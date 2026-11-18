@@ -23,6 +23,36 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Campaigns (MG-27, reversible defaults)
+
+Picked while building MG-27; easy to change.
+
+- **Recipients** are `{"all": true}` or `{"tag_ids": [...]}`, up to 20 tags,
+  matched as any. A new campaign must say which; there's no default, so
+  nothing goes to everyone by accident. A campaign whose only tags are
+  deleted reaches nobody until it's given new recipients; it never falls
+  back to everyone.
+- **Status moves:** draft to scheduled or sending (launch); scheduled to
+  sending, back to draft (unschedule) or cancelled; sending to sent,
+  paused, failed or cancelled; paused to sending, cancelled or failed.
+  Sent, cancelled and failed are final. Launch, the scheduler and pausing
+  (MG-30 to MG-34) make the moves through `campaigns.SetStatus`; no
+  endpoint changes status yet.
+- **Only drafts can be deleted.** Anything past draft stays for its record;
+  a scheduled campaign is cancelled instead (MG-32).
+- **A scheduled campaign keeps a send time.** Setting it to "when launched"
+  is refused; unscheduling comes with MG-32.
+- **Send times** must be in the future and at most a year ahead.
+- **Every edit moves `version` on**, and deleting a tag moves the version
+  of the draft and scheduled campaigns that had it, so a launch
+  confirmation code (MG-30) can go stale when the campaign changes.
+  `version` on an update is optional; when given, a stale one is refused.
+- **Deleting an email leaves its draft campaigns with no email**
+  (`email_id: null`), which launch will refuse. Launched campaigns get a
+  copy of the email (MG-30), so they're not affected.
+- **`recipient_count`** is counted on every single-campaign response, not
+  stored. Lists leave it out to stay fast.
+
 ## 2026-11-18: Signup forms (MG-35, reversible defaults)
 
 Picked while building MG-35; easy to change.
@@ -356,6 +386,7 @@ Picked while building MG-15; easy to change.
 - **Deleting a tag answers `contacts_untagged` and `campaigns_updated`.**
   Campaigns come with MG-27, which must take a deleted tag off draft and
   scheduled campaigns and count them; until then `campaigns_updated` is 0.
+  (Done in MG-27.)
 - **`listContacts` filters by `tag_id`**, which completes the tag filter
   MG-14 left for this ticket.
 
@@ -380,7 +411,8 @@ Picked while building MG-14; easy to change.
   exact. Lists are newest first. The tag filter comes with tags in MG-15.
   (Done in MG-15: `tag_id`.)
 - **Campaigns pick recipients only through `contacts.Recipients`,** which
-  returns subscribed contacts and nothing else.
+  returns subscribed contacts and nothing else. (MG-27 added
+  `contacts.CountRecipients`, which counts the same way.)
 
 ## 2026-11-18: Mascot and UI direction (owner decision, confirmed)
 

@@ -92,8 +92,7 @@ type TagDeleted struct {
 	// ContactsUntagged is how many contacts had the tag.
 	ContactsUntagged int
 	// CampaignsUpdated is how many draft or scheduled campaigns lost the tag
-	// from their recipients. Campaigns come with MG-27, which must count
-	// them here; until then it is 0.
+	// from their recipients.
 	CampaignsUpdated int
 }
 
@@ -114,10 +113,19 @@ func (s *Service) DeleteTag(ctx context.Context, accountID, id string) (*TagDele
 	if err != nil {
 		return nil, err
 	}
+	// Draft and scheduled campaigns that went to the tag change: count them
+	// and move their version on, so a launch confirmation made before goes
+	// stale. The tag comes off every campaign with it (ON DELETE CASCADE).
+	camps, err := tx.Exec(ctx, `
+		UPDATE campaigns SET version = version + 1, updated_at = now()
+		WHERE status IN ('draft', 'scheduled') AND id IN (SELECT campaign_id FROM campaign_tags WHERE tag_id = $1)`, id)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM tags WHERE id = $1`, id); err != nil {
 		return nil, err
 	}
-	return &TagDeleted{ContactsUntagged: int(res.RowsAffected())}, tx.Commit(ctx)
+	return &TagDeleted{ContactsUntagged: int(res.RowsAffected()), CampaignsUpdated: int(camps.RowsAffected())}, tx.Commit(ctx)
 }
 
 // GetTag returns one tag of the account.
@@ -250,4 +258,15 @@ func (s *Service) changeTags(ctx context.Context, accountID, tagID string, sel S
 		return nil, err
 	}
 	return &ch, tx.Commit(ctx)
+}
+
+// TagsExist reports whether every id is one of the account's tags.
+func (s *Service) TagsExist(ctx context.Context, accountID string, ids []string) (bool, error) {
+	uniq := map[string]bool{}
+	for _, id := range ids {
+		uniq[id] = true
+	}
+	var n int
+	err := s.DB.QueryRow(ctx, `SELECT count(*) FROM tags WHERE account_id = $1 AND id::text = ANY($2)`, accountID, ids).Scan(&n)
+	return n == len(uniq), err
 }

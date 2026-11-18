@@ -25,6 +25,7 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/api"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/config"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
@@ -119,6 +120,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		srv.Contacts = &contacts.Service{DB: pool}
 		srv.Emails = &emails.Service{DB: pool}
 		srv.Forms = &forms.Service{DB: pool}
+		srv.Campaigns = &campaigns.Service{DB: pool}
 		if srv.Domains, err = newDomains(ctx, cfg, pool, log); err != nil {
 			return err
 		}

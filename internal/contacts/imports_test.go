@@ -204,12 +204,12 @@ func TestLargeFirstImportIsHeld(t *testing.T) {
 	if im.Review != ReviewHeld || deref(im.HoldReason) != HoldLargeFirstImport || im.Imported != LargeFirstImport+1 {
 		t.Fatalf("import = %+v", im)
 	}
-	if rs, err := h.svc.Recipients(ctx, h.acc, "", 10); err != nil || len(rs) != 0 {
+	if rs, err := h.svc.Recipients(ctx, h.acc, Audience{All: true}, "", 10); err != nil || len(rs) != 0 {
 		t.Errorf("held contacts are recipients: %d, %v", len(rs), err)
 	}
 	// A contact added another way is still mailed.
 	h.add(t, "own@example.com", StatusSubscribed)
-	if rs, _ := h.svc.Recipients(ctx, h.acc, "", 10); len(rs) != 1 || rs[0].Email != "own@example.com" {
+	if rs, _ := h.svc.Recipients(ctx, h.acc, Audience{All: true}, "", 10); len(rs) != 1 || rs[0].Email != "own@example.com" {
 		t.Errorf("recipients = %v", rs)
 	}
 	// Only the first import is held for size.

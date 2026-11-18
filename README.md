@@ -490,6 +490,29 @@ most 10 times a minute (`linkChecksPerMinute`); checks past that still run,
 with their links reported as not checked. Only `cmd/mailgoosed` wires it; a test server with no `Links` looks
 at the addresses without fetching them.
 
+## Campaigns
+
+`internal/campaigns` keeps an account's campaigns; the API has
+`/v1/campaigns` and the CLI `mailgoose campaign create|get|list|update|delete|count`.
+A campaign is a name, an email, recipients and a send time:
+
+```
+mailgoose campaign count --tag VIP
+mailgoose campaign create --name "VIP preview" --email <email-id> --tag VIP --send-at "2026-12-01 09:00"
+```
+
+Recipients are every subscribed contact (`--all`, `{"all": true}`) or the
+subscribed contacts with any of some tags (`--tag`, `{"tag_ids": [...]}`).
+They're picked and counted only through `contacts.Recipients` and
+`contacts.CountRecipients`. `recipient_count` on a campaign, and
+`POST /v1/campaigns/recipient-count`, count them now.
+
+Statuses are draft, scheduled, sending, sent, cancelled, paused and failed.
+`campaigns.CanMove` holds the allowed moves and `campaigns.SetStatus`
+enforces them; only draft and scheduled campaigns can be edited, and only
+drafts deleted. Every edit moves `version` on. Launching and sending come
+with MG-29 to MG-32.
+
 ## Signup forms
 
 `internal/forms` keeps an account's signup forms; the API has

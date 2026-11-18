@@ -915,6 +915,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/campaigns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List campaigns
+         * @description The account's campaigns, newest first. List items leave out `recipient_count`.
+         */
+        get: operations["listCampaigns"];
+        put?: never;
+        /**
+         * Create a campaign
+         * @description Makes a draft campaign: an email, who it goes to and when. Nothing is
+         *     sent until it's launched. `recipients` is `{"all": true}` for every
+         *     subscribed contact, or `{"tag_ids": [...]}` for the subscribed
+         *     contacts with any of the tags. Leave `send_at` out (or null) to send
+         *     when launched.
+         */
+        post: operations["createCampaign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/recipient-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Count recipients
+         * @description Counts who a choice of recipients would reach now: subscribed
+         *     contacts only, the same way a campaign picks them. Changes nothing.
+         */
+        post: operations["countCampaignRecipients"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{campaign_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a campaign
+         * @description The campaign, with `recipient_count` counted now.
+         */
+        get: operations["getCampaign"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a draft campaign
+         * @description Deletes a draft. Campaigns past draft stay, for their record.
+         */
+        delete: operations["deleteCampaign"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a campaign
+         * @description Changes the parts given; the rest stay. Only draft and scheduled
+         *     campaigns can be changed. `send_at: null` sends when launched; a
+         *     scheduled campaign keeps a send time. With `version`, the change is
+         *     refused if the campaign changed since that version was read.
+         */
+        patch: operations["updateCampaign"];
+        trace?: never;
+    };
     "/v1/emails": {
         parameters: {
             query?: never;
@@ -2160,6 +2240,80 @@ export interface components {
             /** @description Optional. Paste it after the form to show the result in the page. */
             script: string;
         };
+        /**
+         * @description `draft` is being set up; `scheduled` is launched and waiting for its
+         *     send time; `sending`, then `sent`. `cancelled` was stopped by the
+         *     account, `paused` by us mid-send, and `failed` couldn't finish.
+         * @enum {string}
+         */
+        CampaignStatus: "draft" | "scheduled" | "sending" | "sent" | "cancelled" | "paused" | "failed";
+        CampaignRecipients: {
+            /** @description True sends to every subscribed contact; tags is then empty. */
+            all: boolean;
+            /** @description Otherwise the subscribed contacts with any of these tags. */
+            tags: components["schemas"]["TagRef"][];
+        };
+        /** @description `{"all": true}` for every subscribed contact, or `{"tag_ids": [...]}` for those with any of the tags. */
+        RecipientsInput: {
+            all?: boolean;
+            tag_ids?: string[];
+        };
+        Campaign: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description The email it sends. Null when a draft's email was deleted. */
+            email_id: string | null;
+            recipients: components["schemas"]["CampaignRecipients"];
+            /** @description How many contacts the recipients reach now. Single-campaign responses only. */
+            recipient_count?: number;
+            /**
+             * Format: date-time
+             * @description When it goes out; null for when it's launched.
+             */
+            send_at: string | null;
+            status: components["schemas"]["CampaignStatus"];
+            /** @description Goes up with every change. */
+            version: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CampaignList: {
+            data: components["schemas"]["Campaign"][];
+            next_cursor: string | null;
+        };
+        CreateCampaignRequest: {
+            name: string;
+            /** Format: uuid */
+            email_id: string;
+            recipients: components["schemas"]["RecipientsInput"];
+            /**
+             * Format: date-time
+             * @description A time in the next year; null or left out sends when launched.
+             */
+            send_at?: string | null;
+        };
+        UpdateCampaignRequest: {
+            name?: string;
+            /** Format: uuid */
+            email_id?: string;
+            recipients?: components["schemas"]["RecipientsInput"];
+            /**
+             * Format: date-time
+             * @description A time in the next year; null sends when launched.
+             */
+            send_at?: string | null;
+            /** @description The version you read; the change is refused if the campaign changed since. */
+            version?: number;
+        };
+        RecipientCountRequest: {
+            recipients: components["schemas"]["RecipientsInput"];
+        };
+        RecipientCount: {
+            recipient_count: number;
+        };
         EmailList: {
             data: components["schemas"]["EmailSummary"][];
             next_cursor: string | null;
@@ -2436,6 +2590,35 @@ export interface components {
             };
         };
         /**
+         * @description `invalid_campaign`: a part breaks a rule; `details.field` names it
+         *     (`name`, `email_id`, `recipients` or `send_at`). `unknown_email` and
+         *     `unknown_tag`: an id isn't one of the account's.
+         */
+        InvalidCampaign: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `campaign_locked`: only draft and scheduled campaigns can be changed,
+         *     and only drafts deleted; `details.status` is the campaign's status.
+         *     `version_conflict`: the campaign changed since the version given;
+         *     `details.current_version` is its version now.
+         */
+        CampaignConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `invalid_merge_tags`: a merge tag can't be filled or a link is
          *     unsafe; `details.problems` lists each with its `path` (such as
          *     `blocks[2].text`, or `html`) and `message`. `empty_email`: an html
@@ -2614,6 +2797,8 @@ export interface components {
         BlockId: components["schemas"]["BlockId"];
         /** @description The form's `id`. */
         FormId: string;
+        /** @description The campaign's `id`. */
+        CampaignId: string;
         /** @description The email's `id`. */
         EmailId: string;
         /**
@@ -4211,6 +4396,194 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listCampaigns: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Only campaigns in this status. */
+                status?: components["schemas"]["CampaignStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of campaigns. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createCampaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateCampaignRequest"];
+            };
+        };
+        responses: {
+            /** @description The new campaign. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Campaign"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            422: components["responses"]["InvalidCampaign"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    countCampaignRecipients: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecipientCountRequest"];
+            };
+        };
+        responses: {
+            /** @description The count. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipientCount"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            422: components["responses"]["InvalidCampaign"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getCampaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The campaign's `id`. */
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The campaign. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Campaign"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteCampaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The campaign's `id`. */
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["CampaignConflict"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    updateCampaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The campaign's `id`. */
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCampaignRequest"];
+            };
+        };
+        responses: {
+            /** @description The changed campaign. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Campaign"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["CampaignConflict"];
+            422: components["responses"]["InvalidCampaign"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

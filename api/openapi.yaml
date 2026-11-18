@@ -1947,6 +1947,229 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/campaigns:
+    get:
+      operationId: listCampaigns
+      summary: List campaigns
+      description: The account's campaigns, newest first. List items leave out `recipient_count`.
+      tags: [campaigns]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: status
+          in: query
+          required: false
+          description: Only campaigns in this status.
+          schema:
+            $ref: "#/components/schemas/CampaignStatus"
+      responses:
+        "200":
+          description: A page of campaigns.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: createCampaign
+      summary: Create a campaign
+      description: |
+        Makes a draft campaign: an email, who it goes to and when. Nothing is
+        sent until it's launched. `recipients` is `{"all": true}` for every
+        subscribed contact, or `{"tag_ids": [...]}` for the subscribed
+        contacts with any of the tags. Leave `send_at` out (or null) to send
+        when launched.
+      tags: [campaigns]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCampaignRequest"
+      responses:
+        "201":
+          description: The new campaign.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "422":
+          $ref: "#/components/responses/InvalidCampaign"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/campaigns/recipient-count:
+    post:
+      operationId: countCampaignRecipients
+      summary: Count recipients
+      description: |
+        Counts who a choice of recipients would reach now: subscribed
+        contacts only, the same way a campaign picks them. Changes nothing.
+      tags: [campaigns]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RecipientCountRequest"
+      responses:
+        "200":
+          description: The count.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecipientCount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "422":
+          $ref: "#/components/responses/InvalidCampaign"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/campaigns/{campaign_id}:
+    get:
+      operationId: getCampaign
+      summary: Get a campaign
+      description: The campaign, with `recipient_count` counted now.
+      tags: [campaigns]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      responses:
+        "200":
+          description: The campaign.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      operationId: updateCampaign
+      summary: Change a campaign
+      description: |
+        Changes the parts given; the rest stay. Only draft and scheduled
+        campaigns can be changed. `send_at: null` sends when launched; a
+        scheduled campaign keeps a send time. With `version`, the change is
+        refused if the campaign changed since that version was read.
+      tags: [campaigns]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCampaignRequest"
+      responses:
+        "200":
+          description: The changed campaign.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/CampaignConflict"
+        "422":
+          $ref: "#/components/responses/InvalidCampaign"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: deleteCampaign
+      summary: Delete a draft campaign
+      description: Deletes a draft. Campaigns past draft stay, for their record.
+      tags: [campaigns]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      responses:
+        "204":
+          description: Deleted.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/CampaignConflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/emails:
     get:
       operationId: listEmails
@@ -4156,6 +4379,131 @@ components:
         script:
           type: string
           description: Optional. Paste it after the form to show the result in the page.
+    CampaignStatus:
+      type: string
+      enum: [draft, scheduled, sending, sent, cancelled, paused, failed]
+      description: |
+        `draft` is being set up; `scheduled` is launched and waiting for its
+        send time; `sending`, then `sent`. `cancelled` was stopped by the
+        account, `paused` by us mid-send, and `failed` couldn't finish.
+    CampaignRecipients:
+      type: object
+      required: [all, tags]
+      properties:
+        all:
+          type: boolean
+          description: True sends to every subscribed contact; tags is then empty.
+        tags:
+          type: array
+          description: Otherwise the subscribed contacts with any of these tags.
+          items:
+            $ref: "#/components/schemas/TagRef"
+    RecipientsInput:
+      type: object
+      additionalProperties: false
+      description: '`{"all": true}` for every subscribed contact, or `{"tag_ids": [...]}` for those with any of the tags.'
+      properties:
+        all:
+          type: boolean
+        tag_ids:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            format: uuid
+    Campaign:
+      type: object
+      required: [id, name, email_id, recipients, send_at, status, version, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email_id:
+          type: [string, "null"]
+          description: The email it sends. Null when a draft's email was deleted.
+        recipients:
+          $ref: "#/components/schemas/CampaignRecipients"
+        recipient_count:
+          type: integer
+          description: How many contacts the recipients reach now. Single-campaign responses only.
+        send_at:
+          type: [string, "null"]
+          format: date-time
+          description: When it goes out; null for when it's launched.
+        status:
+          $ref: "#/components/schemas/CampaignStatus"
+        version:
+          type: integer
+          description: Goes up with every change.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CampaignList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Campaign"
+        next_cursor:
+          type: [string, "null"]
+    CreateCampaignRequest:
+      type: object
+      additionalProperties: false
+      required: [name, email_id, recipients]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        email_id:
+          type: string
+          format: uuid
+        recipients:
+          $ref: "#/components/schemas/RecipientsInput"
+        send_at:
+          type: [string, "null"]
+          format: date-time
+          description: A time in the next year; null or left out sends when launched.
+    UpdateCampaignRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        email_id:
+          type: string
+          format: uuid
+        recipients:
+          $ref: "#/components/schemas/RecipientsInput"
+        send_at:
+          type: [string, "null"]
+          format: date-time
+          description: A time in the next year; null sends when launched.
+        version:
+          type: integer
+          description: The version you read; the change is refused if the campaign changed since.
+    RecipientCountRequest:
+      type: object
+      additionalProperties: false
+      required: [recipients]
+      properties:
+        recipients:
+          $ref: "#/components/schemas/RecipientsInput"
+    RecipientCount:
+      type: object
+      required: [recipient_count]
+      properties:
+        recipient_count:
+          type: integer
     EmailList:
       type: object
       required: [data, next_cursor]
@@ -4492,6 +4840,14 @@ components:
       schema:
         type: string
         format: uuid
+    CampaignId:
+      name: campaign_id
+      in: path
+      required: true
+      description: The campaign's `id`.
+      schema:
+        type: string
+        format: uuid
     EmailId:
       name: email_id
       in: path
@@ -4642,6 +4998,31 @@ components:
         `invalid_form`: a part of the form breaks a rule; `details.field`
         names it (such as `redirect_url` or `fields[1].name`).
         `unknown_tag`: a tag id isn't one of the account's tags.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InvalidCampaign:
+      description: |
+        `invalid_campaign`: a part breaks a rule; `details.field` names it
+        (`name`, `email_id`, `recipients` or `send_at`). `unknown_email` and
+        `unknown_tag`: an id isn't one of the account's.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CampaignConflict:
+      description: |
+        `campaign_locked`: only draft and scheduled campaigns can be changed,
+        and only drafts deleted; `details.status` is the campaign's status.
+        `version_conflict`: the campaign changed since the version given;
+        `details.current_version` is its version now.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

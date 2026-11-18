@@ -476,17 +476,37 @@ func (s *Service) List(ctx context.Context, accountID string, f Filter, after *C
 	return out, rows.Err()
 }
 
-// Recipients returns up to limit of the account's contacts that may be sent
-// a campaign, in id order after afterID ("" for the first batch). Campaign
-// sending (MG-30) selects its audience only through here, so an
-// unconfirmed, unsubscribed, bounced or complained contact is never mailed,
-// and neither is one from an import held for review.
-func (s *Service) Recipients(ctx context.Context, accountID, afterID string, limit int) ([]*Contact, error) {
-	q := `SELECT ` + columns + ` FROM contacts WHERE account_id = $1 AND status = '` + StatusSubscribed + `' AND held_import_id IS NULL`
+// Audience picks a campaign's recipients: every subscribed contact, or the
+// subscribed contacts with any of the tags. No tags and not All picks nobody.
+type Audience struct {
+	All    bool
+	TagIDs []string
+}
+
+// recipientsWhere is the condition every campaign recipient meets, with the
+// account as $1 and, for a tag audience, the tags as $2.
+func recipientsWhere(accountID string, aud Audience) (string, []any) {
+	q := `account_id = $1 AND status = '` + StatusSubscribed + `' AND held_import_id IS NULL`
 	args := []any{accountID}
+	if !aud.All {
+		args = append(args, aud.TagIDs)
+		q += ` AND EXISTS (SELECT 1 FROM contact_tags ct WHERE ct.contact_id = contacts.id AND ct.tag_id::text = ANY($2))`
+	}
+	return q, args
+}
+
+// Recipients returns up to limit of the audience's contacts that may be
+// sent a campaign, in id order after afterID ("" for the first batch).
+// Campaign sending (MG-30) selects its audience only through here, and
+// counts it only through CountRecipients, so an unconfirmed, unsubscribed,
+// bounced or complained contact is never mailed, and neither is one from an
+// import held for review.
+func (s *Service) Recipients(ctx context.Context, accountID string, aud Audience, afterID string, limit int) ([]*Contact, error) {
+	where, args := recipientsWhere(accountID, aud)
+	q := `SELECT ` + columns + ` FROM contacts WHERE ` + where
 	if afterID != "" {
 		args = append(args, afterID)
-		q += ` AND id > $2::uuid`
+		q += fmt.Sprintf(` AND id > $%d::uuid`, len(args))
 	}
 	args = append(args, limit)
 	q += fmt.Sprintf(` ORDER BY id LIMIT $%d`, len(args))
@@ -504,4 +524,12 @@ func (s *Service) Recipients(ctx context.Context, accountID, afterID string, lim
 		out = append(out, c)
 	}
 	return out, rows.Err()
+}
+
+// CountRecipients counts the audience's contacts now.
+func (s *Service) CountRecipients(ctx context.Context, accountID string, aud Audience) (int, error) {
+	where, args := recipientsWhere(accountID, aud)
+	var n int
+	err := s.DB.QueryRow(ctx, `SELECT count(*) FROM contacts WHERE `+where, args...).Scan(&n)
+	return n, err
 }
