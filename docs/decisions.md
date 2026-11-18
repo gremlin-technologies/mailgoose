@@ -23,6 +23,33 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Send pipeline (MG-31, reversible defaults)
+
+Picked while building MG-31; easy to change.
+
+- **Limits:** 10 emails a second across all workers
+  (`SEND_RATE_PER_SECOND`), and per account 10,000 in any 24 hours, 1,000 in
+  its first 7 days (CMP-7's number). An account's own `daily_send_limit`
+  column overrides both; MG-34 (account health) is what will raise or lower
+  it. The 24 hours are a rolling window, not a calendar day.
+- **The rate is global,** kept by one row in Postgres that every worker
+  takes its next slot from, so adding workers never raises it. SES's own
+  account quota stays the outer limit.
+- **A send cut off mid-way is not retried.** If a worker dies between
+  claiming a row and recording it sent, the copy may have gone out, so
+  after 10 minutes the row ends `failed` and its credit comes back. Missing
+  one email is preferred to sending two (CAM-8).
+- **A refused send is retried** with the batch, up to 5 tries (the queue's
+  redrive limit); then the row is `failed`, its credit back, and the message
+  lands in the dead-letter queue.
+- **The dispatcher runs in the API** when there's an SQS queue, because only
+  the API's role may send to it (no infra change), and in the worker when
+  there isn't (local).
+- **MG-31 starts due scheduled campaigns.** MG-32 keeps cancelling and
+  rescheduling.
+- **A campaign where nothing went out ends `failed`;** if any copy went out
+  it ends `sent`, with the failures counted on its rows.
+
 ## 2026-11-18: Form submissions and double opt-in (MG-36, reversible defaults)
 
 Picked while building MG-36; easy to change.

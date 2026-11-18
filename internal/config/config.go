@@ -38,6 +38,15 @@ type Config struct {
 	SendQueueURL string
 	// SESEventsQueueURL is the SQS queue SES events arrive on through SNS.
 	SESEventsQueueURL string
+
+	// SendRatePerSecond is the most campaign emails one worker sends a
+	// second, under the SES account's sending rate (CAM-7).
+	SendRatePerSecond int
+	// AccountDailySendLimit is how many campaign recipients an account may
+	// be sent to in 24 hours once it's past its first week (CMP-7).
+	AccountDailySendLimit int
+	// NewAccountDailySendLimit is that limit in an account's first week.
+	NewAccountDailySendLimit int
 	// SESConfigurationSet must be passed on every send so events are recorded.
 	SESConfigurationSet string
 	// SystemSendingDomain is mailgoose's own sending domain (sign-in codes, double opt-in).
@@ -104,6 +113,19 @@ func load(getenv func(string) string) (Config, error) {
 		errs = append(errs, errors.New("RATE_LIMIT_PER_MINUTE must be 0 (off) or more"))
 	}
 
+	sendRate, err := intEnv(getenv, "SEND_RATE_PER_SECOND", 10)
+	errs = append(errs, err)
+	dailyLimit, err := intEnv(getenv, "ACCOUNT_DAILY_SEND_LIMIT", 10000)
+	errs = append(errs, err)
+	newDailyLimit, err := intEnv(getenv, "NEW_ACCOUNT_DAILY_SEND_LIMIT", 1000)
+	errs = append(errs, err)
+	for name, v := range map[string]int{"SEND_RATE_PER_SECOND": sendRate, "ACCOUNT_DAILY_SEND_LIMIT": dailyLimit,
+		"NEW_ACCOUNT_DAILY_SEND_LIMIT": newDailyLimit} {
+		if v < 1 {
+			errs = append(errs, fmt.Errorf("%s must be 1 or more", name))
+		}
+	}
+
 	secrets, err := parseAppSecrets(getenv("APP_SECRETS_JSON"))
 	errs = append(errs, err)
 
@@ -120,15 +142,18 @@ func load(getenv func(string) string) (Config, error) {
 			SecretARN: getenv("DATABASE_SECRET_ARN"),
 			SSLMode:   orDefault(getenv("DATABASE_SSLMODE"), "require"),
 		},
-		SendQueueURL:        getenv("SEND_QUEUE_URL"),
-		SESEventsQueueURL:   getenv("SES_EVENTS_QUEUE_URL"),
-		SESConfigurationSet: getenv("SES_CONFIGURATION_SET"),
-		SystemSendingDomain: getenv("SYSTEM_SENDING_DOMAIN"),
-		SESIdentityTag:      getenv("SES_IDENTITY_TAG"),
-		WebDir:              getenv("WEB_DIR"),
-		MigrateOnStart:      migrate,
-		RateLimitPerMinute:  rateLimit,
-		AppSecrets:          secrets,
+		SendQueueURL:             getenv("SEND_QUEUE_URL"),
+		SESEventsQueueURL:        getenv("SES_EVENTS_QUEUE_URL"),
+		SendRatePerSecond:        sendRate,
+		AccountDailySendLimit:    dailyLimit,
+		NewAccountDailySendLimit: newDailyLimit,
+		SESConfigurationSet:      getenv("SES_CONFIGURATION_SET"),
+		SystemSendingDomain:      getenv("SYSTEM_SENDING_DOMAIN"),
+		SESIdentityTag:           getenv("SES_IDENTITY_TAG"),
+		WebDir:                   getenv("WEB_DIR"),
+		MigrateOnStart:           migrate,
+		RateLimitPerMinute:       rateLimit,
+		AppSecrets:               secrets,
 	}
 
 	for _, o := range strings.Split(getenv("WEB_ORIGINS"), ",") {

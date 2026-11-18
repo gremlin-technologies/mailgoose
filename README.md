@@ -127,7 +127,9 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_SECRET_ARN` | Postgres on RDS. The user and password come from the RDS-managed secret, re-read when a connection fails (RDS rotates it). |
 | `DATABASE_URL` | Local only. Takes precedence over the variables above. |
 | `DATABASE_SSLMODE` | Defaults to `require` (RDS forces TLS). |
-| `SEND_QUEUE_URL`, `SES_EVENTS_QUEUE_URL` | Queues the worker drains. Unset means idle. |
+| `SEND_QUEUE_URL`, `SES_EVENTS_QUEUE_URL` | Queues the worker drains. Without `SEND_QUEUE_URL` the worker batches and sends campaigns itself, through a queue in memory (local). |
+| `SEND_RATE_PER_SECOND` | Campaign emails sent a second, across every worker. Default 10. |
+| `ACCOUNT_DAILY_SEND_LIMIT`, `NEW_ACCOUNT_DAILY_SEND_LIMIT` | Campaign emails an account may send in any 24 hours: 10,000 by default, and 1,000 in its first 7 days. An account's own `daily_send_limit` overrides both. |
 | `SYSTEM_SENDING_DOMAIN` | mailgoose's own sending domain; sign-in codes come from `signin@` it. Defaults to `mail.localhost` when mail is captured (`MAIL_SENDER=fake`). Unset with SES, sign-up and sign-in answer 503. |
 | `WEB_DIR` | The built web app (`web/dist`) the API serves at `/`. The image sets it to `/srv/web`; unset, the API serves no web app. |
 | `WEB_ORIGINS` | Comma-separated origins, besides the API's own, that may send cookie-authenticated requests that change something, such as `https://app.staging.mailgoose.app`. Empty by default. |
@@ -571,6 +573,34 @@ again returns the same result, and so does a retry with the same
 `Idempotency-Key`. Draft keys get 403. After a launch the campaign can't be
 edited or tested; its `launch` field shows when, to how many and the credits
 held.
+
+### Sending
+
+The send pipeline (`internal/sending/pipeline.go`) takes it from there:
+
+- **Dispatcher.** Every 2 seconds it takes the due `send_queue` rows (each
+  locked by one dispatcher at a time). It starts a `scheduled` campaign at
+  its time, then marks the next recipients enqueued, as many as the
+  account's daily limit leaves, and puts them on the send queue in batches
+  of about 10 seconds' sending (10 to 100). It runs in the API when
+  `SEND_QUEUE_URL` is set (only the API's role may send to the queue), and
+  in the worker otherwise.
+- **Workers.** Each takes one batch at a time and, per recipient, waits for
+  the next send slot (`send_pace`, shared by every worker), claims the row
+  (`sending`) in its own transaction, renders the copy with its
+  unsubscribe link and `List-Unsubscribe` headers, sends it and marks it
+  `sent` with the message id. A contact no longer subscribed is `skipped`
+  and its credit given back.
+- **Exactly once.** A row is sent only from `queued`, so a batch delivered
+  twice sends nothing twice. A row left `sending` (the worker died
+  mid-send) might have gone out, so it's never sent again: after 10 minutes
+  it ends `failed` with its credit back.
+- **Failures.** A refused send puts the row back to `queued` and the batch
+  is retried. On the fifth try the rows that still fail end `failed` with
+  their credits back, and the message goes to the dead-letter queue.
+- **Finishing.** When no row is `queued` or `sending`, the campaign moves
+  to `sent` (or `failed` if nothing went out). A paused account or
+  campaign holds its rows until it's resumed.
 
 ## Unsubscribing
 

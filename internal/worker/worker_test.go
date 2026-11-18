@@ -19,10 +19,12 @@ type fakeSQS struct {
 	mu      sync.Mutex
 	batch   []types.Message
 	deleted []string
+	asked   []int32
 }
 
-func (f *fakeSQS) ReceiveMessage(ctx context.Context, _ *sqs.ReceiveMessageInput, _ ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error) {
+func (f *fakeSQS) ReceiveMessage(ctx context.Context, in *sqs.ReceiveMessageInput, _ ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error) {
 	f.mu.Lock()
+	f.asked = append(f.asked, in.MaxNumberOfMessages)
 	b := f.batch
 	f.batch = nil
 	f.mu.Unlock()
@@ -92,5 +94,25 @@ func TestIdlesWithNoQueues(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("worker did not stop")
+	}
+}
+
+func TestMaxMessagesPerReceive(t *testing.T) {
+	for _, tc := range []struct{ set, want int32 }{{0, 10}, {1, 1}, {4, 4}, {11, 10}} {
+		f := &fakeSQS{batch: []types.Message{msg("a")}}
+		handled := make(chan struct{}, 1)
+		h := HandlerFunc(func(context.Context, types.Message) error { handled <- struct{}{}; return nil })
+		ctx, cancel := context.WithCancel(context.Background())
+		w := &Worker{SQS: f, Log: quietLog(), Queues: []Queue{{Name: "send", URL: "https://sqs/send", Handler: h, MaxMessages: tc.set}}}
+		done := make(chan error, 1)
+		go func() { done <- w.Run(ctx) }()
+		<-handled
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if f.asked[0] != tc.want {
+			t.Errorf("MaxMessages %d: asked for %d, want %d", tc.set, f.asked[0], tc.want)
+		}
 	}
 }
