@@ -12,7 +12,7 @@ describe("signing in", () => {
   it("emails a code, then signs in and goes on to ?next=", async () => {
     let current = signedOut["GET /v1/sessions/current"];
     const api = fakeApi({
-      "GET /v1/sessions/current": (b) => current(b),
+      "GET /v1/sessions/current": (b, u) => current(b, u),
       "POST /v1/sign-in": () => ({ status: 202, body: { status: "code_sent", message: "Check your email." } }),
       "POST /v1/sessions": (body) => {
         const { code } = body as { code: string };
@@ -77,7 +77,7 @@ describe("signing up", () => {
   it("sends the account name and terms, then signs in with the code", async () => {
     let current = signedOut["GET /v1/sessions/current"];
     const api = fakeApi({
-      "GET /v1/sessions/current": (b) => current(b),
+      "GET /v1/sessions/current": (b, u) => current(b, u),
       "POST /v1/signup": () => ({ status: 202, body: { status: "code_sent", message: "Check your email." } }),
       "POST /v1/sessions": () => {
         current = signedIn["GET /v1/sessions/current"];

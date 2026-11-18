@@ -176,7 +176,11 @@ make web-check  # ESLint, type check and Vitest
 ```
 
 Pages so far: sign up, sign in with an emailed code, the CLI approval page
-(`/device`), and the signed-in layout with a placeholder for every MVP page.
+(`/device`), Domains (add, DNS records with copy buttons, check now), API keys
+(create with a scope, secret shown once, revoke) and Settings (including
+deleting the account), in the signed-in layout with a placeholder for every
+other MVP page. Colors come from `docs/brand.md`; `web/src/styles.test.ts`
+checks every text and background pair against WCAG 2.2 AA.
 In development, sign-in codes land in `.local/mail` (`make mail`). CI runs
 the web checks and a production build through `go test ./internal/web`.
 
@@ -243,6 +247,19 @@ can't launch without, which today is the postal address.
 
 ```sh
 mailgoose account update --postal-address-file address.txt --time-zone America/Chicago
+```
+
+`DELETE /v1/account?confirm=<name>` (or `mailgoose account delete --confirm
+<name>`, or Settings in the web app) deletes the account at once. `confirm`
+must be the account's exact name, and only a session or a full-scope key can
+do it. Emails, contacts, tags, imports, the suppression list, domains (and
+their SES identities), API keys, CLI logins and sessions go; the credit ledger
+stays, and the account row stays as `closed` with its name and settings
+cleared, so payments and refunds can still be traced. The address can sign up
+again afterwards.
+
+```sh
+mailgoose account delete --confirm "Pat's Bakery"
 ```
 
 ## Credits

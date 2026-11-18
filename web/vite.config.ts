@@ -22,5 +22,7 @@ export default defineConfig({
     environment: "jsdom",
     include: ["src/**/*.test.{ts,tsx}"],
     restoreMocks: true,
+    // styles.test.ts reads the stylesheet (?raw) to check its contrast.
+    css: { include: [/styles\.css/] },
   },
 });

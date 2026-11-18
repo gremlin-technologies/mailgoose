@@ -114,6 +114,16 @@ var contractCases = map[string][]contractCase{
 			req: bearer(jsonRequest(http.MethodPatch, "/v1/account", accountUpdate)), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(jsonRequest(http.MethodPatch, "/v1/account", accountUpdate)), status: http.StatusServiceUnavailable},
 	},
+	"deleteAccount": {
+		{name: "deleted", server: fullKey(authServer), req: bearer(request(http.MethodDelete, "/v1/account?confirm=Test")), status: http.StatusNoContent},
+		{name: "no confirm", server: fullKey(authServer), req: bearer(request(http.MethodDelete, "/v1/account")), status: http.StatusBadRequest},
+		{name: "no credentials", server: authServer, req: request(http.MethodDelete, "/v1/account?confirm=Test"), status: http.StatusUnauthorized},
+		{name: "draft key", server: draftKey(authServer), req: bearer(request(http.MethodDelete, "/v1/account?confirm=Test")), status: http.StatusForbidden},
+		{name: "wrong name", server: fullKey(authServer), req: bearer(request(http.MethodDelete, "/v1/account?confirm=Nope")), status: http.StatusUnprocessableEntity},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodDelete, "/v1/account?confirm=Nope"))),
+			req: bearer(request(http.MethodDelete, "/v1/account?confirm=Test")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodDelete, "/v1/account?confirm=Test")), status: http.StatusServiceUnavailable},
+	},
 	"listTags": {
 		{name: "listed", server: draftKey(authServer), before: addedTag, req: bearer(request(http.MethodGet, "/v1/tags?name=VIP&limit=5")), status: http.StatusOK},
 		{name: "bad cursor", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/tags?cursor="+EncodeCursor("x"))), status: http.StatusBadRequest},

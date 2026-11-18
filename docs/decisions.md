@@ -4,6 +4,34 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Deleting an account, and the settings pages (MG-43, reversible defaults)
+
+Picked while building MG-43; easy to change. No ticket covered AUTH-6's API,
+so MG-43 builds it along with the page.
+
+- **Deletion is immediate**, not within 30 days: nothing waits in a queue, so
+  nothing can be forgotten. AUTH-6 allows up to 30 days, so a grace period
+  can be added later.
+- **What stays:** the credit ledger (payments and refunds need it) and the
+  account row, marked `closed` with its name set to "Deleted account" and the
+  From name, From address and postal address cleared. Everything else with
+  the account's id goes, including SES identities for its domains. A test
+  fails when a new table with an `account_id` isn't listed as deleted or kept.
+  Sign-in code rate-limit rows (by address) age out on their own.
+- **Confirmation is the exact account name**, in the API (`?confirm=`), the
+  CLI (`--confirm`) and the web page (typed). A mismatch is a 422
+  `confirmation_mismatch`.
+- **Who can:** a signed-in person or a full-scope key; a draft key gets 403.
+- **A closed account gets no monthly free grant.**
+- **New API keys default to draft scope** in the web form, since a key is
+  usually for an agent or a script; full is one click away.
+- **Brand tokens:** the palette in `docs/brand.md`, tuned for WCAG 2.2 AA:
+  deep periwinkle `#5562A3` for primary buttons and links, charcoal text on
+  a lightened cream, a darker warm grey `#8C7A72` for input borders (3:1),
+  and beak orange only as decoration (it fails as a background for text).
+  Dark mode uses a lighter periwinkle on a charcoal background. A test checks
+  every pair.
+
 ## 2026-11-18: Block operation details (MG-20, reversible defaults)
 
 Picked while building MG-20; easy to change.
