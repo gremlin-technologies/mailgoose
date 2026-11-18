@@ -20,10 +20,16 @@ ECR_REPO    ?= mailgoose
 
 TEST_DB_URL ?= postgres://mailgoose:mailgoose@localhost:5432/mailgoose_test?sslmode=disable
 
-.PHONY: help build test test-db vet lint lint-api generate fmt tidy run-api run-worker migrate up down image push-ecr clean
+.PHONY: help dev mail build test test-db vet lint lint-api generate fmt tidy run-api run-worker migrate up down image push-ecr clean
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
+
+dev: ## Run Postgres, migrations, the API and the worker locally; mail goes to .local/mail
+	./scripts/dev.sh
+
+mail: ## List the newest mail the local fake sender captured
+	@if ls .local/mail/*.eml >/dev/null 2>&1; then ls -1t .local/mail/*.eml | head -10; else echo "No mail captured yet."; fi
 
 build: ## Build bin/mailgoose (CLI) and bin/mailgoosed (server)
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o bin/mailgoose ./cmd/mailgoose
@@ -64,10 +70,11 @@ tidy: ## Tidy go.mod
 
 run-api: ## Run the API against the compose Postgres
 	docker compose up -d --wait postgres
+	APP_ENV=local MAIL_SENDER=fake MAIL_CAPTURE_DIR=$(CURDIR)/.local/mail \
 	DATABASE_URL="postgres://mailgoose:mailgoose@localhost:5432/mailgoose?sslmode=disable" $(GO) run ./cmd/mailgoosed serve
 
 run-worker: ## Run the worker locally (idles with no queue URLs)
-	$(GO) run ./cmd/mailgoosed worker
+	APP_ENV=local MAIL_SENDER=fake MAIL_CAPTURE_DIR=$(CURDIR)/.local/mail $(GO) run ./cmd/mailgoosed worker
 
 migrate: ## Apply migrations to the compose Postgres
 	docker compose up -d --wait postgres
@@ -96,5 +103,5 @@ push-ecr: ## Build and push $(PLATFORM) image to ECR as $(ECR_REPO):$(IMAGE_TAG)
 	  -t "$$registry/$(ECR_REPO):$(IMAGE_TAG)" --push .; \
 	echo "Pushed $$registry/$(ECR_REPO):$(IMAGE_TAG)"
 
-clean: ## Remove build output
-	rm -rf bin web/node_modules
+clean: ## Remove build output, npm packages and captured local mail
+	rm -rf bin web/node_modules .local
