@@ -4,6 +4,37 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Email document details (MG-19, reversible defaults)
+
+Picked while building MG-19; easy to change.
+
+- **Text blocks hold a small Markdown subset** (`**bold**`, `*italic*`,
+  `[text](https://...)`, `- ` and `1. ` lists, blank lines between
+  paragraphs), not HTML, so agents can write them and the renderer (MG-21)
+  decides the markup. Headings are one plain line.
+- **Settings live in the document**, next to the blocks (DES-1), for both
+  kinds. Fields a request leaves out take defaults: empty subject, preview
+  text and From name, no From address or reply-to, background `#f4f4f5`,
+  width 600 (480 to 800). From and reply-to are only checked as addresses
+  here; the email check (MG-26) says whether From is at a verified domain.
+- **Block ids** are optional in requests: a block without one gets `b_` and
+  ten random characters. Ids a document brings are kept (1 to 40 letters,
+  digits, `-` or `_`, unique in the document), so replacing a document with
+  moved blocks keeps their ids. A duplicated email keeps the same ids.
+- **The footer** is added at the end of a blocks document that lacks one, and
+  a footer anywhere but last is refused. A column can't hold columns or a
+  footer. A document holds at most 200 blocks, counting those in columns.
+- **Versions:** the API requires the version read on every update and
+  replace. The CLI uses the version in a `email get --json` file, or
+  `--version`; with neither it reads the current version first, so a bare
+  document from a person or agent replaces the email as it is now.
+- **HTML emails** take up to 512 KB here; MG-22 adds the 102 KB sendable limit
+  and the markup checks. The kind can't change after creation.
+- **Links:** image `src` and social URLs must be http or https; button and
+  image links may also be `mailto:` or a merge tag such as
+  `{{unsubscribe_url}}`. MG-26 warns about plain http.
+- **Scopes:** draft keys can do everything with emails.
+
 ## 2026-11-18: Contact export and data request details (MG-18, reversible defaults)
 
 Picked while building MG-18; easy to change.

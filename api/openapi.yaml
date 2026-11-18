@@ -1689,6 +1689,272 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/emails:
+    get:
+      operationId: listEmails
+      summary: List emails
+      description: The account's emails, newest first, without their content.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of emails.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: createEmail
+      summary: Create an email
+      description: |
+        Makes an email of kind `blocks` (the default) or `html`. Without a
+        `document`, a blocks email starts with only its footer and an html
+        email with empty HTML; both get default settings. The kind can't
+        change later.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmailRequest"
+      responses:
+        "201":
+          description: The new email.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Email"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "422":
+          $ref: "#/components/responses/InvalidEmail"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/emails/{email_id}:
+    get:
+      operationId: getEmail
+      summary: Get an email
+      description: The email with its whole document.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+      responses:
+        "200":
+          description: The email.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Email"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      operationId: updateEmail
+      summary: Rename an email or change its settings
+      description: |
+        Changes the name, some settings, or both. Settings left out keep their
+        values. `version` must be the email's current version; if someone
+        saved it since, nothing changes and the answer is a 409
+        `version_conflict`.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEmailRequest"
+      responses:
+        "200":
+          description: The email as saved, with its new version.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Email"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/EmailVersionConflict"
+        "422":
+          $ref: "#/components/responses/InvalidEmail"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: deleteEmail
+      summary: Delete an email
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+      responses:
+        "204":
+          description: Deleted.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/emails/{email_id}/document:
+    put:
+      operationId: replaceEmailDocument
+      summary: Replace an email's whole document
+      description: |
+        Swaps the settings and content for the `document` given, checked
+        whole. A document read with getEmail and sent back unchanged saves
+        unchanged. Blocks keep the ids they bring; a block without an `id`
+        gets a new one, and a blocks document without a footer gets one at
+        the end. `version` works as in updateEmail.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplaceEmailDocumentRequest"
+      responses:
+        "200":
+          description: The email as saved, with its new version.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Email"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/EmailVersionConflict"
+        "422":
+          $ref: "#/components/responses/InvalidEmail"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/emails/{email_id}/duplicate:
+    post:
+      operationId: duplicateEmail
+      summary: Duplicate an email
+      description: |
+        Copies the email's settings and content into a new email, named
+        "Copy of" the original unless a `name` is given. Block ids stay the
+        same in the copy.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DuplicateEmailRequest"
+      responses:
+        "201":
+          description: The new copy.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Email"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/InvalidEmail"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   securitySchemes:
     apiKey:
@@ -2661,6 +2927,492 @@ components:
           type: string
           description: When the server binary was built (RFC 3339), if known.
           examples: ["2026-11-18T12:00:00Z"]
+    EmailKind:
+      type: string
+      enum: [blocks, html]
+      description: |
+        `blocks`: built from blocks in the designer or with block commands.
+        `html`: hand-written HTML, edited as code only.
+    Color:
+      type: string
+      pattern: "^#[0-9a-fA-F]{6}$"
+      examples: ["#18181b"]
+    Align:
+      type: string
+      enum: [left, center, right]
+    BlockId:
+      type: string
+      pattern: "^[A-Za-z0-9_-]{1,40}$"
+      description: |
+        Stable for the block's life: edits and moves keep it. Leave it out
+        when adding a block to get a new one (`b_` and ten letters and
+        digits). Unique within the document.
+    EmailSettings:
+      type: object
+      description: |
+        The parts of an email outside its content. In a request, fields left
+        out take their defaults.
+      additionalProperties: false
+      required: [subject, preview_text, from_name, from_email, reply_to, background_color, content_width]
+      properties:
+        subject:
+          type: string
+          maxLength: 200
+          default: ""
+        preview_text:
+          type: string
+          maxLength: 200
+          default: ""
+          description: The line inboxes show after the subject.
+        from_name:
+          type: string
+          maxLength: 100
+          default: ""
+        from_email:
+          type: [string, "null"]
+          format: email
+          default: null
+          description: Must be at one of the account's verified domains to send (the email check says so).
+        reply_to:
+          type: [string, "null"]
+          format: email
+          default: null
+        background_color:
+          $ref: "#/components/schemas/Color"
+          default: "#f4f4f5"
+        content_width:
+          type: integer
+          minimum: 480
+          maximum: 800
+          default: 600
+          description: Pixels, on desktop. Blocks emails only; html emails ignore it.
+    EmailSettingsUpdate:
+      type: object
+      description: Some or all settings. Fields left out keep their values.
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        subject:
+          type: string
+          maxLength: 200
+        preview_text:
+          type: string
+          maxLength: 200
+        from_name:
+          type: string
+          maxLength: 100
+        from_email:
+          type: [string, "null"]
+          format: email
+        reply_to:
+          type: [string, "null"]
+          format: email
+        background_color:
+          $ref: "#/components/schemas/Color"
+        content_width:
+          type: integer
+          minimum: 480
+          maximum: 800
+    HeadingBlock:
+      type: object
+      additionalProperties: false
+      required: [id, type, text, level, align]
+      properties:
+        id:
+          $ref: "#/components/schemas/BlockId"
+        type:
+          type: string
+          const: heading
+        text:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: One line; merge tags allowed.
+        level:
+          type: integer
+          enum: [1, 2, 3]
+          default: 1
+        align:
+          $ref: "#/components/schemas/Align"
+          default: left
+    TextBlock:
+      type: object
+      additionalProperties: false
+      required: [id, type, text, align]
+      properties:
+        id:
+          $ref: "#/components/schemas/BlockId"
+        type:
+          type: string
+          const: text
+        text:
+          type: string
+          minLength: 1
+          maxLength: 20000
+          description: |
+            A small Markdown subset: `**bold**`, `*italic*`,
+            `[link text](https://...)`, lists with `- ` or `1. `, and a blank
+            line between paragraphs. Merge tags allowed.
+        align:
+          $ref: "#/components/schemas/Align"
+          default: left
+    ImageBlock:
+      type: object
+      additionalProperties: false
+      required: [id, type, src, alt, href, width, align]
+      properties:
+        id:
+          $ref: "#/components/schemas/BlockId"
+        type:
+          type: string
+          const: image
+        src:
+          type: string
+          format: uri
+          maxLength: 2000
+          description: An http or https address, usually one `mailgoose image upload` gave.
+        alt:
+          type: string
+          maxLength: 500
+          default: ""
+        href:
+          type: [string, "null"]
+          maxLength: 2000
+          default: null
+          description: Where a click on the image goes, if anywhere.
+        width:
+          type: [integer, "null"]
+          minimum: 1
+          maximum: 800
+          default: null
+          description: Pixels; null for the full content width.
+        align:
+          $ref: "#/components/schemas/Align"
+          default: center
+    ButtonBlock:
+      type: object
+      additionalProperties: false
+      required: [id, type, text, href, align, background_color, text_color]
+      properties:
+        id:
+          $ref: "#/components/schemas/BlockId"
+        type:
+          type: string
+          const: button
+        text:
+          type: string
+          minLength: 1
+          maxLength: 100
+        href:
+          type: string
+          maxLength: 2000
+          description: An http, https or mailto address, or a merge tag such as `{{unsubscribe_url}}`.
+        align:
+          $ref: "#/components/schemas/Align"
+          default: center
+        background_color:
+          $ref: "#/components/schemas/Color"
+          default: "#18181b"
+        text_color:
+          $ref: "#/components/schemas/Color"
+          default: "#ffffff"
+    DividerBlock:
+      type: object
+      additionalProperties: false
+      required: [id, type, color, thickness]
+      properties:
+        id:
+          $ref: "#/components/schemas/BlockId"
+        type:
+          type: string
+          const: divider
+        color:
+          $ref: "#/components/schemas/Color"
+          default: "#e4e4e7"
+        thickness:
+          type: integer
+          minimum: 1
+          maximum: 10
+          default: 1
+    SpacerBlock:
+      type: object
+      additionalProperties: false
+      required: [id, type, height]
+      properties:
+        id:
+          $ref: "#/components/schemas/BlockId"
+        type:
+          type: string
+          const: spacer
+        height:
+          type: integer
+          minimum: 4
+          maximum: 200
+          default: 24
+    SocialBlock:
+      type: object
+      additionalProperties: false
+      required: [id, type, links, align]
+      properties:
+        id:
+          $ref: "#/components/schemas/BlockId"
+        type:
+          type: string
+          const: social
+        links:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            type: object
+            additionalProperties: false
+            required: [network, url]
+            properties:
+              network:
+                type: string
+                enum: [facebook, instagram, x, linkedin, youtube, tiktok, threads, bluesky, website]
+              url:
+                type: string
+                format: uri
+                maxLength: 2000
+        align:
+          $ref: "#/components/schemas/Align"
+          default: center
+    FooterBlock:
+      type: object
+      description: |
+        The locked last block of every blocks email. Rendering adds the
+        account's postal address and the unsubscribe link; `text` is an
+        optional line above them.
+      additionalProperties: false
+      required: [id, type, text]
+      properties:
+        id:
+          $ref: "#/components/schemas/BlockId"
+        type:
+          type: string
+          const: footer
+        text:
+          type: string
+          maxLength: 1000
+          default: ""
+    ColumnsBlock:
+      type: object
+      description: A row of two columns, each holding blocks other than columns and the footer.
+      additionalProperties: false
+      required: [id, type, columns]
+      properties:
+        id:
+          $ref: "#/components/schemas/BlockId"
+        type:
+          type: string
+          const: columns
+        columns:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: object
+            additionalProperties: false
+            required: [blocks]
+            properties:
+              blocks:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ColumnContentBlock"
+    ColumnContentBlock:
+      description: A block that can go inside a column.
+      oneOf:
+        - $ref: "#/components/schemas/HeadingBlock"
+        - $ref: "#/components/schemas/TextBlock"
+        - $ref: "#/components/schemas/ImageBlock"
+        - $ref: "#/components/schemas/ButtonBlock"
+        - $ref: "#/components/schemas/DividerBlock"
+        - $ref: "#/components/schemas/SpacerBlock"
+        - $ref: "#/components/schemas/SocialBlock"
+      discriminator:
+        propertyName: type
+        mapping:
+          heading: "#/components/schemas/HeadingBlock"
+          text: "#/components/schemas/TextBlock"
+          image: "#/components/schemas/ImageBlock"
+          button: "#/components/schemas/ButtonBlock"
+          divider: "#/components/schemas/DividerBlock"
+          spacer: "#/components/schemas/SpacerBlock"
+          social: "#/components/schemas/SocialBlock"
+    Block:
+      description: One block of a document, by `type` (DES-2).
+      oneOf:
+        - $ref: "#/components/schemas/HeadingBlock"
+        - $ref: "#/components/schemas/TextBlock"
+        - $ref: "#/components/schemas/ImageBlock"
+        - $ref: "#/components/schemas/ButtonBlock"
+        - $ref: "#/components/schemas/DividerBlock"
+        - $ref: "#/components/schemas/SpacerBlock"
+        - $ref: "#/components/schemas/ColumnsBlock"
+        - $ref: "#/components/schemas/SocialBlock"
+        - $ref: "#/components/schemas/FooterBlock"
+      discriminator:
+        propertyName: type
+        mapping:
+          heading: "#/components/schemas/HeadingBlock"
+          text: "#/components/schemas/TextBlock"
+          image: "#/components/schemas/ImageBlock"
+          button: "#/components/schemas/ButtonBlock"
+          divider: "#/components/schemas/DividerBlock"
+          spacer: "#/components/schemas/SpacerBlock"
+          columns: "#/components/schemas/ColumnsBlock"
+          social: "#/components/schemas/SocialBlock"
+          footer: "#/components/schemas/FooterBlock"
+    BlockDocument:
+      type: object
+      description: |
+        A blocks email's settings and content, schema version 1. Blocks come
+        in order, at most 200 counting those inside columns, and the last is
+        the footer. Unknown block types and fields are refused. In a
+        request, `schema_version` may be left out, and so may block ids and
+        fields that have defaults.
+      additionalProperties: false
+      required: [schema_version, settings, blocks]
+      properties:
+        schema_version:
+          type: integer
+          const: 1
+        settings:
+          $ref: "#/components/schemas/EmailSettings"
+        blocks:
+          type: array
+          maxItems: 200
+          items:
+            $ref: "#/components/schemas/Block"
+    HtmlDocument:
+      type: object
+      description: An html email's settings and its markup (MG-22 adds the checks for sending).
+      additionalProperties: false
+      required: [schema_version, settings, html]
+      properties:
+        schema_version:
+          type: integer
+          const: 1
+        settings:
+          $ref: "#/components/schemas/EmailSettings"
+        html:
+          type: string
+          maxLength: 512000
+    EmailDocument:
+      description: A BlockDocument for a blocks email, an HtmlDocument for an html one.
+      oneOf:
+        - $ref: "#/components/schemas/BlockDocument"
+        - $ref: "#/components/schemas/HtmlDocument"
+    Email:
+      type: object
+      additionalProperties: false
+      required: [id, name, kind, version, document, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: For the account's own use; recipients never see it.
+        kind:
+          $ref: "#/components/schemas/EmailKind"
+        version:
+          type: integer
+          minimum: 1
+          description: Goes up by one with every save. Updates name the version they read.
+        document:
+          $ref: "#/components/schemas/EmailDocument"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    EmailSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, kind, version, subject, block_count, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        kind:
+          $ref: "#/components/schemas/EmailKind"
+        version:
+          type: integer
+          minimum: 1
+        subject:
+          type: string
+        block_count:
+          type: integer
+          description: Blocks at the top level, footer included; 0 for an html email.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    EmailList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailSummary"
+        next_cursor:
+          type: [string, "null"]
+    CreateEmailRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        kind:
+          $ref: "#/components/schemas/EmailKind"
+          default: blocks
+        document:
+          $ref: "#/components/schemas/EmailDocument"
+    UpdateEmailRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: The version you read.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        settings:
+          $ref: "#/components/schemas/EmailSettingsUpdate"
+    ReplaceEmailDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [version, document]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: The version you read.
+        document:
+          $ref: "#/components/schemas/EmailDocument"
+    DuplicateEmailRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
     Error:
       type: object
       required: [error]
@@ -2686,7 +3438,9 @@ components:
               type: object
               description: |
                 Extra facts some errors carry; absent otherwise. A
-                `contact_limit` has `limit` and `count`.
+                `contact_limit` has `limit` and `count`, an
+                `invalid_document` has `path`, and a `version_conflict` has
+                `current_version`.
               additionalProperties: true
   parameters:
     Limit:
@@ -2733,6 +3487,14 @@ components:
       in: path
       required: true
       description: The import's `id`.
+      schema:
+        type: string
+        format: uuid
+    EmailId:
+      name: email_id
+      in: path
+      required: true
+      description: The email's `id`.
       schema:
         type: string
         format: uuid
@@ -2837,6 +3599,31 @@ components:
         The request is well formed but a field is wrong. `code` says which
         problem, such as `invalid_email`, `invalid_account_name`,
         `terms_not_accepted` or `invalid_code`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InvalidEmail:
+      description: |
+        `invalid_document`: the document breaks the schema; `message` names
+        the place, such as `blocks[2].href`, and `details.path` holds it.
+        `invalid_name` (empty or over 200 characters), `invalid_kind` (not
+        blocks or html) or `kind_mismatch` (a document of the other kind).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    EmailVersionConflict:
+      description: |
+        `version_conflict`: the email was saved since the version given was
+        read, and nothing changed. `details.current_version` is its version
+        now; read it again and redo the change.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

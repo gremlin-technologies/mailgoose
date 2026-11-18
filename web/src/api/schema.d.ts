@@ -821,6 +821,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/emails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List emails
+         * @description The account's emails, newest first, without their content.
+         */
+        get: operations["listEmails"];
+        put?: never;
+        /**
+         * Create an email
+         * @description Makes an email of kind `blocks` (the default) or `html`. Without a
+         *     `document`, a blocks email starts with only its footer and an html
+         *     email with empty HTML; both get default settings. The kind can't
+         *     change later.
+         */
+        post: operations["createEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/emails/{email_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an email
+         * @description The email with its whole document.
+         */
+        get: operations["getEmail"];
+        put?: never;
+        post?: never;
+        /** Delete an email */
+        delete: operations["deleteEmail"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename an email or change its settings
+         * @description Changes the name, some settings, or both. Settings left out keep their
+         *     values. `version` must be the email's current version; if someone
+         *     saved it since, nothing changes and the answer is a 409
+         *     `version_conflict`.
+         */
+        patch: operations["updateEmail"];
+        trace?: never;
+    };
+    "/v1/emails/{email_id}/document": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace an email's whole document
+         * @description Swaps the settings and content for the `document` given, checked
+         *     whole. A document read with getEmail and sent back unchanged saves
+         *     unchanged. Blocks keep the ids they bring; a block without an `id`
+         *     gets a new one, and a blocks document without a footer gets one at
+         *     the end. `version` works as in updateEmail.
+         */
+        put: operations["replaceEmailDocument"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/emails/{email_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Duplicate an email
+         * @description Copies the email's settings and content into a new email, named
+         *     "Copy of" the original unless a `name` is given. Block ids stay the
+         *     same in the copy.
+         */
+        post: operations["duplicateEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1457,6 +1558,287 @@ export interface components {
              */
             build_date?: string;
         };
+        /**
+         * @description `blocks`: built from blocks in the designer or with block commands.
+         *     `html`: hand-written HTML, edited as code only.
+         * @enum {string}
+         */
+        EmailKind: "blocks" | "html";
+        /** @example #18181b */
+        Color: string;
+        /** @enum {string} */
+        Align: "left" | "center" | "right";
+        /**
+         * @description Stable for the block's life: edits and moves keep it. Leave it out
+         *     when adding a block to get a new one (`b_` and ten letters and
+         *     digits). Unique within the document.
+         */
+        BlockId: string;
+        /**
+         * @description The parts of an email outside its content. In a request, fields left
+         *     out take their defaults.
+         */
+        EmailSettings: {
+            /** @default  */
+            subject: string;
+            /**
+             * @description The line inboxes show after the subject.
+             * @default
+             */
+            preview_text: string;
+            /** @default  */
+            from_name: string;
+            /**
+             * Format: email
+             * @description Must be at one of the account's verified domains to send (the email check says so).
+             * @default null
+             */
+            from_email: string | null;
+            /**
+             * Format: email
+             * @default null
+             */
+            reply_to: string | null;
+            /** @default #f4f4f5 */
+            background_color: components["schemas"]["Color"];
+            /**
+             * @description Pixels, on desktop. Blocks emails only; html emails ignore it.
+             * @default 600
+             */
+            content_width: number;
+        };
+        /** @description Some or all settings. Fields left out keep their values. */
+        EmailSettingsUpdate: {
+            subject?: string;
+            preview_text?: string;
+            from_name?: string;
+            /** Format: email */
+            from_email?: string | null;
+            /** Format: email */
+            reply_to?: string | null;
+            background_color?: components["schemas"]["Color"];
+            content_width?: number;
+        };
+        HeadingBlock: {
+            id: components["schemas"]["BlockId"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "heading";
+            /** @description One line; merge tags allowed. */
+            text: string;
+            /**
+             * @default 1
+             * @enum {integer}
+             */
+            level: 1 | 2 | 3;
+            /** @default left */
+            align: components["schemas"]["Align"];
+        };
+        TextBlock: {
+            id: components["schemas"]["BlockId"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "text";
+            /**
+             * @description A small Markdown subset: `**bold**`, `*italic*`,
+             *     `[link text](https://...)`, lists with `- ` or `1. `, and a blank
+             *     line between paragraphs. Merge tags allowed.
+             */
+            text: string;
+            /** @default left */
+            align: components["schemas"]["Align"];
+        };
+        ImageBlock: {
+            id: components["schemas"]["BlockId"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "image";
+            /**
+             * Format: uri
+             * @description An http or https address, usually one `mailgoose image upload` gave.
+             */
+            src: string;
+            /** @default  */
+            alt: string;
+            /**
+             * @description Where a click on the image goes, if anywhere.
+             * @default null
+             */
+            href: string | null;
+            /**
+             * @description Pixels; null for the full content width.
+             * @default null
+             */
+            width: number | null;
+            /** @default center */
+            align: components["schemas"]["Align"];
+        };
+        ButtonBlock: {
+            id: components["schemas"]["BlockId"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "button";
+            text: string;
+            /** @description An http, https or mailto address, or a merge tag such as `{{unsubscribe_url}}`. */
+            href: string;
+            /** @default center */
+            align: components["schemas"]["Align"];
+            /** @default #18181b */
+            background_color: components["schemas"]["Color"];
+            /** @default #ffffff */
+            text_color: components["schemas"]["Color"];
+        };
+        DividerBlock: {
+            id: components["schemas"]["BlockId"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "divider";
+            /** @default #e4e4e7 */
+            color: components["schemas"]["Color"];
+            /** @default 1 */
+            thickness: number;
+        };
+        SpacerBlock: {
+            id: components["schemas"]["BlockId"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "spacer";
+            /** @default 24 */
+            height: number;
+        };
+        SocialBlock: {
+            id: components["schemas"]["BlockId"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "social";
+            links: {
+                /** @enum {string} */
+                network: "facebook" | "instagram" | "x" | "linkedin" | "youtube" | "tiktok" | "threads" | "bluesky" | "website";
+                /** Format: uri */
+                url: string;
+            }[];
+            /** @default center */
+            align: components["schemas"]["Align"];
+        };
+        /**
+         * @description The locked last block of every blocks email. Rendering adds the
+         *     account's postal address and the unsubscribe link; `text` is an
+         *     optional line above them.
+         */
+        FooterBlock: {
+            id: components["schemas"]["BlockId"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "footer";
+            /** @default  */
+            text: string;
+        };
+        /** @description A row of two columns, each holding blocks other than columns and the footer. */
+        ColumnsBlock: {
+            id: components["schemas"]["BlockId"];
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "columns";
+            columns: {
+                blocks: components["schemas"]["ColumnContentBlock"][];
+            }[];
+        };
+        /** @description A block that can go inside a column. */
+        ColumnContentBlock: components["schemas"]["HeadingBlock"] | components["schemas"]["TextBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ButtonBlock"] | components["schemas"]["DividerBlock"] | components["schemas"]["SpacerBlock"] | components["schemas"]["SocialBlock"];
+        /** @description One block of a document, by `type` (DES-2). */
+        Block: components["schemas"]["HeadingBlock"] | components["schemas"]["TextBlock"] | components["schemas"]["ImageBlock"] | components["schemas"]["ButtonBlock"] | components["schemas"]["DividerBlock"] | components["schemas"]["SpacerBlock"] | components["schemas"]["ColumnsBlock"] | components["schemas"]["SocialBlock"] | components["schemas"]["FooterBlock"];
+        /**
+         * @description A blocks email's settings and content, schema version 1. Blocks come
+         *     in order, at most 200 counting those inside columns, and the last is
+         *     the footer. Unknown block types and fields are refused. In a
+         *     request, `schema_version` may be left out, and so may block ids and
+         *     fields that have defaults.
+         */
+        BlockDocument: {
+            /** @constant */
+            schema_version: 1;
+            settings: components["schemas"]["EmailSettings"];
+            blocks: components["schemas"]["Block"][];
+        };
+        /** @description An html email's settings and its markup (MG-22 adds the checks for sending). */
+        HtmlDocument: {
+            /** @constant */
+            schema_version: 1;
+            settings: components["schemas"]["EmailSettings"];
+            html: string;
+        };
+        /** @description A BlockDocument for a blocks email, an HtmlDocument for an html one. */
+        EmailDocument: components["schemas"]["BlockDocument"] | components["schemas"]["HtmlDocument"];
+        Email: {
+            /** Format: uuid */
+            id: string;
+            /** @description For the account's own use; recipients never see it. */
+            name: string;
+            kind: components["schemas"]["EmailKind"];
+            /** @description Goes up by one with every save. Updates name the version they read. */
+            version: number;
+            document: components["schemas"]["EmailDocument"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        EmailSummary: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            kind: components["schemas"]["EmailKind"];
+            version: number;
+            subject: string;
+            /** @description Blocks at the top level, footer included; 0 for an html email. */
+            block_count: number;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        EmailList: {
+            data: components["schemas"]["EmailSummary"][];
+            next_cursor: string | null;
+        };
+        CreateEmailRequest: {
+            name: string;
+            /** @default blocks */
+            kind: components["schemas"]["EmailKind"];
+            document?: components["schemas"]["EmailDocument"];
+        };
+        UpdateEmailRequest: {
+            /** @description The version you read. */
+            version: number;
+            name?: string;
+            settings?: components["schemas"]["EmailSettingsUpdate"];
+        };
+        ReplaceEmailDocumentRequest: {
+            /** @description The version you read. */
+            version: number;
+            document: components["schemas"]["EmailDocument"];
+        };
+        DuplicateEmailRequest: {
+            name?: string;
+        };
         Error: {
             error: {
                 /**
@@ -1473,7 +1855,9 @@ export interface components {
                 hint: string;
                 /**
                  * @description Extra facts some errors carry; absent otherwise. A
-                 *     `contact_limit` has `limit` and `count`.
+                 *     `contact_limit` has `limit` and `count`, an
+                 *     `invalid_document` has `path`, and a `version_conflict` has
+                 *     `current_version`.
                  */
                 details?: {
                     [key: string]: unknown;
@@ -1564,6 +1948,35 @@ export interface components {
          *     `terms_not_accepted` or `invalid_code`.
          */
         ValidationFailed: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `invalid_document`: the document breaks the schema; `message` names
+         *     the place, such as `blocks[2].href`, and `details.path` holds it.
+         *     `invalid_name` (empty or over 200 characters), `invalid_kind` (not
+         *     blocks or html) or `kind_mismatch` (a document of the other kind).
+         */
+        InvalidEmail: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `version_conflict`: the email was saved since the version given was
+         *     read, and nothing changed. `details.current_version` is its version
+         *     now; read it again and redo the change.
+         */
+        EmailVersionConflict: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -1687,6 +2100,8 @@ export interface components {
         TagId: string;
         /** @description The import's `id`. */
         ImportId: string;
+        /** @description The email's `id`. */
+        EmailId: string;
         /**
          * @description Makes a retry safe. A repeat with the same key and request within 24
          *     hours returns the stored response instead of running again; the same
@@ -3072,6 +3487,231 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listEmails: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of emails. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description The new email. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Email"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            422: components["responses"]["InvalidEmail"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The email. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Email"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    updateEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description The email as saved, with its new version. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Email"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["EmailVersionConflict"];
+            422: components["responses"]["InvalidEmail"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    replaceEmailDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReplaceEmailDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description The email as saved, with its new version. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Email"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["EmailVersionConflict"];
+            422: components["responses"]["InvalidEmail"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    duplicateEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DuplicateEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description The new copy. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Email"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidEmail"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };
