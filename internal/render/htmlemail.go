@@ -33,13 +33,10 @@ func CompileHTML(doc *emails.Document, acct Account) (*Template, error) {
 	}
 	// The same check the html had to pass to be saved, so an email whose
 	// markup was never imported (empty) or has no unsubscribe link can't
-	// be sent. Draft skips it: the email check reports these itself.
+	// be sent. It comes back as an *emails.HTMLError, apart from merge tag
+	// Problems. Draft skips it: the email check reports these itself.
 	if errs, _ := emails.CheckHTML(*doc.HTML); len(errs) > 0 {
-		probs := make(Problems, 0, len(errs)+len(problems))
-		for _, e := range errs {
-			probs = append(probs, &TagError{Path: "html", Message: e.String()})
-		}
-		return nil, append(probs, problems...)
+		return nil, &emails.HTMLError{Issues: errs}
 	}
 	if len(problems) > 0 {
 		return nil, problems

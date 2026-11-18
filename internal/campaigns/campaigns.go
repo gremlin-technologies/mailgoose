@@ -91,6 +91,22 @@ type Campaign struct {
 	StatusChangedAt time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
+	// LastTest is the campaign's last test send; nil before the first.
+	LastTest *Test
+}
+
+// Test is when a campaign's last test send went out, and the versions of
+// the campaign and its email it was made from.
+type Test struct {
+	At           time.Time
+	Version      int
+	EmailVersion int
+}
+
+// TestedAsIs reports whether the campaign's last test was made from the
+// campaign as it is now and from emailVersion of its email.
+func (c *Campaign) TestedAsIs(emailVersion int) bool {
+	return c.LastTest != nil && c.LastTest.Version == c.Version && c.LastTest.EmailVersion == emailVersion
 }
 
 // Audience is who the campaign goes to, for contacts.Recipients.
@@ -141,19 +157,41 @@ func (s *Service) now() time.Time {
 	return time.Now()
 }
 
-const columns = `id, account_id, name, email_id, all_contacts, send_at, status, version, status_changed_at, created_at, updated_at`
+const columns = `id, account_id, name, email_id, all_contacts, send_at, status, version, status_changed_at, created_at, updated_at,
+	last_test_at, last_test_version, last_test_email_version`
 
 func scan(row pgx.Row) (*Campaign, error) {
 	var c Campaign
+	var testAt *time.Time
+	var testVersion, testEmailVersion *int
 	err := row.Scan(&c.ID, &c.AccountID, &c.Name, &c.EmailID, &c.AllContacts, &c.SendAt, &c.Status, &c.Version,
-		&c.StatusChangedAt, &c.CreatedAt, &c.UpdatedAt)
+		&c.StatusChangedAt, &c.CreatedAt, &c.UpdatedAt, &testAt, &testVersion, &testEmailVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, err
 	}
+	if testAt != nil && testVersion != nil && testEmailVersion != nil {
+		c.LastTest = &Test{At: *testAt, Version: *testVersion, EmailVersion: *testEmailVersion}
+	}
 	return &c, nil
+}
+
+// RecordTest notes a test send of the campaign, made from its version
+// version and its email's emailVersion. It's not an edit: the campaign's
+// version stays.
+func (s *Service) RecordTest(ctx context.Context, accountID, id string, t Test) error {
+	tag, err := s.DB.Exec(ctx, `
+		UPDATE campaigns SET last_test_at = $3, last_test_version = $4, last_test_email_version = $5
+		WHERE account_id = $1 AND id = $2`, accountID, id, t.At, t.Version, t.EmailVersion)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // apply checks the changes that need no lookups and sets them on c.

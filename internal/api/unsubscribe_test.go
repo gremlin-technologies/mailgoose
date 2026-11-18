@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
 
@@ -262,5 +263,18 @@ func TestUnsubscribePagesLimit(t *testing.T) {
 	}
 	if !strings.Contains(f.logs.String(), "unsubscribe post rate limited") || !strings.Contains(f.logs.String(), "one_click=true") {
 		t.Errorf("logs:\n%s", f.logs)
+	}
+}
+
+func TestTestSendUnsubscribeLink(t *testing.T) {
+	f := newUnsubscribeFixture(t)
+	if sending.TestUnsubscribePath != "/u/"+testToken {
+		t.Fatalf("test path %s", sending.TestUnsubscribePath)
+	}
+	for _, m := range []string{http.MethodGet, http.MethodPost} {
+		expectPage(t, f.do(t, m, sending.TestUnsubscribePath, "List-Unsubscribe=One-Click", nil), http.StatusOK, "This was a test email", "Nothing has been changed.")
+	}
+	if f.status(t, f.pat) != "subscribed" || f.status(t, f.jo) != "subscribed" {
+		t.Error("the test link changed someone")
 	}
 }

@@ -5,6 +5,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestPreviewEmail(t *testing.T) {
@@ -59,6 +61,17 @@ func TestPreviewEmail(t *testing.T) {
 	addedEmailFrom(`{"name":"Empty","kind":"html"}`)(t, h)
 	if rec := get("/preview"); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), `"empty_email"`) {
 		t.Errorf("empty html: %d %s", rec.Code, rec.Body)
+	}
+
+	// Markup saved before a check was tightened is refused as invalid_html.
+	addedEmailFrom(`{"name":"Legacy","kind":"html","document":{"html":"<p>Hi</p><a href=\"{{unsubscribe_url}}\">Unsubscribe</a>"}}`)(t, h)
+	v, _ := testDBs.Load(t)
+	if _, err := v.(*pgxpool.Pool).Exec(t.Context(), `UPDATE emails SET document = jsonb_set(document, '{html}', '"<p>Unsubscribe: {{unsubscribe_url}}</p>"') WHERE name = 'Legacy'`); err != nil {
+		t.Fatal(err)
+	}
+	if rec := get("/preview"); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), `"invalid_html"`) ||
+		!strings.Contains(rec.Body.String(), `"code":"missing_unsubscribe"`) {
+		t.Errorf("legacy html: %d %s", rec.Code, rec.Body)
 	}
 
 	// Every problem is listed.

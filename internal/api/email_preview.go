@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
+	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
 )
 
@@ -71,6 +72,13 @@ func (s *Server) PreviewEmail(w http.ResponseWriter, r *http.Request, id string,
 		tpl, err = render.CompileHTML(e.Document, acct)
 	} else {
 		tpl, err = render.Compile(e.Document, acct)
+	}
+	var htmlErr *emails.HTMLError
+	if errors.As(err, &htmlErr) {
+		WriteError(w, Unprocessable("invalid_html", "The email's markup has errors: "+htmlErr.Error()+".").
+			WithHint("Fix each problem in details.problems and import the markup again with `mailgoose email import-html <email> <file.html>`.").
+			WithDetails(map[string]any{"problems": htmlErr.Issues}))
+		return
 	}
 	var problems render.Problems
 	if errors.As(err, &problems) {

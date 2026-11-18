@@ -2170,6 +2170,59 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/campaigns/{campaign_id}/test:
+    post:
+      operationId: testCampaign
+      summary: Send a test of a campaign
+      description: |
+        Sends the campaign's email, rendered as recipients will get it, to
+        the account owner, or to up to 5 addresses (`to`) that are the
+        owner's or on one of the account's verified sending domains. Each
+        subject starts `[Test] `, and the unsubscribe link and header point
+        at a page that only says it's a test. Tests use no credits; an
+        account can send 50 test emails in any 24 hours. The campaign
+        records the test in `last_test`, which launch checks. Draft and
+        scheduled campaigns only.
+      tags: [campaigns]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestCampaignRequest"
+      responses:
+        "200":
+          description: Sent.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestSendResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/CampaignConflict"
+        "422":
+          $ref: "#/components/responses/TestNotSendable"
+        "429":
+          $ref: "#/components/responses/TestLimited"
+        "502":
+          $ref: "#/components/responses/TestSendFailed"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/emails:
     get:
       operationId: listEmails
@@ -4413,7 +4466,7 @@ components:
             format: uuid
     Campaign:
       type: object
-      required: [id, name, email_id, recipients, send_at, status, version, created_at, updated_at]
+      required: [id, name, email_id, recipients, send_at, status, version, last_test, created_at, updated_at]
       properties:
         id:
           type: string
@@ -4437,12 +4490,59 @@ components:
         version:
           type: integer
           description: Goes up with every change.
+        last_test:
+          description: The campaign's last test send; null before the first.
+          oneOf:
+            - $ref: "#/components/schemas/CampaignTest"
+            - type: "null"
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+    CampaignTest:
+      type: object
+      required: [at, version, email_version]
+      properties:
+        at:
+          type: string
+          format: date-time
+          description: When the test went out.
+        version:
+          type: integer
+          description: The campaign's version it was made from.
+        email_version:
+          type: integer
+          description: The email's version it was made from.
+    TestCampaignRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        to:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+            format: email
+          description: Who gets the test. Left out or empty, the account owner.
+    TestSendResult:
+      type: object
+      required: [campaign, to, sent_today, daily_limit]
+      properties:
+        campaign:
+          $ref: "#/components/schemas/Campaign"
+        to:
+          type: array
+          items:
+            type: string
+          description: Who each copy went to.
+        sent_today:
+          type: integer
+          description: Test emails the account sent in the last 24 hours, these included.
+        daily_limit:
+          type: integer
+          description: Test emails an account can send in any 24 hours.
     CampaignList:
       type: object
       required: [data, next_cursor]
@@ -5030,12 +5130,55 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    TestNotSendable:
+      description: |
+        `not_ready`: something stops the email being sent;
+        `details.problems` lists each with its `code` (`no_email`,
+        `missing_from`, `unverified_from`, `missing_postal_address`,
+        `missing_subject`, `empty_email`, `merge_tag`, `invalid_html`), `message`
+        and `hint`.
+        `invalid_test`: `to` has an address that isn't one, or more than 5.
+        `test_recipient_not_allowed`: an address in `to` isn't the owner's
+        or on a verified sending domain; `details.address` names it.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TestLimited:
+      description: |
+        `test_limit`: the account has sent 50 test emails in the last 24
+        hours; Retry-After says when enough have aged out. `rate_limited`:
+        the API's request limit.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+        Retry-After:
+          $ref: "#/components/headers/Retry-After"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TestSendFailed:
+      description: "`test_send_failed`: the mail provider refused or didn't answer. It still counts toward the day's tests."
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     UnrenderableEmail:
       description: |
         `invalid_merge_tags`: a merge tag can't be filled or a link is
         unsafe; `details.problems` lists each with its `path` (such as
         `blocks[2].text`, or `html`) and `message`. `empty_email`: an html
-        email with no markup yet.
+        email with no markup yet. `invalid_html`: the html email's markup
+        fails the import check (possible only for markup saved before a
+        check was added); `details.problems` lists each with its `line`,
+        `code` and `message`.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

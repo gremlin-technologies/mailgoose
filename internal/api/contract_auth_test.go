@@ -18,6 +18,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
 
@@ -40,7 +41,7 @@ func authServer(t *testing.T) *Server {
 	outboxes.Store(t, fake)
 	testDBs.Store(t, db)
 	t.Cleanup(func() { outboxes.Delete(t); testDBs.Delete(t) })
-	return &Server{
+	s := &Server{
 		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		DB:          db,
 		Credits:     &credits.Ledger{DB: db},
@@ -59,6 +60,9 @@ func authServer(t *testing.T) *Server {
 			From: mail.Address{Name: "mailgoose", Email: "signin@mail.test.example"},
 		},
 	}
+	s.Sending = &sending.Service{DB: db, Campaigns: s.Campaigns, Emails: s.Emails, Settings: s.Auth,
+		Domains: s.Domains, Unsubscribe: s.Unsubscribe, Mail: fake}
+	return s
 }
 
 func rateLimitedAuthServer(t *testing.T) *Server {

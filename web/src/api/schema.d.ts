@@ -995,6 +995,33 @@ export interface paths {
         patch: operations["updateCampaign"];
         trace?: never;
     };
+    "/v1/campaigns/{campaign_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a test of a campaign
+         * @description Sends the campaign's email, rendered as recipients will get it, to
+         *     the account owner, or to up to 5 addresses (`to`) that are the
+         *     owner's or on one of the account's verified sending domains. Each
+         *     subject starts `[Test] `, and the unsubscribe link and header point
+         *     at a page that only says it's a test. Tests use no credits; an
+         *     account can send 50 test emails in any 24 hours. The campaign
+         *     records the test in `last_test`, which launch checks. Draft and
+         *     scheduled campaigns only.
+         */
+        post: operations["testCampaign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/emails": {
         parameters: {
             query?: never;
@@ -2275,10 +2302,36 @@ export interface components {
             status: components["schemas"]["CampaignStatus"];
             /** @description Goes up with every change. */
             version: number;
+            /** @description The campaign's last test send; null before the first. */
+            last_test: components["schemas"]["CampaignTest"] | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        CampaignTest: {
+            /**
+             * Format: date-time
+             * @description When the test went out.
+             */
+            at: string;
+            /** @description The campaign's version it was made from. */
+            version: number;
+            /** @description The email's version it was made from. */
+            email_version: number;
+        };
+        TestCampaignRequest: {
+            /** @description Who gets the test. Left out or empty, the account owner. */
+            to?: string[];
+        };
+        TestSendResult: {
+            campaign: components["schemas"]["Campaign"];
+            /** @description Who each copy went to. */
+            to: string[];
+            /** @description Test emails the account sent in the last 24 hours, these included. */
+            sent_today: number;
+            /** @description Test emails an account can send in any 24 hours. */
+            daily_limit: number;
         };
         CampaignList: {
             data: components["schemas"]["Campaign"][];
@@ -2619,10 +2672,57 @@ export interface components {
             };
         };
         /**
+         * @description `not_ready`: something stops the email being sent;
+         *     `details.problems` lists each with its `code` (`no_email`,
+         *     `missing_from`, `unverified_from`, `missing_postal_address`,
+         *     `missing_subject`, `empty_email`, `merge_tag`, `invalid_html`), `message`
+         *     and `hint`.
+         *     `invalid_test`: `to` has an address that isn't one, or more than 5.
+         *     `test_recipient_not_allowed`: an address in `to` isn't the owner's
+         *     or on a verified sending domain; `details.address` names it.
+         */
+        TestNotSendable: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `test_limit`: the account has sent 50 test emails in the last 24
+         *     hours; Retry-After says when enough have aged out. `rate_limited`:
+         *     the API's request limit.
+         */
+        TestLimited: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                "Retry-After": components["headers"]["Retry-After"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description `test_send_failed`: the mail provider refused or didn't answer. It still counts toward the day's tests. */
+        TestSendFailed: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `invalid_merge_tags`: a merge tag can't be filled or a link is
          *     unsafe; `details.problems` lists each with its `path` (such as
          *     `blocks[2].text`, or `html`) and `message`. `empty_email`: an html
-         *     email with no markup yet.
+         *     email with no markup yet. `invalid_html`: the html email's markup
+         *     fails the import check (possible only for markup saved before a
+         *     check was added); `details.problems` lists each with its `line`,
+         *     `code` and `message`.
          */
         UnrenderableEmail: {
             headers: {
@@ -4585,6 +4685,43 @@ export interface operations {
             409: components["responses"]["CampaignConflict"];
             422: components["responses"]["InvalidCampaign"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    testCampaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The campaign's `id`. */
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TestCampaignRequest"];
+            };
+        };
+        responses: {
+            /** @description Sent. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestSendResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["CampaignConflict"];
+            422: components["responses"]["TestNotSendable"];
+            429: components["responses"]["TestLimited"];
+            502: components["responses"]["TestSendFailed"];
             503: components["responses"]["ServiceUnavailable"];
         };
     };

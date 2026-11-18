@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api"
@@ -17,11 +18,20 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
+	"github.com/gremlin-technologies/mailgoose/internal/domains"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
+
+// liveOutboxes holds each liveAPI test's fake mail sender, for test sends.
+var liveOutboxes sync.Map // *testing.T -> *mail.Fake
+
+// liveDBs holds each liveAPI test's database, for setup no command can do
+// (verifying a sending domain takes DNS).
+var liveDBs sync.Map // *testing.T -> *pgxpool.Pool
 
 // liveAPI runs the real API on a test database and points a harness at it
 // with a full-scope key, for commands whose round trip matters.
@@ -29,6 +39,10 @@ func liveAPI(t *testing.T) *harness {
 	t.Helper()
 	ctx := context.Background()
 	db := dbtest.New(t)
+	outbox := &mail.Fake{}
+	liveOutboxes.Store(t, outbox)
+	liveDBs.Store(t, db)
+	t.Cleanup(func() { liveOutboxes.Delete(t); liveDBs.Delete(t) })
 	srv := &api.Server{
 		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		DB:          db,
@@ -39,6 +53,8 @@ func liveAPI(t *testing.T) *harness {
 		Unsubscribe: &unsubscribe.Service{DB: db},
 		Auth:        &auth.Service{DB: db, Mail: &mail.Fake{}, From: mail.Address{Email: "signin@mail.test.example"}},
 	}
+	srv.Sending = &sending.Service{DB: db, Campaigns: srv.Campaigns, Emails: srv.Emails, Settings: srv.Auth,
+		Domains: &domains.Service{DB: db}, Unsubscribe: srv.Unsubscribe, Mail: outbox}
 	var accountID, userID string
 	if err := db.QueryRow(ctx, `INSERT INTO accounts (name, status) VALUES ('Test', 'active') RETURNING id`).Scan(&accountID); err != nil {
 		t.Fatal(err)

@@ -52,7 +52,23 @@ func logPath(path string) string {
 	return path
 }
 
+// testToken is the token in a test send's unsubscribe link
+// (sending.TestUnsubscribePath). Real tokens start "u1".
+const testToken = "test"
+
+var testSendPage = page{
+	Title: "This was a test email",
+	Body: []string{
+		"In the campaign itself, this link unsubscribes the person it's sent to, with one click.",
+		"Nothing has been changed.",
+	},
+}
+
 func (s *Server) unsubscribePage(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("token") == testToken {
+		writePage(w, http.StatusOK, testSendPage)
+		return
+	}
 	if s.Unsubscribe == nil {
 		writePage(w, http.StatusServiceUnavailable, unavailablePage)
 		return
@@ -86,6 +102,10 @@ func (s *Server) unsubscribePost(w http.ResponseWriter, r *http.Request) {
 	source := unsubscribe.SourceLink
 	if oneClick {
 		source = unsubscribe.SourceOneClick
+	}
+	if r.PathValue("token") == testToken {
+		writePage(w, http.StatusOK, testSendPage)
+		return
 	}
 	if s.Unsubscribe == nil {
 		writePage(w, http.StatusServiceUnavailable, unavailablePage)

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -29,8 +30,13 @@ type campaign struct {
 	SendAt         *time.Time `json:"send_at"`
 	Status         string     `json:"status"`
 	Version        int        `json:"version"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	LastTest       *struct {
+		At           time.Time `json:"at"`
+		Version      int       `json:"version"`
+		EmailVersion int       `json:"email_version"`
+	} `json:"last_test"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type campaignPage struct {
@@ -146,6 +152,13 @@ func (a *App) printCampaign(c campaign, verb string) {
 		fmt.Fprintf(tw, "Recipients now:\t%d\n", *c.RecipientCount)
 	}
 	fmt.Fprintf(tw, "Send:\t%s\n", c.sendTime())
+	if verb == "" {
+		test := "none yet (`mailgoose campaign test " + c.ID + "`)"
+		if c.LastTest != nil {
+			test = fmt.Sprintf("%s, of campaign version %d", c.LastTest.At.Local().Format("2006-01-02 15:04 MST"), c.LastTest.Version)
+		}
+		fmt.Fprintf(tw, "Last test:\t%s\n", test)
+	}
 	_ = tw.Flush()
 }
 
@@ -394,6 +407,78 @@ is refused if the campaign changed since you read it.`,
 	})
 	cc.register(count)
 
-	cmd.AddCommand(list, create, get, update, del, count)
+	var to []string
+	test := calls("testCampaign", &cobra.Command{
+		Use:   "test <campaign-id>",
+		Short: "Send a test of a campaign's email, to you or a colleague",
+		Long: `Sends one copy of the campaign's email, with "[Test] " before the subject,
+to you (the account owner), or with --to to up to 5 addresses: yours, or any
+on a verified sending domain of the account. Merge tags are filled from the
+contact with that address when there is one. No credits are used, and the
+account can send 50 test emails in any 24 hours.
+
+The email has to be ready to send: a From on a verified domain, a subject,
+the account's postal address, and merge tags that can be filled in. If it
+isn't, nothing is sent and each problem is listed with how to fix it.`,
+		Example: `  mailgoose campaign test 3f1c...
+  mailgoose campaign test 3f1c... --to sam@yourbakery.com --to you@yourbakery.com`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := campaignIDArg(args[0])
+			if err != nil {
+				return err
+			}
+			var body any
+			if len(to) > 0 {
+				body = map[string]any{"to": to}
+			}
+			var out struct {
+				Campaign   campaign `json:"campaign"`
+				To         []string `json:"to"`
+				SentToday  int      `json:"sent_today"`
+				DailyLimit int      `json:"daily_limit"`
+			}
+			if err := a.call(cmd.Context(), http.MethodPost, campaignPath(id)+"/test", body, &out, true); err != nil {
+				return listSendProblems(err)
+			}
+			if a.jsonOut {
+				a.printJSON(out)
+				return nil
+			}
+			fmt.Fprintf(a.Stdout, "Sent a test of %q to %s.\n", out.Campaign.Name, strings.Join(out.To, ", "))
+			fmt.Fprintf(a.Stdout, "%d of %d test emails used in the last 24 hours.\n", out.SentToday, out.DailyLimit)
+			return nil
+		},
+	})
+	test.Flags().StringArrayVar(&to, "to", nil, "send to this address instead of yours; repeat for up to 5")
+
+	cmd.AddCommand(list, create, get, update, del, count, test)
 	return cmd
+}
+
+// listSendProblems puts every problem in a not_ready error's message, one
+// per line with how to fix it, so the person sees them all at once.
+func listSendProblems(err error) error {
+	var e *Error
+	if !errors.As(err, &e) || e.Code != "not_ready" {
+		return err
+	}
+	raw, _ := e.Details["problems"].([]any)
+	if len(raw) == 0 {
+		return err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "The campaign can't be sent yet, so nothing was sent. %d %s to fix:", len(raw), plural(len(raw), "thing", "things"))
+	for _, r := range raw {
+		m, _ := r.(map[string]any)
+		msg, _ := m["message"].(string)
+		hint, _ := m["hint"].(string)
+		fmt.Fprintf(&b, "\n  - %s", msg)
+		if hint != "" {
+			fmt.Fprintf(&b, "\n    %s", hint)
+		}
+	}
+	e.Message = b.String()
+	e.Hint = ""
+	return e
 }

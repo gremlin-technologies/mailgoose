@@ -35,6 +35,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 	"github.com/gremlin-technologies/mailgoose/internal/web"
@@ -127,13 +128,15 @@ func serve(ctx context.Context, log *slog.Logger) error {
 			return err
 		}
 
+		sender, err := mail.New(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		srv.Sending = &sending.Service{DB: pool, Campaigns: srv.Campaigns, Emails: srv.Emails,
+			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Unsubscribe: srv.Unsubscribe, Mail: sender}
 		if cfg.SystemSendingDomain == "" {
 			log.Warn("SYSTEM_SENDING_DOMAIN is not set; sign-up and sign-in will answer 503")
 		} else {
-			sender, err := mail.New(ctx, cfg)
-			if err != nil {
-				return err
-			}
 			srv.Auth = &auth.Service{
 				DB:   pool,
 				Mail: sender,
