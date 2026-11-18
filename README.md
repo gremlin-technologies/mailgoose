@@ -176,6 +176,18 @@ mailgoose keys list
 mailgoose keys revoke <id> --yes
 ```
 
+## Account settings
+
+`GET /v1/account` and `PATCH /v1/account` (or `mailgoose account get|update`)
+read and change the account name, default From name and address, postal
+address and IANA time zone. A PATCH changes only the fields sent, and `null`
+removes an optional one. `missing_for_send` lists the settings a campaign
+can't launch without, which today is the postal address.
+
+```sh
+mailgoose account update --postal-address-file address.txt --time-zone America/Chicago
+```
+
 ## Credits
 
 One credit sends one email to one recipient. `internal/credits` is the ledger:

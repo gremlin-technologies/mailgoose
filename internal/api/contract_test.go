@@ -89,6 +89,23 @@ var contractCases = map[string][]contractCase{
 			req: bearer(request(http.MethodDelete, "/v1/api-keys/"+noSuchID)), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodDelete, "/v1/api-keys/"+noSuchID)), status: http.StatusServiceUnavailable},
 	},
+	"getAccount": {
+		{name: "draft key", server: draftKey(authServer), req: bearer(request(http.MethodGet, "/v1/account")), status: http.StatusOK},
+		{name: "no credentials", server: authServer, req: request(http.MethodGet, "/v1/account"), status: http.StatusUnauthorized},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/account"))),
+			req: bearer(request(http.MethodGet, "/v1/account")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodGet, "/v1/account")), status: http.StatusServiceUnavailable},
+	},
+	"updateAccount": {
+		{name: "full update", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPatch, "/v1/account", accountUpdate)), status: http.StatusOK},
+		{name: "clear a field", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPatch, "/v1/account", `{"postal_address":null}`)), status: http.StatusOK},
+		{name: "empty", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPatch, "/v1/account", `{}`)), status: http.StatusBadRequest},
+		{name: "no credentials", server: authServer, req: jsonRequest(http.MethodPatch, "/v1/account", accountUpdate), status: http.StatusUnauthorized},
+		{name: "bad time zone", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPatch, "/v1/account", `{"time_zone":"Mars/Olympus"}`)), status: http.StatusUnprocessableEntity},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(jsonRequest(http.MethodPatch, "/v1/account", accountUpdate))),
+			req: bearer(jsonRequest(http.MethodPatch, "/v1/account", accountUpdate)), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(jsonRequest(http.MethodPatch, "/v1/account", accountUpdate)), status: http.StatusServiceUnavailable},
+	},
 	"getCredits": {
 		{name: "draft key", server: draftKey(authServer), req: bearer(request(http.MethodGet, "/v1/credits")), status: http.StatusOK},
 		{name: "web session", server: authServer, before: signedIn, req: withSession(request(http.MethodGet, "/v1/credits")), status: http.StatusOK},
@@ -133,6 +150,10 @@ var contractCases = map[string][]contractCase{
 		{name: "no database", server: serverWith(nil), req: withSession(request(http.MethodDelete, "/v1/sessions")), status: http.StatusServiceUnavailable},
 	},
 }
+
+// accountUpdate sets every account setting.
+const accountUpdate = `{"name":"Pat's Bakery","from_name":"Pat","from_email":"news@patsbakery.example",` +
+	`"postal_address":"Pat's Bakery\n12 Main St\nSpringfield, IL 62701","time_zone":"America/Chicago"}`
 
 const noSuchID = "00000000-0000-4000-8000-000000000000"
 

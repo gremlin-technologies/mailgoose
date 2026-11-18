@@ -50,6 +50,24 @@ func (e AccountStatus) Valid() bool {
 	}
 }
 
+// Defines values for AccountSettingsPlan.
+const (
+	AccountSettingsPlanFree AccountSettingsPlan = "free"
+	AccountSettingsPlanPaid AccountSettingsPlan = "paid"
+)
+
+// Valid indicates whether the value is a known member of the AccountSettingsPlan enum.
+func (e AccountSettingsPlan) Valid() bool {
+	switch e {
+	case AccountSettingsPlanFree:
+		return true
+	case AccountSettingsPlanPaid:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApiKeyScope.
 const (
 	ApiKeyScopeDraft ApiKeyScope = "draft"
@@ -163,6 +181,42 @@ type AccountPlan string
 
 // AccountStatus defines model for Account.Status.
 type AccountStatus string
+
+// AccountSettings defines model for AccountSettings.
+type AccountSettings struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// FromEmail The default From address for new campaigns.
+	//
+	// Examples: news@patsbakery.example
+	FromEmail *string `json:"from_email"`
+
+	// FromName The default From name for new campaigns.
+	//
+	// Examples: Pat's Bakery
+	FromName *string `json:"from_name"`
+	Id       string  `json:"id"`
+
+	// MissingForSend Settings a campaign can't launch without, such as `postal_address`. Empty when none are missing.
+	MissingForSend []string            `json:"missing_for_send"`
+	Name           string              `json:"name"`
+	Plan           AccountSettingsPlan `json:"plan"`
+
+	// PostalAddress The mailing address in every email's footer, one line per `\n`.
+	//
+	// Examples: Pat's Bakery
+	// 12 Main St
+	// Springfield, IL 62701
+	PostalAddress *string `json:"postal_address"`
+
+	// TimeZone An IANA time zone name.
+	//
+	// Examples: America/Chicago
+	TimeZone string `json:"time_zone"`
+}
+
+// AccountSettingsPlan defines model for AccountSettings.Plan.
+type AccountSettingsPlan string
 
 // ApiKey defines model for ApiKey.
 type ApiKey struct {
@@ -339,6 +393,22 @@ type SignupRequest struct {
 	Email string `json:"email"`
 }
 
+// UpdateAccountRequest defines model for UpdateAccountRequest.
+type UpdateAccountRequest struct {
+	// FromEmail `null` removes it.
+	FromEmail *string `json:"from_email,omitempty"`
+
+	// FromName One line, without quotes or angle brackets. `null` removes it.
+	FromName *string `json:"from_name,omitempty"`
+	Name     *string `json:"name,omitempty"`
+
+	// PostalAddress Up to 8 lines separated by `\n`; blank lines are dropped. `null` removes it.
+	PostalAddress *string `json:"postal_address,omitempty"`
+
+	// TimeZone An IANA time zone name, such as `America/New_York` or `UTC`.
+	TimeZone *string `json:"time_zone,omitempty"`
+}
+
 // User defines model for User.
 type User struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -400,6 +470,9 @@ type ListCreditTransactionsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// UpdateAccountJSONRequestBody defines body for UpdateAccount for application/json ContentType.
+type UpdateAccountJSONRequestBody = UpdateAccountRequest
+
 // CreateApiKeyJSONRequestBody defines body for CreateApiKey for application/json ContentType.
 type CreateApiKeyJSONRequestBody = CreateApiKeyRequest
 
@@ -420,6 +493,12 @@ type ServerInterface interface {
 	// GetReadiness Readiness check
 	// (GET /readyz)
 	GetReadiness(w http.ResponseWriter, r *http.Request)
+	// GetAccount Show account settings
+	// (GET /v1/account)
+	GetAccount(w http.ResponseWriter, r *http.Request)
+	// UpdateAccount Change account settings
+	// (PATCH /v1/account)
+	UpdateAccount(w http.ResponseWriter, r *http.Request)
 	// ListApiKeys List API keys
 	// (GET /v1/api-keys)
 	ListApiKeys(w http.ResponseWriter, r *http.Request, params ListApiKeysParams)
@@ -483,6 +562,34 @@ func (siw *ServerInterfaceWrapper) GetReadiness(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReadiness(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAccount operation middleware
+func (siw *ServerInterfaceWrapper) GetAccount(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAccount(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateAccount operation middleware
+func (siw *ServerInterfaceWrapper) UpdateAccount(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateAccount(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -844,6 +951,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealth)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadiness)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/account", wrapper.GetAccount)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/account", wrapper.UpdateAccount)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/api-keys", wrapper.ListApiKeys)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/api-keys", wrapper.CreateApiKey)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/api-keys/{key_id}", wrapper.RevokeApiKey)

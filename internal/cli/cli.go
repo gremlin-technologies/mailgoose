@@ -107,7 +107,7 @@ machine-readable output. Set MAILGOOSE_API_KEY to run headless.`,
 	root.PersistentFlags().BoolVar(&a.jsonOut, "json", false, "print machine-readable JSON")
 	root.PersistentFlags().StringVar(&a.apiURL, "api-url", "", "API base URL (overrides "+EnvAPIURL+" and the config file)")
 
-	root.AddCommand(a.versionCmd(), a.statusCmd(), a.configCmd(), a.commandsCmd(), a.keysCmd(), a.creditsCmd(), &cobra.Command{
+	root.AddCommand(a.versionCmd(), a.statusCmd(), a.configCmd(), a.commandsCmd(), a.keysCmd(), a.creditsCmd(), a.accountCmd(), &cobra.Command{
 		Use:   "exit-codes",
 		Short: "What each exit code means",
 		Long:  exitCodesHelp,
