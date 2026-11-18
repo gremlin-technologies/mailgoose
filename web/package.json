@@ -1,0 +1,22 @@
+{
+  "name": "@mailgoose/web",
+  "private": true,
+  "description": "The mailgoose web app. For now it holds only the API client generated from api/openapi.yaml; the app itself comes with MG-41.",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "generate": "openapi-typescript ../api/openapi.yaml --output src/api/schema.d.ts",
+    "lint:api": "redocly lint ../api/openapi.yaml --config ../api/redocly.yaml",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "openapi-fetch": "0.17.0"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.79.0",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

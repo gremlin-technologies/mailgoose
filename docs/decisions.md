@@ -4,6 +4,25 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: OpenAPI pipeline (MG-02, reversible defaults)
+
+Picked while building MG-02; technical and easy to change.
+
+- **Tools:** Redocly CLI lints the spec (`recommended-strict`, so warnings fail
+  too; settings in `api/redocly.yaml`), oapi-codegen generates the Go types and
+  a `net/http` server interface, and openapi-typescript plus openapi-fetch make
+  the TypeScript client. The contract test validates responses with
+  libopenapi-validator, which handles OpenAPI 3.1.
+- **CI runs the checks as Go tests**, not as new workflow steps, so this PR
+  doesn't touch `.github/workflows` and stays within what the reviewer can
+  merge. `internal/api/apigen` tests run the lint and the two freshness checks;
+  they install the `web/` npm packages with `npm ci` when needed and fail in CI
+  if Node is missing. A later workflow PR (the owner merges those) can move
+  them to their own steps.
+- **The TypeScript client lives in a minimal `web/` package** (package.json,
+  the generated `schema.d.ts` and a small `client.ts`). MG-41 builds the web
+  app around it.
+
 ## 2026-11-18: API conventions (MG-01, reversible defaults)
 
 Picked while building MG-01; technical and easy to change.

@@ -18,7 +18,7 @@ ECR_REPO    ?= mailgoose
 
 TEST_DB_URL ?= postgres://mailgoose:mailgoose@localhost:5432/mailgoose_test?sslmode=disable
 
-.PHONY: help build test test-db vet lint fmt tidy run-api run-worker migrate up down image push-ecr clean
+.PHONY: help build test test-db vet lint lint-api generate fmt tidy run-api run-worker migrate up down image push-ecr clean
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -42,6 +42,17 @@ vet: ## go vet
 
 lint: ## golangci-lint (v2)
 	golangci-lint run ./...
+
+lint-api: web/node_modules ## Lint api/openapi.yaml with Redocly
+	cd web && npm run -s lint:api
+
+generate: web/node_modules ## Regenerate the Go API types and the TypeScript client from api/openapi.yaml
+	$(GO) tool oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
+	cd web && npm run -s generate
+
+web/node_modules: web/package.json web/package-lock.json
+	cd web && npm ci --no-audit --no-fund
+	@touch web/node_modules
 
 fmt: ## Format code
 	golangci-lint fmt ./...
@@ -84,4 +95,4 @@ push-ecr: ## Build and push $(PLATFORM) image to ECR as $(ECR_REPO):$(IMAGE_TAG)
 	echo "Pushed $$registry/$(ECR_REPO):$(IMAGE_TAG)"
 
 clean: ## Remove build output
-	rm -rf bin
+	rm -rf bin web/node_modules

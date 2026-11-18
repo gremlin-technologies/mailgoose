@@ -9,12 +9,14 @@ forms, and drive it all from a CLI that works with any AI agent.
 cmd/mailgoose/     Customer CLI (single static binary).
 cmd/mailgoosed/    Server: `serve` (HTTP API), `worker` (SQS), `migrate`.
 internal/api/      HTTP handlers. /healthz is the load balancer's check.
+internal/api/apigen/  Go types and server interface generated from the spec.
 internal/worker/   SQS consumer for the send and SES events queues (stub handlers).
 internal/db/       Postgres pool, Secrets Manager credentials, migrations.
 internal/config/   Server settings from environment variables.
 internal/mail/     Sends built messages: SES v2, or a fake for tests and local runs.
 internal/cli/      CLI commands and its config file.
 api/openapi.yaml   The API contract. Every endpoint gets a CLI command.
+web/               Web app package; for now only the generated TypeScript API client.
 infra/             Terraform for AWS (see infra/README.md).
 docs/              PRD, pricing, decisions.
 ```
@@ -53,6 +55,21 @@ make vet lint   # go vet, golangci-lint v2
 make build      # bin/mailgoose and bin/mailgoosed
 make image      # server image for linux/arm64
 ```
+
+### Changing the API
+
+`api/openapi.yaml` is the source of truth. After editing it:
+
+```sh
+make generate   # Go types (internal/api/apigen) and the TS client (web/src/api)
+make lint-api   # Redocly lint (recommended-strict, settings in api/redocly.yaml)
+```
+
+`make generate` and `make lint-api` need Node 22+. A new operation doesn't
+compile until `api.Server` has its handler, and `TestContract` in
+`internal/api/contract_test.go` needs a case for each response the operation
+documents. CI's `go test` runs the lint, checks that both generated files match
+the spec, and validates every contract case's response against the spec.
 
 ### CLI
 

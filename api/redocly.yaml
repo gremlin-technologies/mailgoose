@@ -1,0 +1,13 @@
+# Redocly lint settings for api/openapi.yaml. `make lint-api` runs them, and
+# so do the Go tests in internal/api/spec, which is how CI checks them.
+# recommended-strict turns every warning into an error.
+extends:
+  - recommended-strict
+rules:
+  # mailgoose isn't published under a license.
+  info-license: off
+  # The localhost server entry is deliberate: it's where `make dev` listens.
+  no-server-example.com: off
+  # Shared parameters and responses (Limit, Cursor, IdempotencyKey, ...) are
+  # defined ahead of the endpoints that will use them.
+  no-unused-components: off
