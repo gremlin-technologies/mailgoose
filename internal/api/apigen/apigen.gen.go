@@ -167,6 +167,96 @@ func (e DeviceLoginPendingStatus) Valid() bool {
 	}
 }
 
+// Defines values for DnsRecordPurpose.
+const (
+	DnsRecordPurposeDkim        DnsRecordPurpose = "dkim"
+	DnsRecordPurposeDmarc       DnsRecordPurpose = "dmarc"
+	DnsRecordPurposeMailFromMx  DnsRecordPurpose = "mail_from_mx"
+	DnsRecordPurposeMailFromSpf DnsRecordPurpose = "mail_from_spf"
+)
+
+// Valid indicates whether the value is a known member of the DnsRecordPurpose enum.
+func (e DnsRecordPurpose) Valid() bool {
+	switch e {
+	case DnsRecordPurposeDkim:
+		return true
+	case DnsRecordPurposeDmarc:
+		return true
+	case DnsRecordPurposeMailFromMx:
+		return true
+	case DnsRecordPurposeMailFromSpf:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DnsRecordStatus.
+const (
+	DnsRecordStatusFound     DnsRecordStatus = "found"
+	DnsRecordStatusMissing   DnsRecordStatus = "missing"
+	DnsRecordStatusUnchecked DnsRecordStatus = "unchecked"
+	DnsRecordStatusWrong     DnsRecordStatus = "wrong"
+)
+
+// Valid indicates whether the value is a known member of the DnsRecordStatus enum.
+func (e DnsRecordStatus) Valid() bool {
+	switch e {
+	case DnsRecordStatusFound:
+		return true
+	case DnsRecordStatusMissing:
+		return true
+	case DnsRecordStatusUnchecked:
+		return true
+	case DnsRecordStatusWrong:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DnsRecordType.
+const (
+	DnsRecordTypeCNAME DnsRecordType = "CNAME"
+	DnsRecordTypeMX    DnsRecordType = "MX"
+	DnsRecordTypeTXT   DnsRecordType = "TXT"
+)
+
+// Valid indicates whether the value is a known member of the DnsRecordType enum.
+func (e DnsRecordType) Valid() bool {
+	switch e {
+	case DnsRecordTypeCNAME:
+		return true
+	case DnsRecordTypeMX:
+		return true
+	case DnsRecordTypeTXT:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DomainStatus.
+const (
+	DomainStatusFailed   DomainStatus = "failed"
+	DomainStatusPending  DomainStatus = "pending"
+	DomainStatusVerified DomainStatus = "verified"
+)
+
+// Valid indicates whether the value is a known member of the DomainStatus enum.
+func (e DomainStatus) Valid() bool {
+	switch e {
+	case DomainStatusFailed:
+		return true
+	case DomainStatusPending:
+		return true
+	case DomainStatusVerified:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatus.
 const (
 	HealthStatusOk HealthStatus = "ok"
@@ -323,6 +413,14 @@ type CreateDeviceLoginRequest struct {
 	ClientName *string `json:"client_name,omitempty"`
 }
 
+// CreateDomainRequest defines model for CreateDomainRequest.
+type CreateDomainRequest struct {
+	// Name The domain to send from, such as `example.com` or `news.example.com`. Internationalized names are stored in their ASCII (punycode) form.
+	//
+	// Examples: example.com
+	Name string `json:"name"`
+}
+
 // CreatedApiKey defines model for CreatedApiKey.
 type CreatedApiKey struct {
 	Key ApiKey `json:"key"`
@@ -435,6 +533,84 @@ type DeviceLoginToken struct {
 	Token string `json:"token"`
 	User  User   `json:"user"`
 }
+
+// DnsRecord defines model for DnsRecord.
+type DnsRecord struct {
+	// Detail What is wrong, or why the lookup failed.
+	Detail *string `json:"detail"`
+
+	// Found The values the lookup returned, when there were any.
+	Found []string `json:"found"`
+
+	// Name The full record name, such as `abc._domainkey.example.com`.
+	Name string `json:"name"`
+
+	// Priority The MX priority; null for other types.
+	Priority *int             `json:"priority"`
+	Purpose  DnsRecordPurpose `json:"purpose"`
+
+	// Required Whether the domain needs this record to verify. The DMARC record is only suggested.
+	Required bool `json:"required"`
+
+	// Status What the last check found; `unchecked` before the first check.
+	Status DnsRecordStatus `json:"status"`
+	Type   DnsRecordType   `json:"type"`
+	Value  string          `json:"value"`
+}
+
+// DnsRecordPurpose defines model for DnsRecord.Purpose.
+type DnsRecordPurpose string
+
+// DnsRecordStatus What the last check found; `unchecked` before the first check.
+type DnsRecordStatus string
+
+// DnsRecordType defines model for DnsRecord.Type.
+type DnsRecordType string
+
+// Domain defines model for Domain.
+type Domain struct {
+	// CheckUntil When background checks of a pending domain stop.
+	CheckUntil    time.Time  `json:"check_until"`
+	CreatedAt     time.Time  `json:"created_at"`
+	FailedAt      *time.Time `json:"failed_at"`
+	Id            string     `json:"id"`
+	LastCheckedAt *time.Time `json:"last_checked_at"`
+
+	// MailFromDomain The MAIL FROM subdomain, where bounces go.
+	//
+	// Examples: bounce.example.com
+	MailFromDomain string `json:"mail_from_domain"`
+
+	// Name Examples: example.com
+	Name    string      `json:"name"`
+	Records []DnsRecord `json:"records"`
+
+	// RecordsChanged Only in `verifyDomain` responses. True when the domain was set up again with new DKIM records, which replace the old ones in DNS.
+	RecordsChanged *bool `json:"records_changed,omitempty"`
+
+	// SesStatus Amazon SES's DKIM verification status at the last check: `pending`,
+	// `success`, `failed`, `temporary_failure`, `not_started`, or
+	// `not_found` and `unknown` when SES couldn't say. Null before the
+	// first check.
+	SesStatus *string `json:"ses_status"`
+
+	// Status `pending` until every required record is found and Amazon SES has
+	// verified the domain; `verified` after that; `failed` when 72 hours of
+	// checks passed without it.
+	Status     DomainStatus `json:"status"`
+	VerifiedAt *time.Time   `json:"verified_at"`
+}
+
+// DomainList defines model for DomainList.
+type DomainList struct {
+	Data       []Domain `json:"data"`
+	NextCursor *string  `json:"next_cursor"`
+}
+
+// DomainStatus `pending` until every required record is found and Amazon SES has
+// verified the domain; `verified` after that; `failed` when 72 hours of
+// checks passed without it.
+type DomainStatus string
 
 // Error defines model for Error.
 type Error struct {
@@ -557,6 +733,9 @@ type WhoamiAuthMethod string
 // Cursor defines model for Cursor.
 type Cursor = string
 
+// DomainId defines model for DomainId.
+type DomainId = string
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
@@ -568,6 +747,9 @@ type BadRequest = Error
 
 // CrossOrigin defines model for CrossOrigin.
 type CrossOrigin = Error
+
+// DomainConflict defines model for DomainConflict.
+type DomainConflict = Error
 
 // Forbidden defines model for Forbidden.
 type Forbidden = Error
@@ -608,6 +790,18 @@ type ListCreditTransactionsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListDomainsParams defines parameters for ListDomains.
+type ListDomainsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Name Only the domain with this name, such as `example.com`.
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+}
+
 // UpdateAccountJSONRequestBody defines body for UpdateAccount for application/json ContentType.
 type UpdateAccountJSONRequestBody = UpdateAccountRequest
 
@@ -622,6 +816,9 @@ type CreateDeviceLoginJSONRequestBody = CreateDeviceLoginRequest
 
 // PollDeviceLoginJSONRequestBody defines body for PollDeviceLogin for application/json ContentType.
 type PollDeviceLoginJSONRequestBody = PollDeviceLoginRequest
+
+// CreateDomainJSONRequestBody defines body for CreateDomain for application/json ContentType.
+type CreateDomainJSONRequestBody = CreateDomainRequest
 
 // CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
 type CreateSessionJSONRequestBody = SessionRequest
@@ -682,6 +879,21 @@ type ServerInterface interface {
 	// DenyDeviceLogin Deny a CLI login
 	// (POST /v1/device-logins/{user_code}/deny)
 	DenyDeviceLogin(w http.ResponseWriter, r *http.Request, userCode string)
+	// ListDomains List sending domains
+	// (GET /v1/domains)
+	ListDomains(w http.ResponseWriter, r *http.Request, params ListDomainsParams)
+	// CreateDomain Add a sending domain
+	// (POST /v1/domains)
+	CreateDomain(w http.ResponseWriter, r *http.Request)
+	// DeleteDomain Remove a sending domain
+	// (DELETE /v1/domains/{domain_id})
+	DeleteDomain(w http.ResponseWriter, r *http.Request, domainId DomainId)
+	// GetDomain Show a sending domain
+	// (GET /v1/domains/{domain_id})
+	GetDomain(w http.ResponseWriter, r *http.Request, domainId DomainId)
+	// VerifyDomain Check a sending domain now
+	// (POST /v1/domains/{domain_id}/verify)
+	VerifyDomain(w http.ResponseWriter, r *http.Request, domainId DomainId)
 	// DeleteAllSessions Sign out everywhere
 	// (DELETE /v1/sessions)
 	DeleteAllSessions(w http.ResponseWriter, r *http.Request)
@@ -1050,6 +1262,157 @@ func (siw *ServerInterfaceWrapper) DenyDeviceLogin(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// ListDomains operation middleware
+func (siw *ServerInterfaceWrapper) ListDomains(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListDomainsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDomains(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDomain operation middleware
+func (siw *ServerInterfaceWrapper) CreateDomain(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDomain(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDomain operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "domain_id" -------------
+	var domainId DomainId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "domain_id", r.PathValue("domain_id"), &domainId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domain_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDomain(w, r, domainId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDomain operation middleware
+func (siw *ServerInterfaceWrapper) GetDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "domain_id" -------------
+	var domainId DomainId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "domain_id", r.PathValue("domain_id"), &domainId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domain_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDomain(w, r, domainId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyDomain operation middleware
+func (siw *ServerInterfaceWrapper) VerifyDomain(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "domain_id" -------------
+	var domainId DomainId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "domain_id", r.PathValue("domain_id"), &domainId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "domain_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyDomain(w, r, domainId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteAllSessions operation middleware
 func (siw *ServerInterfaceWrapper) DeleteAllSessions(w http.ResponseWriter, r *http.Request) {
 
@@ -1291,6 +1654,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions", wrapper.CreateSession)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions/current", wrapper.DeleteCurrentSession)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sessions/current", wrapper.GetCurrentSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/domains", wrapper.ListDomains)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/domains", wrapper.CreateDomain)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/domains/{domain_id}", wrapper.DeleteDomain)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/domains/{domain_id}", wrapper.GetDomain)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/domains/{domain_id}/verify", wrapper.VerifyDomain)
 
 	return m
 }

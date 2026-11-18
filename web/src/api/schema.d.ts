@@ -455,10 +455,164 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List sending domains
+         * @description The account's sending domains, oldest first, each with its DNS records and the result of its last check.
+         */
+        get: operations["listDomains"];
+        put?: never;
+        /**
+         * Add a sending domain
+         * @description Sets the domain up in Amazon SES, with DKIM signing and a MAIL FROM
+         *     subdomain (`bounce.<domain>`), and answers with the DNS records to
+         *     add: three DKIM CNAMEs, the MAIL FROM MX and SPF TXT, and a suggested
+         *     DMARC TXT when the domain has no DMARC policy. Campaigns can only be
+         *     sent from a verified domain. The domain is checked every 5 minutes for
+         *     72 hours; `verifyDomain` checks it at once.
+         */
+        post: operations["createDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/domains/{domain_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a sending domain
+         * @description The domain, its DNS records and the result of its last check.
+         */
+        get: operations["getDomain"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove a sending domain
+         * @description Removes the domain and its Amazon SES identity. Mail can no longer be
+         *     sent from it. The DNS records can then be deleted.
+         */
+        delete: operations["deleteDomain"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/domains/{domain_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a sending domain now
+         * @description Looks up each DNS record and reports it as `found`, `missing` or
+         *     `wrong`, and asks Amazon SES whether it has verified the domain. The
+         *     domain is verified when every required record is found and SES
+         *     agrees. Checking a failed domain starts another 72 hours of background
+         *     checks; if SES had given up on its DKIM records, the domain is set up
+         *     again with new ones, and `records_changed` is true.
+         */
+        post: operations["verifyDomain"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CreateDomainRequest: {
+            /**
+             * @description The domain to send from, such as `example.com` or `news.example.com`. Internationalized names are stored in their ASCII (punycode) form.
+             * @example example.com
+             */
+            name: string;
+        };
+        /**
+         * @description `pending` until every required record is found and Amazon SES has
+         *     verified the domain; `verified` after that; `failed` when 72 hours of
+         *     checks passed without it.
+         * @enum {string}
+         */
+        DomainStatus: "pending" | "verified" | "failed";
+        DnsRecord: {
+            /** @enum {string} */
+            purpose: "dkim" | "mail_from_mx" | "mail_from_spf" | "dmarc";
+            /** @enum {string} */
+            type: "CNAME" | "MX" | "TXT";
+            /** @description The full record name, such as `abc._domainkey.example.com`. */
+            name: string;
+            value: string;
+            /** @description The MX priority; null for other types. */
+            priority: number | null;
+            /** @description Whether the domain needs this record to verify. The DMARC record is only suggested. */
+            required: boolean;
+            /**
+             * @description What the last check found; `unchecked` before the first check.
+             * @enum {string}
+             */
+            status: "found" | "missing" | "wrong" | "unchecked";
+            /** @description The values the lookup returned, when there were any. */
+            found: string[];
+            /** @description What is wrong, or why the lookup failed. */
+            detail: string | null;
+        };
+        Domain: {
+            /** Format: uuid */
+            id: string;
+            /** @example example.com */
+            name: string;
+            status: components["schemas"]["DomainStatus"];
+            /**
+             * @description The MAIL FROM subdomain, where bounces go.
+             * @example bounce.example.com
+             */
+            mail_from_domain: string;
+            records: components["schemas"]["DnsRecord"][];
+            /**
+             * @description Amazon SES's DKIM verification status at the last check: `pending`,
+             *     `success`, `failed`, `temporary_failure`, `not_started`, or
+             *     `not_found` and `unknown` when SES couldn't say. Null before the
+             *     first check.
+             */
+            ses_status: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_checked_at: string | null;
+            /**
+             * Format: date-time
+             * @description When background checks of a pending domain stop.
+             */
+            check_until: string;
+            /** Format: date-time */
+            verified_at: string | null;
+            /** Format: date-time */
+            failed_at: string | null;
+            /** @description Only in `verifyDomain` responses. True when the domain was set up again with new DKIM records, which replace the old ones in DNS. */
+            records_changed?: boolean;
+        };
+        DomainList: {
+            data: components["schemas"]["Domain"][];
+            next_cursor: string | null;
+        };
         CreateApiKeyRequest: {
             /** @example Claude on my laptop */
             name: string;
@@ -771,6 +925,21 @@ export interface components {
     };
     responses: {
         /**
+         * @description `domain_exists`: this account already has the domain.
+         *     `domain_taken`: another mailgoose account has it.
+         *     `domain_unavailable`: the domain is already set up in Amazon SES
+         *     outside mailgoose's reach. Contact support for either of the last two.
+         */
+        DomainConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description The request is well formed but a field is wrong. `code` says which
          *     problem, such as `invalid_email`, `invalid_account_name`,
          *     `terms_not_accepted` or `invalid_code`.
@@ -785,8 +954,9 @@ export interface components {
             };
         };
         /**
-         * @description `service_unavailable`: a dependency the endpoint needs (the database)
-         *     isn't configured or reachable. Try again later.
+         * @description `service_unavailable`: a dependency the endpoint needs (the database,
+         *     or Amazon SES for domains) isn't configured or reachable. Try again
+         *     later.
          */
         ServiceUnavailable: {
             headers: {
@@ -890,6 +1060,8 @@ export interface components {
         Limit: number;
         /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
         Cursor: string;
+        /** @description The domain's `id`. */
+        DomainId: string;
         /**
          * @description Makes a retry safe. A repeat with the same key and request within 24
          *     hours returns the stored response instead of running again; the same
@@ -1568,6 +1740,157 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["CrossOrigin"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listDomains: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Only the domain with this name, such as `example.com`. */
+                name?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of domains. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DomainList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateDomainRequest"];
+            };
+        };
+        responses: {
+            /** @description The new domain, with the records to add. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Domain"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            409: components["responses"]["DomainConflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The domain's `id`. */
+                domain_id: components["parameters"]["DomainId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The domain. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Domain"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The domain's `id`. */
+                domain_id: components["parameters"]["DomainId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    verifyDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The domain's `id`. */
+                domain_id: components["parameters"]["DomainId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The domain, as just checked. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Domain"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };
     };

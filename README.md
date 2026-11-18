@@ -261,6 +261,27 @@ mailgoose credits
 mailgoose credits history --limit 20
 ```
 
+## Sending domains
+
+Campaigns go out from an address at a domain the customer owns.
+`internal/domains` makes the SES identity (Easy DKIM, MAIL FROM at
+`bounce.<domain>`, tagged with the environment and account) and returns the
+DNS records to add: three DKIM CNAMEs, an MX and SPF TXT for the MAIL FROM
+subdomain, and a suggested DMARC TXT when the domain has none. The API
+service re-checks pending domains every 5 minutes for 72 hours, then marks
+them failed. `domains.RequireVerifiedFrom` is the check test send and launch
+use on the From address.
+
+```sh
+mailgoose domain add example.com
+mailgoose domain verify example.com   # exit 0 once verified
+mailgoose domain list
+mailgoose domain delete example.com --yes
+```
+
+With `MAIL_SENDER=fake` (the local default) SES is in memory and DNS answers
+every record, so local domains verify on the first check.
+
 ## API conventions
 
 Every endpoint shares the plumbing in `internal/api` (MG-01):
