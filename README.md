@@ -176,6 +176,22 @@ mailgoose keys list
 mailgoose keys revoke <id> --yes
 ```
 
+## Credits
+
+One credit sends one email to one recipient. `internal/credits` is the ledger:
+every change is a row in `credit_transactions` (grant, purchase, reserve,
+release, spend, fee, expiry) and the balance is their sum, never stored.
+Debits lock the account row, so parallel reservations can't overdraw it. Free
+accounts get 1,000 credits on activation and on each monthly anniversary, and
+unused free credits expire at the next grant; both happen lazily when the
+account is next read or debited.
+
+```sh
+curl -s localhost:8080/v1/credits -H "Authorization: Bearer $MAILGOOSE_API_KEY"
+mailgoose credits
+mailgoose credits history --limit 20
+```
+
 ## API conventions
 
 Every endpoint shares the plumbing in `internal/api` (MG-01):

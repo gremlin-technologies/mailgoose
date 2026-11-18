@@ -93,6 +93,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/credits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the credit balance
+         * @description The account's balance, its plan, and when its next free grant comes.
+         *     One credit sends one email to one recipient. Free accounts get 1,000
+         *     credits when they activate and on each monthly anniversary of that,
+         *     and unused free credits expire when the next grant arrives.
+         */
+        get: operations["getCredits"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/credits/transactions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List credit transactions
+         * @description Every change to the balance, newest first: grants, purchases,
+         *     reservations for a send and their release, spends, fees and expiries.
+         *     Amounts are signed, so the balance is their sum.
+         */
+        get: operations["listCreditTransactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/signup": {
         parameters: {
             query?: never;
@@ -242,6 +287,50 @@ export interface components {
         };
         ApiKeyList: {
             data: components["schemas"]["ApiKey"][];
+            next_cursor: string | null;
+        };
+        CreditSummary: {
+            /**
+             * Format: int64
+             * @description Credits available now, not counting any reserved for a send in progress.
+             */
+            balance: number;
+            /** @enum {string} */
+            plan: "free" | "paid";
+            /**
+             * Format: date-time
+             * @description When the next 1,000 free credits arrive; null on the paid plan.
+             */
+            next_grant_at: string | null;
+        };
+        /**
+         * @description `grant` is a free monthly grant and `purchase` a bought credit pack.
+         *     `reserve` holds credits for a send and `release` gives back what it
+         *     didn't use. `spend` is credits used directly, `fee` the monthly
+         *     account fee and `expiry` credits that ran out.
+         * @enum {string}
+         */
+        CreditTransactionType: "grant" | "purchase" | "reserve" | "release" | "spend" | "fee" | "expiry";
+        CreditTransaction: {
+            id: string;
+            type: components["schemas"]["CreditTransactionType"];
+            /**
+             * Format: int64
+             * @description Credits added (positive) or taken (negative).
+             */
+            amount: number;
+            /**
+             * Format: date-time
+             * @description When a grant's or purchase's credits expire; null for other types.
+             */
+            expires_at: string | null;
+            /** @description What the transaction is for, such as a campaign id; empty when there's nothing to point to. */
+            ref: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        CreditTransactionList: {
+            data: components["schemas"]["CreditTransaction"][];
             next_cursor: string | null;
         };
         SignupRequest: {
@@ -616,6 +705,60 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getCredits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The balance. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditSummary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listCreditTransactions: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of transactions. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditTransactionList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

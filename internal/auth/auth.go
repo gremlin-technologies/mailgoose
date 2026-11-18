@@ -26,6 +26,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/argon2"
 
+	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	mgmail "github.com/gremlin-technologies/mailgoose/internal/mail"
 )
 
@@ -367,6 +368,10 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code string, meta Sessio
 		if _, err := tx.Exec(ctx, `UPDATE accounts SET status = 'active', activated_at = $2, updated_at = $2 WHERE id = $1`,
 			sess.Account.ID, now); err != nil {
 			return nil, fmt.Errorf("activate account: %w", err)
+		}
+		// The first free monthly grant arrives with activation.
+		if err := credits.CatchUp(ctx, tx, sess.Account.ID, now); err != nil {
+			return nil, fmt.Errorf("first credit grant: %w", err)
 		}
 		sess.Account.Status = "active"
 	}

@@ -190,6 +190,68 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/credits:
+    get:
+      operationId: getCredits
+      summary: Show the credit balance
+      description: |
+        The account's balance, its plan, and when its next free grant comes.
+        One credit sends one email to one recipient. Free accounts get 1,000
+        credits when they activate and on each monthly anniversary of that,
+        and unused free credits expire when the next grant arrives.
+      tags: [credits]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The balance.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/credits/transactions:
+    get:
+      operationId: listCreditTransactions
+      summary: List credit transactions
+      description: |
+        Every change to the balance, newest first: grants, purchases,
+        reservations for a send and their release, spends, fees and expiries.
+        Amounts are signed, so the balance is their sum.
+      tags: [credits]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of transactions.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditTransactionList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/signup:
     post:
       operationId: createSignup
@@ -439,6 +501,62 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ApiKey"
+        next_cursor:
+          type: [string, "null"]
+    CreditSummary:
+      type: object
+      required: [balance, plan, next_grant_at]
+      properties:
+        balance:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Credits available now, not counting any reserved for a send in progress.
+        plan:
+          type: string
+          enum: [free, paid]
+        next_grant_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the next 1,000 free credits arrive; null on the paid plan.
+    CreditTransactionType:
+      type: string
+      enum: [grant, purchase, reserve, release, spend, fee, expiry]
+      description: |
+        `grant` is a free monthly grant and `purchase` a bought credit pack.
+        `reserve` holds credits for a send and `release` gives back what it
+        didn't use. `spend` is credits used directly, `fee` the monthly
+        account fee and `expiry` credits that ran out.
+    CreditTransaction:
+      type: object
+      required: [id, type, amount, expires_at, ref, created_at]
+      properties:
+        id:
+          type: string
+        type:
+          $ref: "#/components/schemas/CreditTransactionType"
+        amount:
+          type: integer
+          format: int64
+          description: Credits added (positive) or taken (negative).
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: When a grant's or purchase's credits expire; null for other types.
+        ref:
+          type: string
+          description: What the transaction is for, such as a campaign id; empty when there's nothing to point to.
+        created_at:
+          type: string
+          format: date-time
+    CreditTransactionList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/CreditTransaction"
         next_cursor:
           type: [string, "null"]
     SignupRequest:

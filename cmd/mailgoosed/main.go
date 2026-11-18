@@ -23,6 +23,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/api"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/config"
+	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/db"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
@@ -93,6 +94,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		defer pool.Close()
 		srv.DB = pool
 		srv.Idempotency = api.PGIdempotencyStore{DB: pool}
+		srv.Credits = &credits.Ledger{DB: pool}
 
 		if cfg.SystemSendingDomain == "" {
 			log.Warn("SYSTEM_SENDING_DOMAIN is not set; sign-up and sign-in will answer 503")

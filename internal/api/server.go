@@ -18,6 +18,7 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 )
 
@@ -41,6 +42,9 @@ type Server struct {
 	// Auth signs people up and in. Nil (no database) makes those endpoints
 	// answer 503.
 	Auth *auth.Service
+	// Credits is the credit ledger. Nil (no database) makes the credits
+	// endpoints answer 503.
+	Credits *credits.Ledger
 	// TrustedOrigins are other origins (such as the web app's, when it isn't
 	// served from the API's own origin) allowed to send cookie-authenticated
 	// requests that change something. The API's own origin always is.
