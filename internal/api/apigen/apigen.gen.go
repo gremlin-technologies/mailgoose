@@ -2201,6 +2201,12 @@ type ReplaceEmailDocumentRequest struct {
 	Version int `json:"version"`
 }
 
+// RescheduleCampaignRequest defines model for RescheduleCampaignRequest.
+type RescheduleCampaignRequest struct {
+	// SendAt The new send time, with its offset; stored in UTC.
+	SendAt time.Time `json:"send_at"`
+}
+
 // Session defines model for Session.
 type Session struct {
 	Account   Account   `json:"account"`
@@ -2770,6 +2776,9 @@ type UpdateCampaignJSONRequestBody = UpdateCampaignRequest
 
 // LaunchCampaignJSONRequestBody defines body for LaunchCampaign for application/json ContentType.
 type LaunchCampaignJSONRequestBody = LaunchCampaignRequest
+
+// RescheduleCampaignJSONRequestBody defines body for RescheduleCampaign for application/json ContentType.
+type RescheduleCampaignJSONRequestBody = RescheduleCampaignRequest
 
 // TestCampaignJSONRequestBody defines body for TestCampaign for application/json ContentType.
 type TestCampaignJSONRequestBody = TestCampaignRequest
@@ -3586,9 +3595,15 @@ type ServerInterface interface {
 	// UpdateCampaign Change a campaign
 	// (PATCH /v1/campaigns/{campaign_id})
 	UpdateCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
+	// CancelCampaign Cancel a scheduled campaign
+	// (POST /v1/campaigns/{campaign_id}/cancel)
+	CancelCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
 	// LaunchCampaign Launch a campaign, after confirmation
 	// (POST /v1/campaigns/{campaign_id}/launch)
 	LaunchCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
+	// RescheduleCampaign Move a scheduled campaign's send time
+	// (POST /v1/campaigns/{campaign_id}/reschedule)
+	RescheduleCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
 	// TestCampaign Send a test of a campaign
 	// (POST /v1/campaigns/{campaign_id}/test)
 	TestCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
@@ -4120,6 +4135,32 @@ func (siw *ServerInterfaceWrapper) UpdateCampaign(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// CancelCampaign operation middleware
+func (siw *ServerInterfaceWrapper) CancelCampaign(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "campaign_id" -------------
+	var campaignId CampaignId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "campaign_id", r.PathValue("campaign_id"), &campaignId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "campaign_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelCampaign(w, r, campaignId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // LaunchCampaign operation middleware
 func (siw *ServerInterfaceWrapper) LaunchCampaign(w http.ResponseWriter, r *http.Request) {
 
@@ -4137,6 +4178,32 @@ func (siw *ServerInterfaceWrapper) LaunchCampaign(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.LaunchCampaign(w, r, campaignId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RescheduleCampaign operation middleware
+func (siw *ServerInterfaceWrapper) RescheduleCampaign(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "campaign_id" -------------
+	var campaignId CampaignId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "campaign_id", r.PathValue("campaign_id"), &campaignId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "campaign_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RescheduleCampaign(w, r, campaignId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6038,6 +6105,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/campaigns/{campaign_id}", wrapper.UpdateCampaign)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/test", wrapper.TestCampaign)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/launch", wrapper.LaunchCampaign)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/cancel", wrapper.CancelCampaign)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/reschedule", wrapper.RescheduleCampaign)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails", wrapper.ListEmails)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails", wrapper.CreateEmail)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/emails/{email_id}", wrapper.DeleteEmail)

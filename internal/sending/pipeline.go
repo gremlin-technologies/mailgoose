@@ -185,13 +185,15 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 
 	switch status {
 	case campaigns.StatusScheduled:
-		if _, err := tx.Exec(ctx, `
-			UPDATE campaigns SET status = 'sending', status_changed_at = $2, updated_at = $2 WHERE id = $1`,
-			campaignID, now); err != nil {
+		// Due: start it, unless it was cancelled or moved meanwhile.
+		tag, err := tx.Exec(ctx, `
+			UPDATE campaigns SET status = 'sending', status_changed_at = $2, updated_at = $2 WHERE id = $1 AND status = 'scheduled'`,
+			campaignID, now)
+		if err != nil {
 			return 0, err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE send_queue SET claimed_at = $2 WHERE id = $1`, rowID, now); err != nil {
-			return 0, err
+		if tag.RowsAffected() == 0 {
+			return rowID, tx.Commit(ctx)
 		}
 	case campaigns.StatusSending:
 	case campaigns.StatusPaused:

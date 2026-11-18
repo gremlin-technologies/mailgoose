@@ -23,6 +23,26 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Scheduled campaigns (MG-32, reversible defaults)
+
+Picked while building MG-32; easy to change.
+
+- **Cancel and reschedule need a full-scope key,** like launch, since they
+  act on a launched campaign. Cancel asks for `--yes` in the CLI.
+- **Only before sending starts.** A campaign already `sending` can't be
+  cancelled or moved here; stopping one in flight is the kill switch
+  (MG-34).
+- **Cancelling can't be undone.** The recipients are marked skipped and
+  every reserved credit comes back; to send it after all, make a new
+  campaign.
+- **Starting due campaigns:** the worker checks every 15 seconds, and the
+  send dispatcher (which runs in the API when there's an SQS queue) also
+  starts one it reaches first. Either way a conditional update starts it
+  once.
+- **Time zones:** times are stored and returned in UTC. The CLI shows them
+  in the account's time zone and reads a time without an offset in it. The
+  web app has no campaign pages yet; they'll do the same.
+
 ## 2026-11-18: Send pipeline (MG-31, reversible defaults)
 
 Picked while building MG-31; easy to change.

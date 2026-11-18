@@ -61,9 +61,40 @@ func campaignPath(id string) string { return "/v1/campaigns/" + url.PathEscape(i
 // sendAtLayouts are the local-time forms --send-at takes besides RFC 3339.
 var sendAtLayouts = []string{"2006-01-02 15:04", "2006-01-02T15:04"}
 
-// parseSendAt reads --send-at: "now" for when launched (nil), an RFC 3339
-// time, or a local date and time.
-func parseSendAt(v string) (*time.Time, error) {
+// timeLayout is how the CLI shows campaign times, in the account's zone.
+const timeLayout = "2006-01-02 15:04 MST"
+
+// accountZone is the account's time zone (`mailgoose account update
+// --time-zone`), read once. Send times are shown in it, and a date and time
+// without an offset is read in it. If the account can't be read, the
+// computer's own zone is used.
+func (a *App) accountZone(ctx context.Context) *time.Location {
+	if a.zone != nil {
+		return a.zone
+	}
+	a.zone = time.Local
+	var acct struct {
+		TimeZone string `json:"time_zone"`
+	}
+	if err := a.call(ctx, http.MethodGet, "/v1/account", nil, &acct, true); err == nil && acct.TimeZone != "" {
+		if loc, err := time.LoadLocation(acct.TimeZone); err == nil {
+			a.zone = loc
+		}
+	}
+	return a.zone
+}
+
+// loc is the account's zone once read, else the computer's.
+func (a *App) loc() *time.Location {
+	if a.zone != nil {
+		return a.zone
+	}
+	return time.Local
+}
+
+// parseSendAt reads a send time flag: "now" for when launched (nil), an
+// RFC 3339 time, or a date and time in the account's zone.
+func (a *App) parseSendAt(ctx context.Context, flag, v string) (*time.Time, error) {
 	if strings.EqualFold(v, "now") {
 		return nil, nil
 	}
@@ -71,12 +102,14 @@ func parseSendAt(v string) (*time.Time, error) {
 		return &t, nil
 	}
 	for _, layout := range sendAtLayouts {
-		if t, err := time.ParseInLocation(layout, v, time.Local); err == nil {
+		if _, err := time.Parse(layout, v); err == nil {
+			loc := a.accountZone(ctx)
+			t, _ := time.ParseInLocation(layout, v, loc)
 			return &t, nil
 		}
 	}
-	return nil, usageError(fmt.Sprintf("--send-at %q isn't a time.", v),
-		`Use now, a time like 2026-12-01T09:00:00Z, or a local "2026-12-01 09:00".`)
+	return nil, usageError(fmt.Sprintf("--%s %q isn't a time.", flag, v),
+		`Use now, a time like 2026-12-01T09:00:00Z, or "2026-12-01 09:00" in the account's time zone.`)
 }
 
 // recipientFlags pick who a campaign goes to.
@@ -125,18 +158,19 @@ func (c campaign) audience() string {
 	return "subscribed contacts tagged " + strings.Join(names, " or ")
 }
 
-func (c campaign) sendTime() string {
+func (c campaign) sendTime(loc *time.Location) string {
 	if c.SendAt == nil {
 		return "when launched"
 	}
-	return c.SendAt.Local().Format("2006-01-02 15:04 MST")
+	return c.SendAt.In(loc).Format(timeLayout)
 }
 
-func (a *App) printCampaign(c campaign, verb string) {
+func (a *App) printCampaign(ctx context.Context, c campaign, verb string) {
 	if a.jsonOut {
 		a.printJSON(c)
 		return
 	}
+	a.accountZone(ctx)
 	if verb != "" {
 		fmt.Fprintf(a.Stdout, "%s campaign %q (%s), version %d.\n", verb, c.Name, c.ID, c.Version)
 	}
@@ -156,15 +190,15 @@ func (a *App) printCampaign(c campaign, verb string) {
 	if c.RecipientCount != nil {
 		fmt.Fprintf(tw, "Recipients now:\t%d\n", *c.RecipientCount)
 	}
-	fmt.Fprintf(tw, "Send:\t%s\n", c.sendTime())
+	fmt.Fprintf(tw, "Send:\t%s\n", c.sendTime(a.loc()))
 	if verb == "" {
 		test := "none yet (`mailgoose campaign test " + c.ID + "`)"
 		if c.LastTest != nil {
-			test = fmt.Sprintf("%s, of campaign version %d", c.LastTest.At.Local().Format("2006-01-02 15:04 MST"), c.LastTest.Version)
+			test = fmt.Sprintf("%s, of campaign version %d", c.LastTest.At.In(a.loc()).Format(timeLayout), c.LastTest.Version)
 		}
 		fmt.Fprintf(tw, "Last test:\t%s\n", test)
 		if c.Launch != nil {
-			fmt.Fprintf(tw, "Launched:\t%s, to %d %s, %d %s reserved\n", c.Launch.At.Local().Format("2006-01-02 15:04 MST"),
+			fmt.Fprintf(tw, "Launched:\t%s, to %d %s, %d %s reserved\n", c.Launch.At.In(a.loc()).Format(timeLayout),
 				c.Launch.RecipientCount, plural(c.Launch.RecipientCount, "contact", "contacts"),
 				c.Launch.CreditsReserved, plural(c.Launch.CreditsReserved, "credit", "credits"))
 		}
@@ -221,10 +255,11 @@ as it is.`,
 				fmt.Fprintln(a.Stdout, "No campaigns. Make one with `mailgoose campaign create --name <name> --email <email-id> --all`.")
 				return nil
 			}
+			a.accountZone(cmd.Context())
 			tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
 			fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tSEND\tUPDATED")
 			for _, c := range page.Data {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", c.ID, c.Name, c.Status, c.sendTime(), c.UpdatedAt.Local().Format("2006-01-02 15:04"))
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", c.ID, c.Name, c.Status, c.sendTime(a.loc()), c.UpdatedAt.In(a.loc()).Format("2006-01-02 15:04"))
 			}
 			_ = tw.Flush()
 			if page.NextCursor != nil {
@@ -264,7 +299,7 @@ Nothing is sent until it's launched.`,
 			}
 			body := map[string]any{"name": name, "email_id": emailID, "recipients": recipients}
 			if sendAt != "" {
-				at, err := parseSendAt(sendAt)
+				at, err := a.parseSendAt(cmd.Context(), "send-at", sendAt)
 				if err != nil {
 					return err
 				}
@@ -274,7 +309,7 @@ Nothing is sent until it's launched.`,
 			if err := a.call(cmd.Context(), http.MethodPost, "/v1/campaigns", body, &c, true); err != nil {
 				return err
 			}
-			a.printCampaign(c, "Created")
+			a.printCampaign(cmd.Context(), c, "Created")
 			return nil
 		},
 	})
@@ -296,7 +331,7 @@ Nothing is sent until it's launched.`,
 			if err := a.call(cmd.Context(), http.MethodGet, campaignPath(id), nil, &c, true); err != nil {
 				return err
 			}
-			a.printCampaign(c, "")
+			a.printCampaign(cmd.Context(), c, "")
 			return nil
 		},
 	})
@@ -327,7 +362,7 @@ is refused if the campaign changed since you read it.`,
 				body["email_id"] = newEmail
 			}
 			if flags.Changed("send-at") {
-				at, err := parseSendAt(newSendAt)
+				at, err := a.parseSendAt(cmd.Context(), "send-at", newSendAt)
 				if err != nil {
 					return err
 				}
@@ -350,7 +385,7 @@ is refused if the campaign changed since you read it.`,
 			if err := a.call(cmd.Context(), http.MethodPatch, campaignPath(id), body, &c, true); err != nil {
 				return err
 			}
-			a.printCampaign(c, "Updated")
+			a.printCampaign(cmd.Context(), c, "Updated")
 			return nil
 		},
 	})
@@ -463,8 +498,88 @@ isn't, nothing is sent and each problem is listed with how to fix it.`,
 	})
 	test.Flags().StringArrayVar(&to, "to", nil, "send to this address instead of yours; repeat for up to 5")
 
-	cmd.AddCommand(list, create, get, update, del, count, test, a.campaignLaunchCmd())
+	cmd.AddCommand(list, create, get, update, del, count, test, a.campaignLaunchCmd(), a.campaignCancelCmd(), a.campaignRescheduleCmd())
 	return cmd
+}
+
+func (a *App) campaignCancelCmd() *cobra.Command {
+	var yes bool
+	cancel := calls("cancelCampaign", &cobra.Command{
+		Use:   "cancel <campaign-id>",
+		Short: "Cancel a scheduled campaign before it sends",
+		Long: `Cancels a scheduled campaign before its send time. Nobody gets it, and
+the credits reserved at launch come back. Once it has started sending it
+can't be cancelled. Cancelling can't be undone: to send it after all, make
+a new campaign.`,
+		Example: `  mailgoose campaign cancel 3f1c... --yes`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := campaignIDArg(args[0])
+			if err != nil {
+				return err
+			}
+			if !yes {
+				return needFlag("yes", "Confirmation (cancelling can't be undone)")
+			}
+			var c campaign
+			if err := a.call(cmd.Context(), http.MethodPost, campaignPath(id)+"/cancel", nil, &c, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(c)
+				return nil
+			}
+			fmt.Fprintf(a.Stdout, "Cancelled campaign %q (%s). Nobody gets it, and its reserved credits are back.\n", c.Name, c.ID)
+			return nil
+		},
+	})
+	cancel.Flags().BoolVar(&yes, "yes", false, "confirm the cancel")
+	return cancel
+}
+
+func (a *App) campaignRescheduleCmd() *cobra.Command {
+	var at string
+	reschedule := calls("rescheduleCampaign", &cobra.Command{
+		Use:   "reschedule <campaign-id> --at <time>",
+		Short: "Move a scheduled campaign's send time",
+		Long: `Moves a scheduled campaign to a new send time, before it starts
+sending. The time is in the future and at most a year ahead: a time with
+its offset, or a date and time in the account's time zone (see
+` + "`mailgoose account get`" + `).`,
+		Example: `  mailgoose campaign reschedule 3f1c... --at "2026-12-01 09:00"
+  mailgoose campaign reschedule 3f1c... --at 2026-12-01T14:00:00Z`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := campaignIDArg(args[0])
+			if err != nil {
+				return err
+			}
+			if at == "" {
+				return needFlag("at", "The new send time")
+			}
+			t, err := a.parseSendAt(cmd.Context(), "at", at)
+			if err != nil {
+				return err
+			}
+			if t == nil {
+				return usageError("A scheduled campaign needs a time; --at now isn't one.",
+					"To send it now, cancel it and launch a copy without a send time.")
+			}
+			var c campaign
+			body := map[string]any{"send_at": t.UTC().Format(time.RFC3339)}
+			if err := a.call(cmd.Context(), http.MethodPost, campaignPath(id)+"/reschedule", body, &c, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(c)
+				return nil
+			}
+			fmt.Fprintf(a.Stdout, "Campaign %q now sends at %s.\n", c.Name, c.sendTime(a.accountZone(cmd.Context())))
+			return nil
+		},
+	})
+	reschedule.Flags().StringVar(&at, "at", "", "the new send time (required)")
+	return reschedule
 }
 
 func (a *App) campaignLaunchCmd() *cobra.Command {
@@ -505,7 +620,7 @@ command with --confirm only after they say yes in the chat.`,
 				CreditsReserved int      `json:"credits_reserved"`
 			}
 			if err := a.call(cmd.Context(), http.MethodPost, campaignPath(id)+"/launch", body, &out, true); err != nil {
-				return a.launchError(id, err)
+				return a.launchError(cmd.Context(), id, err)
 			}
 			if a.jsonOut {
 				a.printJSON(out)
@@ -513,7 +628,7 @@ command with --confirm only after they say yes in the chat.`,
 			}
 			when := "It's sending now."
 			if out.Campaign.Status == "scheduled" {
-				when = "It sends at " + out.Campaign.sendTime() + "."
+				when = "It sends at " + out.Campaign.sendTime(a.accountZone(cmd.Context())) + "."
 			}
 			fmt.Fprintf(a.Stdout, "Launched %q to %d %s, with %d %s reserved. %s\n", out.Campaign.Name,
 				out.RecipientCount, plural(out.RecipientCount, "contact", "contacts"),
@@ -527,7 +642,7 @@ command with --confirm only after they say yes in the chat.`,
 
 // launchError prints a launch summary, when that's the answer, and lists
 // the problems of a campaign that can't launch.
-func (a *App) launchError(id string, err error) error {
+func (a *App) launchError(ctx context.Context, id string, err error) error {
 	var e *Error
 	if !errors.As(err, &e) {
 		return err
@@ -551,7 +666,7 @@ func (a *App) launchError(id string, err error) error {
 	}
 	when := "as soon as it's launched"
 	if t, err := time.Parse(time.RFC3339, str(sum, "send_at")); err == nil {
-		when = t.Local().Format("2006-01-02 15:04 MST")
+		when = t.In(a.accountZone(ctx)).Format(timeLayout)
 	}
 	tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintf(tw, "Campaign:\t%s\n", str(sum, "name"))

@@ -1059,6 +1059,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/campaigns/{campaign_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a scheduled campaign
+         * @description Stops a scheduled campaign before its send time (CAM-6). Nobody gets
+         *     it, and the credits reserved at launch come back. Cancelling a
+         *     cancelled campaign changes nothing. Once it has started sending it
+         *     can't be cancelled (409 `campaign_locked`).
+         */
+        post: operations["cancelCampaign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{campaign_id}/reschedule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a scheduled campaign's send time
+         * @description Moves a scheduled campaign to a new send time (CAM-6), in the future
+         *     and at most a year ahead. Nothing else about it changes. Once it has
+         *     started sending it can't be moved (409 `campaign_locked`).
+         */
+        post: operations["rescheduleCampaign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/emails": {
         parameters: {
             query?: never;
@@ -2398,6 +2443,13 @@ export interface components {
              *     said yes to it. Any case; the dash is optional.
              */
             confirm?: string;
+        };
+        RescheduleCampaignRequest: {
+            /**
+             * Format: date-time
+             * @description The new send time, with its offset; stored in UTC.
+             */
+            send_at: string;
         };
         LaunchResult: {
             campaign: components["schemas"]["Campaign"];
@@ -4899,6 +4951,73 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["LaunchConfirmation"];
             422: components["responses"]["LaunchRefused"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    cancelCampaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The campaign's `id`. */
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled, now or before. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Campaign"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["CampaignConflict"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    rescheduleCampaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The campaign's `id`. */
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RescheduleCampaignRequest"];
+            };
+        };
+        responses: {
+            /** @description Moved. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Campaign"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["CampaignConflict"];
+            422: components["responses"]["InvalidCampaign"];
+            429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };
     };

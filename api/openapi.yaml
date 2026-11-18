@@ -2283,6 +2283,93 @@ paths:
           $ref: "#/components/responses/LaunchRefused"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/campaigns/{campaign_id}/cancel:
+    post:
+      operationId: cancelCampaign
+      summary: Cancel a scheduled campaign
+      description: |
+        Stops a scheduled campaign before its send time (CAM-6). Nobody gets
+        it, and the credits reserved at launch come back. Cancelling a
+        cancelled campaign changes nothing. Once it has started sending it
+        can't be cancelled (409 `campaign_locked`).
+      tags: [campaigns]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      responses:
+        "200":
+          description: Cancelled, now or before.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/CampaignConflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/campaigns/{campaign_id}/reschedule:
+    post:
+      operationId: rescheduleCampaign
+      summary: Move a scheduled campaign's send time
+      description: |
+        Moves a scheduled campaign to a new send time (CAM-6), in the future
+        and at most a year ahead. Nothing else about it changes. Once it has
+        started sending it can't be moved (409 `campaign_locked`).
+      tags: [campaigns]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RescheduleCampaignRequest"
+      responses:
+        "200":
+          description: Moved.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/CampaignConflict"
+        "422":
+          $ref: "#/components/responses/InvalidCampaign"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/emails:
     get:
       operationId: listEmails
@@ -4650,6 +4737,15 @@ components:
           description: |
             The code from the launch summary, given only after the person
             said yes to it. Any case; the dash is optional.
+    RescheduleCampaignRequest:
+      type: object
+      additionalProperties: false
+      required: [send_at]
+      properties:
+        send_at:
+          type: string
+          format: date-time
+          description: The new send time, with its offset; stored in UTC.
     LaunchResult:
       type: object
       required: [campaign, recipient_count, credits_reserved]

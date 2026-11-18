@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -105,17 +106,24 @@ func TestCampaignsAgainstAPI(t *testing.T) {
 }
 
 func TestParseSendAt(t *testing.T) {
-	if at, err := parseSendAt("NOW"); at != nil || err != nil {
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &App{zone: chicago}
+	ctx := context.Background()
+	if at, err := a.parseSendAt(ctx, "send-at", "NOW"); at != nil || err != nil {
 		t.Errorf("now: %v %v", at, err)
 	}
-	if at, err := parseSendAt("2026-12-01T09:00:00Z"); err != nil || !at.Equal(time.Date(2026, 12, 1, 9, 0, 0, 0, time.UTC)) {
+	if at, err := a.parseSendAt(ctx, "send-at", "2026-12-01T09:00:00Z"); err != nil || !at.Equal(time.Date(2026, 12, 1, 9, 0, 0, 0, time.UTC)) {
 		t.Errorf("rfc3339: %v %v", at, err)
 	}
-	if at, err := parseSendAt("2026-12-01 09:00"); err != nil || !at.Equal(time.Date(2026, 12, 1, 9, 0, 0, 0, time.Local)) {
-		t.Errorf("local: %v %v", at, err)
+	// Without an offset, the time is in the account's zone.
+	if at, err := a.parseSendAt(ctx, "at", "2026-12-01 09:00"); err != nil || !at.Equal(time.Date(2026, 12, 1, 15, 0, 0, 0, time.UTC)) {
+		t.Errorf("account zone: %v %v", at, err)
 	}
-	if _, err := parseSendAt("tomorrow"); err == nil {
-		t.Error("tomorrow parsed")
+	if _, err := a.parseSendAt(ctx, "at", "tomorrow"); err == nil || !strings.Contains(err.Error(), "--at") {
+		t.Errorf("tomorrow: %v", err)
 	}
 }
 
@@ -265,4 +273,115 @@ func TestCampaignLaunchAgainstAPI(t *testing.T) {
 	if c := h.run("campaign", "get", id); c != ExitOK || !strings.Contains(h.out.String(), "Launched:") || !strings.Contains(h.out.String(), "sending") {
 		t.Errorf("get: exit %d %s", c, h.out)
 	}
+}
+
+func TestCampaignScheduleAgainstAPI(t *testing.T) {
+	h := liveAPI(t)
+	h.app.Stdin = strings.NewReader(strings.Replace(springDoc, "news@bakery.example", "hello@patsbakery.com", 1))
+	if code := h.run("email", "create", "--name", "Spring", "--file", "-", "--json"); code != ExitOK {
+		t.Fatalf("email: exit %d %s", code, h.errOut)
+	}
+	emailID := h.jsonOut(t)["id"].(string)
+	if code := h.run("account", "update", "--postal-address", "12 Main St", "--time-zone", "America/Chicago"); code != ExitOK {
+		t.Fatalf("account: exit %d %s", code, h.errOut)
+	}
+	// A send time without an offset is in the account's zone: 9:00 in
+	// Chicago, stored in UTC and shown back in Chicago time.
+	at := time.Now().AddDate(0, 0, 3).Format("2006-01-02") + " 09:00"
+	if code := h.run("campaign", "create", "--name", "Spring", "--email", emailID, "--all", "--send-at", at, "--json"); code != ExitOK {
+		t.Fatalf("create: exit %d %s", code, h.errOut)
+	}
+	c := h.jsonOut(t)
+	id := c["id"].(string)
+	stored, _ := time.Parse(time.RFC3339, c["send_at"].(string))
+	if _, off := stored.In(mustZone(t, "America/Chicago")).Zone(); stored.UTC().Hour() != 9-off/3600 {
+		t.Errorf("stored %s", c["send_at"])
+	}
+	if code := h.run("campaign", "get", id); code != ExitOK || !strings.Contains(h.out.String(), at+" CST") {
+		t.Errorf("get: exit %d %s", code, h.out)
+	}
+
+	v, _ := liveDBs.Load(t)
+	db := v.(*pgxpool.Pool)
+	for _, sql := range []string{
+		`INSERT INTO domains (account_id, name, mail_from, created_at, check_until, status) SELECT id, 'patsbakery.com', 'bounce', now(), now(), 'verified' FROM accounts`,
+		`INSERT INTO credit_transactions (account_id, type, amount, expires_at) SELECT id, 'purchase', 100, now() + interval '1 year' FROM accounts`,
+	} {
+		if _, err := db.Exec(t.Context(), sql); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code := h.run("contact", "add", "sam@patsbakery.com"); code != ExitOK {
+		t.Fatalf("contact: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("campaign", "test", id); code != ExitOK {
+		t.Fatalf("test: exit %d %s", code, h.errOut)
+	}
+
+	// Not launched yet: there's nothing to cancel or move.
+	if code := h.run("campaign", "cancel", id, "--yes"); code != ExitError || !strings.Contains(h.errOut.String(), "campaign delete") {
+		t.Errorf("cancel draft: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("campaign", "launch", id, "--json"); code != ExitNeedsConfirmation {
+		t.Fatalf("summary: exit %d %s", code, h.errOut)
+	}
+	var e struct {
+		Error struct {
+			Details struct {
+				Code string `json:"code"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(h.errOut.Bytes(), &e); err != nil {
+		t.Fatal(err)
+	}
+	if code := h.run("campaign", "launch", id, "--confirm", e.Error.Details.Code); code != ExitOK ||
+		!strings.Contains(h.out.String(), "It sends at "+at+" CST.") {
+		t.Fatalf("launch: exit %d %s %s", code, h.out, h.errOut)
+	}
+
+	// Moved, in the account's zone.
+	later := time.Now().AddDate(0, 0, 5).Format("2006-01-02") + " 14:30"
+	if code := h.run("campaign", "reschedule", id); code != ExitUsage {
+		t.Errorf("no --at: exit %d", code)
+	}
+	if code := h.run("campaign", "reschedule", id, "--at", "2020-01-01 09:00"); code != ExitError || !strings.Contains(h.errOut.String(), "in the future") {
+		t.Errorf("past: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("campaign", "reschedule", id, "--at", later); code != ExitOK ||
+		h.out.String() != "Campaign \"Spring\" now sends at "+later+" CST.\n" {
+		t.Fatalf("reschedule: exit %d %q %s", code, h.out, h.errOut)
+	}
+	var runAt time.Time
+	_ = db.QueryRow(t.Context(), `SELECT run_at FROM send_queue WHERE campaign_id = $1`, id).Scan(&runAt)
+	if got := runAt.In(mustZone(t, "America/Chicago")).Format("2006-01-02 15:04"); got != later {
+		t.Errorf("queue runs at %s", got)
+	}
+
+	// Cancelled: the credit comes back, and a second cancel changes nothing.
+	if code := h.run("campaign", "cancel", id); code != ExitUsage {
+		t.Errorf("no --yes: exit %d", code)
+	}
+	for range 2 {
+		if code := h.run("campaign", "cancel", id, "--yes"); code != ExitOK || !strings.Contains(h.out.String(), "Cancelled campaign") {
+			t.Fatalf("cancel: exit %d %s %s", code, h.out, h.errOut)
+		}
+	}
+	var balance int
+	_ = db.QueryRow(t.Context(), `SELECT sum(amount) FROM credit_transactions`).Scan(&balance)
+	if balance != 100 {
+		t.Errorf("balance %d after cancelling", balance)
+	}
+	if code := h.run("campaign", "reschedule", id, "--at", later); code != ExitError || !strings.Contains(h.errOut.String(), "cancelled") {
+		t.Errorf("move cancelled: exit %d %s", code, h.errOut)
+	}
+}
+
+func mustZone(t *testing.T, name string) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return loc
 }

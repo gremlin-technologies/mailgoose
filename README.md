@@ -602,6 +602,27 @@ The send pipeline (`internal/sending/pipeline.go`) takes it from there:
   to `sent` (or `failed` if nothing went out). A paused account or
   campaign holds its rows until it's resumed.
 
+### Scheduled campaigns
+
+A campaign launched with a send time is `scheduled`. The worker checks
+every 15 seconds and starts each one whose time has come (the dispatcher
+also starts one it reaches first); the update only takes campaigns still
+`scheduled`, so each starts once however many workers run.
+
+Until then it can be cancelled or moved, by API or CLI (full-scope keys):
+
+- `POST /v1/campaigns/{id}/cancel`, `mailgoose campaign cancel <id> --yes`:
+  nobody gets it, its recipients are `skipped` and the credits reserved at
+  launch come back. Cancelling again changes nothing.
+- `POST /v1/campaigns/{id}/reschedule` with `send_at`,
+  `mailgoose campaign reschedule <id> --at <time>`: a new time in the
+  future, at most a year ahead.
+
+Once it's `sending`, both answer `409 campaign_locked`. Times are stored
+and returned in UTC. The CLI shows them in the account's time zone
+(`mailgoose account update --time-zone`), and reads a `--send-at` or `--at`
+without an offset (`"2026-12-01 09:00"`) in that zone.
+
 ## Unsubscribing
 
 Every campaign email's `{{unsubscribe_url}}` is `<app URL>/u/<token>`, and

@@ -260,6 +260,8 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	run := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }
 	imports := &contacts.Service{DB: pool}
 	run(func() { imports.RunImports(ctx, log.With("job", "import"), 2*time.Second) })
+	// Scheduled campaigns start within 15 seconds of their time.
+	run(func() { sending.RunScheduler(ctx, pool, 15*time.Second, log.With("job", "schedule")) })
 	if cfg.SendQueueURL == "" {
 		// No SQS (local): the worker dispatches too, into a queue in memory.
 		log.Info("no send queue configured; sending through an in-process queue")
