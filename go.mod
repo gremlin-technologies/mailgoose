@@ -15,6 +15,7 @@ require (
 	github.com/pb33f/libopenapi-validator v0.16.3
 	github.com/pressly/goose/v3 v3.30.1
 	github.com/spf13/cobra v1.10.2
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/term v0.48.0
 )
 
@@ -56,7 +57,6 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/vmware-labs/yaml-jsonpath v0.3.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
