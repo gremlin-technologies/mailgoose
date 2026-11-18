@@ -47,7 +47,7 @@ scope; they only show where an idea came from.
   SNS events, Terraform, one REST API with an OpenAPI spec shared by web app, CLI
   and agents, designs stored as JSON blocks rendered server-side.
 - MVP (Nov 18): billing ships (Stripe credit packs, $5 fee from credits; yearly
-  card billing later); web sign-in by emailed one-time codes; one person per
+  card billing later); web sign-in by emailed one-time codes (CLI sign-up uses the same code, owner decision Nov 18); one person per
   account; HTML emails edited as code only; agent launch confirmed with a
   one-time code; one audience per account with tags; CLI only, no MCP server;
   open and click tracking on by default with a per-campaign switch (our own

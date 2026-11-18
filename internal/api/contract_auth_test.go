@@ -56,20 +56,36 @@ var sixDigits = regexp.MustCompile(`\b\d{6}\b`)
 // sessionRequest posts a code for pat@example.com: the one in the test's
 // last email when code is "", or code as given.
 func sessionRequest(code string) func(*testing.T) *http.Request {
+	return codeRequest("/v1/sessions", code)
+}
+
+// cliTokenRequest is sessionRequest for a CLI token.
+func cliTokenRequest(code string) func(*testing.T) *http.Request {
+	return codeRequest("/v1/cli-tokens", code)
+}
+
+func codeRequest(path, code string) func(*testing.T) *http.Request {
 	return func(t *testing.T) *http.Request {
-		if code == "" {
-			v, ok := outboxes.Load(t)
-			if !ok {
-				t.Fatal("no outbox for this test")
-			}
-			last, ok := v.(*mail.Fake).Last()
-			if !ok {
-				t.Fatal("no email sent")
-			}
-			code = sixDigits.FindString(last.Message.Text)
+		c := code
+		if c == "" {
+			c = lastCode(t)
 		}
-		return jsonRequest(http.MethodPost, "/v1/sessions", `{"email":"pat@example.com","code":"`+code+`"}`)(t)
+		return jsonRequest(http.MethodPost, path, `{"email":"pat@example.com","code":"`+c+`"}`)(t)
 	}
+}
+
+// lastCode is the six-digit code in the test's last email.
+func lastCode(t *testing.T) string {
+	t.Helper()
+	v, ok := outboxes.Load(t)
+	if !ok {
+		t.Fatal("no outbox for this test")
+	}
+	last, ok := v.(*mail.Fake).Last()
+	if !ok {
+		t.Fatal("no email sent")
+	}
+	return sixDigits.FindString(last.Message.Text)
 }
 
 // cookies holds each test's session cookie, set by signedIn.

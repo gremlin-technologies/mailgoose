@@ -59,6 +59,14 @@ var contractCases = map[string][]contractCase{
 			req: sessionRequest("wrong"), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: sessionRequest("wrong"), status: http.StatusServiceUnavailable},
 	},
+	"createCliToken": {
+		{name: "right code", server: authServer, before: signedUp, req: cliTokenRequest(""), status: http.StatusCreated},
+		{name: "malformed", server: authServer, req: jsonRequest(http.MethodPost, "/v1/cli-tokens", `[]`), status: http.StatusBadRequest},
+		{name: "wrong code", server: authServer, before: signedUp, req: cliTokenRequest("wrong"), status: http.StatusUnprocessableEntity},
+		{name: "rate limited", server: rateLimitedAuthServer, before: send(cliTokenRequest("wrong")),
+			req: cliTokenRequest("wrong"), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: cliTokenRequest("wrong"), status: http.StatusServiceUnavailable},
+	},
 	"listApiKeys": {
 		{name: "full key", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/api-keys?limit=10")), status: http.StatusOK},
 		{name: "bad limit", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/api-keys?limit=0")), status: http.StatusBadRequest},

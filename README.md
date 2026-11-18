@@ -204,6 +204,8 @@ People sign the CLI in through the browser; agents and scripts use an API key
 in `MAILGOOSE_API_KEY` instead.
 
 ```sh
+mailgoose signup --email pat@example.com --account-name "Pat's Bakery" --accept-terms
+mailgoose signup --email pat@example.com --code 042917   # the code from the email
 mailgoose login     # prints a code and a link; approve it in the browser
 mailgoose whoami    # account, user, and how this CLI is signed in
 mailgoose logout    # revokes the token and removes it from this computer
@@ -219,6 +221,12 @@ keychain under the service `mailgoose` with the API URL as the account name,
 or in the config file (mode 0600) where there is no keychain. Logins are kept
 per API URL, so staging and production can both be signed in. Without a
 terminal, `login` exits 2 and points to `MAILGOOSE_API_KEY`.
+
+`signup` makes an account without a browser. Step 1 calls `POST /v1/signup`
+and emails a six-digit code; step 2 trades it at `POST /v1/cli-tokens` for the
+same kind of token `login` stores, and activates the account. A person has to
+read the code from their email, so an agent can run both steps but needs the
+code from them. Neither step prompts.
 
 The CLI picks its credential in this order: `MAILGOOSE_API_KEY`, then the
 login for the API URL in use, then `api_key` in the config file.

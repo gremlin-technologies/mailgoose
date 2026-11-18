@@ -651,6 +651,44 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/cli-tokens:
+    post:
+      operationId: createCliToken
+      summary: Get a CLI token with an emailed code
+      description: |
+        Uses a code from `createSignup` or `createSignIn`, like
+        `createSession`, but answers with a full-scope CLI token instead of
+        setting a session cookie. This is how `mailgoose signup` finishes
+        without a browser: a person still has to read the code from the email
+        and type it in. On success a pending account becomes active. A wrong,
+        expired, used or locked code gets the same `invalid_code` error; a
+        code stops working after 5 wrong tries.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CliTokenRequest"
+      responses:
+        "201":
+          description: Signed in; the token is shown only here.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceLoginToken"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/sessions:
     post:
       operationId: createSession
@@ -1101,6 +1139,23 @@ components:
           type: string
           description: The six-digit code from the email.
           examples: ["042917"]
+    CliTokenRequest:
+      type: object
+      required: [email, code]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        code:
+          type: string
+          description: The six-digit code from the email.
+          examples: ["042917"]
+        client_name:
+          type: string
+          maxLength: 100
+          description: Names the token, such as the computer's name. Defaults to "CLI sign-up".
     Session:
       type: object
       required: [account, user, expires_at]

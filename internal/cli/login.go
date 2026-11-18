@@ -120,35 +120,41 @@ MAILGOOSE_API_KEY to an API key instead (mailgoose keys create).`,
 				return err
 			}
 
-			where, path, err := a.storeLogin(ctx, s.APIURL, tok.Token, Login{KeyID: tok.KeyID, Account: tok.Account.Name, Email: tok.User.Email})
-			if err != nil {
-				return fmt.Errorf("signed in, but couldn't store the token: %w", err)
-			}
-			envWins := a.Getenv(EnvAPIKey) != ""
-			if a.jsonOut {
-				a.printJSON(map[string]any{
-					"api_url":     s.APIURL,
-					"account":     tok.Account,
-					"user":        tok.User,
-					"key_id":      tok.KeyID,
-					"stored_in":   where,
-					"config_path": path,
-					"env_api_key": envWins,
-				})
-				return nil
-			}
-			fmt.Fprintf(a.Stdout, "Signed in to %s as %s.\n", tok.Account.Name, tok.User.Email)
-			if where == StoreKeychain {
-				fmt.Fprintln(a.Stdout, "The token is in the OS keychain.")
-			} else {
-				fmt.Fprintf(a.Stdout, "There's no keychain here, so the token is in %s, readable only by you.\n", path)
-			}
-			if envWins {
-				fmt.Fprintf(a.Stdout, "Note: %s is set, and it wins over this login until you unset it.\n", EnvAPIKey)
-			}
-			return nil
+			return a.finishLogin(ctx, s.APIURL, tok)
 		},
 	})
+}
+
+// finishLogin stores tok for apiURL and says who is signed in, for login
+// and signup.
+func (a *App) finishLogin(ctx context.Context, apiURL string, tok loginToken) error {
+	where, path, err := a.storeLogin(ctx, apiURL, tok.Token, Login{KeyID: tok.KeyID, Account: tok.Account.Name, Email: tok.User.Email})
+	if err != nil {
+		return fmt.Errorf("signed in, but couldn't store the token: %w", err)
+	}
+	envWins := a.Getenv(EnvAPIKey) != ""
+	if a.jsonOut {
+		a.printJSON(map[string]any{
+			"api_url":     apiURL,
+			"account":     tok.Account,
+			"user":        tok.User,
+			"key_id":      tok.KeyID,
+			"stored_in":   where,
+			"config_path": path,
+			"env_api_key": envWins,
+		})
+		return nil
+	}
+	fmt.Fprintf(a.Stdout, "Signed in to %s as %s.\n", tok.Account.Name, tok.User.Email)
+	if where == StoreKeychain {
+		fmt.Fprintln(a.Stdout, "The token is in the OS keychain.")
+	} else {
+		fmt.Fprintf(a.Stdout, "There's no keychain here, so the token is in %s, readable only by you.\n", path)
+	}
+	if envWins {
+		fmt.Fprintf(a.Stdout, "Note: %s is set, and it wins over this login until you unset it.\n", EnvAPIKey)
+	}
+	return nil
 }
 
 func (a *App) clientName() string {
