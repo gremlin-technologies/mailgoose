@@ -12,6 +12,7 @@ internal/api/      HTTP handlers. /healthz is the load balancer's check.
 internal/worker/   SQS consumer for the send and SES events queues (stub handlers).
 internal/db/       Postgres pool, Secrets Manager credentials, migrations.
 internal/config/   Server settings from environment variables.
+internal/mail/     Sends built messages: SES v2, or a fake for tests and local runs.
 internal/cli/      CLI commands and its config file.
 api/openapi.yaml   The API contract. Every endpoint gets a CLI command.
 infra/             Terraform for AWS (see infra/README.md).
@@ -83,6 +84,8 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `APP_SECRETS_JSON` | The `<env>/app` secret, a JSON object. |
 | `MIGRATE_ON_START` | `false` to skip migrations at API start. |
 | `RATE_LIMIT_PER_MINUTE` | Requests per minute per API key (or per IP without one), with bursts up to the same number. Default 600; `0` turns limiting off. Counted per API task. |
+| `MAIL_SENDER` | `ses` or `fake`. Defaults to `fake` when `APP_ENV=local` and `ses` otherwise; prod refuses `fake`. The fake records mail and never calls AWS. |
+| `MAIL_CAPTURE_DIR` | With the fake sender, write each message as an `.eml` file here. |
 
 ## API conventions
 

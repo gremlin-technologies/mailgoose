@@ -89,3 +89,28 @@ func TestRateLimitSetting(t *testing.T) {
 		}
 	}
 }
+
+func TestMailSenderSetting(t *testing.T) {
+	cases := []struct {
+		env     map[string]string
+		want    string
+		wantErr bool
+	}{
+		{nil, "fake", false},
+		{map[string]string{"APP_ENV": "staging"}, "ses", false},
+		{map[string]string{"APP_ENV": "prod"}, "ses", false},
+		{map[string]string{"APP_ENV": "staging", "MAIL_SENDER": "fake"}, "fake", false},
+		{map[string]string{"APP_ENV": "prod", "MAIL_SENDER": "fake"}, "", true},
+		{map[string]string{"MAIL_SENDER": "smtp"}, "", true},
+	}
+	for _, tc := range cases {
+		cfg, err := load(env(tc.env))
+		if (err != nil) != tc.wantErr {
+			t.Errorf("%v: err = %v", tc.env, err)
+			continue
+		}
+		if !tc.wantErr && cfg.MailSender != tc.want {
+			t.Errorf("%v: MailSender = %q, want %q", tc.env, cfg.MailSender, tc.want)
+		}
+	}
+}

@@ -38,6 +38,14 @@ type Config struct {
 	// SESIdentityTag is "Environment=<env>"; every SES identity the app creates must carry it.
 	SESIdentityTag string
 
+	// MailSender picks how mail goes out: "ses", or "fake", which records
+	// messages (and writes them to MailCaptureDir when set) and never calls
+	// AWS. It defaults to "fake" when AppEnv is "local" and "ses" otherwise;
+	// prod refuses "fake".
+	MailSender string
+	// MailCaptureDir is where the fake sender writes .eml files. Optional.
+	MailCaptureDir string
+
 	// MigrateOnStart runs pending database migrations when the API starts.
 	MigrateOnStart bool
 
@@ -113,6 +121,21 @@ func load(getenv func(string) string) (Config, error) {
 		MigrateOnStart:      migrate,
 		RateLimitPerMinute:  rateLimit,
 		AppSecrets:          secrets,
+	}
+
+	cfg.MailSender = getenv("MAIL_SENDER")
+	if cfg.MailSender == "" {
+		cfg.MailSender = "ses"
+		if cfg.AppEnv == "local" {
+			cfg.MailSender = "fake"
+		}
+	}
+	cfg.MailCaptureDir = getenv("MAIL_CAPTURE_DIR")
+	switch {
+	case cfg.MailSender != "ses" && cfg.MailSender != "fake":
+		errs = append(errs, fmt.Errorf("MAIL_SENDER must be ses or fake, got %q", cfg.MailSender))
+	case cfg.MailSender == "fake" && cfg.AppEnv == "prod":
+		errs = append(errs, errors.New("MAIL_SENDER=fake is not allowed in prod; it would drop every email"))
 	}
 
 	if cfg.Database.URL == "" && cfg.Database.Host != "" && cfg.Database.SecretARN == "" {
