@@ -277,6 +277,17 @@ mailgoose contacts update pat@example.com --status unsubscribed
 mailgoose contacts delete pat@example.com --yes
 ```
 
+Tags are basic labels; a campaign can go to the contacts with any of chosen
+tags. Put one on contacts by name, or on every contact matching a filter:
+
+```sh
+mailgoose tags create vip
+mailgoose tags add vip pat@example.com sam@example.com
+mailgoose tags add customers --email @example.com --status subscribed
+mailgoose contacts list --tag vip
+mailgoose tags delete vip --yes   # says how many contacts lost it
+```
+
 ## Sending domains
 
 Campaigns go out from an address at a domain the customer owns.

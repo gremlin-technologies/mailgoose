@@ -72,6 +72,14 @@ type Contact struct {
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 	StatusChangedAt time.Time
+	// Tags are the contact's tags, sorted by name.
+	Tags []TagRef
+}
+
+// TagRef names one of a contact's tags.
+type TagRef struct {
+	ID   string
+	Name string
 }
 
 // Service reads and changes contacts.
@@ -87,14 +95,21 @@ func (s *Service) now() time.Time {
 	return time.Now().UTC()
 }
 
-const columns = `id, account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at`
+const columns = `id, account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at,
+	ARRAY(SELECT t.id::text FROM contact_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.contact_id = contacts.id ORDER BY lower(t.name), t.id),
+	ARRAY(SELECT t.name FROM contact_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.contact_id = contacts.id ORDER BY lower(t.name), t.id)`
 
 func scan(row pgx.Row) (*Contact, error) {
 	var c Contact
+	var tagIDs, tagNames []string
 	err := row.Scan(&c.ID, &c.AccountID, &c.Email, &c.FirstName, &c.LastName, &c.Status, &c.Source,
-		&c.CreatedAt, &c.UpdatedAt, &c.StatusChangedAt)
+		&c.CreatedAt, &c.UpdatedAt, &c.StatusChangedAt, &tagIDs, &tagNames)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
+	}
+	c.Tags = make([]TagRef, len(tagIDs))
+	for i := range tagIDs {
+		c.Tags[i] = TagRef{ID: tagIDs[i], Name: tagNames[i]}
 	}
 	return &c, err
 }
@@ -384,6 +399,30 @@ type Filter struct {
 	Name string
 	// Status is one exact status.
 	Status string
+	// TagID is a tag the contact must have.
+	TagID string
+}
+
+// where appends f's conditions to a query on contacts, numbering its
+// parameters after those already in args.
+func (f Filter) where(q string, args []any) (string, []any) {
+	add := func(cond string, v any) {
+		args = append(args, v)
+		q += " AND " + strings.ReplaceAll(cond, "?", fmt.Sprintf("$%d", len(args)))
+	}
+	if e := strings.TrimSpace(f.Email); e != "" {
+		add(`email LIKE ?`, likePattern(strings.ToLower(e)))
+	}
+	if n := strings.TrimSpace(f.Name); n != "" {
+		add(`(coalesce(first_name, '') || ' ' || coalesce(last_name, '')) ILIKE ?`, likePattern(n))
+	}
+	if f.Status != "" {
+		add(`status = ?`, f.Status)
+	}
+	if f.TagID != "" {
+		add(`EXISTS (SELECT 1 FROM contact_tags ct WHERE ct.contact_id = contacts.id AND ct.tag_id = ?::uuid)`, f.TagID)
+	}
+	return q, args
 }
 
 // Cursor is the keyset position after a row: List returns rows after it.
@@ -403,21 +442,7 @@ func likePattern(s string) string {
 // List returns up to limit contacts of the account, newest first, after
 // the cursor when one is given.
 func (s *Service) List(ctx context.Context, accountID string, f Filter, after *Cursor, limit int) ([]*Contact, error) {
-	q := `SELECT ` + columns + ` FROM contacts WHERE account_id = $1`
-	args := []any{accountID}
-	add := func(cond string, v any) {
-		args = append(args, v)
-		q += " AND " + strings.ReplaceAll(cond, "?", fmt.Sprintf("$%d", len(args)))
-	}
-	if f.Email != "" {
-		add(`email LIKE ?`, likePattern(strings.ToLower(strings.TrimSpace(f.Email))))
-	}
-	if n := strings.TrimSpace(f.Name); n != "" {
-		add(`(coalesce(first_name, '') || ' ' || coalesce(last_name, '')) ILIKE ?`, likePattern(n))
-	}
-	if f.Status != "" {
-		add(`status = ?`, f.Status)
-	}
+	q, args := f.where(`SELECT `+columns+` FROM contacts WHERE account_id = $1`, []any{accountID})
 	if after != nil {
 		args = append(args, after.CreatedAt, after.ID)
 		q += fmt.Sprintf(" AND (created_at, id) < ($%d, $%d::uuid)", len(args)-1, len(args))

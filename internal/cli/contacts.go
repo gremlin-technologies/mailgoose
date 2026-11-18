@@ -17,6 +17,7 @@ import (
 type contact struct {
 	ID              string    `json:"id"`
 	Email           string    `json:"email"`
+	Tags            []tagRef  `json:"tags"`
 	FirstName       *string   `json:"first_name"`
 	LastName        *string   `json:"last_name"`
 	Status          string    `json:"status"`
@@ -24,6 +25,11 @@ type contact struct {
 	CreatedAt       time.Time `json:"created_at"`
 	UpdatedAt       time.Time `json:"updated_at"`
 	StatusChangedAt time.Time `json:"status_changed_at"`
+}
+
+type tagRef struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 type contactPage struct {
@@ -68,14 +74,26 @@ func (a *App) contactID(ctx context.Context, arg string) (string, error) {
 	}
 }
 
+func (c contact) tagNames() string {
+	names := make([]string, len(c.Tags))
+	for i, t := range c.Tags {
+		names[i] = t.Name
+	}
+	return strings.Join(names, ", ")
+}
+
 func (a *App) printContact(c contact) {
 	tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
 	name := c.name()
 	if name == "" {
 		name = "(none)"
 	}
-	fmt.Fprintf(tw, "ID\t%s\nEmail\t%s\nName\t%s\nStatus\t%s (since %s)\nSource\t%s\nAdded\t%s\n",
-		c.ID, c.Email, name, c.Status, c.StatusChangedAt.Local().Format("2006-01-02 15:04"), c.Source,
+	tags := c.tagNames()
+	if tags == "" {
+		tags = "(none)"
+	}
+	fmt.Fprintf(tw, "ID\t%s\nEmail\t%s\nName\t%s\nStatus\t%s (since %s)\nTags\t%s\nSource\t%s\nAdded\t%s\n",
+		c.ID, c.Email, name, c.Status, c.StatusChangedAt.Local().Format("2006-01-02 15:04"), tags, c.Source,
 		c.CreatedAt.Local().Format("2006-01-02 15:04"))
 	_ = tw.Flush()
 }
@@ -134,13 +152,14 @@ hash of its address, so adding it again keeps its status.`,
 	add.Flags().StringVar(&last, "last-name", "", "last name")
 	add.Flags().StringVar(&status, "status", "", "subscribed (default), unconfirmed or unsubscribed")
 
-	var fEmail, fName, fStatus, cursor string
+	var fEmail, fName, fStatus, fTag, cursor string
 	var limit int
-	list := calls("listContacts", &cobra.Command{
+	list := callsAll([]string{"listContacts", "listTags"}, &cobra.Command{
 		Use:   "list",
 		Short: "List contacts, newest first",
 		Example: `  mailgoose contacts list --status subscribed
-  mailgoose contacts list --email example.org --name smith`,
+  mailgoose contacts list --email example.org --name smith
+  mailgoose contacts list --tag vip`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			q := url.Values{}
@@ -151,6 +170,13 @@ hash of its address, so adding it again keeps its status.`,
 			}
 			if limit > 0 {
 				q.Set("limit", strconv.Itoa(limit))
+			}
+			if fTag != "" {
+				id, err := a.tagID(cmd.Context(), fTag)
+				if err != nil {
+					return err
+				}
+				q.Set("tag_id", id)
 			}
 			path := "/v1/contacts"
 			if len(q) > 0 {
@@ -169,9 +195,9 @@ hash of its address, so adding it again keeps its status.`,
 				return nil
 			}
 			tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(tw, "ID\tEMAIL\tNAME\tSTATUS\tADDED")
+			fmt.Fprintln(tw, "ID\tEMAIL\tNAME\tSTATUS\tTAGS\tADDED")
 			for _, c := range page.Data {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", c.ID, c.Email, c.name(), c.Status, c.CreatedAt.Local().Format("2006-01-02 15:04"))
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", c.ID, c.Email, c.name(), c.Status, c.tagNames(), c.CreatedAt.Local().Format("2006-01-02 15:04"))
 			}
 			_ = tw.Flush()
 			if page.NextCursor != nil {
@@ -183,6 +209,7 @@ hash of its address, so adding it again keeps its status.`,
 	list.Flags().StringVar(&fEmail, "email", "", "only addresses containing this")
 	list.Flags().StringVar(&fName, "name", "", "only names containing this")
 	list.Flags().StringVar(&fStatus, "status", "", "only this status: "+contactStatuses)
+	list.Flags().StringVar(&fTag, "tag", "", "only contacts with this tag (name or id)")
 	list.Flags().IntVar(&limit, "limit", 0, "contacts per page (1 to 100, default 50)")
 	list.Flags().StringVar(&cursor, "cursor", "", "next_cursor from the previous page")
 

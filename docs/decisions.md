@@ -4,6 +4,25 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Tag details (MG-15, reversible defaults)
+
+Picked while building MG-15; easy to change.
+
+- **Tag names are 1 to 50 characters on one line, without commas,** and
+  unique per account ignoring case. Commas are kept out so a list of tags can
+  be written `a,b` in CSV imports and CLI flags later.
+- **Tags must exist before they're put on contacts;** tagging doesn't create
+  them.
+- **Bulk changes take up to 1,000 contact ids, or a filter** (email, name,
+  status, another tag), and answer how many contacts were selected and how
+  many changed. An empty filter means every contact; the CLI asks for
+  `--all` to say so. Ids from another account are skipped, not refused.
+- **Deleting a tag answers `contacts_untagged` and `campaigns_updated`.**
+  Campaigns come with MG-27, which must take a deleted tag off draft and
+  scheduled campaigns and count them; until then `campaigns_updated` is 0.
+- **`listContacts` filters by `tag_id`**, which completes the tag filter
+  MG-14 left for this ticket.
+
 ## 2026-11-18: Contact details (MG-14, reversible defaults)
 
 Picked while building MG-14; easy to change.
@@ -23,6 +42,7 @@ Picked while building MG-14; easy to change.
   since the contact now carries the status.
 - **Search:** `email` and `name` match any part, ignoring case; `status` is
   exact. Lists are newest first. The tag filter comes with tags in MG-15.
+  (Done in MG-15: `tag_id`.)
 - **Campaigns pick recipients only through `contacts.Recipients`,** which
   returns subscribed contacts and nothing else.
 
