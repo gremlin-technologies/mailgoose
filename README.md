@@ -318,6 +318,35 @@ mailgoose contacts export-data pat@example.com
 mailgoose contacts delete pat@example.com --erase --yes
 ```
 
+## Emails
+
+`internal/emails` stores each account's emails. An email is a block document
+(kind `blocks`, the default) or hand-written HTML (kind `html`), plus settings
+both kinds share: subject, preview text, From, reply-to, background color and
+content width. The kind is fixed at creation.
+
+A block document is versioned JSON (`schema_version: 1`); its schema is
+`BlockDocument` in `api/openapi.yaml`. Block types are heading, text (a small
+Markdown subset), image, button, divider, spacer, columns (two columns of
+blocks), social and footer. `emails.ParseDocument` is the only way in: it
+refuses unknown block types and fields with a path such as
+`blocks[2].columns[0].blocks[1].href`, fills defaults, gives blocks without an
+id a new one (`b_` and ten characters), and adds the locked footer at the end
+when it's missing. Ids never change on edits or moves.
+
+Every save names the version it read; a stale one gets 409
+`version_conflict` with `details.current_version`.
+
+```sh
+mailgoose email create --name "Spring menu" --file spring.json
+mailgoose email get <id> --json > spring.json   # edit, then:
+mailgoose email replace <id> --file spring.json  # uses the file's version
+mailgoose email update <id> --subject "Spring is here" --from-email news@bakery.example
+mailgoose email duplicate <id> --name "Summer menu"
+mailgoose email list
+mailgoose email delete <id> --yes
+```
+
 ## Sending domains
 
 Campaigns go out from an address at a domain the customer owns.

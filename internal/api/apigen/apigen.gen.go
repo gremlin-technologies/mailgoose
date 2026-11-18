@@ -6,6 +6,7 @@
 package apigen
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -68,6 +69,27 @@ func (e AccountSettingsPlan) Valid() bool {
 	}
 }
 
+// Defines values for Align.
+const (
+	AlignCenter Align = "center"
+	AlignLeft   Align = "left"
+	AlignRight  Align = "right"
+)
+
+// Valid indicates whether the value is a known member of the Align enum.
+func (e Align) Valid() bool {
+	switch e {
+	case AlignCenter:
+		return true
+	case AlignLeft:
+		return true
+	case AlignRight:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ApiKeyScope.
 const (
 	ApiKeyScopeDraft ApiKeyScope = "draft"
@@ -86,6 +108,36 @@ func (e ApiKeyScope) Valid() bool {
 	}
 }
 
+// Defines values for BlockDocumentSchemaVersion.
+const (
+	BlockDocumentSchemaVersionN1 BlockDocumentSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the BlockDocumentSchemaVersion enum.
+func (e BlockDocumentSchemaVersion) Valid() bool {
+	switch e {
+	case BlockDocumentSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ButtonBlockType.
+const (
+	ButtonBlockTypeButton ButtonBlockType = "button"
+)
+
+// Valid indicates whether the value is a known member of the ButtonBlockType enum.
+func (e ButtonBlockType) Valid() bool {
+	switch e {
+	case ButtonBlockTypeButton:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CodeSentStatus.
 const (
 	CodeSentStatusCodeSent CodeSentStatus = "code_sent"
@@ -95,6 +147,21 @@ const (
 func (e CodeSentStatus) Valid() bool {
 	switch e {
 	case CodeSentStatusCodeSent:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ColumnsBlockType.
+const (
+	ColumnsBlockTypeColumns ColumnsBlockType = "columns"
+)
+
+// Valid indicates whether the value is a known member of the ColumnsBlockType enum.
+func (e ColumnsBlockType) Valid() bool {
+	switch e {
+	case ColumnsBlockTypeColumns:
 		return true
 	default:
 		return false
@@ -257,6 +324,21 @@ func (e DeviceLoginPendingStatus) Valid() bool {
 	}
 }
 
+// Defines values for DividerBlockType.
+const (
+	DividerBlockTypeDivider DividerBlockType = "divider"
+)
+
+// Valid indicates whether the value is a known member of the DividerBlockType enum.
+func (e DividerBlockType) Valid() bool {
+	switch e {
+	case DividerBlockTypeDivider:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DnsRecordPurpose.
 const (
 	DnsRecordPurposeDkim        DnsRecordPurpose = "dkim"
@@ -347,6 +429,75 @@ func (e DomainStatus) Valid() bool {
 	}
 }
 
+// Defines values for EmailKind.
+const (
+	EmailKindBlocks EmailKind = "blocks"
+	EmailKindHtml   EmailKind = "html"
+)
+
+// Valid indicates whether the value is a known member of the EmailKind enum.
+func (e EmailKind) Valid() bool {
+	switch e {
+	case EmailKindBlocks:
+		return true
+	case EmailKindHtml:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FooterBlockType.
+const (
+	FooterBlockTypeFooter FooterBlockType = "footer"
+)
+
+// Valid indicates whether the value is a known member of the FooterBlockType enum.
+func (e FooterBlockType) Valid() bool {
+	switch e {
+	case FooterBlockTypeFooter:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HeadingBlockLevel.
+const (
+	HeadingBlockLevelN1 HeadingBlockLevel = 1
+	HeadingBlockLevelN2 HeadingBlockLevel = 2
+	HeadingBlockLevelN3 HeadingBlockLevel = 3
+)
+
+// Valid indicates whether the value is a known member of the HeadingBlockLevel enum.
+func (e HeadingBlockLevel) Valid() bool {
+	switch e {
+	case HeadingBlockLevelN1:
+		return true
+	case HeadingBlockLevelN2:
+		return true
+	case HeadingBlockLevelN3:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HeadingBlockType.
+const (
+	HeadingBlockTypeHeading HeadingBlockType = "heading"
+)
+
+// Valid indicates whether the value is a known member of the HeadingBlockType enum.
+func (e HeadingBlockType) Valid() bool {
+	switch e {
+	case HeadingBlockTypeHeading:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatus.
 const (
 	HealthStatusOk HealthStatus = "ok"
@@ -356,6 +507,36 @@ const (
 func (e HealthStatus) Valid() bool {
 	switch e {
 	case HealthStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HtmlDocumentSchemaVersion.
+const (
+	HtmlDocumentSchemaVersionN1 HtmlDocumentSchemaVersion = 1
+)
+
+// Valid indicates whether the value is a known member of the HtmlDocumentSchemaVersion enum.
+func (e HtmlDocumentSchemaVersion) Valid() bool {
+	switch e {
+	case HtmlDocumentSchemaVersionN1:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImageBlockType.
+const (
+	ImageBlockTypeImage ImageBlockType = "image"
+)
+
+// Valid indicates whether the value is a known member of the ImageBlockType enum.
+func (e ImageBlockType) Valid() bool {
+	switch e {
+	case ImageBlockTypeImage:
 		return true
 	default:
 		return false
@@ -455,6 +636,90 @@ func (e SkipReason) Valid() bool {
 	}
 }
 
+// Defines values for SocialBlockLinksNetwork.
+const (
+	SocialBlockLinksNetworkBluesky   SocialBlockLinksNetwork = "bluesky"
+	SocialBlockLinksNetworkFacebook  SocialBlockLinksNetwork = "facebook"
+	SocialBlockLinksNetworkInstagram SocialBlockLinksNetwork = "instagram"
+	SocialBlockLinksNetworkLinkedin  SocialBlockLinksNetwork = "linkedin"
+	SocialBlockLinksNetworkThreads   SocialBlockLinksNetwork = "threads"
+	SocialBlockLinksNetworkTiktok    SocialBlockLinksNetwork = "tiktok"
+	SocialBlockLinksNetworkWebsite   SocialBlockLinksNetwork = "website"
+	SocialBlockLinksNetworkX         SocialBlockLinksNetwork = "x"
+	SocialBlockLinksNetworkYoutube   SocialBlockLinksNetwork = "youtube"
+)
+
+// Valid indicates whether the value is a known member of the SocialBlockLinksNetwork enum.
+func (e SocialBlockLinksNetwork) Valid() bool {
+	switch e {
+	case SocialBlockLinksNetworkBluesky:
+		return true
+	case SocialBlockLinksNetworkFacebook:
+		return true
+	case SocialBlockLinksNetworkInstagram:
+		return true
+	case SocialBlockLinksNetworkLinkedin:
+		return true
+	case SocialBlockLinksNetworkThreads:
+		return true
+	case SocialBlockLinksNetworkTiktok:
+		return true
+	case SocialBlockLinksNetworkWebsite:
+		return true
+	case SocialBlockLinksNetworkX:
+		return true
+	case SocialBlockLinksNetworkYoutube:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SocialBlockType.
+const (
+	SocialBlockTypeSocial SocialBlockType = "social"
+)
+
+// Valid indicates whether the value is a known member of the SocialBlockType enum.
+func (e SocialBlockType) Valid() bool {
+	switch e {
+	case SocialBlockTypeSocial:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SpacerBlockType.
+const (
+	SpacerBlockTypeSpacer SpacerBlockType = "spacer"
+)
+
+// Valid indicates whether the value is a known member of the SpacerBlockType enum.
+func (e SpacerBlockType) Valid() bool {
+	switch e {
+	case SpacerBlockTypeSpacer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TextBlockType.
+const (
+	TextBlockTypeText TextBlockType = "text"
+)
+
+// Valid indicates whether the value is a known member of the TextBlockType enum.
+func (e TextBlockType) Valid() bool {
+	switch e {
+	case TextBlockTypeText:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateContactRequestStatus.
 const (
 	UpdateContactRequestStatusSubscribed   UpdateContactRequestStatus = "subscribed"
@@ -548,6 +813,9 @@ type AccountSettings struct {
 // AccountSettingsPlan defines model for AccountSettings.Plan.
 type AccountSettingsPlan string
 
+// Align defines model for Align.
+type Align string
+
 // ApiKey defines model for ApiKey.
 type ApiKey struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -577,6 +845,57 @@ type ApiKeyList struct {
 // campaigns, change billing and manage keys.
 type ApiKeyScope string
 
+// Block One block of a document, by `type` (DES-2).
+type Block struct {
+	union json.RawMessage
+}
+
+// BlockDocument A blocks email's settings and content, schema version 1. Blocks come
+// in order, at most 200 counting those inside columns, and the last is
+// the footer. Unknown block types and fields are refused. In a
+// request, `schema_version` may be left out, and so may block ids and
+// fields that have defaults.
+type BlockDocument struct {
+	Blocks        []Block                    `json:"blocks"`
+	SchemaVersion BlockDocumentSchemaVersion `json:"schema_version"`
+
+	// Settings The parts of an email outside its content. In a request, fields left
+	// out take their defaults.
+	Settings EmailSettings `json:"settings"`
+}
+
+// BlockDocumentSchemaVersion defines model for BlockDocument.SchemaVersion.
+type BlockDocumentSchemaVersion int
+
+// BlockId Stable for the block's life: edits and moves keep it. Leave it out
+// when adding a block to get a new one (`b_` and ten letters and
+// digits). Unique within the document.
+type BlockId = string
+
+// ButtonBlock defines model for ButtonBlock.
+type ButtonBlock struct {
+	Align Align `json:"align"`
+
+	// BackgroundColor Examples: #18181b
+	BackgroundColor Color `json:"background_color"`
+
+	// Href An http, https or mailto address, or a merge tag such as `{{unsubscribe_url}}`.
+	Href string `json:"href"`
+
+	// Id Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	Id   BlockId `json:"id"`
+	Text string  `json:"text"`
+
+	// TextColor Examples: #18181b
+	TextColor Color           `json:"text_color"`
+	Type      ButtonBlockType `json:"type"`
+}
+
+// ButtonBlockType defines model for ButtonBlock.Type.
+type ButtonBlockType string
+
 // CliTokenRequest defines model for CliTokenRequest.
 type CliTokenRequest struct {
 	// ClientName Names the token, such as the computer's name. Defaults to "CLI sign-up".
@@ -598,6 +917,30 @@ type CodeSent struct {
 
 // CodeSentStatus defines model for CodeSent.Status.
 type CodeSentStatus string
+
+// Color Examples: #18181b
+type Color = string
+
+// ColumnContentBlock A block that can go inside a column.
+type ColumnContentBlock struct {
+	union json.RawMessage
+}
+
+// ColumnsBlock A row of two columns, each holding blocks other than columns and the footer.
+type ColumnsBlock struct {
+	Columns []struct {
+		Blocks []ColumnContentBlock `json:"blocks"`
+	} `json:"columns"`
+
+	// Id Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	Id   BlockId          `json:"id"`
+	Type ColumnsBlockType `json:"type"`
+}
+
+// ColumnsBlockType defines model for ColumnsBlock.Type.
+type ColumnsBlockType string
 
 // Contact defines model for Contact.
 type Contact struct {
@@ -743,6 +1086,17 @@ type CreateDomainRequest struct {
 	Name string `json:"name"`
 }
 
+// CreateEmailRequest defines model for CreateEmailRequest.
+type CreateEmailRequest struct {
+	// Document A BlockDocument for a blocks email, an HtmlDocument for an html one.
+	Document *EmailDocument `json:"document,omitempty"`
+
+	// Kind `blocks`: built from blocks in the designer or with block commands.
+	// `html`: hand-written HTML, edited as code only.
+	Kind *EmailKind `json:"kind,omitempty"`
+	Name string     `json:"name"`
+}
+
 // CreateImportRequest defines model for CreateImportRequest.
 type CreateImportRequest struct {
 	// Columns The header of the column each field comes from. Leave a field out to have it found from common headers.
@@ -885,6 +1239,22 @@ type DeviceLoginToken struct {
 	User  User   `json:"user"`
 }
 
+// DividerBlock defines model for DividerBlock.
+type DividerBlock struct {
+	// Color Examples: #18181b
+	Color Color `json:"color"`
+
+	// Id Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	Id        BlockId          `json:"id"`
+	Thickness int              `json:"thickness"`
+	Type      DividerBlockType `json:"type"`
+}
+
+// DividerBlockType defines model for DividerBlock.Type.
+type DividerBlockType string
+
 // DnsRecord defines model for DnsRecord.
 type DnsRecord struct {
 	// Detail What is wrong, or why the lookup failed.
@@ -963,6 +1333,93 @@ type DomainList struct {
 // checks passed without it.
 type DomainStatus string
 
+// DuplicateEmailRequest defines model for DuplicateEmailRequest.
+type DuplicateEmailRequest struct {
+	Name *string `json:"name,omitempty"`
+}
+
+// Email defines model for Email.
+type Email struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// Document A BlockDocument for a blocks email, an HtmlDocument for an html one.
+	Document EmailDocument `json:"document"`
+	Id       string        `json:"id"`
+
+	// Kind `blocks`: built from blocks in the designer or with block commands.
+	// `html`: hand-written HTML, edited as code only.
+	Kind EmailKind `json:"kind"`
+
+	// Name For the account's own use; recipients never see it.
+	Name      string    `json:"name"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// Version Goes up by one with every save. Updates name the version they read.
+	Version int `json:"version"`
+}
+
+// EmailDocument A BlockDocument for a blocks email, an HtmlDocument for an html one.
+type EmailDocument struct {
+	union json.RawMessage
+}
+
+// EmailKind `blocks`: built from blocks in the designer or with block commands.
+// `html`: hand-written HTML, edited as code only.
+type EmailKind string
+
+// EmailList defines model for EmailList.
+type EmailList struct {
+	Data       []EmailSummary `json:"data"`
+	NextCursor *string        `json:"next_cursor"`
+}
+
+// EmailSettings The parts of an email outside its content. In a request, fields left
+// out take their defaults.
+type EmailSettings struct {
+	// BackgroundColor Examples: #18181b
+	BackgroundColor Color `json:"background_color"`
+
+	// ContentWidth Pixels, on desktop. Blocks emails only; html emails ignore it.
+	ContentWidth int `json:"content_width"`
+
+	// FromEmail Must be at one of the account's verified domains to send (the email check says so).
+	FromEmail *string `json:"from_email"`
+	FromName  string  `json:"from_name"`
+
+	// PreviewText The line inboxes show after the subject.
+	PreviewText string  `json:"preview_text"`
+	ReplyTo     *string `json:"reply_to"`
+	Subject     string  `json:"subject"`
+}
+
+// EmailSettingsUpdate Some or all settings. Fields left out keep their values.
+type EmailSettingsUpdate struct {
+	// BackgroundColor Examples: #18181b
+	BackgroundColor *Color  `json:"background_color,omitempty"`
+	ContentWidth    *int    `json:"content_width,omitempty"`
+	FromEmail       *string `json:"from_email,omitempty"`
+	FromName        *string `json:"from_name,omitempty"`
+	PreviewText     *string `json:"preview_text,omitempty"`
+	ReplyTo         *string `json:"reply_to,omitempty"`
+	Subject         *string `json:"subject,omitempty"`
+}
+
+// EmailSummary defines model for EmailSummary.
+type EmailSummary struct {
+	// BlockCount Blocks at the top level, footer included; 0 for an html email.
+	BlockCount int       `json:"block_count"`
+	CreatedAt  time.Time `json:"created_at"`
+	Id         string    `json:"id"`
+
+	// Kind `blocks`: built from blocks in the designer or with block commands.
+	// `html`: hand-written HTML, edited as code only.
+	Kind      EmailKind `json:"kind"`
+	Name      string    `json:"name"`
+	Subject   string    `json:"subject"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Version   int       `json:"version"`
+}
+
 // Error defines model for Error.
 type Error struct {
 	Error struct {
@@ -972,7 +1429,9 @@ type Error struct {
 		Code string `json:"code"`
 
 		// Details Extra facts some errors carry; absent otherwise. A
-		// `contact_limit` has `limit` and `count`.
+		// `contact_limit` has `limit` and `count`, an
+		// `invalid_document` has `path`, and a `version_conflict` has
+		// `current_version`.
 		Details *map[string]interface{} `json:"details,omitempty"`
 
 		// Hint What to do about it. Empty when there's nothing to add.
@@ -984,6 +1443,42 @@ type Error struct {
 		Message string `json:"message"`
 	} `json:"error"`
 }
+
+// FooterBlock The locked last block of every blocks email. Rendering adds the
+// account's postal address and the unsubscribe link; `text` is an
+// optional line above them.
+type FooterBlock struct {
+	// Id Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	Id   BlockId         `json:"id"`
+	Text string          `json:"text"`
+	Type FooterBlockType `json:"type"`
+}
+
+// FooterBlockType defines model for FooterBlock.Type.
+type FooterBlockType string
+
+// HeadingBlock defines model for HeadingBlock.
+type HeadingBlock struct {
+	Align Align `json:"align"`
+
+	// Id Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	Id    BlockId           `json:"id"`
+	Level HeadingBlockLevel `json:"level"`
+
+	// Text One line; merge tags allowed.
+	Text string           `json:"text"`
+	Type HeadingBlockType `json:"type"`
+}
+
+// HeadingBlockLevel defines model for HeadingBlock.Level.
+type HeadingBlockLevel int
+
+// HeadingBlockType defines model for HeadingBlock.Type.
+type HeadingBlockType string
 
 // Health defines model for Health.
 type Health struct {
@@ -1002,6 +1497,43 @@ type Health struct {
 
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
+
+// HtmlDocument An html email's settings and its markup (MG-22 adds the checks for sending).
+type HtmlDocument struct {
+	Html          string                    `json:"html"`
+	SchemaVersion HtmlDocumentSchemaVersion `json:"schema_version"`
+
+	// Settings The parts of an email outside its content. In a request, fields left
+	// out take their defaults.
+	Settings EmailSettings `json:"settings"`
+}
+
+// HtmlDocumentSchemaVersion defines model for HtmlDocument.SchemaVersion.
+type HtmlDocumentSchemaVersion int
+
+// ImageBlock defines model for ImageBlock.
+type ImageBlock struct {
+	Align Align  `json:"align"`
+	Alt   string `json:"alt"`
+
+	// Href Where a click on the image goes, if anywhere.
+	Href *string `json:"href"`
+
+	// Id Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	Id BlockId `json:"id"`
+
+	// Src An http or https address, usually one `mailgoose image upload` gave.
+	Src  string         `json:"src"`
+	Type ImageBlockType `json:"type"`
+
+	// Width Pixels; null for the full content width.
+	Width *int `json:"width"`
+}
+
+// ImageBlockType defines model for ImageBlock.Type.
+type ImageBlockType string
 
 // Import defines model for Import.
 type Import struct {
@@ -1097,6 +1629,15 @@ type RenameTagRequest struct {
 	Name string `json:"name"`
 }
 
+// ReplaceEmailDocumentRequest defines model for ReplaceEmailDocumentRequest.
+type ReplaceEmailDocumentRequest struct {
+	// Document A BlockDocument for a blocks email, an HtmlDocument for an html one.
+	Document EmailDocument `json:"document"`
+
+	// Version The version you read.
+	Version int `json:"version"`
+}
+
 // Session defines model for Session.
 type Session struct {
 	Account   Account   `json:"account"`
@@ -1163,6 +1704,41 @@ type SkippedRowList struct {
 	NextCursor *string      `json:"next_cursor"`
 }
 
+// SocialBlock defines model for SocialBlock.
+type SocialBlock struct {
+	Align Align `json:"align"`
+
+	// Id Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	Id    BlockId `json:"id"`
+	Links []struct {
+		Network SocialBlockLinksNetwork `json:"network"`
+		Url     string                  `json:"url"`
+	} `json:"links"`
+	Type SocialBlockType `json:"type"`
+}
+
+// SocialBlockLinksNetwork defines model for SocialBlock.Links.Network.
+type SocialBlockLinksNetwork string
+
+// SocialBlockType defines model for SocialBlock.Type.
+type SocialBlockType string
+
+// SpacerBlock defines model for SpacerBlock.
+type SpacerBlock struct {
+	Height int `json:"height"`
+
+	// Id Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	Id   BlockId         `json:"id"`
+	Type SpacerBlockType `json:"type"`
+}
+
+// SpacerBlockType defines model for SpacerBlock.Type.
+type SpacerBlockType string
+
 // Tag defines model for Tag.
 type Tag struct {
 	// ContactCount How many contacts have the tag, whatever their status.
@@ -1204,6 +1780,25 @@ type TagRef struct {
 	Name string `json:"name"`
 }
 
+// TextBlock defines model for TextBlock.
+type TextBlock struct {
+	Align Align `json:"align"`
+
+	// Id Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	Id BlockId `json:"id"`
+
+	// Text A small Markdown subset: `**bold**`, `*italic*`,
+	// `[link text](https://...)`, lists with `- ` or `1. `, and a blank
+	// line between paragraphs. Merge tags allowed.
+	Text string        `json:"text"`
+	Type TextBlockType `json:"type"`
+}
+
+// TextBlockType defines model for TextBlock.Type.
+type TextBlockType string
+
 // UpdateAccountRequest defines model for UpdateAccountRequest.
 type UpdateAccountRequest struct {
 	// FromEmail `null` removes it.
@@ -1230,6 +1825,17 @@ type UpdateContactRequest struct {
 
 // UpdateContactRequestStatus defines model for UpdateContactRequest.Status.
 type UpdateContactRequestStatus string
+
+// UpdateEmailRequest defines model for UpdateEmailRequest.
+type UpdateEmailRequest struct {
+	Name *string `json:"name,omitempty"`
+
+	// Settings Some or all settings. Fields left out keep their values.
+	Settings *EmailSettingsUpdate `json:"settings,omitempty"`
+
+	// Version The version you read.
+	Version int `json:"version"`
+}
 
 // User defines model for User.
 type User struct {
@@ -1266,6 +1872,9 @@ type Cursor = string
 // DomainId defines model for DomainId.
 type DomainId = string
 
+// EmailId defines model for EmailId.
+type EmailId = string
+
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
@@ -1293,6 +1902,9 @@ type CrossOrigin = Error
 // DomainConflict defines model for DomainConflict.
 type DomainConflict = Error
 
+// EmailVersionConflict defines model for EmailVersionConflict.
+type EmailVersionConflict = Error
+
 // Forbidden defines model for Forbidden.
 type Forbidden = Error
 
@@ -1301,6 +1913,9 @@ type IdempotencyConflict = Error
 
 // ImportRefused defines model for ImportRefused.
 type ImportRefused = Error
+
+// InvalidEmail defines model for InvalidEmail.
+type InvalidEmail = Error
 
 // NotFound defines model for NotFound.
 type NotFound = Error
@@ -1395,6 +2010,15 @@ type ListDomainsParams struct {
 	Name *string `form:"name,omitempty" json:"name,omitempty"`
 }
 
+// ListEmailsParams defines parameters for ListEmails.
+type ListEmailsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListImportsParams defines parameters for ListImports.
 type ListImportsParams struct {
 	// Limit Items per page.
@@ -1449,6 +2073,18 @@ type PollDeviceLoginJSONRequestBody = PollDeviceLoginRequest
 // CreateDomainJSONRequestBody defines body for CreateDomain for application/json ContentType.
 type CreateDomainJSONRequestBody = CreateDomainRequest
 
+// CreateEmailJSONRequestBody defines body for CreateEmail for application/json ContentType.
+type CreateEmailJSONRequestBody = CreateEmailRequest
+
+// UpdateEmailJSONRequestBody defines body for UpdateEmail for application/json ContentType.
+type UpdateEmailJSONRequestBody = UpdateEmailRequest
+
+// ReplaceEmailDocumentJSONRequestBody defines body for ReplaceEmailDocument for application/json ContentType.
+type ReplaceEmailDocumentJSONRequestBody = ReplaceEmailDocumentRequest
+
+// DuplicateEmailJSONRequestBody defines body for DuplicateEmail for application/json ContentType.
+type DuplicateEmailJSONRequestBody = DuplicateEmailRequest
+
 // CreateImportJSONRequestBody defines body for CreateImport for application/json ContentType.
 type CreateImportJSONRequestBody = CreateImportRequest
 
@@ -1472,6 +2108,702 @@ type TagContactsJSONRequestBody = ContactSelection
 
 // UntagContactsJSONRequestBody defines body for UntagContacts for application/json ContentType.
 type UntagContactsJSONRequestBody = ContactSelection
+
+// AsHeadingBlock returns the union data inside the Block as a HeadingBlock
+func (t Block) AsHeadingBlock() (HeadingBlock, error) {
+	var body HeadingBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromHeadingBlock overwrites any union data inside the Block as the provided HeadingBlock
+func (t *Block) FromHeadingBlock(v HeadingBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"heading"}`))
+	t.union = b
+	return err
+}
+
+// MergeHeadingBlock performs a merge with any union data inside the Block, using the provided HeadingBlock
+func (t *Block) MergeHeadingBlock(v HeadingBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"heading"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTextBlock returns the union data inside the Block as a TextBlock
+func (t Block) AsTextBlock() (TextBlock, error) {
+	var body TextBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTextBlock overwrites any union data inside the Block as the provided TextBlock
+func (t *Block) FromTextBlock(v TextBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"text"}`))
+	t.union = b
+	return err
+}
+
+// MergeTextBlock performs a merge with any union data inside the Block, using the provided TextBlock
+func (t *Block) MergeTextBlock(v TextBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"text"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsImageBlock returns the union data inside the Block as a ImageBlock
+func (t Block) AsImageBlock() (ImageBlock, error) {
+	var body ImageBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromImageBlock overwrites any union data inside the Block as the provided ImageBlock
+func (t *Block) FromImageBlock(v ImageBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"image"}`))
+	t.union = b
+	return err
+}
+
+// MergeImageBlock performs a merge with any union data inside the Block, using the provided ImageBlock
+func (t *Block) MergeImageBlock(v ImageBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"image"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsButtonBlock returns the union data inside the Block as a ButtonBlock
+func (t Block) AsButtonBlock() (ButtonBlock, error) {
+	var body ButtonBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromButtonBlock overwrites any union data inside the Block as the provided ButtonBlock
+func (t *Block) FromButtonBlock(v ButtonBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"button"}`))
+	t.union = b
+	return err
+}
+
+// MergeButtonBlock performs a merge with any union data inside the Block, using the provided ButtonBlock
+func (t *Block) MergeButtonBlock(v ButtonBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"button"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsDividerBlock returns the union data inside the Block as a DividerBlock
+func (t Block) AsDividerBlock() (DividerBlock, error) {
+	var body DividerBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromDividerBlock overwrites any union data inside the Block as the provided DividerBlock
+func (t *Block) FromDividerBlock(v DividerBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"divider"}`))
+	t.union = b
+	return err
+}
+
+// MergeDividerBlock performs a merge with any union data inside the Block, using the provided DividerBlock
+func (t *Block) MergeDividerBlock(v DividerBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"divider"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSpacerBlock returns the union data inside the Block as a SpacerBlock
+func (t Block) AsSpacerBlock() (SpacerBlock, error) {
+	var body SpacerBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSpacerBlock overwrites any union data inside the Block as the provided SpacerBlock
+func (t *Block) FromSpacerBlock(v SpacerBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"spacer"}`))
+	t.union = b
+	return err
+}
+
+// MergeSpacerBlock performs a merge with any union data inside the Block, using the provided SpacerBlock
+func (t *Block) MergeSpacerBlock(v SpacerBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"spacer"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsColumnsBlock returns the union data inside the Block as a ColumnsBlock
+func (t Block) AsColumnsBlock() (ColumnsBlock, error) {
+	var body ColumnsBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromColumnsBlock overwrites any union data inside the Block as the provided ColumnsBlock
+func (t *Block) FromColumnsBlock(v ColumnsBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"columns"}`))
+	t.union = b
+	return err
+}
+
+// MergeColumnsBlock performs a merge with any union data inside the Block, using the provided ColumnsBlock
+func (t *Block) MergeColumnsBlock(v ColumnsBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"columns"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSocialBlock returns the union data inside the Block as a SocialBlock
+func (t Block) AsSocialBlock() (SocialBlock, error) {
+	var body SocialBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSocialBlock overwrites any union data inside the Block as the provided SocialBlock
+func (t *Block) FromSocialBlock(v SocialBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"social"}`))
+	t.union = b
+	return err
+}
+
+// MergeSocialBlock performs a merge with any union data inside the Block, using the provided SocialBlock
+func (t *Block) MergeSocialBlock(v SocialBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"social"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsFooterBlock returns the union data inside the Block as a FooterBlock
+func (t Block) AsFooterBlock() (FooterBlock, error) {
+	var body FooterBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromFooterBlock overwrites any union data inside the Block as the provided FooterBlock
+func (t *Block) FromFooterBlock(v FooterBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"footer"}`))
+	t.union = b
+	return err
+}
+
+// MergeFooterBlock performs a merge with any union data inside the Block, using the provided FooterBlock
+func (t *Block) MergeFooterBlock(v FooterBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"footer"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t Block) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"type"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t Block) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "button":
+		return t.AsButtonBlock()
+	case "columns":
+		return t.AsColumnsBlock()
+	case "divider":
+		return t.AsDividerBlock()
+	case "footer":
+		return t.AsFooterBlock()
+	case "heading":
+		return t.AsHeadingBlock()
+	case "image":
+		return t.AsImageBlock()
+	case "social":
+		return t.AsSocialBlock()
+	case "spacer":
+		return t.AsSpacerBlock()
+	case "text":
+		return t.AsTextBlock()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t Block) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *Block) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsHeadingBlock returns the union data inside the ColumnContentBlock as a HeadingBlock
+func (t ColumnContentBlock) AsHeadingBlock() (HeadingBlock, error) {
+	var body HeadingBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromHeadingBlock overwrites any union data inside the ColumnContentBlock as the provided HeadingBlock
+func (t *ColumnContentBlock) FromHeadingBlock(v HeadingBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"heading"}`))
+	t.union = b
+	return err
+}
+
+// MergeHeadingBlock performs a merge with any union data inside the ColumnContentBlock, using the provided HeadingBlock
+func (t *ColumnContentBlock) MergeHeadingBlock(v HeadingBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"heading"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTextBlock returns the union data inside the ColumnContentBlock as a TextBlock
+func (t ColumnContentBlock) AsTextBlock() (TextBlock, error) {
+	var body TextBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTextBlock overwrites any union data inside the ColumnContentBlock as the provided TextBlock
+func (t *ColumnContentBlock) FromTextBlock(v TextBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"text"}`))
+	t.union = b
+	return err
+}
+
+// MergeTextBlock performs a merge with any union data inside the ColumnContentBlock, using the provided TextBlock
+func (t *ColumnContentBlock) MergeTextBlock(v TextBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"text"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsImageBlock returns the union data inside the ColumnContentBlock as a ImageBlock
+func (t ColumnContentBlock) AsImageBlock() (ImageBlock, error) {
+	var body ImageBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromImageBlock overwrites any union data inside the ColumnContentBlock as the provided ImageBlock
+func (t *ColumnContentBlock) FromImageBlock(v ImageBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"image"}`))
+	t.union = b
+	return err
+}
+
+// MergeImageBlock performs a merge with any union data inside the ColumnContentBlock, using the provided ImageBlock
+func (t *ColumnContentBlock) MergeImageBlock(v ImageBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"image"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsButtonBlock returns the union data inside the ColumnContentBlock as a ButtonBlock
+func (t ColumnContentBlock) AsButtonBlock() (ButtonBlock, error) {
+	var body ButtonBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromButtonBlock overwrites any union data inside the ColumnContentBlock as the provided ButtonBlock
+func (t *ColumnContentBlock) FromButtonBlock(v ButtonBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"button"}`))
+	t.union = b
+	return err
+}
+
+// MergeButtonBlock performs a merge with any union data inside the ColumnContentBlock, using the provided ButtonBlock
+func (t *ColumnContentBlock) MergeButtonBlock(v ButtonBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"button"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsDividerBlock returns the union data inside the ColumnContentBlock as a DividerBlock
+func (t ColumnContentBlock) AsDividerBlock() (DividerBlock, error) {
+	var body DividerBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromDividerBlock overwrites any union data inside the ColumnContentBlock as the provided DividerBlock
+func (t *ColumnContentBlock) FromDividerBlock(v DividerBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"divider"}`))
+	t.union = b
+	return err
+}
+
+// MergeDividerBlock performs a merge with any union data inside the ColumnContentBlock, using the provided DividerBlock
+func (t *ColumnContentBlock) MergeDividerBlock(v DividerBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"divider"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSpacerBlock returns the union data inside the ColumnContentBlock as a SpacerBlock
+func (t ColumnContentBlock) AsSpacerBlock() (SpacerBlock, error) {
+	var body SpacerBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSpacerBlock overwrites any union data inside the ColumnContentBlock as the provided SpacerBlock
+func (t *ColumnContentBlock) FromSpacerBlock(v SpacerBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"spacer"}`))
+	t.union = b
+	return err
+}
+
+// MergeSpacerBlock performs a merge with any union data inside the ColumnContentBlock, using the provided SpacerBlock
+func (t *ColumnContentBlock) MergeSpacerBlock(v SpacerBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"spacer"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsSocialBlock returns the union data inside the ColumnContentBlock as a SocialBlock
+func (t ColumnContentBlock) AsSocialBlock() (SocialBlock, error) {
+	var body SocialBlock
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSocialBlock overwrites any union data inside the ColumnContentBlock as the provided SocialBlock
+func (t *ColumnContentBlock) FromSocialBlock(v SocialBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"social"}`))
+	t.union = b
+	return err
+}
+
+// MergeSocialBlock performs a merge with any union data inside the ColumnContentBlock, using the provided SocialBlock
+func (t *ColumnContentBlock) MergeSocialBlock(v SocialBlock) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"type":"social"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ColumnContentBlock) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"type"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t ColumnContentBlock) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "button":
+		return t.AsButtonBlock()
+	case "divider":
+		return t.AsDividerBlock()
+	case "heading":
+		return t.AsHeadingBlock()
+	case "image":
+		return t.AsImageBlock()
+	case "social":
+		return t.AsSocialBlock()
+	case "spacer":
+		return t.AsSpacerBlock()
+	case "text":
+		return t.AsTextBlock()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t ColumnContentBlock) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ColumnContentBlock) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
+// AsBlockDocument returns the union data inside the EmailDocument as a BlockDocument
+func (t EmailDocument) AsBlockDocument() (BlockDocument, error) {
+	var body BlockDocument
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromBlockDocument overwrites any union data inside the EmailDocument as the provided BlockDocument
+func (t *EmailDocument) FromBlockDocument(v BlockDocument) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeBlockDocument performs a merge with any union data inside the EmailDocument, using the provided BlockDocument
+func (t *EmailDocument) MergeBlockDocument(v BlockDocument) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsHtmlDocument returns the union data inside the EmailDocument as a HtmlDocument
+func (t EmailDocument) AsHtmlDocument() (HtmlDocument, error) {
+	var body HtmlDocument
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromHtmlDocument overwrites any union data inside the EmailDocument as the provided HtmlDocument
+func (t *EmailDocument) FromHtmlDocument(v HtmlDocument) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeHtmlDocument performs a merge with any union data inside the EmailDocument, using the provided HtmlDocument
+func (t *EmailDocument) MergeHtmlDocument(v HtmlDocument) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t EmailDocument) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *EmailDocument) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -1559,6 +2891,27 @@ type ServerInterface interface {
 	// VerifyDomain Check a sending domain now
 	// (POST /v1/domains/{domain_id}/verify)
 	VerifyDomain(w http.ResponseWriter, r *http.Request, domainId DomainId)
+	// ListEmails List emails
+	// (GET /v1/emails)
+	ListEmails(w http.ResponseWriter, r *http.Request, params ListEmailsParams)
+	// CreateEmail Create an email
+	// (POST /v1/emails)
+	CreateEmail(w http.ResponseWriter, r *http.Request)
+	// DeleteEmail Delete an email
+	// (DELETE /v1/emails/{email_id})
+	DeleteEmail(w http.ResponseWriter, r *http.Request, emailId EmailId)
+	// GetEmail Get an email
+	// (GET /v1/emails/{email_id})
+	GetEmail(w http.ResponseWriter, r *http.Request, emailId EmailId)
+	// UpdateEmail Rename an email or change its settings
+	// (PATCH /v1/emails/{email_id})
+	UpdateEmail(w http.ResponseWriter, r *http.Request, emailId EmailId)
+	// ReplaceEmailDocument Replace an email's whole document
+	// (PUT /v1/emails/{email_id}/document)
+	ReplaceEmailDocument(w http.ResponseWriter, r *http.Request, emailId EmailId)
+	// DuplicateEmail Duplicate an email
+	// (POST /v1/emails/{email_id}/duplicate)
+	DuplicateEmail(w http.ResponseWriter, r *http.Request, emailId EmailId)
 	// ListImports List CSV imports
 	// (GET /v1/imports)
 	ListImports(w http.ResponseWriter, r *http.Request, params ListImportsParams)
@@ -2412,6 +3765,196 @@ func (siw *ServerInterfaceWrapper) VerifyDomain(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListEmails operation middleware
+func (siw *ServerInterfaceWrapper) ListEmails(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListEmailsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEmails(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateEmail operation middleware
+func (siw *ServerInterfaceWrapper) CreateEmail(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateEmail(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteEmail operation middleware
+func (siw *ServerInterfaceWrapper) DeleteEmail(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteEmail(w, r, emailId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetEmail operation middleware
+func (siw *ServerInterfaceWrapper) GetEmail(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetEmail(w, r, emailId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateEmail operation middleware
+func (siw *ServerInterfaceWrapper) UpdateEmail(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateEmail(w, r, emailId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReplaceEmailDocument operation middleware
+func (siw *ServerInterfaceWrapper) ReplaceEmailDocument(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReplaceEmailDocument(w, r, emailId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DuplicateEmail operation middleware
+func (siw *ServerInterfaceWrapper) DuplicateEmail(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DuplicateEmail(w, r, emailId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListImports operation middleware
 func (siw *ServerInterfaceWrapper) ListImports(w http.ResponseWriter, r *http.Request) {
 
@@ -2993,6 +4536,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports", wrapper.CreateImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}", wrapper.GetImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}/skipped-rows", wrapper.ListImportSkippedRows)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails", wrapper.ListEmails)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails", wrapper.CreateEmail)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/emails/{email_id}", wrapper.DeleteEmail)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails/{email_id}", wrapper.GetEmail)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/emails/{email_id}", wrapper.UpdateEmail)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/emails/{email_id}/document", wrapper.ReplaceEmailDocument)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/duplicate", wrapper.DuplicateEmail)
 
 	return m
 }

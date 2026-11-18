@@ -22,6 +22,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
+	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 )
 
@@ -53,6 +54,8 @@ type Server struct {
 	Domains *domains.Service
 	// Contacts is the account audience; nil without a database.
 	Contacts *contacts.Service
+	// Emails stores the account's emails; nil without a database.
+	Emails *emails.Service
 	// TrustedOrigins are other origins (such as the web app's, when it isn't
 	// served from the API's own origin) allowed to send cookie-authenticated
 	// requests that change something. The API's own origin always is.
