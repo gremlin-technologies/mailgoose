@@ -1,0 +1,39 @@
+{
+  "eventType": "Delivery",
+  "mail": {
+    "timestamp": "2026-11-18T12:00:00.000Z",
+    "source": "Pat's Bakery <hello@patsbakery.com>",
+    "sendingAccountId": "123456789012",
+    "messageId": "{{MESSAGE_ID}}",
+    "destination": ["{{ADDRESS}}"],
+    "headersTruncated": false,
+    "headers": [
+      {"name": "From", "value": "Pat's Bakery <hello@patsbakery.com>"},
+      {"name": "To", "value": "{{ADDRESS}}"},
+      {"name": "Subject", "value": "Fresh bread"}
+    ],
+    "commonHeaders": {
+      "from": ["Pat's Bakery <hello@patsbakery.com>"],
+      "to": ["{{ADDRESS}}"],
+      "messageId": "{{MESSAGE_ID}}",
+      "subject": "Fresh bread"
+    },
+    "tags": {
+      "ses:configuration-set": ["mailgoose-staging"],
+      "ses:source-ip": ["192.0.2.0"],
+      "ses:from-domain": ["patsbakery.com"],
+      "ses:caller-identity": ["mailgoose-worker"],
+      "mg_kind": ["{{KIND}}"],
+      "mg_account": ["{{ACCOUNT_ID}}"],
+      "mg_campaign": ["{{CAMPAIGN_ID}}"]
+    }
+  },
+  "delivery": {
+    "timestamp": "2026-11-18T12:00:01.250Z",
+    "processingTimeMillis": 1250,
+    "recipients": ["{{ADDRESS}}"],
+    "smtpResponse": "250 2.6.0 Message received",
+    "reportingMTA": "a8-70.smtp-out.amazonses.com",
+    "remoteMtaIp": "198.51.100.0"
+  }
+}
