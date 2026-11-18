@@ -513,6 +513,29 @@ enforces them; only draft and scheduled campaigns can be edited, and only
 drafts deleted. Every edit moves `version` on. Launching and sending come
 with MG-29 to MG-32.
 
+## Unsubscribing
+
+Every campaign email's `{{unsubscribe_url}}` is `<app URL>/u/<token>`, and
+`render` adds the RFC 8058 `List-Unsubscribe` and `List-Unsubscribe-Post`
+headers for the same address (`render.UnsubscribeHeaders`). The token
+(`internal/unsubscribe`) names the account, contact and campaign, signed
+with a key the account gets the first time it needs one; it never expires.
+
+- `GET /u/<token>` shows a page asking to confirm, and changes nothing, so a
+  link checker that opens it doesn't unsubscribe anyone.
+- `POST /u/<token>` unsubscribes: the page's button, or a mail app's
+  one-click POST of `List-Unsubscribe=One-Click`. It's immediate, needs no
+  sign-in, records the time, campaign and source in `unsubscribes`, and
+  doing it again changes nothing.
+- A changed, cut-off or unknown-format token gets a friendly 400 page and
+  changes nothing.
+
+These are pages for recipients, not API operations: they're outside the
+OpenAPI spec and the API's sign-in, cross-origin and idempotency layers,
+with their own per-IP limit of 1,200 a minute (one-click POSTs come from a
+mail provider's few servers). Request logs show the path as
+`/u/[token]`.
+
 ## Signup forms
 
 `internal/forms` keeps an account's signup forms; the API has

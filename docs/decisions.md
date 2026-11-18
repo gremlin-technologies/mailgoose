@@ -23,6 +23,32 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Unsubscribe links (MG-28, reversible defaults)
+
+Picked while building MG-28; easy to change.
+
+- **Opening the link doesn't unsubscribe; one click on its page does.**
+  Mail security scanners open links in emails, so a GET that unsubscribed
+  would remove people who never clicked. The mail app's one-click button
+  (RFC 8058) posts and needs no page.
+- **Tokens never expire** and name the account, contact and campaign,
+  signed with a per-account key kept in the database (`unsubscribe_keys`),
+  so no new server secret is needed and the API and workers can both make
+  and check them. A tampered token fails its signature before anything is
+  looked up.
+- **Unsubscribe pages sit on the app's URL** (`WebURL`, `/u/<token>`), the
+  same origin as the web app. The send workers (MG-31) need that URL to
+  build links.
+- **Unsubscribing records** the time, campaign and source (`link` or
+  `one_click`). Records outlive the contact and the campaign, so a report's
+  unsubscribe count (MG-38) stays right. Bounced and complained contacts
+  stay as they are; an unconfirmed contact becomes unsubscribed.
+- **The done page points to the account's signup form to come back.** No
+  "resubscribe" button, which keeps the open question on resubscribing
+  open.
+- **The pages show the address and the account's name**, so a person with
+  more than one address knows which one left.
+
 ## 2026-11-18: Campaigns (MG-27, reversible defaults)
 
 Picked while building MG-27; easy to change.

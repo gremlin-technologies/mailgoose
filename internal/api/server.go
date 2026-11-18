@@ -26,6 +26,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
+	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 )
 
@@ -63,6 +64,9 @@ type Server struct {
 	Forms *forms.Service
 	// Campaigns stores the account's campaigns; nil without a database.
 	Campaigns *campaigns.Service
+	// Unsubscribe checks recipients' unsubscribe links; nil without a
+	// database, which makes the unsubscribe pages answer 503.
+	Unsubscribe *unsubscribe.Service
 	// TrustedOrigins are other origins (such as the web app's, when it isn't
 	// served from the API's own origin) allowed to send cookie-authenticated
 	// requests that change something. The API's own origin always is.
@@ -112,18 +116,25 @@ func (s *Server) Handler() http.Handler {
 	h = s.logRequests(h)
 	h = s.recoverer(h)
 	api := requestIDs(h)
-	if s.Web == nil {
-		return api
-	}
+	// Recipient pages (unsubscribing) have their own, higher limit and none
+	// of the API's sign-in layers.
+	pages := requestIDs(s.recoverer(s.logRequests(
+		(&RateLimiter{PerMinute: recipientPagesPerMinute, Now: now}).Middleware(s.recipientPages()))))
 	// The web app skips the API's middleware: its files need no rate limit,
 	// session lookup or idempotency.
-	web := requestIDs(s.recoverer(s.Web))
+	var web http.Handler
+	if s.Web != nil {
+		web = requestIDs(s.recoverer(s.Web))
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isAPIRequest(mux, r) {
+		switch {
+		case isRecipientPage(r.URL.Path):
+			pages.ServeHTTP(w, r)
+		case web == nil || isAPIRequest(mux, r):
 			api.ServeHTTP(w, r)
-			return
+		default:
+			web.ServeHTTP(w, r)
 		}
-		web.ServeHTTP(w, r)
 	})
 }
 
@@ -215,7 +226,7 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		}
 		s.Log.InfoContext(r.Context(), "request",
 			"method", r.Method,
-			"path", r.URL.Path,
+			"path", logPath(r.URL.Path),
 			"status", rec.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
@@ -229,7 +240,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 				if err, ok := v.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 					panic(v)
 				}
-				s.Log.ErrorContext(r.Context(), "panic in handler", "panic", v, "path", r.URL.Path)
+				s.Log.ErrorContext(r.Context(), "panic in handler", "panic", v, "path", logPath(r.URL.Path))
 				WriteError(w, Internal())
 			}
 		}()

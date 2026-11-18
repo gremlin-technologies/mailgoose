@@ -131,6 +131,10 @@ func TestMergeTags(t *testing.T) {
 	if !strings.Contains(m.Text, "Hi <Jo>  <a&b@example.com>") || !strings.Contains(m.Text, "Unsubscribe: https://u.example/u?x=1&y=2") {
 		t.Errorf("text:\n%s", m.Text)
 	}
+	if len(m.Headers) != 2 || m.Headers[0] != (Header{"List-Unsubscribe", "<https://u.example/u?x=1&y=2>"}) ||
+		m.Headers[1] != (Header{"List-Unsubscribe-Post", "List-Unsubscribe=One-Click"}) {
+		t.Errorf("headers %+v", m.Headers)
+	}
 
 	// Fallbacks fill empty values, escaped once in html.
 	d = doc(t, `{"id":"t","type":"text","text":"Hi {{first_name|Pat & co}}"}`, "")
@@ -285,5 +289,16 @@ func BenchmarkRender20Blocks(b *testing.B) {
 			b.Fatal(err)
 		}
 		tpl.Personalize(pat)
+	}
+}
+
+func TestUnsubscribeHeaders(t *testing.T) {
+	for _, url := range []string{"", "  ", "https://x.example/u/a>b", "https://x.example/u/a\r\nBcc: x@example.com"} {
+		if h := UnsubscribeHeaders(url); h != nil {
+			t.Errorf("%q: %+v", url, h)
+		}
+	}
+	if h := UnsubscribeHeaders(" https://x.example/u/tok "); len(h) != 2 || h[0].Value != "<https://x.example/u/tok>" {
+		t.Errorf("headers %+v", h)
 	}
 }
