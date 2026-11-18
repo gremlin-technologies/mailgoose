@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -44,22 +45,36 @@ func (s *Service) lockScheduled(ctx context.Context, tx pgx.Tx, accountID, campa
 // campaign changes nothing. One that has started sending can't be
 // cancelled this way (a StatusError).
 func (s *Service) Cancel(ctx context.Context, accountID, campaignID string) (*campaigns.Campaign, error) {
+	return s.end(ctx, accountID, campaignID, "cancelled before sending", campaigns.StatusScheduled)
+}
+
+// Stop is the kill switch for one campaign (CMP-8): a scheduled, sending or
+// paused campaign is cancelled where it stands. Nobody else gets it, the
+// credits for who's left come back, and a batch already on its way sends
+// nothing more (each send checks the campaign first). Copies being sent
+// at that moment still go. Stopping a cancelled campaign changes nothing.
+func (s *Service) Stop(ctx context.Context, accountID, campaignID string) (*campaigns.Campaign, error) {
+	return s.end(ctx, accountID, campaignID, "stopped by mailgoose",
+		campaigns.StatusScheduled, campaigns.StatusSending, campaigns.StatusPaused)
+}
+
+// end cancels a campaign in one of the allowed statuses.
+func (s *Service) end(ctx context.Context, accountID, campaignID, note string, allowed ...string) (*campaigns.Campaign, error) {
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		c, err := s.lockScheduled(ctx, tx, accountID, campaignID)
 		if err != nil {
 			return err
 		}
-		switch c.Status {
-		case campaigns.StatusCancelled:
+		if c.Status == campaigns.StatusCancelled {
 			return nil
-		case campaigns.StatusScheduled:
-		default:
+		}
+		if !slices.Contains(allowed, c.Status) {
 			return &campaigns.StatusError{Status: c.Status, To: campaigns.StatusCancelled}
 		}
 		now := s.now()
 		tag, err := tx.Exec(ctx, `
-			UPDATE campaign_recipients SET status = 'skipped', error = 'cancelled before sending'
-			WHERE campaign_id = $1 AND status = 'queued'`, campaignID)
+			UPDATE campaign_recipients SET status = 'skipped', error = $2
+			WHERE campaign_id = $1 AND status = 'queued'`, campaignID, note)
 		if err != nil {
 			return err
 		}

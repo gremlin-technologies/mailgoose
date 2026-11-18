@@ -28,6 +28,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 )
 
 // SoftBounceLimit is how many soft bounces in a row suppress an address.
@@ -57,6 +58,9 @@ const (
 type Service struct {
 	DB  *pgxpool.Pool
 	Log *slog.Logger
+	// Alert is told when a campaign's bounces or complaints pause its
+	// account; nil tells no one.
+	Alert func(ctx context.Context, p sending.AutoPause)
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }
@@ -319,7 +323,21 @@ func (s *Service) store(ctx context.Context, e *event, p *parsed, key string) (O
 	if err := s.apply(ctx, tx, p, contactIDs); err != nil {
 		return "", err
 	}
-	return Stored, tx.Commit(ctx)
+	// A campaign's hard bounces and complaints can pause its account
+	// (CMP-6).
+	var paused *sending.AutoPause
+	if campaignID != nil && (p.typ == TypeComplaint || p.typ == TypeBounce && p.hard) {
+		if paused, err = sending.CheckCampaign(ctx, tx, *campaignID, s.now()); err != nil {
+			return "", err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	if paused != nil && s.Alert != nil {
+		s.Alert(ctx, *paused)
+	}
+	return Stored, nil
 }
 
 // contactsFor is who the event is about: the send record's contact, or for

@@ -24,6 +24,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
+	"github.com/gremlin-technologies/mailgoose/internal/admin"
 	"github.com/gremlin-technologies/mailgoose/internal/api"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
@@ -79,6 +80,7 @@ func newRoot(log *slog.Logger) *cobra.Command {
 			RunE:  func(cmd *cobra.Command, _ []string) error { return runWorker(cmd.Context(), log) },
 		},
 		newMigrateCmd(log),
+		newAdminCmd(log),
 		&cobra.Command{
 			Use:   "version",
 			Short: "Print the version",
@@ -139,6 +141,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Unsubscribe: srv.Unsubscribe, Mail: sender}
 		srv.Signups = &signups.Service{DB: pool, Forms: srv.Forms, Settings: &auth.Service{DB: pool},
 			Domains: srv.Domains, Mail: sender}
+		srv.Admin = &admin.Service{DB: pool, Sending: srv.Sending, Log: log.With("component", "admin")}
 		// With a send queue, the API puts batches on it, since only the
 		// API's role may send to it. Without one, the worker does it all.
 		if cfg.SendQueueURL != "" {
@@ -257,7 +260,9 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	// One handler takes one batch at a time, at the configured rate.
 	queues[0].Handler = worker.HandlerFunc(p.SQSHandler())
 	// Deliveries, bounces and complaints from SES.
-	events := &sesevents.Service{DB: pool, Log: log.With("queue", "ses-events")}
+	alert := &sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
+		To: cfg.OpsAlertEmail, Log: log.With("job", "health")}
+	events := &sesevents.Service{DB: pool, Log: log.With("queue", "ses-events"), Alert: alert.AutoPaused}
 	queues[1].Handler = worker.HandlerFunc(events.SQSHandler())
 
 	var wg sync.WaitGroup
@@ -294,6 +299,58 @@ func newPipeline(cfg config.Config, pool *pgxpool.Pool, sender mail.Sender, log 
 		},
 		Log: log.With("job", "send"),
 	}
+}
+
+// newAdminCmd makes and unmakes mailgoose admins (OPS-6). It needs the
+// database, so only someone who can run the server (the ECS task, or the
+// owner's machine) can grant the role; there is no API for it.
+func newAdminCmd(log *slog.Logger) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "admin",
+		Short: "Grant or revoke the admin role",
+	}
+	var reason string
+	set := func(grant bool) func(*cobra.Command, []string) error {
+		return func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			cfg, err := config.Load()
+			if err != nil {
+				return err
+			}
+			pool, err := openDB(ctx, cfg)
+			if err != nil {
+				return err
+			}
+			defer pool.Close()
+			svc := &admin.Service{DB: pool, Log: log.With("component", "admin")}
+			if err := svc.SetAdmin(ctx, admin.Server, args[0], grant, reason); err != nil {
+				return err
+			}
+			if grant {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s is an admin now.\n", args[0])
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "%s isn't an admin any more.\n", args[0])
+			}
+			return nil
+		}
+	}
+	grant := &cobra.Command{
+		Use:   "grant <email> --reason <why>",
+		Short: "Make the person with this address an admin",
+		Args:  cobra.ExactArgs(1),
+		RunE:  set(true),
+	}
+	revoke := &cobra.Command{
+		Use:   "revoke <email> --reason <why>",
+		Short: "Stop the person with this address being an admin",
+		Args:  cobra.ExactArgs(1),
+		RunE:  set(false),
+	}
+	for _, c := range []*cobra.Command{grant, revoke} {
+		c.Flags().StringVar(&reason, "reason", "", "why (logged)")
+	}
+	cmd.AddCommand(grant, revoke)
+	return cmd
 }
 
 func newMigrateCmd(log *slog.Logger) *cobra.Command {

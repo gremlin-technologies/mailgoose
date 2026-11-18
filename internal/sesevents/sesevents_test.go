@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -16,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 )
 
 // The payloads in testdata follow the event records SES publishes for a
@@ -460,5 +462,43 @@ func TestSQSHandler(t *testing.T) {
 	}
 	if c := h.contactState(t, h.contact); c.status != "bounced" {
 		t.Errorf("status = %s", c.status)
+	}
+}
+
+func TestComplaintsPauseAccount(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	// 1,000 copies of the campaign went out.
+	if _, err := h.db.Exec(ctx, `
+		INSERT INTO campaign_recipients (account_id, campaign_id, status, sent_at, message_id)
+		SELECT $1, $2, 'sent', now(), 'copy-' || i FROM generate_series(1, 999) i`, h.acc, h.campaign); err != nil {
+		t.Fatal(err)
+	}
+	var alerts []sending.AutoPause
+	h.svc.Alert = func(_ context.Context, p sending.AutoPause) { alerts = append(alerts, p) }
+	complain := func(i int) {
+		t.Helper()
+		id := fmt.Sprintf("copy-%d", i)
+		if got := h.handle(t, h.payload(t, "complaint", "{{MESSAGE_ID}}", id)); got != Stored {
+			t.Fatalf("complaint %d: %s", i, got)
+		}
+	}
+	for i := 1; i <= 3; i++ {
+		complain(i)
+	}
+	if len(alerts) != 0 {
+		t.Fatalf("paused at 0.3%%: %+v", alerts)
+	}
+	complain(4)
+	if len(alerts) != 1 || alerts[0].AccountID != h.acc || alerts[0].Rates.Complaints != 4 || alerts[0].Rates.Sent != 1000 {
+		t.Fatalf("alerts = %+v", alerts)
+	}
+	var paused bool
+	if err := h.db.QueryRow(ctx, `SELECT sending_paused_at IS NOT NULL FROM accounts WHERE id = $1`, h.acc).Scan(&paused); err != nil || !paused {
+		t.Errorf("account paused = %v, %v", paused, err)
+	}
+	complain(5)
+	if len(alerts) != 1 {
+		t.Errorf("alerted again for the same campaign: %d", len(alerts))
 	}
 }

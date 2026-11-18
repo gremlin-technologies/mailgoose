@@ -3020,6 +3020,346 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/accounts:
+    get:
+      operationId: findAdminAccounts
+      summary: Find accounts (admin)
+      description: |
+        mailgoose staff only (OPS-6): accounts whose id is `q`, or whose
+        owner's address, name or sending domain contains it. At most `limit`
+        of them, newest first; there's no next page. Admin endpoints need a
+        signed-in admin (a CLI token or web session, not an API key) and
+        answer 403 `admin_only` to anyone else.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - name: q
+          in: query
+          description: |
+            An account id, or part of an address, name or domain. Required;
+            the endpoint answers 400 `invalid_parameter` without it (it's
+            checked after the caller is, so others get 401 or 403 first).
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The accounts found.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAccountList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/accounts/{account_id}:
+    get:
+      operationId: getAdminAccount
+      summary: Look at an account (admin)
+      description: |
+        mailgoose staff only: an account's owner, pause, send limit, credits,
+        last 30 days' bounces and complaints, held imports and live
+        campaigns.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      responses:
+        "200":
+          $ref: "#/components/responses/AdminAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/accounts/{account_id}/pause:
+    post:
+      operationId: pauseAccount
+      summary: Pause an account's sending (admin)
+      description: |
+        mailgoose staff only, the kill switch for an account (CMP-8): nothing
+        more is sent from it, from the next copy on. Its campaigns stay as
+        they are and carry on when it's unpaused. `reason` is logged and
+        shown to the account as why. Pausing a paused account replaces the
+        reason.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReasonRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AdminAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/InvalidAdminRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/accounts/{account_id}/unpause:
+    post:
+      operationId: unpauseAccount
+      summary: Let an account send again (admin)
+      description: |
+        mailgoose staff only: lifts a pause, an admin's or an automatic one.
+        The account's sending campaigns carry on where they stopped.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReasonRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AdminAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/InvalidAdminRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/accounts/{account_id}/credits:
+    post:
+      operationId: grantCredits
+      summary: Grant credits (admin)
+      description: |
+        mailgoose staff only: gives the account credits, which last 24
+        months like bought ones. They show in its history as a `grant`.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GrantCreditsRequest"
+      responses:
+        "200":
+          description: Granted.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditGrant"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/InvalidAdminRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/campaigns/{campaign_id}/stop:
+    post:
+      operationId: stopCampaign
+      summary: Stop a campaign in flight (admin)
+      description: |
+        mailgoose staff only, the kill switch for a campaign (CMP-8): a
+        scheduled, sending or paused campaign is cancelled where it stands.
+        Nobody else gets it, from the next copy on, and the credits for who's
+        left come back. Stopping a cancelled campaign changes nothing; one
+        that's a draft or finished answers 409 `campaign_locked`.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReasonRequest"
+      responses:
+        "200":
+          description: Stopped, now or before.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Campaign"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/CampaignConflict"
+        "422":
+          $ref: "#/components/responses/InvalidAdminRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/imports/{import_id}/approve:
+    post:
+      operationId: approveImport
+      summary: Approve a held import (admin)
+      description: |
+        mailgoose staff only (CON-6): a held import's contacts can be mailed.
+        An import that isn't held answers 409 `import_not_held`.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ImportId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReasonRequest"
+      responses:
+        "200":
+          description: Approved.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovedImport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: "`import_not_held`: the import isn't waiting for approval."
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          $ref: "#/components/responses/InvalidAdminRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/actions:
+    get:
+      operationId: listAdminActions
+      summary: The admin log (admin)
+      description: |
+        mailgoose staff only: every admin action and automatic pause, newest
+        first, with who did it and why; for one account with `account_id`.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - name: account_id
+          in: query
+          required: false
+          description: Only this account's actions.
+          schema:
+            type: string
+            format: uuid
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of the log.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminActionList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   securitySchemes:
     apiKey:
@@ -5134,6 +5474,197 @@ components:
                 `invalid_document` has `path`, and a `version_conflict` has
                 `current_version`.
               additionalProperties: true
+    AdminReasonRequest:
+      type: object
+      additionalProperties: false
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          description: Why, for the admin log (and, for a pause, the account). At most 500 characters.
+    GrantCreditsRequest:
+      type: object
+      additionalProperties: false
+      required: [amount, reason]
+      properties:
+        amount:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000
+        reason:
+          type: string
+    AdminRates:
+      type: object
+      description: Copies sent, and the recipients who hard bounced or complained.
+      required: [sent, hard_bounces, complaints]
+      properties:
+        sent:
+          type: integer
+        hard_bounces:
+          type: integer
+        complaints:
+          type: integer
+    AdminAccountSummary:
+      type: object
+      required: [id, name, status, plan, owner_email, sending_paused_at, sending_paused_reason, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+        plan:
+          type: string
+        owner_email:
+          type: [string, "null"]
+        sending_paused_at:
+          type: [string, "null"]
+          format: date-time
+        sending_paused_reason:
+          type: [string, "null"]
+        created_at:
+          type: string
+          format: date-time
+    AdminAccountList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminAccountSummary"
+        next_cursor:
+          type: "null"
+    AdminHeldImport:
+      type: object
+      required: [id, file_name, total_rows, hold_reason, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        file_name:
+          type: [string, "null"]
+        total_rows:
+          type: integer
+        hold_reason:
+          type: string
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    AdminLiveCampaign:
+      type: object
+      required: [id, name, status, send_at, recipients, rates]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+        send_at:
+          type: [string, "null"]
+          format: date-time
+        recipients:
+          type: integer
+        rates:
+          $ref: "#/components/schemas/AdminRates"
+    AdminAccount:
+      allOf:
+        - $ref: "#/components/schemas/AdminAccountSummary"
+        - type: object
+          required: [daily_send_limit, contacts, credit_balance, last_30_days, held_imports, live_campaigns]
+          properties:
+            daily_send_limit:
+              type: [integer, "null"]
+              description: The account's own daily limit; null follows the schedule.
+            contacts:
+              type: integer
+            credit_balance:
+              type: integer
+              format: int64
+            last_30_days:
+              $ref: "#/components/schemas/AdminRates"
+            held_imports:
+              type: array
+              items:
+                $ref: "#/components/schemas/AdminHeldImport"
+            live_campaigns:
+              type: array
+              items:
+                $ref: "#/components/schemas/AdminLiveCampaign"
+    CreditGrant:
+      type: object
+      required: [account_id, amount, expires_at, credit_balance]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          format: int64
+        expires_at:
+          type: string
+          format: date-time
+        credit_balance:
+          type: integer
+          format: int64
+    ApprovedImport:
+      type: object
+      required: [id, account_id, contacts_released]
+      properties:
+        id:
+          type: string
+          format: uuid
+        account_id:
+          type: string
+          format: uuid
+        contacts_released:
+          type: integer
+          format: int64
+          description: How many of its contacts can now be mailed.
+    AdminAction:
+      type: object
+      required: [id, actor, action, account_id, target_id, reason, details, created_at]
+      properties:
+        id:
+          type: integer
+          format: int64
+        actor:
+          type: string
+          description: The admin's address, `mailgoosed` (the server's command line) or `automatic`.
+        action:
+          type: string
+          enum: [grant_admin, revoke_admin, pause, unpause, auto_pause, stop_campaign, approve_import, grant_credits]
+        account_id:
+          type: [string, "null"]
+          format: uuid
+        target_id:
+          type: [string, "null"]
+          description: The campaign, import or user acted on.
+        reason:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    AdminActionList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminAction"
+        next_cursor:
+          type: [string, "null"]
   parameters:
     Limit:
       name: limit
@@ -5171,6 +5702,14 @@ components:
       in: path
       required: true
       description: The tag's `id`.
+      schema:
+        type: string
+        format: uuid
+    AccountId:
+      name: account_id
+      in: path
+      required: true
+      description: The account's `id`.
       schema:
         type: string
         format: uuid
@@ -5242,6 +5781,26 @@ components:
       schema:
         type: integer
   responses:
+    AdminAccount:
+      description: The account.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/AdminAccount"
+    InvalidAdminRequest:
+      description: |
+        `invalid_admin_request`: `details.field` is `reason` (missing, or over
+        500 characters) or `amount` (not 1 to 1,000,000).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     TagConflict:
       description: "`tag_exists`: the account already has a tag with that name, ignoring case."
       headers:
@@ -5550,7 +6109,8 @@ components:
       description: |
         `insufficient_scope`: a draft-scope key can't do this; use a full-scope
         key or the web app. `cross_origin_request`: a browser sent this from
-        another site.
+        another site. `admin_only`: only a signed-in mailgoose admin can do
+        this.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
