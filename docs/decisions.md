@@ -1,12 +1,62 @@
 # Decisions log
 
 Newest first. Each entry says who decided and whether it's confirmed. Anything
-marked **recommended** is a proposal Carlton hasn't confirmed yet; treat it as
-the default until he does, but don't build anything hard to undo on it.
+marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
+the default until the owner does, but don't build anything hard to undo on it.
+
+## 2026-11-18: No personal names in the repo
+
+Decided by the owner: "as a rule, let's not refer to me ... in the repo. just
+gremlin technologies is fine". Docs, code, commit messages, PRs and issues say
+"Gremlin Technologies", or "the owner" where a role reads better. Earlier
+mentions were replaced.
+
+## 2026-11-18: Open and click tracking source (default)
+
+Picked as a reversible default while writing the tickets, after review of
+PR 7. Opens and clicks come only from our own pixel and signed redirects
+(MG-37). SES's own open and click tracking is turned off for the configuration
+set, because with both on, links would be wrapped twice, opens counted twice,
+and the per-campaign off switch wouldn't turn tracking off. SES events are used
+for delivery, bounce, complaint, reject and delay only (MG-33).
+
+## 2026-11-18: Reviewer agent merges PRs
+
+Decided by the owner: "i want this to be as autonomous as possible. delegate a
+reviewer agent and if it passes their review, allow them to merge it."
+
+- A separate reviewer agent reviews every PR. It merges when CI is green, the PR
+  meets its ticket's acceptance criteria, and it follows `CLAUDE.md`. Otherwise
+  it sends the PR back with comments. The author never merges its own PR.
+- PRs touching `infra/` (Terraform) or `.github/workflows/` (CI and deploy
+  credentials) wait for the owner to merge. The owner: "Keep those for me". The
+  reviewer still reviews them.
+
+## 2026-11-18: MVP decisions
+
+Decided by the owner ("All defaults" to the ten proposals). Full requirements, with
+acceptance criteria, are in `docs/mvp-requirements.md`.
+
+- **Billing ships in the MVP.** Stripe Checkout credit packs, and the $5 account
+  fee taken from credits. Yearly card billing comes after the MVP.
+- **Web sign-in:** emailed one-time codes, no passwords. The CLI signs in with a
+  browser device flow; agents use API keys.
+- **One person per account.** No team members in the MVP.
+- **HTML emails are edited as code only.** No click-to-edit in the preview.
+- **Agent launch confirmation:** `campaign launch` without confirmation returns a
+  summary and a one-time code; `campaign launch --confirm <code>` launches after
+  the person says yes in the agent's chat.
+- **Send queue: SQS** (already in the Terraform), not River on Postgres.
+- **One audience per account,** organized with tags. No separate lists.
+- **CLI only.** No MCP server in the MVP.
+- **Open and click tracking** on by default, with a per-campaign switch off.
+- **Tech confirmed:** RDS Postgres, ECS Fargate, SES with SNS events, Terraform,
+  one REST API with an OpenAPI spec shared by the web app, CLI and agents, and
+  designs stored as JSON blocks rendered server-side.
 
 ## 2026-11-17: Domain, DNS, and first apply
 
-Decided by Carlton.
+Decided by the owner.
 
 - **Domain: mailgoose.app** (registered at GoDaddy).
 - **DNS stays at GoDaddy** for the root domain, which carries live Microsoft 365
@@ -32,9 +82,9 @@ Found during the first apply, not decided:
 
 ## 2026-11-17: AWS Region
 
-Decided by Carlton.
+Decided by the owner.
 
-- **Region: us-east-2.** Carlton's AWS project is assigned us-east-2, and the
+- **Region: us-east-2.** The Gremlin Technologies AWS project is assigned us-east-2, and the
   project allows Regional resources only there. All Terraform (state bucket,
   backends, provider defaults) now uses us-east-2. Global services such as
   CloudFront, and WAF or CloudWatch Logs tied to them, may use us-east-1 when
@@ -43,7 +93,7 @@ Decided by Carlton.
 
 ## 2026-11-17
 
-Decided by Carlton in the PRD scoping call and follow-ups.
+Decided by the owner in the PRD scoping call and follow-ups.
 
 ### Product
 
@@ -82,10 +132,10 @@ Decided by Carlton in the PRD scoping call and follow-ups.
 - **Languages.** Go for backend, workers and CLI. TypeScript and React for the
   web app and editor (chosen over Rust).
 - **Hosting.** AWS from day one (chosen over Render).
-- **Recommended, not yet confirmed:**
+- **Recommended at the time, confirmed on 2026-11-18** (see that entry):
   - Postgres on RDS
   - ECS Fargate for the API and workers
-  - SQS for the send queue (River on Postgres is the alternative)
+  - SQS for the send queue
   - SES for sending, with bounce and complaint events through SNS
   - Terraform for infrastructure
   - One REST API with an OpenAPI spec, shared by the editor, CLI and agents
@@ -99,17 +149,19 @@ Decided by Carlton in the PRD scoping call and follow-ups.
 
 ### Process
 
-- Dev plan and ticketing come after the PRD, not yet.
-- Cloud Claude writes code on branches and opens PRs; Carlton's local Claude
-  Code does anything needing his AWS sign-in; Carlton merges. See `CLAUDE.md`.
+- Dev plan and ticketing come after the PRD, not yet. (Superseded 2026-11-18:
+  MVP tickets are in `docs/mvp-tickets.md`.)
+- Cloud Claude writes code on branches and opens PRs; the owner's local Claude
+  Code does anything needing the owner's AWS sign-in; the owner merges. See `CLAUDE.md`.
+  (Merging changed 2026-11-18: a reviewer agent merges.)
 
 ## Open questions
 
-- Can people click into the HTML preview to edit text, or is the code the only
-  way in?
-- Is the one-time-code check (see PRD, CLI requirements) the right way to
-  enforce agent launch confirmation?
-- SQS or River on Postgres for the send queue?
-- One audience with tags, or separate lists per account?
-- Ship an MCP server alongside the CLI, or CLI only?
-- Anything in the earlier mailgoose repo worth reusing?
+- How does prod get DNS: move mailgoose.app to Route 53, or delegate only
+  `api`, `app` and `mail`? (See 2026-11-17. Blocks MG-60.)
+- How does CI deploy without AWS keys in GitHub while the AWS project blocks
+  the OIDC role? (See 2026-11-17. Blocks MG-52.)
+- Monthly fee: does a partial block of 10,000 contacts round up? (Default: yes,
+  2,501 to 12,500 counted contacts is one extra block. MG-40.)
+- Anything in the earlier mailgoose repo worth reusing? (Default: no, fresh
+  start.)

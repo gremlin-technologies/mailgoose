@@ -2,7 +2,7 @@
 
 > Snapshot of the [mailgoose pricing research Claude Doc](https://claude.ai/artifact/WJ38cukTpgWbxFaNVoT1S4) as of Nov 17, 2026. The Claude Doc is the live version; if they differ, trust the doc and refresh this copy.
 
-Nov 18, 2026 · @Carlton
+Nov 18, 2026 · Gremlin Technologies
 
 ## Recommendation
 
@@ -142,7 +142,7 @@ Other numbers for model C:
 - **Break-even** on $400/mo of fixed costs is about 9 customers the size of the 10,000-contact example.
 - **Trade-off:** credits are best for people who send a few times a month. Someone mailing 10,000 contacts weekly pays a bit more than on EmailOctopus, though still well under MailerLite or Resend ($80).
 
-## Decisions for Carlton
+## Decisions for the owner
 
 Decided on Nov 18, 2026: the revised plan. That's a $5/mo fee on paid accounts including the first 2,500 contacts, credits at $20 per 10,000, and a free tier of 500 contacts and 1,000 credits a month.
 
