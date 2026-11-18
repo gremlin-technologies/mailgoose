@@ -14,6 +14,8 @@ already use.
 - `docs/mvp-tickets.md`: the proposed MVP ticket breakdown, in order.
 - `docs/decisions.md`: dated log of decisions and open questions. **Read this
   first; it wins over anything older.**
+- `docs/brand.md`: the goose mascot, the UI's direction and its starting color
+  palette. UI tickets build their design tokens from it.
 
 The PRD, pricing and MVP requirements files are snapshots of Claude Docs; the
 Claude Doc is the live version. In the PRD and pricing files, lines marked
@@ -47,11 +49,15 @@ scope; they only show where an idea came from.
   SNS events, Terraform, one REST API with an OpenAPI spec shared by web app, CLI
   and agents, designs stored as JSON blocks rendered server-side.
 - MVP (Nov 18): billing ships (Stripe credit packs, $5 fee from credits; yearly
-  card billing later); web sign-in by emailed one-time codes (CLI sign-up uses the same code, owner decision Nov 18); one person per
-  account; HTML emails edited as code only; agent launch confirmed with a
-  one-time code; one audience per account with tags; CLI only, no MCP server;
-  open and click tracking on by default with a per-campaign switch (our own
-  pixel and redirects only; SES tracking off).
+  card billing later); web sign-in by emailed one-time codes (CLI sign-up uses
+  the same code, owner decision Nov 18); one person per account; HTML emails
+  edited as code only; agent launch confirmed with a one-time code; one
+  audience per account with tags; CLI only, no MCP server; open and click
+  tracking on by default with a per-campaign switch (our own pixel and
+  redirects only; SES tracking off).
+- Brand (Nov 18): the goose in `docs/brand/mascot.png` is the mascot and the
+  UI palette comes from it; modern and sleek, but simple to use. See
+  `docs/brand.md`.
 
 ## Working rules
 

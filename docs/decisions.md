@@ -4,6 +4,18 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Mascot and UI direction (owner decision, confirmed)
+
+The owner picked the goose in `docs/brand/mascot.png` as the mascot.
+
+- **The UI's color palette is derived from the mascot.** The starting palette,
+  sampled from the image, is in `docs/brand.md`.
+- **The interface should be modern and sleek, but simple to use.**
+- **Contrast is not settled.** The UI tickets check the palette against WCAG
+  2.2 AA when they build design tokens and adjust shades where needed.
+- This changes no UI work already merged; the web and editor tickets use
+  `docs/brand.md` from here on.
+
 ## 2026-11-18: Sending domain details (MG-13, reversible defaults)
 
 Picked while building MG-13; easy to change.
