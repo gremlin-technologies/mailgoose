@@ -4,6 +4,34 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: CLI device login details (MG-10, reversible defaults)
+
+Picked while building MG-10; easy to change.
+
+- **User codes are 8 letters, shown as `XXXX-XXXX`,** from 20 consonants, so
+  they can't spell words or be misread (no vowels, no I, O, U or Y). They're
+  matched without regard to case or the dash. Requests last 10 minutes and
+  the CLI polls every 5 seconds; polling faster gets `slow_down` (429), and
+  the CLI adds 5 seconds each time. Expired requests are deleted a day later.
+- **The token is a full-scope CLI token** (`mg_cli_…`), named after the
+  computer (`client_name`, the hostname), and shown once, to the first poll
+  after approval. It doesn't expire on its own; `mailgoose logout` or a
+  later `login` for the same API URL revokes it.
+- **Where the token is kept:** the OS keychain (service `mailgoose`, account
+  = API URL), through `zalando/go-keyring`, which needs no cgo. Where there's
+  no keychain (a Linux box without a Secret Service, for one), it goes in the
+  config file, mode 0600, and `login` says so.
+- **Credential order:** `MAILGOOSE_API_KEY`, then the login for the API URL,
+  then the config file's `api_key`. AUTH-4 asks for the environment key to win
+  over a stored login; putting a login ahead of a saved `api_key` is the
+  default picked here, since logging in is the newer, deliberate act.
+- **Logout keeps the token if the API can't be reached,** so it can be
+  revoked on a retry instead of staying live on the server with no way to
+  find it. A token the API already rejects (401) is just removed.
+- **Approving and denying need a web session**, not an API key or CLI token,
+  so an agent holding a key can't approve its own sign-in. These three
+  operations are on the CLI parity allowlist; the approval page is MG-41.
+
 ## 2026-11-18: Account settings details (MG-11, reversible defaults)
 
 Picked while building MG-11; easy to change.

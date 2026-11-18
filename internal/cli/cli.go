@@ -14,7 +14,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,9 +31,16 @@ type App struct {
 	Stderr io.Writer
 	Getenv func(string) string
 	HTTP   *http.Client
-	// IsTerminal reports whether stdin is a terminal. Nothing prompts today;
-	// a future prompt must check it and fall back to needFlag without one.
+	// IsTerminal reports whether stdin is a terminal. Nothing prompts;
+	// `mailgoose login`, which needs a person at a browser, refuses without one.
 	IsTerminal func() bool
+	// Keyring is the OS keychain for login tokens; nil means keep them in the
+	// config file only.
+	Keyring Keyring
+	// Sleep waits between login polls; tests make it instant.
+	Sleep func(ctx context.Context, d time.Duration) error
+	// Hostname names this computer to the approval page.
+	Hostname func() (string, error)
 
 	jsonOut bool
 	apiURL  string
@@ -50,6 +57,9 @@ func NewApp() *App {
 		Getenv:     os.Getenv,
 		HTTP:       &http.Client{Timeout: 30 * time.Second},
 		IsTerminal: func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }, //nolint:gosec // a file descriptor fits in an int
+		Keyring:    osKeyring{},
+		Sleep:      sleepCtx,
+		Hostname:   os.Hostname,
 	}
 }
 
@@ -67,7 +77,7 @@ func (a *App) Run(ctx context.Context, args []string) int {
 	}
 	e := asError(err)
 	// A flag parsing error comes before --json is parsed, so look for it too.
-	if a.jsonOut || slices.Contains(args, "--json") {
+	if a.jsonOut || wantsJSON(args) {
 		enc := json.NewEncoder(a.Stderr)
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(map[string]any{"error": map[string]string{"code": e.Code, "message": e.Message, "hint": e.Hint}})
@@ -78,6 +88,24 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		}
 	}
 	return e.Exit
+}
+
+// wantsJSON reports whether args ask for JSON output, as --json or
+// --json=<bool>, for errors raised before cobra parses the flags.
+func wantsJSON(args []string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			return false
+		}
+		if arg == "--json" {
+			return true
+		}
+		if v, ok := strings.CutPrefix(arg, "--json="); ok {
+			b, err := strconv.ParseBool(v)
+			return err == nil && b
+		}
+	}
+	return false
 }
 
 // Commands lists every runnable command and the API operation it calls.
@@ -107,29 +135,50 @@ machine-readable output. Set MAILGOOSE_API_KEY to run headless.`,
 	root.PersistentFlags().BoolVar(&a.jsonOut, "json", false, "print machine-readable JSON")
 	root.PersistentFlags().StringVar(&a.apiURL, "api-url", "", "API base URL (overrides "+EnvAPIURL+" and the config file)")
 
-	root.AddCommand(a.versionCmd(), a.statusCmd(), a.configCmd(), a.commandsCmd(), a.keysCmd(), a.creditsCmd(), a.accountCmd(), &cobra.Command{
-		Use:   "exit-codes",
-		Short: "What each exit code means",
-		Long:  exitCodesHelp,
-	})
+	root.AddCommand(a.versionCmd(), a.statusCmd(), a.configCmd(), a.commandsCmd(), a.keysCmd(), a.creditsCmd(), a.accountCmd(),
+		a.loginCmd(), a.logoutCmd(), a.whoamiCmd(), &cobra.Command{
+			Use:   "exit-codes",
+			Short: "What each exit code means",
+			Long:  exitCodesHelp,
+		})
 	root.AddCommand(a.extra...)
 	return root
 }
 
+// settings resolves the API URL and credential, reading a login token from
+// the keychain when that is where it is kept.
 func (a *App) settings() (Settings, error) {
-	path, err := ConfigPath(a.Getenv)
+	s, _, err := a.loadSettings()
 	if err != nil {
 		return Settings{}, err
+	}
+	if s.APIKeySource == "login-keychain" {
+		tok, err := a.keychainGet(s.APIURL)
+		if err != nil {
+			return Settings{}, authError("Can't read your login token from the OS keychain: "+err.Error(),
+				"Run `mailgoose login` again, or set "+EnvAPIKey+".")
+		}
+		s.APIKey = tok
+	}
+	return s, nil
+}
+
+// loadSettings resolves settings without touching the keychain, and returns
+// the config file too.
+func (a *App) loadSettings() (Settings, FileConfig, error) {
+	path, err := ConfigPath(a.Getenv)
+	if err != nil {
+		return Settings{}, FileConfig{}, err
 	}
 	fc, err := LoadFile(path)
 	if err != nil {
-		return Settings{}, err
+		return Settings{}, FileConfig{}, err
 	}
 	s := Resolve(a.apiURL, a.Getenv, path, fc)
 	if err := ValidateAPIURL(s.APIURL); err != nil {
-		return Settings{}, usageError(err.Error(), "Pass --api-url https://... or set "+EnvAPIURL+".")
+		return Settings{}, FileConfig{}, usageError(err.Error(), "Pass --api-url https://... or set "+EnvAPIURL+".")
 	}
-	return s, nil
+	return s, fc, nil
 }
 
 func (a *App) printJSON(v any) {

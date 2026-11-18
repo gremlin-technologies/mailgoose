@@ -109,7 +109,8 @@ codes (`mailgoose help exit-codes`): 0 ok, 1 error (including an unreachable
 API), 2 usage, 3 auth, 4 not found, 5 needs confirmation.
 
 Each command declares the API operation it calls with `calls("operationId",
-cmd)`, or `local(cmd)` if it calls none; `mailgoose commands --json` lists
+cmd)`, `callsAll([]string{...}, cmd)` when it calls several (as `login`
+does), or `local(cmd)` if it calls none; `mailgoose commands --json` lists
 them, and a test fails on any command that declares neither. API requests go
 through `App.call`, which maps the API's error responses to exit codes.
 
@@ -175,6 +176,33 @@ curl -s localhost:8080/v1/api-keys -H "Authorization: Bearer $MAILGOOSE_API_KEY"
 mailgoose keys list
 mailgoose keys revoke <id> --yes
 ```
+
+## CLI sign-in
+
+People sign the CLI in through the browser; agents and scripts use an API key
+in `MAILGOOSE_API_KEY` instead.
+
+```sh
+mailgoose login     # prints a code and a link; approve it in the browser
+mailgoose whoami    # account, user, and how this CLI is signed in
+mailgoose logout    # revokes the token and removes it from this computer
+```
+
+`login` calls `POST /v1/device-logins`, prints the `XXXX-XXXX` code and the
+`/device` link on the web app (`PUBLIC_BASE_URL`), then polls
+`POST /v1/device-logins/token` every 5 seconds. The person approves on the web
+approval page (`/v1/device-logins/{code}/approve`, signed-in web session
+only; the page itself comes with MG-41). Requests expire after 10 minutes;
+denied or expired exits 3. The token (`mg_cli_…`, full scope) goes in the OS
+keychain under the service `mailgoose` with the API URL as the account name,
+or in the config file (mode 0600) where there is no keychain. Logins are kept
+per API URL, so staging and production can both be signed in. Without a
+terminal, `login` exits 2 and points to `MAILGOOSE_API_KEY`.
+
+The CLI picks its credential in this order: `MAILGOOSE_API_KEY`, then the
+login for the API URL in use, then `api_key` in the config file.
+`GET /v1/whoami` answers for any credential, and
+`DELETE /v1/cli-tokens/current` revokes the CLI token making the request.
 
 ## Account settings
 

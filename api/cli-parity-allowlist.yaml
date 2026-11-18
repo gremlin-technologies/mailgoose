@@ -13,3 +13,6 @@ createSignIn: Emails a code for a web session. The CLI signs in with `mailgoose 
 getCurrentSession: Reads the browser's session cookie. The CLI's own sign-in state comes with `mailgoose login` (MG-10).
 deleteCurrentSession: Ends the browser's session cookie. The CLI signs out with `mailgoose logout` (MG-10).
 deleteAllSessions: Ends every browser session, from the web app's account page. CLI tokens are revoked with the CLI's own commands (MG-10).
+getDeviceLogin: The browser approval page (MG-41) reads the pending sign-in with the person's web session; the CLI side is `mailgoose login`.
+approveDeviceLogin: Approving a CLI sign-in is the person's click on the browser approval page (MG-41), with their web session; the CLI side is `mailgoose login`.
+denyDeviceLogin: Denying a CLI sign-in is the person's click on the browser approval page (MG-41); the CLI side is `mailgoose login`.

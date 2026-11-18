@@ -85,7 +85,9 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	log = log.With("env", cfg.AppEnv)
 	log.Info("starting api", "version", version.Get().Version)
 
-	srv := &api.Server{Log: log, RateLimitPerMinute: cfg.RateLimitPerMinute, TrustedOrigins: cfg.WebOrigins}
+	srv := &api.Server{Log: log, RateLimitPerMinute: cfg.RateLimitPerMinute, TrustedOrigins: cfg.WebOrigins,
+		// The API serves the web app (MG-41), so its public URL is the web app's.
+		WebURL: cfg.PublicBaseURL}
 	if cfg.Database.Configured() {
 		pool, err := openDB(ctx, cfg)
 		if err != nil {

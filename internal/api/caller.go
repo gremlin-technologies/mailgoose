@@ -12,6 +12,9 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 )
 
+// KindSession is a Caller's Kind for a signed-in web session.
+const KindSession = "session"
+
 // Caller is who a request comes from: an API key, a CLI token or a web
 // session. Handlers get it with CallerFrom.
 type Caller struct {
@@ -23,6 +26,8 @@ type Caller struct {
 	Scope string
 	// KeyID is set for API keys and CLI tokens.
 	KeyID string
+	// Kind is auth.KindAPIKey, auth.KindCLIToken or KindSession.
+	Kind string
 	// Session is set for web sessions.
 	Session *auth.Current
 }
@@ -74,7 +79,7 @@ func (s *Server) authenticate(next http.Handler, now func() time.Time) http.Hand
 				WriteError(w, Internal())
 				return
 			}
-			caller = &Caller{AccountID: p.Account.ID, UserID: p.UserID, Scope: p.Scope, KeyID: p.KeyID}
+			caller = &Caller{AccountID: p.Account.ID, UserID: p.UserID, Scope: p.Scope, KeyID: p.KeyID, Kind: p.Kind}
 		} else if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" {
 			cur, err := s.Auth.SessionByToken(r.Context(), c.Value)
 			switch {
@@ -84,7 +89,7 @@ func (s *Server) authenticate(next http.Handler, now func() time.Time) http.Hand
 				WriteError(w, Internal())
 				return
 			default:
-				caller = &Caller{AccountID: cur.Account.ID, UserID: cur.User.ID, Scope: auth.ScopeFull, Session: cur}
+				caller = &Caller{AccountID: cur.Account.ID, UserID: cur.User.ID, Scope: auth.ScopeFull, Session: cur, Kind: KindSession}
 			}
 		}
 		if caller != nil {
