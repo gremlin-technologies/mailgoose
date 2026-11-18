@@ -597,6 +597,32 @@ confirmed it.
   ones, and changing the name servers at the registrar, which puts mail at risk
   if anything is missed.
 
+## 2026-11-18: CI deploy without OIDC (MG-52): what blocks it, and the default
+
+Found by reading AWS's published project policies; **not yet confirmed against
+the live account** (needs the owner's AWS sign-in, see the MG-52 PR for the
+commands).
+
+- **The denying statement:** `DenyIAMRestrictedActions` in the AWS-managed
+  service control policy for the project's plan. It denies `iam:*Provider*`,
+  which matches `iam:CreateOpenIDConnectProvider`. The Free Tier policy and the
+  Paid Plan policy both carry it, so upgrading to the Paid plan does not lift
+  it. It is attached by AWS to the managed organization the project belongs to,
+  and AWS documents these policies as not modifiable by the project owner. The
+  policy id recorded on Nov 17 (p-6tzxgdae) should be one of those two.
+- **Nothing narrower is possible from inside the managed setup.** The only
+  documented way to remove the statement is activating advanced features (which
+  needs a Paid upgrade first). Activation cannot be reversed, makes the owner
+  the administrator of the AWS organization, and removes the spend limit.
+  Afterwards the owner can keep the guardrails and exempt only
+  `iam:CreateOpenIDConnectProvider` for the GitHub provider.
+- **Default until the owner decides (reversible):** keep pushing images by hand
+  with `make push-ecr`. The deploy role, the staging deploy workflow and the
+  deploy script are merged but dormant: the role is off in Terraform, and the
+  workflow skips itself until the repository variable `STAGING_DEPLOY_ROLE_ARN`
+  exists. No AWS keys go into GitHub in any case.
+- Still open, see below.
+
 ## 2026-11-18: No personal names in the repo
 
 Decided by the owner: "as a rule, let's not refer to me ... in the repo. just
@@ -754,7 +780,9 @@ Decided by the owner in the PRD scoping call and follow-ups.
   (see 2026-11-18); awaiting the owner's confirmation and the GoDaddy step.
   (Blocks MG-60.)
 - How does CI deploy without AWS keys in GitHub while the AWS project blocks
-  the OIDC role? (See 2026-11-17. Blocks MG-52.)
+  the OIDC role? Activate advanced features, or run a self-hosted runner or
+  CodeBuild in the account; default is manual `make push-ecr`. (See
+  2026-11-17 and 2026-11-18. Blocks MG-52.)
 - Monthly fee: does a partial block of 10,000 contacts round up? (Default: yes,
   2,501 to 12,500 counted contacts is one extra block. MG-40.)
 - Anything in the earlier mailgoose repo worth reusing? (Default: no, fresh
