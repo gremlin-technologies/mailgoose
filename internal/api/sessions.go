@@ -105,21 +105,21 @@ func clearSessionCookie(w http.ResponseWriter) {
 }
 
 func sessionJSON(a auth.Account, u auth.User, expires time.Time) apigen.Session {
-	return apigen.Session{
-		Account: apigen.Account{
-			Id:        a.ID,
-			Name:      a.Name,
-			Status:    apigen.AccountStatus(a.Status),
-			Plan:      apigen.AccountPlan(a.Plan),
-			CreatedAt: a.CreatedAt.UTC(),
-		},
-		User: apigen.User{
-			Id:        u.ID,
-			Email:     u.Email,
-			CreatedAt: u.CreatedAt.UTC(),
-		},
-		ExpiresAt: expires.UTC(),
+	return apigen.Session{Account: accountSummaryJSON(a), User: userJSON(u), ExpiresAt: expires.UTC()}
+}
+
+func accountSummaryJSON(a auth.Account) apigen.Account {
+	return apigen.Account{
+		Id:        a.ID,
+		Name:      a.Name,
+		Status:    apigen.AccountStatus(a.Status),
+		Plan:      apigen.AccountPlan(a.Plan),
+		CreatedAt: a.CreatedAt.UTC(),
 	}
+}
+
+func userJSON(u auth.User) apigen.User {
+	return apigen.User{Id: u.ID, Email: u.Email, CreatedAt: u.CreatedAt.UTC()}
 }
 
 // writeRateLimited answers a code-request limit with a 429 and Retry-After.

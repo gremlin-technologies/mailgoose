@@ -152,6 +152,21 @@ func (e CreditTransactionType) Valid() bool {
 	}
 }
 
+// Defines values for DeviceLoginPendingStatus.
+const (
+	DeviceLoginPendingStatusPending DeviceLoginPendingStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the DeviceLoginPendingStatus enum.
+func (e DeviceLoginPendingStatus) Valid() bool {
+	switch e {
+	case DeviceLoginPendingStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatus.
 const (
 	HealthStatusOk HealthStatus = "ok"
@@ -161,6 +176,27 @@ const (
 func (e HealthStatus) Valid() bool {
 	switch e {
 	case HealthStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WhoamiAuthMethod.
+const (
+	WhoamiAuthMethodApiKey   WhoamiAuthMethod = "api_key"
+	WhoamiAuthMethodCliToken WhoamiAuthMethod = "cli_token"
+	WhoamiAuthMethodSession  WhoamiAuthMethod = "session"
+)
+
+// Valid indicates whether the value is a known member of the WhoamiAuthMethod enum.
+func (e WhoamiAuthMethod) Valid() bool {
+	switch e {
+	case WhoamiAuthMethodApiKey:
+		return true
+	case WhoamiAuthMethodCliToken:
+		return true
+	case WhoamiAuthMethodSession:
 		return true
 	default:
 		return false
@@ -267,6 +303,14 @@ type CreateApiKeyRequest struct {
 	Scope ApiKeyScope `json:"scope"`
 }
 
+// CreateDeviceLoginRequest defines model for CreateDeviceLoginRequest.
+type CreateDeviceLoginRequest struct {
+	// ClientName Where the login comes from, such as the computer's name; shown on the approval page and used as the token's name.
+	//
+	// Examples: pat-laptop
+	ClientName *string `json:"client_name,omitempty"`
+}
+
 // CreatedApiKey defines model for CreatedApiKey.
 type CreatedApiKey struct {
 	Key ApiKey `json:"key"`
@@ -322,6 +366,64 @@ type CreditTransactionList struct {
 // account fee and `expiry` credits that ran out.
 type CreditTransactionType string
 
+// DeviceLogin defines model for DeviceLogin.
+type DeviceLogin struct {
+	// ClientName Where the login comes from, as the CLI described it; may be empty.
+	ClientName string    `json:"client_name"`
+	CreatedAt  time.Time `json:"created_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+
+	// UserCode Examples: BCDF-GHJK
+	UserCode string `json:"user_code"`
+}
+
+// DeviceLoginPending defines model for DeviceLoginPending.
+type DeviceLoginPending struct {
+	// Interval Seconds to wait before polling again.
+	Interval int                      `json:"interval"`
+	Status   DeviceLoginPendingStatus `json:"status"`
+}
+
+// DeviceLoginPendingStatus defines model for DeviceLoginPending.Status.
+type DeviceLoginPendingStatus string
+
+// DeviceLoginStart defines model for DeviceLoginStart.
+type DeviceLoginStart struct {
+	// DeviceCode The CLI's secret for polling. Don't show it.
+	DeviceCode string `json:"device_code"`
+
+	// ExpiresIn Seconds until the request expires.
+	//
+	// Examples: 600
+	ExpiresIn int `json:"expires_in"`
+
+	// Interval Seconds to wait between polls.
+	//
+	// Examples: 5
+	Interval int `json:"interval"`
+
+	// UserCode The code the person confirms in the browser.
+	//
+	// Examples: BCDF-GHJK
+	UserCode string `json:"user_code"`
+
+	// VerificationUrl Where the person approves the code.
+	VerificationUrl string `json:"verification_url"`
+
+	// VerificationUrlComplete `verification_url` with the code filled in.
+	VerificationUrlComplete string `json:"verification_url_complete"`
+}
+
+// DeviceLoginToken defines model for DeviceLoginToken.
+type DeviceLoginToken struct {
+	Account Account `json:"account"`
+	KeyId   string  `json:"key_id"`
+
+	// Token A full-scope CLI token (`mg_cli_…`), shown only in this response.
+	Token string `json:"token"`
+	User  User   `json:"user"`
+}
+
 // Error defines model for Error.
 type Error struct {
 	Error struct {
@@ -357,6 +459,11 @@ type Health struct {
 
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
+
+// PollDeviceLoginRequest defines model for PollDeviceLoginRequest.
+type PollDeviceLoginRequest struct {
+	DeviceCode string `json:"device_code"`
+}
 
 // Session defines model for Session.
 type Session struct {
@@ -415,6 +522,25 @@ type User struct {
 	Email     string    `json:"email"`
 	Id        string    `json:"id"`
 }
+
+// Whoami defines model for Whoami.
+type Whoami struct {
+	Account    Account          `json:"account"`
+	AuthMethod WhoamiAuthMethod `json:"auth_method"`
+
+	// KeyId The API key or CLI token used; null for a web session.
+	KeyId *string `json:"key_id"`
+
+	// Scope `full` can do everything. `draft` can do everything except launch
+	// campaigns, change billing and manage keys.
+	Scope ApiKeyScope `json:"scope"`
+
+	// User The person behind the request; null for an API key whose maker was removed.
+	User *User `json:"user"`
+}
+
+// WhoamiAuthMethod defines model for Whoami.AuthMethod.
+type WhoamiAuthMethod string
 
 // Cursor defines model for Cursor.
 type Cursor = string
@@ -476,6 +602,12 @@ type UpdateAccountJSONRequestBody = UpdateAccountRequest
 // CreateApiKeyJSONRequestBody defines body for CreateApiKey for application/json ContentType.
 type CreateApiKeyJSONRequestBody = CreateApiKeyRequest
 
+// CreateDeviceLoginJSONRequestBody defines body for CreateDeviceLogin for application/json ContentType.
+type CreateDeviceLoginJSONRequestBody = CreateDeviceLoginRequest
+
+// PollDeviceLoginJSONRequestBody defines body for PollDeviceLogin for application/json ContentType.
+type PollDeviceLoginJSONRequestBody = PollDeviceLoginRequest
+
 // CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
 type CreateSessionJSONRequestBody = SessionRequest
 
@@ -508,12 +640,30 @@ type ServerInterface interface {
 	// RevokeApiKey Revoke an API key
 	// (DELETE /v1/api-keys/{key_id})
 	RevokeApiKey(w http.ResponseWriter, r *http.Request, keyId string)
+	// RevokeCurrentCliToken Sign out the CLI
+	// (DELETE /v1/cli-tokens/current)
+	RevokeCurrentCliToken(w http.ResponseWriter, r *http.Request)
 	// GetCredits Show the credit balance
 	// (GET /v1/credits)
 	GetCredits(w http.ResponseWriter, r *http.Request)
 	// ListCreditTransactions List credit transactions
 	// (GET /v1/credits/transactions)
 	ListCreditTransactions(w http.ResponseWriter, r *http.Request, params ListCreditTransactionsParams)
+	// CreateDeviceLogin Start a CLI login
+	// (POST /v1/device-logins)
+	CreateDeviceLogin(w http.ResponseWriter, r *http.Request)
+	// PollDeviceLogin Collect a CLI login token
+	// (POST /v1/device-logins/token)
+	PollDeviceLogin(w http.ResponseWriter, r *http.Request)
+	// GetDeviceLogin Show a CLI login awaiting approval
+	// (GET /v1/device-logins/{user_code})
+	GetDeviceLogin(w http.ResponseWriter, r *http.Request, userCode string)
+	// ApproveDeviceLogin Approve a CLI login
+	// (POST /v1/device-logins/{user_code}/approve)
+	ApproveDeviceLogin(w http.ResponseWriter, r *http.Request, userCode string)
+	// DenyDeviceLogin Deny a CLI login
+	// (POST /v1/device-logins/{user_code}/deny)
+	DenyDeviceLogin(w http.ResponseWriter, r *http.Request, userCode string)
 	// DeleteAllSessions Sign out everywhere
 	// (DELETE /v1/sessions)
 	DeleteAllSessions(w http.ResponseWriter, r *http.Request)
@@ -532,6 +682,9 @@ type ServerInterface interface {
 	// CreateSignup Sign up
 	// (POST /v1/signup)
 	CreateSignup(w http.ResponseWriter, r *http.Request)
+	// GetWhoami Who is calling
+	// (GET /v1/whoami)
+	GetWhoami(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -685,6 +838,20 @@ func (siw *ServerInterfaceWrapper) RevokeApiKey(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// RevokeCurrentCliToken operation middleware
+func (siw *ServerInterfaceWrapper) RevokeCurrentCliToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeCurrentCliToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetCredits operation middleware
 func (siw *ServerInterfaceWrapper) GetCredits(w http.ResponseWriter, r *http.Request) {
 
@@ -736,6 +903,112 @@ func (siw *ServerInterfaceWrapper) ListCreditTransactions(w http.ResponseWriter,
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListCreditTransactions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDeviceLogin operation middleware
+func (siw *ServerInterfaceWrapper) CreateDeviceLogin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDeviceLogin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PollDeviceLogin operation middleware
+func (siw *ServerInterfaceWrapper) PollDeviceLogin(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PollDeviceLogin(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDeviceLogin operation middleware
+func (siw *ServerInterfaceWrapper) GetDeviceLogin(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_code" -------------
+	var userCode string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_code", r.PathValue("user_code"), &userCode, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_code", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDeviceLogin(w, r, userCode)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApproveDeviceLogin operation middleware
+func (siw *ServerInterfaceWrapper) ApproveDeviceLogin(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_code" -------------
+	var userCode string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_code", r.PathValue("user_code"), &userCode, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_code", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApproveDeviceLogin(w, r, userCode)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DenyDeviceLogin operation middleware
+func (siw *ServerInterfaceWrapper) DenyDeviceLogin(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "user_code" -------------
+	var userCode string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "user_code", r.PathValue("user_code"), &userCode, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_code", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DenyDeviceLogin(w, r, userCode)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -820,6 +1093,20 @@ func (siw *ServerInterfaceWrapper) CreateSignup(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateSignup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetWhoami operation middleware
+func (siw *ServerInterfaceWrapper) GetWhoami(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetWhoami(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -958,6 +1245,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/api-keys/{key_id}", wrapper.RevokeApiKey)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/credits", wrapper.GetCredits)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/credits/transactions", wrapper.ListCreditTransactions)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/device-logins", wrapper.CreateDeviceLogin)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/device-logins/token", wrapper.PollDeviceLogin)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/device-logins/{user_code}", wrapper.GetDeviceLogin)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/device-logins/{user_code}/approve", wrapper.ApproveDeviceLogin)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/device-logins/{user_code}/deny", wrapper.DenyDeviceLogin)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/cli-tokens/current", wrapper.RevokeCurrentCliToken)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/whoami", wrapper.GetWhoami)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/signup", wrapper.CreateSignup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sign-in", wrapper.CreateSignIn)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions", wrapper.DeleteAllSessions)

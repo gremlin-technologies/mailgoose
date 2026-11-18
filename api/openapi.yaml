@@ -320,6 +320,262 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/device-logins:
+    post:
+      operationId: createDeviceLogin
+      summary: Start a CLI login
+      description: |
+        Starts the device login that `mailgoose login` uses. Show the person
+        `user_code` and `verification_url`; they sign in to the web app and
+        approve the code there. Meanwhile poll `pollDeviceLogin` with
+        `device_code` every `interval` seconds. The request expires after
+        `expires_in` seconds (10 minutes).
+      tags: [auth]
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDeviceLoginRequest"
+      responses:
+        "201":
+          description: The request.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceLoginStart"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/device-logins/token:
+    post:
+      operationId: pollDeviceLogin
+      summary: Collect a CLI login token
+      description: |
+        Polled by `mailgoose login`. Answers 202 while the request awaits
+        approval, and 200 with a full-scope CLI token (`mg_cli_…`) once it's
+        approved; the token is given out only once. A denied request is a 403
+        `device_login_denied`; an expired, unknown or already collected one
+        is a 410 `device_login_expired`. Polling faster than `interval` is a
+        429 `slow_down`.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PollDeviceLoginRequest"
+      responses:
+        "200":
+          description: Approved. The token is shown only in this response.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceLoginToken"
+        "202":
+          description: Not approved yet; poll again after `interval` seconds.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceLoginPending"
+        "403":
+          description: The person denied the request.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "410":
+          description: The request expired, doesn't exist or was already collected.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/device-logins/{user_code}:
+    get:
+      operationId: getDeviceLogin
+      summary: Show a CLI login awaiting approval
+      description: |
+        For the approval page: the request under this code, if it's still
+        awaiting approval. Needs a signed-in web session; API keys and CLI
+        tokens get a 401.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: user_code
+          in: path
+          required: true
+          description: The code `mailgoose login` printed, such as `BCDF-GHJK`. Case, spaces and the dash don't matter.
+          schema:
+            type: string
+            maxLength: 20
+      responses:
+        "200":
+          description: The request.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceLogin"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/device-logins/{user_code}/approve:
+    post:
+      operationId: approveDeviceLogin
+      summary: Approve a CLI login
+      description: |
+        Lets the CLI that started this request sign in as the signed-in
+        person, with a full-scope token. Needs a signed-in web session.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: user_code
+          in: path
+          required: true
+          description: The code `mailgoose login` printed, such as `BCDF-GHJK`. Case, spaces and the dash don't matter.
+          schema:
+            type: string
+            maxLength: 20
+      responses:
+        "204":
+          description: Approved; the CLI collects its token on its next poll.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/device-logins/{user_code}/deny:
+    post:
+      operationId: denyDeviceLogin
+      summary: Deny a CLI login
+      description: The CLI that started this request stops waiting and signs nothing in. Needs a signed-in web session.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      parameters:
+        - name: user_code
+          in: path
+          required: true
+          description: The code `mailgoose login` printed, such as `BCDF-GHJK`. Case, spaces and the dash don't matter.
+          schema:
+            type: string
+            maxLength: 20
+      responses:
+        "204":
+          description: Denied.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/cli-tokens/current:
+    delete:
+      operationId: revokeCurrentCliToken
+      summary: Sign out the CLI
+      description: |
+        Revokes the CLI token this request is made with, for `mailgoose
+        logout`. Only CLI tokens (`mg_cli_…`); revoke API keys with
+        `revokeApiKey`.
+      tags: [auth]
+      security:
+        - apiKey: []
+      responses:
+        "204":
+          description: Revoked.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "400":
+          description: The request wasn't made with a CLI token (code `not_a_cli_token`).
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/whoami:
+    get:
+      operationId: getWhoami
+      summary: Who is calling
+      description: The account, the person and the kind of credential behind this request.
+      tags: [auth]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The caller.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Whoami"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/signup:
     post:
       operationId: createSignup
@@ -688,6 +944,110 @@ components:
             $ref: "#/components/schemas/CreditTransaction"
         next_cursor:
           type: [string, "null"]
+    CreateDeviceLoginRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        client_name:
+          type: string
+          maxLength: 100
+          description: Where the login comes from, such as the computer's name; shown on the approval page and used as the token's name.
+          examples: [pat-laptop]
+    DeviceLoginStart:
+      type: object
+      required: [device_code, user_code, verification_url, verification_url_complete, expires_in, interval]
+      properties:
+        device_code:
+          type: string
+          description: The CLI's secret for polling. Don't show it.
+        user_code:
+          type: string
+          description: The code the person confirms in the browser.
+          examples: [BCDF-GHJK]
+        verification_url:
+          type: string
+          format: uri
+          description: Where the person approves the code.
+        verification_url_complete:
+          type: string
+          format: uri
+          description: "`verification_url` with the code filled in."
+        expires_in:
+          type: integer
+          description: Seconds until the request expires.
+          examples: [600]
+        interval:
+          type: integer
+          description: Seconds to wait between polls.
+          examples: [5]
+    PollDeviceLoginRequest:
+      type: object
+      required: [device_code]
+      additionalProperties: false
+      properties:
+        device_code:
+          type: string
+          maxLength: 100
+    DeviceLoginPending:
+      type: object
+      required: [status, interval]
+      properties:
+        status:
+          type: string
+          enum: [pending]
+        interval:
+          type: integer
+          description: Seconds to wait before polling again.
+    DeviceLoginToken:
+      type: object
+      required: [token, key_id, account, user]
+      properties:
+        token:
+          type: string
+          description: A full-scope CLI token (`mg_cli_…`), shown only in this response.
+        key_id:
+          type: string
+          format: uuid
+        account:
+          $ref: "#/components/schemas/Account"
+        user:
+          $ref: "#/components/schemas/User"
+    DeviceLogin:
+      type: object
+      required: [user_code, client_name, created_at, expires_at]
+      properties:
+        user_code:
+          type: string
+          examples: [BCDF-GHJK]
+        client_name:
+          type: string
+          description: Where the login comes from, as the CLI described it; may be empty.
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+    Whoami:
+      type: object
+      required: [account, user, auth_method, scope, key_id]
+      properties:
+        account:
+          $ref: "#/components/schemas/Account"
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/User"
+            - type: "null"
+          description: The person behind the request; null for an API key whose maker was removed.
+        auth_method:
+          type: string
+          enum: [session, api_key, cli_token]
+        scope:
+          $ref: "#/components/schemas/ApiKeyScope"
+        key_id:
+          type: [string, "null"]
+          format: uuid
+          description: The API key or CLI token used; null for a web session.
     SignupRequest:
       type: object
       required: [email, account_name, accepted_terms]

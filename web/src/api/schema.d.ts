@@ -169,6 +169,160 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/device-logins": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a CLI login
+         * @description Starts the device login that `mailgoose login` uses. Show the person
+         *     `user_code` and `verification_url`; they sign in to the web app and
+         *     approve the code there. Meanwhile poll `pollDeviceLogin` with
+         *     `device_code` every `interval` seconds. The request expires after
+         *     `expires_in` seconds (10 minutes).
+         */
+        post: operations["createDeviceLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/device-logins/token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Collect a CLI login token
+         * @description Polled by `mailgoose login`. Answers 202 while the request awaits
+         *     approval, and 200 with a full-scope CLI token (`mg_cli_…`) once it's
+         *     approved; the token is given out only once. A denied request is a 403
+         *     `device_login_denied`; an expired, unknown or already collected one
+         *     is a 410 `device_login_expired`. Polling faster than `interval` is a
+         *     429 `slow_down`.
+         */
+        post: operations["pollDeviceLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/device-logins/{user_code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a CLI login awaiting approval
+         * @description For the approval page: the request under this code, if it's still
+         *     awaiting approval. Needs a signed-in web session; API keys and CLI
+         *     tokens get a 401.
+         */
+        get: operations["getDeviceLogin"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/device-logins/{user_code}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a CLI login
+         * @description Lets the CLI that started this request sign in as the signed-in
+         *     person, with a full-scope token. Needs a signed-in web session.
+         */
+        post: operations["approveDeviceLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/device-logins/{user_code}/deny": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Deny a CLI login
+         * @description The CLI that started this request stops waiting and signs nothing in. Needs a signed-in web session.
+         */
+        post: operations["denyDeviceLogin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/cli-tokens/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Sign out the CLI
+         * @description Revokes the CLI token this request is made with, for `mailgoose
+         *     logout`. Only CLI tokens (`mg_cli_…`); revoke API keys with
+         *     `revokeApiKey`.
+         */
+        delete: operations["revokeCurrentCliToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/whoami": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who is calling
+         * @description The account, the person and the kind of credential behind this request.
+         */
+        get: operations["getWhoami"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/signup": {
         parameters: {
             query?: never;
@@ -410,6 +564,82 @@ export interface components {
         CreditTransactionList: {
             data: components["schemas"]["CreditTransaction"][];
             next_cursor: string | null;
+        };
+        CreateDeviceLoginRequest: {
+            /**
+             * @description Where the login comes from, such as the computer's name; shown on the approval page and used as the token's name.
+             * @example pat-laptop
+             */
+            client_name?: string;
+        };
+        DeviceLoginStart: {
+            /** @description The CLI's secret for polling. Don't show it. */
+            device_code: string;
+            /**
+             * @description The code the person confirms in the browser.
+             * @example BCDF-GHJK
+             */
+            user_code: string;
+            /**
+             * Format: uri
+             * @description Where the person approves the code.
+             */
+            verification_url: string;
+            /**
+             * Format: uri
+             * @description `verification_url` with the code filled in.
+             */
+            verification_url_complete: string;
+            /**
+             * @description Seconds until the request expires.
+             * @example 600
+             */
+            expires_in: number;
+            /**
+             * @description Seconds to wait between polls.
+             * @example 5
+             */
+            interval: number;
+        };
+        PollDeviceLoginRequest: {
+            device_code: string;
+        };
+        DeviceLoginPending: {
+            /** @enum {string} */
+            status: "pending";
+            /** @description Seconds to wait before polling again. */
+            interval: number;
+        };
+        DeviceLoginToken: {
+            /** @description A full-scope CLI token (`mg_cli_…`), shown only in this response. */
+            token: string;
+            /** Format: uuid */
+            key_id: string;
+            account: components["schemas"]["Account"];
+            user: components["schemas"]["User"];
+        };
+        DeviceLogin: {
+            /** @example BCDF-GHJK */
+            user_code: string;
+            /** @description Where the login comes from, as the CLI described it; may be empty. */
+            client_name: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+        };
+        Whoami: {
+            account: components["schemas"]["Account"];
+            /** @description The person behind the request; null for an API key whose maker was removed. */
+            user: components["schemas"]["User"] | null;
+            /** @enum {string} */
+            auth_method: "session" | "api_key" | "cli_token";
+            scope: components["schemas"]["ApiKeyScope"];
+            /**
+             * Format: uuid
+             * @description The API key or CLI token used; null for a web session.
+             */
+            key_id: string | null;
         };
         SignupRequest: {
             /**
@@ -890,6 +1120,230 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createDeviceLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["CreateDeviceLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description The request. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceLoginStart"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    pollDeviceLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PollDeviceLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Approved. The token is shown only in this response. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceLoginToken"];
+                };
+            };
+            /** @description Not approved yet; poll again after `interval` seconds. */
+            202: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceLoginPending"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description The person denied the request. */
+            403: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request expired, doesn't exist or was already collected. */
+            410: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getDeviceLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The code `mailgoose login` printed, such as `BCDF-GHJK`. Case, spaces and the dash don't matter. */
+                user_code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceLogin"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    approveDeviceLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The code `mailgoose login` printed, such as `BCDF-GHJK`. Case, spaces and the dash don't matter. */
+                user_code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Approved; the CLI collects its token on its next poll. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    denyDeviceLogin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The code `mailgoose login` printed, such as `BCDF-GHJK`. Case, spaces and the dash don't matter. */
+                user_code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Denied. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    revokeCurrentCliToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description The request wasn't made with a CLI token (code `not_a_cli_token`). */
+            400: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getWhoami: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The caller. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Whoami"];
+                };
+            };
             401: components["responses"]["Unauthorized"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];

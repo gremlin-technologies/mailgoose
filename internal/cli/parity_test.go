@@ -48,7 +48,7 @@ func TestCLIParityFailsWithoutCommand(t *testing.T) {
 
 func TestCLIParityAllowlistRules(t *testing.T) {
 	ops := []string{"getThing", "postWebhook"}
-	reg := []CommandInfo{{Command: "thing get", Operation: "getThing", Declared: true}}
+	reg := []CommandInfo{{Command: "thing get", Operation: "getThing", Operations: []string{"getThing"}, Declared: true}}
 	tests := []struct {
 		name  string
 		allow map[string]string
@@ -79,8 +79,8 @@ func TestCLIParityAllowlistRules(t *testing.T) {
 func checkParity(ops []string, reg []CommandInfo, allow map[string]string) []string {
 	commands := map[string][]string{}
 	for _, c := range reg {
-		if c.Operation != "" {
-			commands[c.Operation] = append(commands[c.Operation], c.Command)
+		for _, op := range c.Operations {
+			commands[op] = append(commands[op], c.Command)
 		}
 	}
 	var problems []string

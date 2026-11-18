@@ -24,6 +24,12 @@ func calls(op string, cmd *cobra.Command) *cobra.Command {
 	return cmd
 }
 
+// callsAll marks cmd as calling each of ops, in order, and returns it. Use it
+// for a command that needs more than one operation, such as login.
+func callsAll(ops []string, cmd *cobra.Command) *cobra.Command {
+	return calls(strings.Join(ops, ","), cmd)
+}
+
 // local marks cmd as not calling the API, and returns it.
 func local(cmd *cobra.Command) *cobra.Command { return calls(operationLocal, cmd) }
 
@@ -32,7 +38,10 @@ type CommandInfo struct {
 	// Command is the command path without the program name, such as "config show".
 	Command string `json:"command"`
 	// Operation is the OpenAPI operationId it calls, or "" for a local command.
+	// For a command that calls several, it is the first.
 	Operation string `json:"operation,omitempty"`
+	// Operations lists every operationId the command calls; empty for a local command.
+	Operations []string `json:"operations,omitempty"`
 	// Declared is false when the command doesn't say what it calls; tests fail on it.
 	Declared bool `json:"-"`
 }
@@ -53,8 +62,9 @@ func Registry(root *cobra.Command) []CommandInfo {
 		}
 		op, ok := c.Annotations[annotationOperation]
 		info := CommandInfo{Command: strings.TrimPrefix(c.CommandPath(), root.Name()+" "), Declared: ok}
-		if op != operationLocal {
-			info.Operation = op
+		if ok && op != operationLocal {
+			info.Operations = strings.Split(op, ",")
+			info.Operation = info.Operations[0]
 		}
 		out = append(out, info)
 	}

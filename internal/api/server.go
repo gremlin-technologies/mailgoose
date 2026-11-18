@@ -49,6 +49,9 @@ type Server struct {
 	// served from the API's own origin) allowed to send cookie-authenticated
 	// requests that change something. The API's own origin always is.
 	TrustedOrigins []string
+	// WebURL is where people reach the web app, for links such as the CLI
+	// login approval page. Empty means the request's own origin.
+	WebURL string
 	// Now is the clock for rate limits and idempotency; nil means time.Now.
 	Now func() time.Time
 }

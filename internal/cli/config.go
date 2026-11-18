@@ -26,7 +26,25 @@ const (
 type FileConfig struct {
 	APIURL string `json:"api_url,omitempty"`
 	APIKey string `json:"api_key,omitempty"`
+	// Logins holds one `mailgoose login` per API URL.
+	Logins map[string]Login `json:"logins,omitempty"`
 }
+
+// Login is a stored CLI token for one API URL. The token itself is in the OS
+// keychain when Store is "keychain", and in Token when Store is "file".
+type Login struct {
+	Store   string `json:"store"`
+	Token   string `json:"token,omitempty"`
+	KeyID   string `json:"key_id,omitempty"`
+	Account string `json:"account,omitempty"`
+	Email   string `json:"email,omitempty"`
+}
+
+// Where a login's token is kept.
+const (
+	StoreKeychain = "keychain"
+	StoreFile     = "file"
+)
 
 // Settings are the resolved values and where each came from.
 type Settings struct {
@@ -84,6 +102,9 @@ func SaveFile(path string, fc FileConfig) error {
 }
 
 // Resolve merges flags, environment and file, in that order of precedence.
+// For the credential: MAILGOOSE_API_KEY, then a stored login for the API URL,
+// then the config file's api_key. A login kept in the keychain resolves with
+// source "login-keychain" and no key; App.settings reads it from the keychain.
 func Resolve(flagURL string, getenv func(string) string, path string, fc FileConfig) Settings {
 	s := Settings{ConfigPath: path}
 	switch {
@@ -98,9 +119,14 @@ func Resolve(flagURL string, getenv func(string) string, path string, fc FileCon
 	}
 	s.APIURL = strings.TrimRight(s.APIURL, "/")
 
+	login, hasLogin := fc.Logins[s.APIURL]
 	switch {
 	case getenv(EnvAPIKey) != "":
 		s.APIKey, s.APIKeySource = getenv(EnvAPIKey), "env"
+	case hasLogin && login.Store == StoreKeychain:
+		s.APIKeySource = "login-keychain"
+	case hasLogin && login.Token != "":
+		s.APIKey, s.APIKeySource = login.Token, "login-file"
 	case fc.APIKey != "":
 		s.APIKey, s.APIKeySource = fc.APIKey, "file"
 	default:
