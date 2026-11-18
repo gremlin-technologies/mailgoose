@@ -30,6 +30,8 @@ type importJob struct {
 		Email     string  `json:"email"`
 		FirstName *string `json:"first_name"`
 		LastName  *string `json:"last_name"`
+		Status    *string `json:"status"`
+		Tags      *string `json:"tags"`
 	} `json:"columns"`
 	TotalRows       int            `json:"total_rows"`
 	ProcessedRows   int            `json:"processed_rows"`
@@ -191,6 +193,7 @@ func (a *App) readImportFile(path string) ([]byte, error) {
 // importFields are what --map can name, with the API's names.
 var importFields = map[string]string{
 	"email": "email", "first_name": "first_name", "first-name": "first_name", "last_name": "last_name", "last-name": "last_name",
+	"status": "status", "tags": "tags",
 }
 
 func (a *App) importCmd() *cobra.Command {
@@ -203,11 +206,14 @@ func (a *App) importCmd() *cobra.Command {
 first name and last name columns are found from common headers ("Email",
 "Email Address", "First Name", "Surname" ...); name any others with --map.
 Commas, semicolons and tabs all work. Pass - to read the file from standard
-input.
+input. A file from "mailgoose export" imports as the same contacts and tags.
 
 Contacts are added unconfirmed, and don't receive campaigns, unless you pass
 --permission-confirmed to say you have these people's permission to email
-them. Then they're added subscribed.
+them. Then they're added subscribed. A "status" column can only hold
+contacts back: unsubscribed, bounced and complained rows keep that status,
+and unconfirmed rows stay unconfirmed. A "tags" column puts the tags it lists,
+separated by commas, on each row's contact, creating tags the account lacks.
 
 Rows with a bad address, a repeat of an earlier row, an address already in the
 account, an address that unsubscribed, bounced or complained before, or one
@@ -230,7 +236,7 @@ until mailgoose approves it.`,
 				api, known := importFields[strings.ToLower(strings.TrimSpace(field))]
 				if !ok || !known || strings.TrimSpace(header) == "" {
 					return usageError(fmt.Sprintf("--map %q isn't field=header.", m),
-						"The fields are email, first_name and last_name, as in --map email=\"Email Address\".")
+						"The fields are email, first_name, last_name, status and tags, as in --map email=\"Email Address\".")
 				}
 				columns[api] = header
 			}
@@ -272,7 +278,7 @@ until mailgoose approves it.`,
 			return nil
 		},
 	})
-	cmd.Flags().StringArrayVar(&maps, "map", nil, "field=header, naming the column a field comes from (email, first_name, last_name); repeatable")
+	cmd.Flags().StringArrayVar(&maps, "map", nil, "field=header, naming the column a field comes from (email, first_name, last_name, status, tags); repeatable")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "tag (name or id) to put on every added contact; repeatable; it must exist")
 	cmd.Flags().BoolVar(&permission, "permission-confirmed", false, "you have these people's permission to email them: add them subscribed, not unconfirmed")
 	cmd.Flags().BoolVar(&wait, "wait", false, "wait for the import to finish and show the result")

@@ -625,6 +625,44 @@ type Contact struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// ContactData defines model for ContactData.
+type ContactData struct {
+	Contact Contact `json:"contact"`
+
+	// Import The import that added the contact; null when none did.
+	Import *struct {
+		CreatedAt time.Time `json:"created_at"`
+		FileName  *string   `json:"file_name"`
+
+		// Held The contact waits for the import's review before it can be mailed.
+		Held bool   `json:"held"`
+		Id   string `json:"id"`
+
+		// PermissionConfirmed Whether the account confirmed it had permission to mail the people in the file.
+		PermissionConfirmed bool `json:"permission_confirmed"`
+	} `json:"import"`
+
+	// SkippedRows Rows of the account's imports with this address that weren't added.
+	SkippedRows []struct {
+		FileName *string `json:"file_name"`
+		ImportId string  `json:"import_id"`
+
+		// Reason `invalid_email`: not an email address. `invalid_row`: the row
+		// couldn't be read as CSV (a stray quote, say). `duplicate`: the same
+		// address is on an earlier row. `exists`: the account already has the
+		// contact, which is left as it is. `suppressed`: the address
+		// unsubscribed, bounced or complained before. `over_limit`: a free
+		// account was full.
+		Reason SkipReason `json:"reason"`
+		Row    int        `json:"row"`
+	} `json:"skipped_rows"`
+	Tags []struct {
+		AddedAt time.Time `json:"added_at"`
+		Id      string    `json:"id"`
+		Name    string    `json:"name"`
+	} `json:"tags"`
+}
+
 // ContactFilter Matches contacts as `listContacts` does; fields left out don't filter.
 type ContactFilter struct {
 	Email *string `json:"email,omitempty"`
@@ -972,6 +1010,8 @@ type Import struct {
 		Email     string  `json:"email"`
 		FirstName *string `json:"first_name"`
 		LastName  *string `json:"last_name"`
+		Status    *string `json:"status"`
+		Tags      *string `json:"tags"`
 	} `json:"columns"`
 
 	// ContactStatus The status added contacts get; `subscribed` only when permission was confirmed.
@@ -1025,6 +1065,17 @@ type ImportColumns struct {
 	Email     *string `json:"email,omitempty"`
 	FirstName *string `json:"first_name,omitempty"`
 	LastName  *string `json:"last_name,omitempty"`
+
+	// Status A status column can only hold contacts back: `unsubscribed`,
+	// `bounced` and `complained` rows are added with that status, and
+	// `unconfirmed` rows stay unconfirmed. Other values are ignored.
+	// Found under the header `status`.
+	Status *string `json:"status,omitempty"`
+
+	// Tags A column of tag names separated by commas, put on each row's
+	// contact. Tags the account doesn't have are created; a file may
+	// name at most 200 different tags. Found under the header `tags`.
+	Tags *string `json:"tags,omitempty"`
 }
 
 // ImportList defines model for ImportList.
@@ -1302,6 +1353,27 @@ type ListContactsParams struct {
 	TagId *string `form:"tag_id,omitempty" json:"tag_id,omitempty"`
 }
 
+// ExportContactsParams defines parameters for ExportContacts.
+type ExportContactsParams struct {
+	// Email Only contacts whose address contains this, ignoring case.
+	Email *string `form:"email,omitempty" json:"email,omitempty"`
+
+	// Name Only contacts whose first, last or full name contains this, ignoring case.
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+
+	// Status Only contacts with this status.
+	Status *ContactStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// TagId Only contacts with this tag.
+	TagId *string `form:"tag_id,omitempty" json:"tag_id,omitempty"`
+}
+
+// DeleteContactParams defines parameters for DeleteContact.
+type DeleteContactParams struct {
+	// Erase Erase every trace of the address, keeping only a hash on the suppression list.
+	Erase *bool `form:"erase,omitempty" json:"erase,omitempty"`
+}
+
 // ListCreditTransactionsParams defines parameters for ListCreditTransactions.
 type ListCreditTransactionsParams struct {
 	// Limit Items per page.
@@ -1436,15 +1508,21 @@ type ServerInterface interface {
 	// CreateContact Add a contact
 	// (POST /v1/contacts)
 	CreateContact(w http.ResponseWriter, r *http.Request)
+	// ExportContacts Export contacts as CSV
+	// (GET /v1/contacts/export)
+	ExportContacts(w http.ResponseWriter, r *http.Request, params ExportContactsParams)
 	// DeleteContact Delete a contact
 	// (DELETE /v1/contacts/{contact_id})
-	DeleteContact(w http.ResponseWriter, r *http.Request, contactId ContactId)
+	DeleteContact(w http.ResponseWriter, r *http.Request, contactId ContactId, params DeleteContactParams)
 	// GetContact Show a contact
 	// (GET /v1/contacts/{contact_id})
 	GetContact(w http.ResponseWriter, r *http.Request, contactId ContactId)
 	// UpdateContact Change a contact
 	// (PATCH /v1/contacts/{contact_id})
 	UpdateContact(w http.ResponseWriter, r *http.Request, contactId ContactId)
+	// GetContactData Everything stored about a contact
+	// (GET /v1/contacts/{contact_id}/data)
+	GetContactData(w http.ResponseWriter, r *http.Request, contactId ContactId)
 	// GetCredits Show the credit balance
 	// (GET /v1/credits)
 	GetCredits(w http.ResponseWriter, r *http.Request)
@@ -1825,6 +1903,78 @@ func (siw *ServerInterfaceWrapper) CreateContact(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// ExportContacts operation middleware
+func (siw *ServerInterfaceWrapper) ExportContacts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ExportContactsParams
+
+	// ------------- Optional query parameter "email" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "email", r.URL.Query(), &params.Email, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "email"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "tag_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag_id", r.URL.Query(), &params.TagId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tag_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag_id", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportContacts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteContact operation middleware
 func (siw *ServerInterfaceWrapper) DeleteContact(w http.ResponseWriter, r *http.Request) {
 
@@ -1840,8 +1990,24 @@ func (siw *ServerInterfaceWrapper) DeleteContact(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteContactParams
+
+	// ------------- Optional query parameter "erase" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "erase", r.URL.Query(), &params.Erase, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "erase"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "erase", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteContact(w, r, contactId)
+		siw.Handler.DeleteContact(w, r, contactId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1894,6 +2060,32 @@ func (siw *ServerInterfaceWrapper) UpdateContact(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateContact(w, r, contactId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetContactData operation middleware
+func (siw *ServerInterfaceWrapper) GetContactData(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "contact_id" -------------
+	var contactId ContactId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "contact_id", r.PathValue("contact_id"), &contactId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "contact_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetContactData(w, r, contactId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2786,9 +2978,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/domains/{domain_id}/verify", wrapper.VerifyDomain)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contacts", wrapper.ListContacts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/contacts", wrapper.CreateContact)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contacts/export", wrapper.ExportContacts)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/contacts/{contact_id}", wrapper.DeleteContact)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contacts/{contact_id}", wrapper.GetContact)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/contacts/{contact_id}", wrapper.UpdateContact)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contacts/{contact_id}/data", wrapper.GetContactData)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/tags", wrapper.ListTags)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tags", wrapper.CreateTag)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/tags/{tag_id}", wrapper.DeleteTag)

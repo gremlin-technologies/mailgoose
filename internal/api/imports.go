@@ -69,6 +69,8 @@ func importJSON(im *contacts.Import) apigen.Import {
 	out.Columns.Email = im.EmailColumn
 	out.Columns.FirstName = im.FirstNameColumn
 	out.Columns.LastName = im.LastNameColumn
+	out.Columns.Status = im.StatusColumn
+	out.Columns.Tags = im.TagsColumn
 	by := im.SkippedByReason
 	out.SkippedByReason.InvalidEmail = by[contacts.SkipInvalidEmail]
 	out.SkippedByReason.InvalidRow = by[contacts.SkipInvalidRow]
@@ -106,6 +108,8 @@ func (s *Server) CreateImport(w http.ResponseWriter, r *http.Request) {
 		in.EmailColumn = deref(req.Columns.Email)
 		in.FirstNameColumn = deref(req.Columns.FirstName)
 		in.LastNameColumn = deref(req.Columns.LastName)
+		in.StatusColumn = deref(req.Columns.Status)
+		in.TagsColumn = deref(req.Columns.Tags)
 	}
 	if req.Tags != nil {
 		if len(*req.Tags) > contacts.MaxImportTags {

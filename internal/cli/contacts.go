@@ -288,14 +288,21 @@ hash of its address, so adding it again keeps its status.`,
 	update.Flags().StringVar(&uLast, "last-name", "", "last name; empty removes it")
 	update.Flags().StringVar(&uStatus, "status", "", "subscribed, unconfirmed or unsubscribed")
 
-	var yes bool
+	var yes, erase bool
 	del := callsAll([]string{"deleteContact", "listContacts"}, &cobra.Command{
 		Use:   "delete <email-or-id>",
 		Short: "Delete a contact for good",
 		Long: `Deletes the contact and everything about it. If it unsubscribed, bounced or
-complained, a hash of its address stays on the suppression list.`,
-		Example: `  mailgoose contacts delete pat@example.com --yes`,
-		Args:    cobra.ExactArgs(1),
+complained, a hash of its address stays on the suppression list.
+
+--erase is for a person's request to erase their data: the address also goes
+from import reports, and a hash of it always stays on the suppression list (as
+unsubscribed, unless it bounced or complained), so it isn't added back and
+emailed from an old list. "mailgoose contacts export-data" shows what's
+stored first.`,
+		Example: `  mailgoose contacts delete pat@example.com --yes
+  mailgoose contacts delete pat@example.com --erase --yes`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !yes {
 				return needFlag("yes", "Confirmation (deleting can't be undone)")
@@ -304,11 +311,19 @@ complained, a hash of its address stays on the suppression list.`,
 			if err != nil {
 				return err
 			}
-			if err := a.call(cmd.Context(), http.MethodDelete, "/v1/contacts/"+url.PathEscape(id), nil, nil, true); err != nil {
+			path := "/v1/contacts/" + url.PathEscape(id)
+			if erase {
+				path += "?erase=true"
+			}
+			if err := a.call(cmd.Context(), http.MethodDelete, path, nil, nil, true); err != nil {
 				return err
 			}
 			if a.jsonOut {
-				a.printJSON(map[string]any{"id": id, "deleted": true})
+				a.printJSON(map[string]any{"id": id, "deleted": true, "erased": erase})
+				return nil
+			}
+			if erase {
+				fmt.Fprintf(a.Stdout, "Erased %s. Only a hash of the address stays, on the suppression list.\n", args[0])
 				return nil
 			}
 			fmt.Fprintf(a.Stdout, "Deleted %s.\n", args[0])
@@ -316,7 +331,8 @@ complained, a hash of its address stays on the suppression list.`,
 		},
 	})
 	del.Flags().BoolVar(&yes, "yes", false, "confirm; deleting can't be undone")
+	del.Flags().BoolVar(&erase, "erase", false, "erase every trace of the address for a data request, keeping only a hash on the suppression list")
 
-	cmd.AddCommand(add, list, get, update, del)
+	cmd.AddCommand(add, list, get, update, del, a.contactDataCmd())
 	return cmd
 }

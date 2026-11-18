@@ -88,6 +88,39 @@ func (a *App) send(ctx context.Context, apiURL, method, path string, body, out a
 	return 0, responseError(resp, raw)
 }
 
+// download sends a GET to path and copies a 2xx response body to w as it
+// arrives, for files such as CSV exports. An error response becomes an
+// *Error, as in call.
+func (a *App) download(ctx context.Context, path string, w io.Writer) error {
+	st, err := a.settings()
+	if err != nil {
+		return err
+	}
+	if st.APIKey == "" {
+		return authError("Not signed in.", "Run `mailgoose login`, or set "+EnvAPIKey+" to an API key (agents and scripts).")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, st.APIURL+path, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "mailgoose-cli/"+version.Get().Version)
+	req.Header.Set("Authorization", "Bearer "+st.APIKey)
+	resp, err := a.HTTP.Do(req)
+	if err != nil {
+		return &Error{Exit: ExitError, Code: "unreachable", Message: fmt.Sprintf("Cannot reach %s: %v", st.APIURL, err),
+			Hint: "Check --api-url or " + EnvAPIURL + ", and your network."}
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return responseError(resp, raw)
+	}
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		return fmt.Errorf("download from %s: %w", st.APIURL, err)
+	}
+	return nil
+}
+
 // responseError maps an error response to an *Error. The exit code follows
 // the status, except that an API code of confirmation_required always means
 // exit 5, whatever its status.

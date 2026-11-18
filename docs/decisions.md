@@ -4,6 +4,41 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Contact export and data request details (MG-18, reversible defaults)
+
+Picked while building MG-18; easy to change.
+
+- **Export columns:** email, first_name, last_name, status, tags (names
+  separated by commas), source, created_at, status_changed_at and
+  permission_confirmed. The consent fields today are status, source,
+  status_changed_at and, for imported contacts, whether the import confirmed
+  permission (contacts now remember their import). Form consent records come
+  with MG-36 and should add their columns here.
+- **Export is one streamed CSV** (`GET /v1/contacts/export`, `mailgoose
+  export`), oldest first, with the same filters as listing contacts. Held
+  contacts are included. Cells starting with `=`, `+`, `-` or `@` get a `'`
+  in front so spreadsheets don't run them; imports strip it again.
+- **Round trip:** imports now read a `status` column and a `tags` column
+  (found under those headers, or named with `--map`). A status can only hold a
+  contact back: unsubscribed, bounced and complained rows keep that status,
+  unconfirmed rows stay unconfirmed, other values are ignored. Tags the
+  account lacks are created; a file may name at most 200 different tags, and
+  a tag name over 50 characters refuses the file. Contacts from one import
+  keep the file's order.
+- **Data request** (`GET /v1/contacts/{id}/data`, `mailgoose contacts
+  export-data`): the contact, when each tag was added, the import that added
+  it, and import skip rows with its address. Later tickets that store more
+  about a contact (sends, events, consent) add it here.
+- **Erase** (`DELETE /v1/contacts/{id}?erase=true`, `contacts delete
+  --erase`): deletes the contact, blanks its address in import skip reports
+  (the row and reason stay), and always leaves a suppression hash: the
+  contact's status if it unsubscribed, bounced or complained, otherwise
+  unsubscribed, so an old list can't bring the person back. An import still
+  waiting to run holds its file until it finishes; the suppression hash makes
+  it skip the address.
+- **Scopes:** export, data and erase work with draft keys, like listing and
+  deleting contacts already do.
+
 ## 2026-11-18: CSV import details (MG-17, reversible defaults)
 
 Picked while building MG-17; easy to change.

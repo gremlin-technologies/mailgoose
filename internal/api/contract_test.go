@@ -180,6 +180,22 @@ var contractCases = map[string][]contractCase{
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/contacts"))), req: bearer(request(http.MethodGet, "/v1/contacts")), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodGet, "/v1/contacts")), status: http.StatusServiceUnavailable},
 	},
+	"exportContacts": {
+		{name: "exported", server: draftKey(authServer), before: addedContact,
+			req: bearer(request(http.MethodGet, "/v1/contacts/export?status=subscribed")), status: http.StatusOK},
+		{name: "bad tag", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/contacts/export?tag_id=vip")), status: http.StatusBadRequest},
+		{name: "no credentials", server: authServer, req: request(http.MethodGet, "/v1/contacts/export"), status: http.StatusUnauthorized},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/contacts"))), req: bearer(request(http.MethodGet, "/v1/contacts/export")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodGet, "/v1/contacts/export")), status: http.StatusServiceUnavailable},
+	},
+	"getContactData": {
+		{name: "found", server: fullKey(authServer), before: addedContact, req: bearer(contactPathSuffix(http.MethodGet, "/data", "")), status: http.StatusOK},
+		{name: "bad id", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/contacts/pat@example.com/data")), status: http.StatusBadRequest},
+		{name: "unknown", server: fullKey(authServer), req: bearer(contactPathSuffix(http.MethodGet, "/data", "")), status: http.StatusNotFound},
+		{name: "no credentials", server: authServer, req: contactPathSuffix(http.MethodGet, "/data", ""), status: http.StatusUnauthorized},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/contacts"))), req: bearer(contactPathSuffix(http.MethodGet, "/data", "")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(contactPathSuffix(http.MethodGet, "/data", "")), status: http.StatusServiceUnavailable},
+	},
 	"createContact": {
 		{name: "created", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/contacts", `{"email":"pat@example.com","first_name":"Pat"}`)), status: http.StatusCreated},
 		{name: "malformed", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/contacts", `{"email":1}`)), status: http.StatusBadRequest},
@@ -215,6 +231,7 @@ var contractCases = map[string][]contractCase{
 	},
 	"deleteContact": {
 		{name: "deleted", server: draftKey(authServer), before: addedContact, req: bearer(contactPath(http.MethodDelete, "")), status: http.StatusNoContent},
+		{name: "erased", server: fullKey(authServer), before: addedContact, req: bearer(contactPathSuffix(http.MethodDelete, "?erase=true", "")), status: http.StatusNoContent},
 		{name: "bad id", server: fullKey(authServer), req: bearer(request(http.MethodDelete, "/v1/contacts/x")), status: http.StatusBadRequest},
 		{name: "unknown", server: fullKey(authServer), req: bearer(contactPath(http.MethodDelete, "")), status: http.StatusNotFound},
 		{name: "no credentials", server: authServer, req: contactPath(http.MethodDelete, ""), status: http.StatusUnauthorized},
