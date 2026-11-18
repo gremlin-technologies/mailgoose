@@ -1,0 +1,11 @@
+.git
+.github
+infra
+docs
+bin
+dist
+*.md
+!README.md
+.env
+.env.*
+compose.yaml
