@@ -10,7 +10,9 @@ resource "aws_security_group" "db" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "from_app" {
-  for_each = toset(var.allowed_security_group_ids)
+  # Keyed by position: the group IDs aren't known until apply, but the list
+  # length is, and for_each keys must be known at plan time.
+  for_each = { for i, id in var.allowed_security_group_ids : tostring(i) => id }
 
   security_group_id            = aws_security_group.db.id
   referenced_security_group_id = each.value

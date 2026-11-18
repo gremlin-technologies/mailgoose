@@ -33,7 +33,7 @@ resource "aws_iam_role_policy_attachment" "execution" {
 }
 
 data "aws_iam_policy_document" "execution_secrets" {
-  count = length(local.secret_arns) > 0 ? 1 : 0
+  count = length(var.secrets) > 0 ? 1 : 0
 
   statement {
     actions   = ["secretsmanager:GetSecretValue"]
@@ -42,7 +42,7 @@ data "aws_iam_policy_document" "execution_secrets" {
 }
 
 resource "aws_iam_role_policy" "execution_secrets" {
-  count  = length(local.secret_arns) > 0 ? 1 : 0
+  count  = length(var.secrets) > 0 ? 1 : 0
   name   = "read-injected-secrets"
   role   = aws_iam_role.execution.id
   policy = data.aws_iam_policy_document.execution_secrets[0].json
