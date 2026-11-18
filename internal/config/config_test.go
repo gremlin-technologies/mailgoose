@@ -154,3 +154,33 @@ func TestSendLimitSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestStripeSettings(t *testing.T) {
+	cfg, err := load(env(map[string]string{
+		"APP_ENV":          "staging",
+		"APP_SECRETS_JSON": `{"STRIPE_SECRET_KEY":"sk_test_abc","STRIPE_WEBHOOK_SECRET":"whsec_1"}`,
+		"CREDIT_PACKS":     "10k=10000:2000",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Stripe != (Stripe{SecretKey: "sk_test_abc", WebhookSecret: "whsec_1", Packs: "10k=10000:2000"}) || !cfg.Stripe.Enabled() {
+		t.Errorf("stripe %+v", cfg.Stripe)
+	}
+	for name, e := range map[string]map[string]string{
+		"live key outside prod": {"APP_ENV": "staging", "STRIPE_SECRET_KEY": "sk_live_x", "STRIPE_WEBHOOK_SECRET": "whsec_1"},
+		"test key in prod":      {"APP_ENV": "prod", "STRIPE_SECRET_KEY": "sk_test_x", "STRIPE_WEBHOOK_SECRET": "whsec_1"},
+		"no webhook secret":     {"STRIPE_SECRET_KEY": "sk_test_x"},
+	} {
+		cfg, err := load(env(e))
+		if err != nil || cfg.Stripe.Enabled() || !strings.Contains(cfg.Stripe.Problem, "STRIPE") {
+			t.Errorf("%s: %v %+v", name, err, cfg.Stripe)
+		}
+	}
+	if cfg, err := load(env(map[string]string{"APP_ENV": "prod", "STRIPE_SECRET_KEY": "sk_live_x", "STRIPE_WEBHOOK_SECRET": "whsec_1"})); err != nil || !cfg.Stripe.Enabled() {
+		t.Errorf("live key in prod: %v %+v", err, cfg.Stripe)
+	}
+	if cfg, _ := load(env(nil)); cfg.Stripe.Enabled() || cfg.Stripe.Problem != "" {
+		t.Errorf("no keys: %+v", cfg.Stripe)
+	}
+}

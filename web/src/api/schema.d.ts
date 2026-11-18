@@ -157,6 +157,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/credits/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start buying a credit pack
+         * @description Makes a Stripe Checkout page for a credit pack and returns its URL;
+         *     the person pays there, in a browser (BIL-3, BIL-6). Nothing is
+         *     charged until they do. Once Stripe says the payment went through,
+         *     the pack's credits are added, lasting 24 months, and the account
+         *     becomes paid: it stops getting the free monthly credits (BIL-5).
+         *     Sales tax is worked out at checkout and Stripe emails the receipt.
+         *     The page expires after 24 hours. Packs: `10k` ($20), `50k` ($75),
+         *     `200k` ($240) and `1m` ($900), unless the server's configured
+         *     otherwise.
+         */
+        post: operations["createCreditCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/credits/transactions": {
         parameters: {
             query?: never;
@@ -2043,6 +2071,28 @@ export interface components {
             data: components["schemas"]["ApiKey"][];
             next_cursor: string | null;
         };
+        CreditCheckoutRequest: {
+            /** @description The pack's name, such as `10k`; case doesn't matter. */
+            pack: string;
+        };
+        CreditCheckout: {
+            /**
+             * Format: uri
+             * @description Stripe's Checkout page; open it in a browser to pay.
+             */
+            url: string;
+            pack: string;
+            credits: number;
+            /** @description The pack's price before any sales tax, in cents. */
+            price_cents: number;
+            /** @enum {string} */
+            currency: "usd";
+            /**
+             * Format: date-time
+             * @description When the page stops working.
+             */
+            expires_at: string;
+        };
         CreditSummary: {
             /**
              * Format: int64
@@ -3065,6 +3115,29 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /**
+         * @description `unknown_pack`: there's no pack by that name; `details.packs` lists
+         *     the packs with their credits and prices.
+         */
+        UnknownPack: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description `payment_provider_error`: Stripe couldn't make the Checkout page; try again shortly. */
+        PaymentProviderError: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description `tag_exists`: the account already has a tag with that name, ignoring case. */
         TagConflict: {
             headers: {
@@ -3776,6 +3849,38 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createCreditCheckout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreditCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description The Checkout page to pay at. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditCheckout"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["UnknownPack"];
+            429: components["responses"]["TooManyRequests"];
+            502: components["responses"]["PaymentProviderError"];
             503: components["responses"]["ServiceUnavailable"];
         };
     };

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -105,6 +106,64 @@ expire when the next ones arrive. ` + "`mailgoose credits history`" + ` lists ev
 	history.Flags().IntVar(&limit, "limit", 0, "transactions per page (1 to 100, default 50)")
 	history.Flags().StringVar(&cursor, "cursor", "", "next_cursor from the previous page")
 
-	cmd.AddCommand(history)
+	buy := calls("createCreditCheckout", &cobra.Command{
+		Use:   "buy <pack>",
+		Short: "Get a Stripe Checkout link to buy a credit pack",
+		Long: `Makes a Stripe Checkout page for a credit pack and prints its link. Open
+the link in a browser to pay; the credits arrive as soon as Stripe confirms
+the payment, and last 24 months. Buying credits makes the account paid.
+
+The packs are 10k ($20), 50k ($75), 200k ($240) and 1m ($900). Sales tax, if
+any, is added at checkout. Needs a full-scope key.`,
+		Example: "  mailgoose credits buy 10k",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var out creditCheckout
+			if err := a.call(cmd.Context(), http.MethodPost, "/v1/credits/checkout", map[string]string{"pack": args[0]}, &out, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(out)
+				return nil
+			}
+			fmt.Fprintf(a.Stdout, "%s credits for %s, plus any sales tax.\n", groupThousands(out.Credits), dollars(out.PriceCents))
+			fmt.Fprintf(a.Stdout, "Pay here (the link works until %s):\n%s\n", out.ExpiresAt.Local().Format("2006-01-02 15:04"), out.URL)
+			fmt.Fprintln(a.Stdout, "The credits arrive once Stripe confirms the payment; check with `mailgoose credits`.")
+			return nil
+		},
+	})
+
+	cmd.AddCommand(history, buy)
 	return cmd
+}
+
+// creditCheckout is the API's CreditCheckout.
+type creditCheckout struct {
+	URL        string    `json:"url"`
+	Pack       string    `json:"pack"`
+	Credits    int64     `json:"credits"`
+	PriceCents int64     `json:"price_cents"`
+	Currency   string    `json:"currency"`
+	ExpiresAt  time.Time `json:"expires_at"`
+}
+
+// dollars writes 7500 cents as "$75" and 1999 as "$19.99".
+func dollars(cents int64) string {
+	if cents%100 == 0 {
+		return "$" + groupThousands(cents/100)
+	}
+	return fmt.Sprintf("$%s.%02d", groupThousands(cents/100), cents%100)
+}
+
+// groupThousands writes 10000 as "10,000".
+func groupThousands(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	var b strings.Builder
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
 }

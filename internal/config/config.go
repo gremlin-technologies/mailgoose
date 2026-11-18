@@ -75,7 +75,30 @@ type Config struct {
 
 	// AppSecrets holds the JSON object injected from the <env>/app secret.
 	AppSecrets map[string]string
+
+	// Stripe is how credits are sold (BIL-3).
+	Stripe Stripe
 }
+
+// Stripe holds the Stripe keys, from the <env>/app secret (or the
+// environment, locally), and the credit packs' prices.
+type Stripe struct {
+	// SecretKey is empty when buying credits isn't set up. Only prod may
+	// use a live key (sk_live_), and prod may use only a live one.
+	SecretKey string
+	// WebhookSecret checks the webhook's signatures (whsec_...).
+	WebhookSecret string
+	// Packs is CREDIT_PACKS: "name=credits:cents,..."; empty means the
+	// decided packs.
+	Packs string
+	// Problem says why the keys can't be used; buying credits is then off
+	// (and the server says so in its log) rather than the server refusing
+	// to start.
+	Problem string
+}
+
+// Enabled reports whether credits can be bought.
+func (s Stripe) Enabled() bool { return s.SecretKey != "" && s.Problem == "" }
 
 // Database says how to reach Postgres. Either URL is set (local), or Host,
 // Port, Name and SecretARN are (AWS, where RDS rotates the password in
@@ -158,6 +181,28 @@ func load(getenv func(string) string) (Config, error) {
 		MigrateOnStart:           migrate,
 		RateLimitPerMinute:       rateLimit,
 		AppSecrets:               secrets,
+	}
+
+	secret := func(name string) string {
+		if v := strings.TrimSpace(cfg.AppSecrets[name]); v != "" {
+			return v
+		}
+		return strings.TrimSpace(getenv(name))
+	}
+	cfg.Stripe = Stripe{
+		SecretKey:     secret("STRIPE_SECRET_KEY"),
+		WebhookSecret: secret("STRIPE_WEBHOOK_SECRET"),
+		Packs:         getenv("CREDIT_PACKS"),
+	}
+	live := strings.HasPrefix(cfg.Stripe.SecretKey, "sk_live_") || strings.HasPrefix(cfg.Stripe.SecretKey, "rk_live_")
+	switch {
+	case cfg.Stripe.SecretKey == "":
+	case live && cfg.AppEnv != "prod":
+		cfg.Stripe.Problem = fmt.Sprintf("STRIPE_SECRET_KEY is a live key, which only prod may use (APP_ENV is %q)", cfg.AppEnv)
+	case !live && cfg.AppEnv == "prod":
+		cfg.Stripe.Problem = "STRIPE_SECRET_KEY isn't a live key; prod would sell credits for test payments"
+	case cfg.Stripe.WebhookSecret == "":
+		cfg.Stripe.Problem = "STRIPE_SECRET_KEY is set without STRIPE_WEBHOOK_SECRET; purchases would never be credited"
 	}
 
 	for _, o := range strings.Split(getenv("WEB_ORIGINS"), ",") {

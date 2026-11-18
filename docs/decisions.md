@@ -23,6 +23,29 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Buying credits with Stripe Checkout (MG-39, reversible defaults)
+
+Picked while building MG-39; easy to change.
+
+- **No Stripe products.** Pack prices live in config (`CREDIT_PACKS`,
+  defaulting to the decided packs) and each Checkout session carries its
+  pack's price, so Stripe needs no products or prices set up, and changing
+  a price is a config change.
+- **A small Stripe client** of our own (one form post), not the Stripe SDK.
+- **Sales tax is added on top** of the pack price (`tax_behavior:
+  exclusive`), worked out by Stripe Tax from the billing address Checkout
+  asks for. Whether prices should include tax instead is left open below.
+- **Receipts** go to the account's sign-in address, set on the session.
+- **Keys** come from the `<env>/app` secret. Only prod may use a live key
+  and prod only a live one; a wrong key turns buying credits off (with a log
+  line) instead of stopping the server.
+- **The webhook trusts the pack, not the session alone:** a paid session
+  adds credits only if its amount, currency and credits match the pack as
+  configured now. One that doesn't is logged as an error and adds nothing.
+- **Paid from the first purchase:** the account becomes paid when its first
+  pack is paid for, and `paid_since` records when (the monthly fee, MG-40,
+  will count from it). It gets no more free monthly grants.
+
 ## 2026-11-18: Campaign reports (MG-38, reversible defaults)
 
 Picked while building MG-38; easy to change.
@@ -1254,3 +1277,6 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - Deleting an account that still has bought credits: are they refunded or
   forfeited? (Default: forfeited; the ledger keeps them as billing records.
   MG-43, for MG-39 and MG-40 to settle.)
+- Should pack prices include sales tax, or have it added at checkout?
+  (Default: added on top, which is usual for US software. See 2026-11-18,
+  MG-39.)

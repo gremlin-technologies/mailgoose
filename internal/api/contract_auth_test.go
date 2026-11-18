@@ -11,6 +11,7 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/admin"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/billing"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
@@ -76,6 +77,8 @@ func authServerTB(t testing.TB) *Server {
 	s.Admin = &admin.Service{DB: db, Sending: s.Sending}
 	s.Tracking = &tracking.Service{DB: db, Unsubscribe: s.Unsubscribe}
 	s.Reports = &reports.Service{DB: db}
+	s.Billing = &billing.Service{DB: db, Stripe: &fakeStripe{}, WebhookSecret: testWebhookSecret,
+		Packs: billing.DefaultPacks, BaseURL: "https://app.mailgoose.test"}
 	return s
 }
 
