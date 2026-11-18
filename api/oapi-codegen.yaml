@@ -1,0 +1,12 @@
+# oapi-codegen settings for the Go server types. `make generate` runs it.
+package: apigen
+output: internal/api/apigen/apigen.gen.go
+generate:
+  models: true
+  std-http-server: true
+output-options:
+  skip-prune: true
+compatibility:
+  # Enum constants get their type's name (HealthStatusOk, not Ok), so two
+  # enums with the same value never collide.
+  always-prefix-enum-values: true

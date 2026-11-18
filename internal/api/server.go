@@ -1,6 +1,9 @@
 // Package api is the mailgoose HTTP API.
 //
-// The contract lives in api/openapi.yaml. Every handler shares the plumbing in
+// The contract lives in api/openapi.yaml. `make generate` turns it into the Go
+// types and the ServerInterface in internal/api/apigen; Server implements that
+// interface, so an operation added to the spec doesn't compile until it has a
+// handler. Every handler shares the plumbing in
 // this package: one error shape (errors.go), cursor pagination
 // (pagination.go), request IDs (requestid.go), idempotency keys
 // (idempotency.go) and per-key rate limits (ratelimit.go).
@@ -13,8 +16,11 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 )
+
+var _ apigen.ServerInterface = (*Server)(nil)
 
 // Pinger reports whether a dependency (the database) is reachable.
 type Pinger interface {
@@ -52,15 +58,7 @@ func (s *Server) Handler() http.Handler {
 		store = &MemoryIdempotencyStore{}
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", s.healthz)
-	mux.HandleFunc("GET /readyz", s.readyz)
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		WriteError(w, NotFound("not_found", "No such endpoint.").
-			WithHint("See the API reference for the endpoints and methods that exist."))
-	})
-
-	var h http.Handler = mux
+	var h http.Handler = s.routes()
 	h = (&Idempotency{Store: store, Now: now, Log: s.Log}).Middleware(h)
 	h = (&RateLimiter{PerMinute: s.RateLimitPerMinute, Now: now}).Middleware(h)
 	h = s.logRequests(h)
@@ -68,20 +66,42 @@ func (s *Server) Handler() http.Handler {
 	return requestIDs(h)
 }
 
-type healthResponse struct {
-	Status string `json:"status"`
-	version.Info
+// routes registers every operation in the spec, through the generated router,
+// and a JSON 404 for everything else.
+func (s *Server) routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	apigen.HandlerWithOptions(s, apigen.StdHTTPServerOptions{
+		BaseRouter: mux,
+		// Called when a path, query or header parameter doesn't parse.
+		ErrorHandlerFunc: func(w http.ResponseWriter, _ *http.Request, err error) {
+			WriteError(w, BadRequest("invalid_parameter", err.Error()))
+		},
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		WriteError(w, NotFound("not_found", "No such endpoint.").
+			WithHint("See the API reference for the endpoints and methods that exist."))
+	})
+	return mux
 }
 
-// healthz is the liveness check the ALB target group polls. It must not
-// depend on the database: a database blip should not make the load balancer
-// drain every task.
-func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, healthResponse{Status: "ok", Info: version.Get()})
+func health() apigen.Health {
+	info := version.Get()
+	h := apigen.Health{Status: apigen.HealthStatusOk, Version: info.Version}
+	if info.Commit != "" {
+		h.Commit = &info.Commit
+	}
+	return h
 }
 
-// readyz also checks the database.
-func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
+// GetHealth is the liveness check (GET /healthz) the ALB target group polls.
+// It must not depend on the database: a database blip should not make the
+// load balancer drain every task.
+func (s *Server) GetHealth(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, health())
+}
+
+// GetReadiness (GET /readyz) also checks the database.
+func (s *Server) GetReadiness(w http.ResponseWriter, r *http.Request) {
 	if s.DB == nil {
 		writeError(w, http.StatusServiceUnavailable, "database_not_configured", "No database is configured.")
 		return
@@ -93,7 +113,7 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "database_unavailable", "The database is not reachable.")
 		return
 	}
-	writeJSON(w, http.StatusOK, healthResponse{Status: "ok", Info: version.Get()})
+	writeJSON(w, http.StatusOK, health())
 }
 
 type statusRecorder struct {
