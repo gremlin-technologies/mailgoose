@@ -1733,6 +1733,220 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/forms:
+    get:
+      operationId: listForms
+      summary: List signup forms
+      description: The account's signup forms, newest first.
+      tags: [forms]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of forms.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FormList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: createForm
+      summary: Create a signup form
+      description: |
+        Makes a signup form. Parts left out take their defaults: an email
+        field only, a "Subscribe" button, double opt-in on, and a success
+        message and confirmation email that fit it. Everyone who signs up
+        gets the form's tags. `mailgoose form embed` (getFormEmbed) gives
+        the code to put it on a site.
+      tags: [forms]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFormRequest"
+      responses:
+        "201":
+          description: The new form.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Form"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "422":
+          $ref: "#/components/responses/InvalidForm"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/forms/{form_id}:
+    get:
+      operationId: getForm
+      summary: Get a signup form
+      tags: [forms]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/FormId"
+      responses:
+        "200":
+          description: The form.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Form"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      operationId: updateForm
+      summary: Change a signup form
+      description: |
+        Changes the parts given; the rest stay. `fields` and `tag_ids`
+        replace the whole list. An empty `redirect_url` removes it, so the
+        form shows its success message instead. Embed code already on a
+        site keeps working, but shows the fields it was made with until
+        it's replaced.
+      tags: [forms]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/FormId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFormRequest"
+      responses:
+        "200":
+          description: The changed form.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Form"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/InvalidForm"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: deleteForm
+      summary: Delete a signup form
+      description: |
+        Deletes the form. Contacts who signed up with it stay, and its embed
+        code stops taking signups.
+      tags: [forms]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/FormId"
+      responses:
+        "204":
+          description: Deleted.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/forms/{form_id}/embed:
+    get:
+      operationId: getFormEmbed
+      summary: Get a signup form's embed code
+      description: |
+        The code to paste into a site. `html` is a plain HTML form that
+        posts to `action_url` and works without JavaScript; it carries a
+        hidden honeypot field (`website`) and a signed timestamp (`_mg_ts`)
+        that submissions are checked against. `script` is optional: pasted
+        after the form, it posts in the page and shows the success message
+        there instead of leaving the page. Labels and the button take the
+        site's own fonts.
+      tags: [forms]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/FormId"
+      responses:
+        "200":
+          description: The embed code.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FormEmbed"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/emails:
     get:
       operationId: listEmails
@@ -3783,6 +3997,165 @@ components:
         updated_at:
           type: string
           format: date-time
+    FormField:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          enum: [email, first_name, last_name]
+        label:
+          type: string
+          maxLength: 100
+          description: What the field is called on the form. Empty takes the default ("Email", "First name", "Last name").
+        required:
+          type: boolean
+          default: false
+          description: Email is always required.
+    Form:
+      type: object
+      required: [id, name, fields, tags, button_text, success_message, redirect_url, double_opt_in,
+        confirm_subject, confirm_text, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        fields:
+          type: array
+          description: The fields the form asks for, in order.
+          items:
+            $ref: "#/components/schemas/FormField"
+        tags:
+          type: array
+          description: Tags put on everyone who signs up with the form.
+          items:
+            $ref: "#/components/schemas/TagRef"
+        button_text:
+          type: string
+        success_message:
+          type: string
+          description: Shown after someone signs up, unless there's a redirect_url.
+        redirect_url:
+          type: [string, "null"]
+          description: Where people go after signing up, instead of seeing the success message.
+        double_opt_in:
+          type: boolean
+          description: When on, people get an email to confirm before they're subscribed.
+        confirm_subject:
+          type: string
+          description: The confirmation email's subject.
+        confirm_text:
+          type: string
+          description: The confirmation email's text, above its confirm link.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    FormList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Form"
+        next_cursor:
+          type: [string, "null"]
+    CreateFormRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        fields:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/FormField"
+        tag_ids:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            format: uuid
+        button_text:
+          type: string
+          maxLength: 50
+        success_message:
+          type: string
+          maxLength: 500
+        redirect_url:
+          type: string
+          maxLength: 2000
+          description: A full https:// address, or empty for none.
+        double_opt_in:
+          type: boolean
+          default: true
+        confirm_subject:
+          type: string
+          maxLength: 200
+        confirm_text:
+          type: string
+          maxLength: 2000
+    UpdateFormRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        fields:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: "#/components/schemas/FormField"
+        tag_ids:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            format: uuid
+        button_text:
+          type: string
+          maxLength: 50
+        success_message:
+          type: string
+          maxLength: 500
+        redirect_url:
+          type: string
+          maxLength: 2000
+        double_opt_in:
+          type: boolean
+        confirm_subject:
+          type: string
+          maxLength: 200
+        confirm_text:
+          type: string
+          maxLength: 2000
+    FormEmbed:
+      type: object
+      required: [action_url, html, script]
+      properties:
+        action_url:
+          type: string
+          description: Where the form posts.
+        html:
+          type: string
+          description: The form, with its styles. Works without JavaScript.
+        script:
+          type: string
+          description: Optional. Paste it after the form to show the result in the page.
     EmailList:
       type: object
       required: [data, next_cursor]
@@ -4111,6 +4484,14 @@ components:
       description: The block's `id`.
       schema:
         $ref: "#/components/schemas/BlockId"
+    FormId:
+      name: form_id
+      in: path
+      required: true
+      description: The form's `id`.
+      schema:
+        type: string
+        format: uuid
     EmailId:
       name: email_id
       in: path
@@ -4249,6 +4630,18 @@ components:
         `details.issues` lists each, with its `line`, `code` and `message`;
         `message` names the first. `kind_mismatch`: the email is a blocks
         email, which has no markup.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InvalidForm:
+      description: |
+        `invalid_form`: a part of the form breaks a rule; `details.field`
+        names it (such as `redirect_url` or `fields[1].name`).
+        `unknown_tag`: a tag id isn't one of the account's tags.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

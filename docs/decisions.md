@@ -4,6 +4,28 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Signup forms (MG-35, reversible defaults)
+
+Picked while building MG-35; easy to change.
+
+- **Form posts go to `/f/{form_id}`** on the app's URL. MG-36 takes them.
+  A post that asks for JSON gets `{message, redirect_url}` back, or the
+  usual error; a plain post gets a redirect.
+- **Each form has its own signing key** for the embed's timestamp, so no
+  new server secret or infrastructure is needed. Deleting the form drops
+  the key.
+- **The timestamp is signed when the embed code is made**, not when the
+  page loads, since a form with no script can't ask for one. The optional
+  script also sends how long the page was open (`_mg_ms`), which MG-36 can
+  use for the minimum time to submit. MG-36 may add a token endpoint if
+  that proves too weak.
+- **The honeypot field is named `website`**, hidden off screen and skipped
+  by keyboards and screen readers.
+- **Redirects must be https.**
+- **Field order and labels** are set with `--file` (or the API); the flags
+  cover the common cases: `--first-name` and `--last-name` take off,
+  optional or required.
+
 ## 2026-11-19: Image storage bucket and CDN (MG-23, reversible defaults)
 
 The owner asked for this as a PR to merge (Nov 19). Picked while writing it;
