@@ -87,20 +87,31 @@ VALUES ($1, $2, $3, $4) ON CONFLICT (scope, key) DO NOTHING`, scope, key, hash, 
 	return false, &IdempotencyRecord{RequestHash: hash}, nil
 }
 
-// Complete implements IdempotencyStore.
-func (s PGIdempotencyStore) Complete(ctx context.Context, scope, key string, resp StoredResponse) error {
+// Complete implements IdempotencyStore. The claim is identified by its
+// created_at, which Claim sets to claimedAt and a takeover moves on by at
+// least idempotencyStaleClaim.
+func (s PGIdempotencyStore) Complete(ctx context.Context, scope, key string, claimedAt time.Time, resp StoredResponse) error {
 	headers, err := json.Marshal(resp.Header)
 	if err != nil {
 		return err
 	}
-	_, err = s.DB.Exec(ctx, `
-UPDATE idempotency_keys SET status_code = $3, response_headers = $4, response_body = $5
-WHERE scope = $1 AND key = $2`, scope, key, resp.Status, headers, resp.Body)
-	return err
+	tag, err := s.DB.Exec(ctx, `
+UPDATE idempotency_keys SET status_code = $4, response_headers = $5, response_body = $6
+WHERE scope = $1 AND key = $2 AND created_at = $3 AND status_code IS NULL`,
+		scope, key, claimedAt, resp.Status, headers, resp.Body)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrIdempotencyClaimLost
+	}
+	return nil
 }
 
 // Release implements IdempotencyStore.
-func (s PGIdempotencyStore) Release(ctx context.Context, scope, key string) error {
-	_, err := s.DB.Exec(ctx, `DELETE FROM idempotency_keys WHERE scope = $1 AND key = $2 AND status_code IS NULL`, scope, key)
+func (s PGIdempotencyStore) Release(ctx context.Context, scope, key string, claimedAt time.Time) error {
+	_, err := s.DB.Exec(ctx, `
+DELETE FROM idempotency_keys
+WHERE scope = $1 AND key = $2 AND created_at = $3 AND status_code IS NULL`, scope, key, claimedAt)
 	return err
 }

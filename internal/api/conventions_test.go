@@ -454,6 +454,60 @@ func TestIdempotencyInProgress(t *testing.T) {
 	}
 }
 
+// testClaimOwnership checks that a request whose claim was taken over as
+// stale can't store its response over, or release, the newer claim.
+func testClaimOwnership(t *testing.T, store IdempotencyStore, t0 time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	const scope, key = "s", "owned"
+	hash := []byte("h")
+	if ok, _, err := store.Claim(ctx, scope, key, hash, t0); !ok || err != nil {
+		t.Fatalf("first claim: %v %v", ok, err)
+	}
+	t1 := t0.Add(3 * time.Minute)
+	if ok, _, err := store.Claim(ctx, scope, key, hash, t1); !ok || err != nil {
+		t.Fatalf("takeover: %v %v", ok, err)
+	}
+
+	// The first request finishes late: nothing it does touches the new claim.
+	stale := StoredResponse{Status: 201, Header: http.Header{}, Body: []byte(`{"from":"first"}`)}
+	if err := store.Complete(ctx, scope, key, t0, stale); !errors.Is(err, ErrIdempotencyClaimLost) {
+		t.Fatalf("late Complete: %v, want ErrIdempotencyClaimLost", err)
+	}
+	if err := store.Release(ctx, scope, key, t0); err != nil {
+		t.Fatalf("late Release: %v", err)
+	}
+	ok, rec, err := store.Claim(ctx, scope, key, hash, t1.Add(time.Second))
+	if ok || err != nil || rec == nil || rec.Response != nil {
+		t.Fatalf("new claim should still be running: %v %+v %v", ok, rec, err)
+	}
+
+	// The new request completes, and its response is the one replayed.
+	fresh := StoredResponse{Status: 201, Header: http.Header{}, Body: []byte(`{"from":"second"}`)}
+	if err := store.Complete(ctx, scope, key, t1, fresh); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	ok, rec, err = store.Claim(ctx, scope, key, hash, t1.Add(2*time.Second))
+	if ok || err != nil || rec.Response == nil || string(rec.Response.Body) != `{"from":"second"}` {
+		t.Fatalf("replay: %v %+v %v", ok, rec, err)
+	}
+
+	// A completed key can't be completed again or released.
+	if err := store.Complete(ctx, scope, key, t1, stale); !errors.Is(err, ErrIdempotencyClaimLost) {
+		t.Errorf("second Complete: %v, want ErrIdempotencyClaimLost", err)
+	}
+	if err := store.Release(ctx, scope, key, t1); err != nil {
+		t.Fatal(err)
+	}
+	if _, rec, _ := store.Claim(ctx, scope, key, hash, t1.Add(3*time.Second)); rec == nil || rec.Response == nil || string(rec.Response.Body) != `{"from":"second"}` {
+		t.Errorf("stored response changed: %+v", rec)
+	}
+}
+
+func TestIdempotencyClaimOwnershipMemory(t *testing.T) {
+	testClaimOwnership(t, &MemoryIdempotencyStore{}, time.Unix(1_800_000_000, 0))
+}
+
 // TestIdempotencyPostgres runs the same checks against the Postgres store.
 func TestIdempotencyPostgres(t *testing.T) {
 	pool := dbtest.New(t)
@@ -476,4 +530,8 @@ func TestIdempotencyPostgres(t *testing.T) {
 	if ok, _, _ := store.Claim(ctx, "s", "running", []byte("h"), now.Add(3*time.Minute)); !ok {
 		t.Error("a stale claim should be taken over")
 	}
+
+	// time.Now has nanoseconds; Postgres keeps microseconds. The claim still
+	// matches because the same value is rounded the same way both times.
+	testClaimOwnership(t, store, time.Now())
 }

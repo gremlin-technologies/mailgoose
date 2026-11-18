@@ -47,11 +47,20 @@ type IdempotencyStore interface {
 	// older than IdempotencyTTL, or a claim older than idempotencyStaleClaim
 	// that never completed, doesn't count as live.
 	Claim(ctx context.Context, scope, key string, hash []byte, now time.Time) (claimed bool, existing *IdempotencyRecord, err error)
-	// Complete stores the response for a claimed key.
-	Complete(ctx context.Context, scope, key string, resp StoredResponse) error
-	// Release drops a claim whose request failed, so the client can retry.
-	Release(ctx context.Context, scope, key string) error
+	// Complete stores the response for the claim made at claimedAt (the now
+	// passed to Claim). It returns ErrIdempotencyClaimLost and stores nothing
+	// when that claim is gone: taken over as stale by a later request, or
+	// already completed or released.
+	Complete(ctx context.Context, scope, key string, claimedAt time.Time, resp StoredResponse) error
+	// Release drops the claim made at claimedAt, if it's still unfinished, so
+	// the client can retry. It leaves alone a claim another request has taken
+	// over.
+	Release(ctx context.Context, scope, key string, claimedAt time.Time) error
 }
+
+// ErrIdempotencyClaimLost means a request finished after its claim was taken
+// over by a later request, so its response wasn't stored.
+var ErrIdempotencyClaimLost = errors.New("idempotency claim was taken over")
 
 // Idempotency makes POST, PUT, PATCH and DELETE requests that carry an
 // Idempotency-Key safe to retry. Within IdempotencyTTL, a repeat with the same
@@ -154,7 +163,8 @@ func (m *Idempotency) Middleware(next http.Handler) http.Handler {
 		hash := requestHash(r, body)
 
 		ctx := r.Context()
-		claimed, existing, err := m.Store.Claim(ctx, scope, key, hash, now())
+		claimedAt := now()
+		claimed, existing, err := m.Store.Claim(ctx, scope, key, hash, claimedAt)
 		if err != nil {
 			log.ErrorContext(ctx, "idempotency claim failed", "err", err)
 			WriteError(w, Internal())
@@ -180,7 +190,7 @@ func (m *Idempotency) Middleware(next http.Handler) http.Handler {
 			if !completed {
 				// The handler panicked; let the client retry. The recoverer
 				// further out writes the 500.
-				_ = m.Store.Release(context.WithoutCancel(ctx), scope, key)
+				_ = m.Store.Release(context.WithoutCancel(ctx), scope, key, claimedAt)
 			}
 		}()
 		next.ServeHTTP(rec, r)
@@ -189,11 +199,15 @@ func (m *Idempotency) Middleware(next http.Handler) http.Handler {
 		resp := StoredResponse{Status: rec.status, Header: storableHeader(rec.header), Body: rec.body.Bytes()}
 		storeCtx := context.WithoutCancel(ctx)
 		if rec.status >= 500 {
-			err = m.Store.Release(storeCtx, scope, key)
+			err = m.Store.Release(storeCtx, scope, key, claimedAt)
 		} else {
-			err = m.Store.Complete(storeCtx, scope, key, resp)
+			err = m.Store.Complete(storeCtx, scope, key, claimedAt, resp)
 		}
-		if err != nil {
+		if errors.Is(err, ErrIdempotencyClaimLost) {
+			// This request ran past idempotencyStaleClaim and a retry took
+			// the key over; the retry's response is the one kept.
+			log.WarnContext(ctx, "idempotency claim taken over before the request finished", "key", key)
+		} else if err != nil {
 			log.ErrorContext(ctx, "idempotency store failed", "err", err)
 		}
 		writeCaptured(w, resp)
@@ -287,22 +301,25 @@ func (s *MemoryIdempotencyStore) Claim(_ context.Context, scope, key string, has
 }
 
 // Complete implements IdempotencyStore.
-func (s *MemoryIdempotencyStore) Complete(_ context.Context, scope, key string, resp StoredResponse) error {
+func (s *MemoryIdempotencyStore) Complete(_ context.Context, scope, key string, claimedAt time.Time, resp StoredResponse) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r, ok := s.recs[scope+"\x00"+key]
-	if !ok {
-		return errors.New("idempotency key not claimed")
+	if !ok || r.resp != nil || !r.created.Equal(claimedAt) {
+		return ErrIdempotencyClaimLost
 	}
 	r.resp = &resp
 	return nil
 }
 
 // Release implements IdempotencyStore.
-func (s *MemoryIdempotencyStore) Release(_ context.Context, scope, key string) error {
+func (s *MemoryIdempotencyStore) Release(_ context.Context, scope, key string, claimedAt time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.recs, scope+"\x00"+key)
+	k := scope + "\x00" + key
+	if r, ok := s.recs[k]; ok && r.resp == nil && r.created.Equal(claimedAt) {
+		delete(s.recs, k)
+	}
 	return nil
 }
 
