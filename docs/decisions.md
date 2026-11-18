@@ -38,6 +38,32 @@ acceptance criteria, are in `docs/mvp-requirements.md`.
   one REST API with an OpenAPI spec shared by the web app, CLI and agents, and
   designs stored as JSON blocks rendered server-side.
 
+## 2026-11-17: Domain, DNS, and first apply
+
+Decided by Carlton.
+
+- **Domain: mailgoose.app** (registered at GoDaddy).
+- **DNS stays at GoDaddy** for the root domain, which carries live Microsoft 365
+  email and the website. Only `staging.mailgoose.app` is delegated to Route 53.
+- **Staging only for now.** Prod waits until there's an app to run. The staging
+  ECS services start at 0 tasks until the first image is in ECR.
+
+Open: how prod gets DNS (move all of mailgoose.app to Route 53, or delegate
+`api`, `app` and `mail` individually). See `infra/README.md`, "DNS".
+
+Found during the first apply, not decided:
+
+- **No GitHub OIDC deploys yet.** The AWS project's managed service control
+  policy denied `iam:CreateOpenIDConnectProvider` (explicit deny, policy
+  p-6tzxgdae), though AWS's published project SCPs don't list it. The OIDC
+  provider and the staging deploy role are switched off
+  (`create_github_oidc_provider`, `enable_github_deploy`). Reversible default:
+  turn them back on once the project allows it (AWS Support, or activating
+  advanced features). Open: how CI deploys until then, without storing AWS keys
+  in GitHub.
+- **AWS plan: Free** ($100 credits, expires 2027-05-18). Everything staging uses
+  is on the Free plan's service list.
+
 ## 2026-11-17: AWS Region
 
 Decided by Carlton.

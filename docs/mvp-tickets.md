@@ -109,7 +109,7 @@ them each time:
 | MG-50 | Credits and billing page | 41, 39 | S | reviewer |
 | MG-51 | Dashboard and getting-started checklist | 43, 42, 45, 47 | S | reviewer |
 | **M10 Launch** | | | | |
-| MG-52 | Deploy pipeline to staging and prod | 00 | M | Carlton (workflows) |
+| MG-52 | Deploy pipeline to staging and prod | 00 | M | Carlton (workflows), needs Carlton |
 | MG-53 | Monitoring and alarms | 52, 31 | M | Carlton (infra) |
 | MG-54 | CLI releases: binaries, Homebrew, install script | 03 | S | Carlton (workflows), needs Carlton |
 | MG-55 | Agent docs: `mailgoose docs`, help examples, API docs, llms.txt | 04, 30 | S | reviewer |
@@ -720,7 +720,10 @@ Acceptance criteria:
 
 ### MG-52: Deploy pipeline
 
-Requirements: OPS-2, OPS-3. **Carlton merges** (workflows).
+Requirements: OPS-2, OPS-3. **Carlton merges** (workflows). **Needs Carlton:**
+GitHub OIDC is switched off because the AWS project's policy denied creating
+the OIDC provider (decisions log, Nov 17). This ticket waits until that is
+lifted, or until Carlton decides how CI deploys without AWS keys in GitHub.
 
 Acceptance criteria:
 
@@ -804,6 +807,7 @@ Carlton** throughout.
 
 Acceptance criteria:
 
+- [ ] Prod DNS decided (open in the decisions log: move mailgoose.app to Route 53, or delegate `api`, `app` and `mail`).
 - [ ] Staging and prod applied and healthy; prod domain and mailgoose's own sending domain verified.
 - [ ] SES production access granted for the account.
 - [ ] Stripe live keys set in the prod app secret; one live purchase refunded end to end.
