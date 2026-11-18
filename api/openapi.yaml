@@ -79,6 +79,74 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /v1/account:
+    get:
+      operationId: getAccount
+      summary: Show account settings
+      description: |
+        The account's name, plan, default From name and address, postal
+        address and time zone. `missing_for_send` lists the settings a
+        campaign can't launch without.
+      tags: [account]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The account.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      operationId: updateAccount
+      summary: Change account settings
+      description: |
+        Changes only the fields sent. Send `null` to remove the default From
+        name, From address or postal address; the name and time zone can't be
+        removed. The postal address goes in the footer of every email, as
+        anti-spam law requires, and campaigns can't launch without it. The
+        From address is checked for format here; a campaign can only send
+        from a domain verified for the account.
+      tags: [account]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAccountRequest"
+      responses:
+        "200":
+          description: The account after the change.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/api-keys:
     get:
       operationId: listApiKeys
@@ -455,6 +523,67 @@ components:
           examples: [Claude on my laptop]
         scope:
           $ref: "#/components/schemas/ApiKeyScope"
+    AccountSettings:
+      type: object
+      required: [id, name, plan, from_name, from_email, postal_address, time_zone, missing_for_send, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        plan:
+          type: string
+          enum: [free, paid]
+        from_name:
+          type: [string, "null"]
+          description: The default From name for new campaigns.
+          examples: [Pat's Bakery]
+        from_email:
+          type: [string, "null"]
+          description: The default From address for new campaigns.
+          examples: [news@patsbakery.example]
+        postal_address:
+          type: [string, "null"]
+          description: The mailing address in every email's footer, one line per `\n`.
+          examples: ["Pat's Bakery\n12 Main St\nSpringfield, IL 62701"]
+        time_zone:
+          type: string
+          description: An IANA time zone name.
+          examples: [America/Chicago]
+        missing_for_send:
+          type: array
+          items:
+            type: string
+          description: Settings a campaign can't launch without, such as `postal_address`. Empty when none are missing.
+        created_at:
+          type: string
+          format: date-time
+    UpdateAccountRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        from_name:
+          type: [string, "null"]
+          maxLength: 100
+          description: One line, without quotes or angle brackets. `null` removes it.
+        from_email:
+          type: [string, "null"]
+          format: email
+          maxLength: 254
+          description: "`null` removes it."
+        postal_address:
+          type: [string, "null"]
+          maxLength: 500
+          description: Up to 8 lines separated by `\n`; blank lines are dropped. `null` removes it.
+        time_zone:
+          type: string
+          description: An IANA time zone name, such as `America/New_York` or `UTC`.
     ApiKeyScope:
       type: string
       enum: [full, draft]

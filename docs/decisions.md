@@ -4,6 +4,28 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Account settings details (MG-11, reversible defaults)
+
+Picked while building MG-11; easy to change.
+
+- **`PATCH /v1/account` changes only the fields sent**, and `null` removes the
+  default From name, From address or postal address. The name and time zone
+  can't be removed. In the CLI, an empty flag value (`--from-email ""`)
+  removes.
+- **The postal address is 1 to 8 non-blank lines, at most 500 characters.**
+  Blank lines and spaces at line ends are dropped. It isn't checked against
+  any address database. `missing_for_send` in the response lists what a
+  campaign can't launch without (today only `postal_address`) for MG-26 and
+  MG-30 to use.
+- **Time zones are IANA names checked against Go's embedded zone database.**
+  `Local`, offsets such as `+05:00` and padded names are refused. New
+  accounts start on `UTC`.
+- **The From address is only checked for format here.** Whether its domain
+  is verified is checked at test send and launch (MG-13), so a person can
+  set it before adding the domain.
+- **Draft keys can change account settings**, since the draft scope only
+  excludes launching, billing and key management.
+
 ## 2026-11-18: Credit ledger details (MG-12, reversible defaults)
 
 Picked while building MG-12; easy to change.

@@ -187,6 +187,9 @@ func TestNoCommandWaitsForInput(t *testing.T) {
 		"/v1/credits": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte(`{"balance":0,"plan":"paid","next_grant_at":null}`))
 		},
+		"/v1/account": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"id":"x","name":"A","plan":"free","from_name":null,"from_email":null,"postal_address":null,"time_zone":"UTC","missing_for_send":[],"created_at":"2026-11-18T12:00:00Z"}`))
+		},
 		"/v1/credits/transactions": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`))
 		},

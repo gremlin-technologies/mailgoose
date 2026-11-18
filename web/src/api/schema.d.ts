@@ -45,6 +45,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show account settings
+         * @description The account's name, plan, default From name and address, postal
+         *     address and time zone. `missing_for_send` lists the settings a
+         *     campaign can't launch without.
+         */
+        get: operations["getAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change account settings
+         * @description Changes only the fields sent. Send `null` to remove the default From
+         *     name, From address or postal address; the name and time zone can't be
+         *     removed. The postal address goes in the footer of every email, as
+         *     anti-spam law requires, and campaigns can't launch without it. The
+         *     From address is checked for format here; a campaign can only send
+         *     from a domain verified for the account.
+         */
+        patch: operations["updateAccount"];
+        trace?: never;
+    };
     "/v1/api-keys": {
         parameters: {
             query?: never;
@@ -252,6 +283,53 @@ export interface components {
             /** @example Claude on my laptop */
             name: string;
             scope: components["schemas"]["ApiKeyScope"];
+        };
+        AccountSettings: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            plan: "free" | "paid";
+            /**
+             * @description The default From name for new campaigns.
+             * @example Pat's Bakery
+             */
+            from_name: string | null;
+            /**
+             * @description The default From address for new campaigns.
+             * @example news@patsbakery.example
+             */
+            from_email: string | null;
+            /**
+             * @description The mailing address in every email's footer, one line per `\n`.
+             * @example Pat's Bakery
+             *     12 Main St
+             *     Springfield, IL 62701
+             */
+            postal_address: string | null;
+            /**
+             * @description An IANA time zone name.
+             * @example America/Chicago
+             */
+            time_zone: string;
+            /** @description Settings a campaign can't launch without, such as `postal_address`. Empty when none are missing. */
+            missing_for_send: string[];
+            /** Format: date-time */
+            created_at: string;
+        };
+        UpdateAccountRequest: {
+            name?: string;
+            /** @description One line, without quotes or angle brackets. `null` removes it. */
+            from_name?: string | null;
+            /**
+             * Format: email
+             * @description `null` removes it.
+             */
+            from_email?: string | null;
+            /** @description Up to 8 lines separated by `\n`; blank lines are dropped. `null` removes it. */
+            postal_address?: string | null;
+            /** @description An IANA time zone name, such as `America/New_York` or `UTC`. */
+            time_zone?: string;
         };
         /**
          * @description `full` can do everything. `draft` can do everything except launch
@@ -617,6 +695,60 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSettings"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    updateAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAccountRequest"];
+            };
+        };
+        responses: {
+            /** @description The account after the change. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AccountSettings"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     listApiKeys: {
