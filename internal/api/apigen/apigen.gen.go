@@ -45,6 +45,11 @@ type Error struct {
 
 // Health defines model for Health.
 type Health struct {
+	// BuildDate When the server binary was built (RFC 3339), if known.
+	//
+	// Examples: 2026-11-18T12:00:00Z
+	BuildDate *string `json:"build_date,omitempty"`
+
 	// Commit Examples: a1b2c3d
 	Commit *string      `json:"commit,omitempty"`
 	Status HealthStatus `json:"status"`

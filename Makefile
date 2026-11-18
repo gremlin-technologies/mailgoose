@@ -3,9 +3,11 @@
 GO          ?= go
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT      ?= $(shell git rev-parse --short HEAD 2>/dev/null)
+BUILD_DATE  ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS     := -s -w \
   -X github.com/gremlin-technologies/mailgoose/internal/version.Version=$(VERSION) \
-  -X github.com/gremlin-technologies/mailgoose/internal/version.Commit=$(COMMIT)
+  -X github.com/gremlin-technologies/mailgoose/internal/version.Commit=$(COMMIT) \
+  -X github.com/gremlin-technologies/mailgoose/internal/version.BuildDate=$(BUILD_DATE)
 
 # Image settings. Fargate runs ARM64 (infra/modules/service, cpu_architecture).
 PLATFORM    ?= linux/arm64
@@ -79,7 +81,7 @@ down: ## Stop the compose stack
 
 image: ## Build the server image for $(PLATFORM) as $(IMAGE):$(IMAGE_TAG)
 	docker buildx build --platform $(PLATFORM) \
-	  --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
+	  --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE) \
 	  -t $(IMAGE):$(IMAGE_TAG) --load .
 
 # Builds and pushes straight to ECR. The repository's tags are immutable, so
@@ -90,7 +92,7 @@ push-ecr: ## Build and push $(PLATFORM) image to ECR as $(ECR_REPO):$(IMAGE_TAG)
 	registry="$$account.dkr.ecr.$(AWS_REGION).amazonaws.com"; \
 	aws ecr get-login-password --region $(AWS_REGION) | docker login --username AWS --password-stdin "$$registry"; \
 	docker buildx build --platform $(PLATFORM) --provenance=false \
-	  --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) \
+	  --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_DATE=$(BUILD_DATE) \
 	  -t "$$registry/$(ECR_REPO):$(IMAGE_TAG)" --push .; \
 	echo "Pushed $$registry/$(ECR_REPO):$(IMAGE_TAG)"
 

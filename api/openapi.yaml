@@ -96,6 +96,10 @@ components:
         commit:
           type: string
           examples: [a1b2c3d]
+        build_date:
+          type: string
+          description: When the server binary was built (RFC 3339), if known.
+          examples: ["2026-11-18T12:00:00Z"]
     Error:
       type: object
       required: [error]
