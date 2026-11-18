@@ -126,6 +126,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `DATABASE_SSLMODE` | Defaults to `require` (RDS forces TLS). |
 | `SEND_QUEUE_URL`, `SES_EVENTS_QUEUE_URL` | Queues the worker drains. Unset means idle. |
 | `SYSTEM_SENDING_DOMAIN` | mailgoose's own sending domain; sign-in codes come from `signin@` it. Defaults to `mail.localhost` when mail is captured (`MAIL_SENDER=fake`). Unset with SES, sign-up and sign-in answer 503. |
+| `WEB_ORIGINS` | Comma-separated origins, besides the API's own, that may send cookie-authenticated requests that change something, such as `https://app.staging.mailgoose.app`. Empty by default. |
 | `SES_CONFIGURATION_SET`, `SES_IDENTITY_TAG` | Read now, used once sending lands. |
 | `APP_SECRETS_JSON` | The `<env>/app` secret, a JSON object. |
 | `MIGRATE_ON_START` | `false` to skip migrations at API start. |
@@ -148,6 +149,14 @@ make mail   # read the code
 curl -si localhost:8080/v1/sessions -H 'Content-Type: application/json' \
   -d '{"email":"pat@example.com","code":"123456"}'
 ```
+
+Signing in later is the same: `POST /v1/sign-in` emails a code to an address
+with an account, and `POST /v1/sessions` turns it into a session.
+`GET /v1/sessions/current` says who is signed in, `DELETE /v1/sessions/current`
+signs out and `DELETE /v1/sessions` signs out everywhere. Code requests are
+limited to 5 an hour per address and 20 an hour per IP, and a browser request
+that changes something with the cookie must come from the API's own origin or
+one listed in `WEB_ORIGINS`.
 
 ## API conventions
 

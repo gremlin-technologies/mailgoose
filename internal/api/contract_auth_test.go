@@ -4,6 +4,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"sync"
 	"testing"
@@ -12,6 +13,8 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 )
+
+const signInBody = `{"email":"pat@example.com"}`
 
 const signupBody = `{"email":"pat@example.com","account_name":"Pat's Bakery","accepted_terms":true}`
 
@@ -64,5 +67,52 @@ func sessionRequest(code string) func(*testing.T) *http.Request {
 			code = sixDigits.FindString(last.Message.Text)
 		}
 		return jsonRequest(http.MethodPost, "/v1/sessions", `{"email":"pat@example.com","code":"`+code+`"}`)(t)
+	}
+}
+
+// cookies holds each test's session cookie, set by signedIn.
+var sessionCookies sync.Map // *testing.T -> *http.Cookie
+
+// signedIn signs pat@example.com up and in through h and keeps the session
+// cookie for withSession.
+func signedIn(t *testing.T, h http.Handler) {
+	t.Helper()
+	signedUp(t, h)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, sessionRequest("")(t))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("sign in: status %d: %s", rec.Code, rec.Body)
+	}
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == SessionCookie {
+			sessionCookies.Store(t, c)
+			t.Cleanup(func() { sessionCookies.Delete(t) })
+			return
+		}
+	}
+	t.Fatal("sign in set no session cookie")
+}
+
+// withSession sends the test's session cookie (from signedIn) or, with no
+// signed-in session, a cookie that matches none.
+func withSession(req func(*testing.T) *http.Request) func(*testing.T) *http.Request {
+	return func(t *testing.T) *http.Request {
+		r := req(t)
+		c := &http.Cookie{Name: SessionCookie, Value: "no-such-session"}
+		if v, ok := sessionCookies.Load(t); ok {
+			c = v.(*http.Cookie)
+		}
+		r.AddCookie(c)
+		return r
+	}
+}
+
+// fromAnotherSite makes req look like a browser request from another site.
+func fromAnotherSite(req func(*testing.T) *http.Request) func(*testing.T) *http.Request {
+	return func(t *testing.T) *http.Request {
+		r := req(t)
+		r.Header.Set("Origin", "https://attacker.example")
+		r.Header.Set("Sec-Fetch-Site", "cross-site")
+		return r
 	}
 }

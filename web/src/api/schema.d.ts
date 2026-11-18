@@ -70,6 +70,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/sign-in": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Email a sign-in code
+         * @description Emails a six-digit code to an address with an account; use it with
+         *     `createSession`. The answer is the same whether or not the address has
+         *     an account, and an address with no account gets no email. An account
+         *     that hasn't finished signing up gets its sign-up code instead. A repeat
+         *     within a minute sends no new email. Code requests (here and in
+         *     `createSignup`) are limited to 5 an hour per address and 20 an hour
+         *     per IP.
+         */
+        post: operations["createSignIn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sessions": {
         parameters: {
             query?: never;
@@ -81,14 +107,43 @@ export interface paths {
         put?: never;
         /**
          * Start a web session with an emailed code
-         * @description Uses a code from `createSignup` (and, later, sign-in). On success a
+         * @description Uses a code from `createSignup` or `createSignIn`. On success a
          *     pending account becomes active, and the response sets an HttpOnly
          *     session cookie that lasts 30 days. A wrong, expired, used or locked
          *     code gets the same `invalid_code` error; a code stops working after 5
          *     wrong tries.
          */
         post: operations["createSession"];
-        delete?: never;
+        /**
+         * Sign out everywhere
+         * @description Ends every web session of the signed-in person, this one included, and
+         *     clears the session cookie.
+         */
+        delete: operations["deleteAllSessions"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sessions/current": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Who is signed in
+         * @description The account and person behind the session cookie.
+         */
+        get: operations["getCurrentSession"];
+        put?: never;
+        post?: never;
+        /**
+         * Sign out
+         * @description Ends this session and clears the session cookie.
+         */
+        delete: operations["deleteCurrentSession"];
         options?: never;
         head?: never;
         patch?: never;
@@ -111,6 +166,13 @@ export interface components {
              *     anti-spam policy. Anything else is a 422 `terms_not_accepted`.
              */
             accepted_terms: boolean;
+        };
+        SignInRequest: {
+            /**
+             * Format: email
+             * @example pat@example.com
+             */
+            email: string;
         };
         CodeSent: {
             /** @enum {string} */
@@ -202,6 +264,32 @@ export interface components {
          *     isn't configured or reachable. Try again later.
          */
         ServiceUnavailable: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `unauthenticated`: no session cookie, or the session has ended. Sign in
+         *     again.
+         */
+        Unauthorized: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `cross_origin_request`: a browser sent this from another site. Only
+         *     the web app's own origin may change things with a session cookie.
+         */
+        CrossOrigin: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -356,6 +444,35 @@ export interface operations {
             503: components["responses"]["ServiceUnavailable"];
         };
     };
+    createSignIn: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignInRequest"];
+            };
+        };
+        responses: {
+            /** @description A code is on its way, if the address has an account. */
+            202: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeSent"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
     createSession: {
         parameters: {
             query?: never;
@@ -384,6 +501,73 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteAllSessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed out everywhere. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getCurrentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The current session. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteCurrentSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed out. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
             503: components["responses"]["ServiceUnavailable"];
         };
     };

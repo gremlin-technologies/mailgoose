@@ -4,6 +4,27 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Web sign-in details (MG-08, reversible defaults)
+
+Picked while building MG-08; easy to change.
+
+- **Code-request limits:** 5 an hour per address and 20 an hour per IP,
+  counted together for sign-up and sign-in and kept in Postgres so they hold
+  across API tasks. Addresses with no account count too, so the limit can't
+  be used to tell which addresses have one.
+- **Sign-in never says whether an address has an account:** the same 202
+  either way, and no email to an unknown address. An account that hasn't
+  finished signing up gets its sign-up code.
+- **Cross-site protection is a same-origin check, not a token.** Browser
+  requests that change something and carry no `Authorization` header must come
+  from the API's own origin or one in `WEB_ORIGINS` (Go's
+  `http.CrossOriginProtection`, which reads `Sec-Fetch-Site` and `Origin`).
+  API keys and non-browser clients aren't affected. The public signup-form
+  endpoint (MG-36) will need an exception when it lands, since it takes posts
+  from any site.
+- **Sign-in and the session endpoints have no CLI command** and are in the
+  CLI parity allowlist; the CLI signs in with `mailgoose login` (MG-10).
+
 ## 2026-11-18: Sign-up details (MG-07, reversible defaults)
 
 Picked while building MG-07; easy to change, and the owner may want to.

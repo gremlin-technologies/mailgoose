@@ -19,8 +19,10 @@ info:
     - Requests are rate limited per API key; responses carry `RateLimit-Limit`
       and `RateLimit-Remaining`, and a 429 carries `Retry-After`.
 
-    Sign-up and code sign-in exist; the web app uses a session cookie. API
-    authentication is a placeholder:
+    The web app signs in with emailed codes and a session cookie. Browser
+    requests that change something and carry no `Authorization` header must
+    come from the web app's own origin (a 403 `cross_origin_request`
+    otherwise). API authentication is a placeholder:
     API keys sent as bearer tokens, which the CLI reads from `MAILGOOSE_API_KEY`
     or its config file. The real scheme (key format, scopes such as
     draft-only) comes with the auth ticket.
@@ -114,12 +116,50 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/sign-in:
+    post:
+      operationId: createSignIn
+      summary: Email a sign-in code
+      description: |
+        Emails a six-digit code to an address with an account; use it with
+        `createSession`. The answer is the same whether or not the address has
+        an account, and an address with no account gets no email. An account
+        that hasn't finished signing up gets its sign-up code instead. A repeat
+        within a minute sends no new email. Code requests (here and in
+        `createSignup`) are limited to 5 an hour per address and 20 an hour
+        per IP.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignInRequest"
+      responses:
+        "202":
+          description: A code is on its way, if the address has an account.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeSent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/sessions:
     post:
       operationId: createSession
       summary: Start a web session with an emailed code
       description: |
-        Uses a code from `createSignup` (and, later, sign-in). On success a
+        Uses a code from `createSignup` or `createSignIn`. On success a
         pending account becomes active, and the response sets an HttpOnly
         session cookie that lasts 30 days. A wrong, expired, used or locked
         code gets the same `invalid_code` error; a code stops working after 5
@@ -154,12 +194,79 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: deleteAllSessions
+      summary: Sign out everywhere
+      description: |
+        Ends every web session of the signed-in person, this one included, and
+        clears the session cookie.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      responses:
+        "204":
+          description: Signed out everywhere.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/sessions/current:
+    get:
+      operationId: getCurrentSession
+      summary: Who is signed in
+      description: The account and person behind the session cookie.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The current session.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: deleteCurrentSession
+      summary: Sign out
+      description: Ends this session and clears the session cookie.
+      tags: [auth]
+      security:
+        - sessionCookie: []
+      responses:
+        "204":
+          description: Signed out.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   securitySchemes:
     apiKey:
       type: http
       scheme: bearer
       description: "Placeholder. An account API key, sent as `Authorization: Bearer <key>`."
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: mg_session
+      description: The web session cookie that `createSession` sets.
   schemas:
     SignupRequest:
       type: object
@@ -181,6 +288,16 @@ components:
           description: |
             Must be `true`: the person accepts the terms of service and the
             anti-spam policy. Anything else is a 422 `terms_not_accepted`.
+    SignInRequest:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          examples: [pat@example.com]
     CodeSent:
       type: object
       required: [status, message]
@@ -345,6 +462,28 @@ components:
       description: |
         `service_unavailable`: a dependency the endpoint needs (the database)
         isn't configured or reachable. Try again later.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: |
+        `unauthenticated`: no session cookie, or the session has ended. Sign in
+        again.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    CrossOrigin:
+      description: |
+        `cross_origin_request`: a browser sent this from another site. Only
+        the web app's own origin may change things with a session cookie.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

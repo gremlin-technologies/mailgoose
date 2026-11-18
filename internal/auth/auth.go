@@ -84,6 +84,8 @@ type SignUpInput struct {
 	Email         string
 	AccountName   string
 	AcceptedTerms bool
+	// IP is the client's address, for the per-IP limit on code requests.
+	IP string
 }
 
 // Account is an account as the API shows it.
@@ -172,6 +174,9 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 		return err
 	}
 	now := s.now()
+	if err := s.limitCodeRequests(ctx, email, in.IP, now); err != nil {
+		return err
+	}
 
 	tx, err := s.DB.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -226,6 +231,13 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 		}
 	}
 
+	return s.issueCode(ctx, tx, userID, accountID, storedEmail, purpose, now)
+}
+
+// issueCode stores a new code for the user, replacing any unused one, commits
+// tx and emails the code. If the email can't be sent the code is dropped, so
+// a retry isn't held back by ResendInterval.
+func (s *Service) issueCode(ctx context.Context, tx pgx.Tx, userID, accountID, to, purpose string, now time.Time) error {
 	code, err := newCode()
 	if err != nil {
 		return err
@@ -234,7 +246,6 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 	if _, err := rand.Read(salt); err != nil {
 		return err
 	}
-	// A new code replaces any earlier one.
 	if _, err := tx.Exec(ctx, `DELETE FROM auth_codes WHERE user_id = $1 AND used_at IS NULL`, userID); err != nil {
 		return fmt.Errorf("clear codes: %w", err)
 	}
@@ -248,9 +259,7 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
-
-	if _, err := s.Mail.Send(ctx, codeMessage(s.From, storedEmail, code, purpose, accountID)); err != nil {
-		// Drop the unsent code so a retry isn't held back by ResendInterval.
+	if _, err := s.Mail.Send(ctx, codeMessage(s.From, to, code, purpose, accountID)); err != nil {
 		if _, derr := s.deleteCode(context.WithoutCancel(ctx), codeID); derr != nil {
 			s.log().ErrorContext(ctx, "drop unsent code", "err", derr)
 		}
