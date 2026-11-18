@@ -15,8 +15,11 @@ module "stack" {
   # would cost more than ~$33/month extra.
   nat_gateway_mode = "single"
 
-  db_instance_class        = "db.t4g.small"
-  db_multi_az              = false # decision: true roughly doubles DB cost
+  db_instance_class = "db.t4g.small"
+  # No standby for now (decided Nov 17, 2026). Turn Multi-AZ on once there
+  # are paying customers: it roughly doubles the database cost, and failover
+  # to the standby takes about a minute instead of a restore from backup.
+  db_multi_az              = false
   db_backup_retention_days = 14
   deletion_protection      = true
 

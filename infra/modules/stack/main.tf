@@ -19,6 +19,12 @@ data "aws_ecr_repository" "app" {
 locals {
   name  = "${var.project}-${var.environment}"
   image = "${data.aws_ecr_repository.app.repository_url}:${var.initial_image_tag}"
+
+  # Staging and prod share one AWS account (decided Nov 17, 2026). Every
+  # resource name starts with local.name, state lives under separate keys, and
+  # the providers tag everything with Environment, which the IAM policies below
+  # use to keep each environment's app away from the other's SES identities.
+  ses_identity_arns = "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/*"
 }
 
 # --- Network ---
@@ -155,6 +161,7 @@ locals {
     SES_EVENTS_QUEUE_URL  = module.events_queue.url
     SES_CONFIGURATION_SET = module.email.configuration_set_name
     SYSTEM_SENDING_DOMAIN = var.sending_domain
+    SES_IDENTITY_TAG      = "Environment=${var.environment}" # tag every customer identity the app creates
     PUBLIC_BASE_URL       = "https://${var.hostnames[0]}"
   }
 
@@ -179,29 +186,54 @@ data "aws_iam_policy_document" "api" {
 
   # Customers verify their own sending domains through the app, so the API
   # manages SES identities on their behalf. Identity ARNs aren't known ahead of
-  # time, hence the wildcard within this account and region.
+  # time, so the resource is a wildcard. Staging and prod share one AWS account,
+  # so every identity carries an Environment tag and each environment can only
+  # create, read, change or delete identities tagged with its own name.
   statement {
-    sid = "ManageCustomerIdentities"
+    sid = "CreateCustomerIdentities"
     actions = [
       "ses:CreateEmailIdentity",
+      "ses:TagResource",
+    ]
+    resources = [local.ses_identity_arns]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Environment"
+      values   = [var.environment]
+    }
+  }
+
+  statement {
+    sid = "ManageOwnCustomerIdentities"
+    actions = [
       "ses:DeleteEmailIdentity",
       "ses:GetEmailIdentity",
       "ses:PutEmailIdentityConfigurationSetAttributes",
       "ses:PutEmailIdentityDkimSigningAttributes",
       "ses:PutEmailIdentityMailFromAttributes",
-      "ses:TagResource",
     ]
-    resources = ["arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/*"]
+    resources = [local.ses_identity_arns]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Environment"
+      values   = [var.environment]
+    }
   }
 
   # Test sends ("mailgoose send --test") go straight from the API.
   statement {
-    sid     = "SendTestEmail"
-    actions = ["ses:SendEmail", "ses:SendRawEmail"]
-    resources = [
-      "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/*",
-      module.email.configuration_set_arn,
-    ]
+    sid       = "SendTestEmail"
+    actions   = ["ses:SendEmail", "ses:SendRawEmail"]
+    resources = [local.ses_identity_arns, module.email.configuration_set_arn]
+
+    # Only identities and the configuration set tagged for this environment.
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Environment"
+      values   = [var.environment]
+    }
   }
 }
 
@@ -224,12 +256,15 @@ data "aws_iam_policy_document" "worker" {
   }
 
   statement {
-    sid     = "SendEmail"
-    actions = ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"]
-    resources = [
-      "arn:aws:ses:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:identity/*",
-      module.email.configuration_set_arn,
-    ]
+    sid       = "SendEmail"
+    actions   = ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"]
+    resources = [local.ses_identity_arns, module.email.configuration_set_arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Environment"
+      values   = [var.environment]
+    }
   }
 }
 
