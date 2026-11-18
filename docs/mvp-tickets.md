@@ -1,8 +1,8 @@
 # mailgoose MVP tickets
 
-Proposed Nov 18, 2026, for Carlton's review. Nothing has been created on GitHub
-yet. Once he approves, each ticket becomes a GitHub issue (title `MG-NN: ...`,
-body = its section below) on a GitHub Project board in this repo, in this order.
+Approved by the owner on Nov 18, 2026. Each ticket is also a GitHub issue in
+this repo (title `MG-NN: ...`, body = its section below), with one GitHub
+milestone per milestone here. If a ticket changes, change both.
 
 Requirement IDs (AUTH-1, CAM-4 ...) point to `docs/mvp-requirements.md`.
 
@@ -17,11 +17,11 @@ Requirement IDs (AUTH-1, CAM-4 ...) point to `docs/mvp-requirements.md`.
   screenshot).
 - **Merge.** The reviewer agent merges when CI is green, every acceptance
   criterion is met and the PR follows `CLAUDE.md`. Tickets marked
-  **Carlton merges** touch `infra/` or `.github/workflows/`; the reviewer
-  reviews them and Carlton merges.
-- **Needs Carlton** means part of the ticket is something only he can do (an
+  **Owner merges** touch `infra/` or `.github/workflows/`; the reviewer
+  reviews them and the owner merges.
+- **Needs owner** means part of the ticket is something only the owner can do (an
   AWS apply, a Stripe or DNS setting, legal text). The code part still goes
-  through a PR; the PR says exactly what he has to do.
+  through a PR; the PR says exactly what the owner has to do.
 - **Size:** S is about half a day of focused work, M about a day or two. Nothing
   is bigger; a ticket that grows past M gets split before it's started.
 
@@ -40,14 +40,14 @@ them each time:
 6. Migrations are additive or reversible.
 7. If the work changes or settles a decision, `docs/decisions.md` gets a dated
    entry in the same PR. An open product question gets a reversible default,
-   named in the PR, and is left open for Carlton.
+   named in the PR, and is left open for the owner.
 
 ## Overview
 
 | # | Ticket | Depends on | Size | Merge |
 | --- | --- | --- | --- | --- |
 | **M0 Foundation** | | | | |
-| MG-00 | Go scaffold (in progress in another thread) | | M | Carlton (CI workflow) |
+| MG-00 | Go scaffold (in progress in another thread) | | M | reviewer (app PR), owner (CI workflow PR) |
 | MG-01 | API conventions: errors, pagination, request IDs, idempotency, rate limits | 00 | M | reviewer |
 | MG-02 | OpenAPI pipeline: lint, Go types, TS client, contract tests | 00 | M | reviewer |
 | MG-03 | CLI framework: output, exit codes, config, no prompts | 00 | M | reviewer |
@@ -74,7 +74,7 @@ them each time:
 | MG-20 | Block operations | 19 | S | reviewer |
 | MG-21 | Renderer: blocks to email HTML and plain text | 19, 11 | M | reviewer |
 | MG-22 | HTML import and validation | 19 | M | reviewer |
-| MG-23 | Image storage bucket and CDN (Terraform) | | S | Carlton (infra), needs Carlton |
+| MG-23 | Image storage bucket and CDN (Terraform) | | S | owner (infra), needs owner |
 | MG-24 | Image upload | 23, 19 | S | reviewer |
 | MG-25 | Preview | 21, 22 | S | reviewer |
 | MG-26 | Email check | 21, 22, 13 | S | reviewer |
@@ -85,16 +85,16 @@ them each time:
 | MG-30 | Launch: summary, confirm code, credit reservation | 29, 26, 12 | M | reviewer |
 | MG-31 | Send pipeline workers | 30, 28 | M | reviewer |
 | MG-32 | Scheduled campaign runner, cancel and reschedule | 30 | S | reviewer |
-| MG-33 | SES events: bounces, complaints, deliveries | 31 | M | reviewer |
+| MG-33 | SES events: deliveries, bounces, complaints | 31 | M | reviewer |
 | MG-34 | Send limits, account health auto-pause, kill switch, admin CLI | 31, 33 | M | reviewer |
 | **M6 Forms** | | | | |
 | MG-35 | Forms and embed code | 15 | S | reviewer |
 | MG-36 | Form submissions, double opt-in, consent records | 35, 13, 16 | M | reviewer |
 | **M7 Reports** | | | | |
-| MG-37 | Open and click tracking | 31 | M | reviewer |
+| MG-37 | Open and click tracking (our own; SES tracking off) | 31 | M | reviewer; owner merges the infra PR |
 | MG-38 | Campaign reports | 33, 37 | S | reviewer |
 | **M8 Billing** | | | | |
-| MG-39 | Buy credits with Stripe Checkout | 12 | M | reviewer, needs Carlton |
+| MG-39 | Buy credits with Stripe Checkout | 12 | M | reviewer, needs owner |
 | MG-40 | Monthly account fee and credit expiry | 39, 16 | M | reviewer |
 | **M9 Web app** | | | | |
 | MG-41 | Web app shell and sign-in pages | 02, 08 | M | reviewer |
@@ -109,18 +109,18 @@ them each time:
 | MG-50 | Credits and billing page | 41, 39 | S | reviewer |
 | MG-51 | Dashboard and getting-started checklist | 43, 42, 45, 47 | S | reviewer |
 | **M10 Launch** | | | | |
-| MG-52 | Deploy pipeline to staging and prod | 00 | M | Carlton (workflows), needs Carlton |
-| MG-53 | Monitoring and alarms | 52, 31 | M | Carlton (infra) |
-| MG-54 | CLI releases: binaries, Homebrew, install script | 03 | S | Carlton (workflows), needs Carlton |
+| MG-52 | Deploy pipeline to staging and prod | 00 | M | owner (workflows), needs owner |
+| MG-53 | Monitoring and alarms | 52, 31 | M | owner (infra) |
+| MG-54 | CLI releases: binaries, Homebrew, install script | 03 | S | owner (workflows), needs owner |
 | MG-55 | Agent docs: `mailgoose docs`, help examples, API docs, llms.txt | 04, 30 | S | reviewer |
-| MG-56 | Security scanning in CI | 00 | S | Carlton (workflows) |
-| MG-57 | Policy pages and signup links | 41 | S | reviewer, needs Carlton |
+| MG-56 | Security scanning in CI | 00 | S | owner (workflows) |
+| MG-57 | Policy pages and signup links | 41 | S | reviewer, needs owner |
 | MG-58 | End-to-end tests: web and CLI-only, signup to delivered | 51, 55 | M | reviewer |
 | MG-59 | Accessibility and browser pass | 51 | S | reviewer |
-| MG-60 | Launch checklist | all | S | needs Carlton |
+| MG-60 | Launch checklist | all | S | needs owner |
 
-Critical path to a first CLI-only send: 00, 01, 06, 07, 08, 09, 11, 12, 13, 14, 15,
-19, 21, 22, 26, 27, 28, 29, 30, 31. The web app (M9) can start once 41's
+Critical path to a first CLI-only send: 00, 01, 02, 03, 05, 06, 07, 08, 09, 11, 12,
+13, 14, 15, 19, 21, 22, 26, 27, 28, 29, 30, 31. The web app (M9) can start once 41's
 dependencies land and runs alongside M5 to M8.
 
 ---
@@ -132,7 +132,9 @@ dependencies land and runs alongside M5 to M8.
 Being built tonight in another thread; listed so everything else can depend on
 it. Expected to cover: Go module, `cmd/` for `mailgoose serve`,
 `mailgoose worker` and the CLI, Dockerfiles, a first migration, an OpenAPI stub,
-and a CI workflow. Because it adds `.github/workflows/`, Carlton merges it.
+and a CI workflow. It is split into two PRs: the Go app PR goes through the
+reviewer like any other ticket, and the CI workflow PR (`.github/workflows/`) is
+left for the owner to merge.
 
 ### MG-01: API conventions
 
@@ -395,13 +397,13 @@ Acceptance criteria:
 
 ### MG-23: Image storage bucket and CDN
 
-Requirements: DES-5. **Carlton merges** (infra), **needs Carlton** (apply).
+Requirements: DES-5. **Owner merges** (infra), **needs owner** (apply).
 
 Acceptance criteria:
 
 - [ ] Terraform adds a private S3 bucket per environment for uploaded images, served through CloudFront with origin access control, and grants the API task role put access to it.
 - [ ] `terraform validate` and `fmt -check` pass for both environments.
-- [ ] The PR says the exact `terraform apply` commands for Carlton's local Claude Code.
+- [ ] The PR says the exact `terraform apply` commands for the owner's local Claude Code.
 
 ### MG-24: Image upload
 
@@ -511,7 +513,8 @@ Requirements: CMP-4, CMP-5, CMP-1 (feedback), REP data.
 
 Acceptance criteria:
 
-- [ ] A worker drains the `ses-events` SQS queue (SES to SNS to SQS) and stores delivery, bounce, complaint, open and click events against the send record.
+- [ ] A worker drains the `ses-events` SQS queue (SES to SNS to SQS) and stores delivery, bounce, complaint, reject and delivery-delay events against the send record.
+- [ ] SES open and click events are not used for reports (opens and clicks come only from MG-37); if any arrive they are acknowledged and dropped.
 - [ ] A hard bounce or a complaint sets the contact's status within a minute; three consecutive soft bounces suppress the contact.
 - [ ] Malformed or unknown events are logged and acknowledged, not retried forever.
 - [ ] Tests use recorded sample SES event payloads.
@@ -557,13 +560,18 @@ Acceptance criteria:
 
 ### MG-37: Open and click tracking
 
-Requirements: REP-3.
+Requirements: REP-3. Opens and clicks come from our own pixel and redirects
+only, so the per-campaign off switch really turns tracking off. SES's own
+tracking is switched off for the configuration set; that Terraform change is a
+separate small PR that the owner merges and applies.
 
 Acceptance criteria:
 
 - [ ] When tracking is on (the default), the renderer adds an open pixel and rewrites links to signed redirect URLs; a campaign option turns both off.
 - [ ] The redirect endpoint records the click and redirects in under 200 ms at p95 in a benchmark; tampered URLs get an error page, never an open redirect.
 - [ ] Unsubscribe links are never rewritten.
+- [ ] A test renders a campaign with tracking off and finds no pixel and no rewritten links.
+- [ ] A separate PR removes `OPEN` and `CLICK` from `event_types` in `infra/modules/email` (owner merges and applies); the main PR doesn't touch `infra/`.
 
 ### MG-38: Campaign reports
 
@@ -579,7 +587,7 @@ Acceptance criteria:
 
 ### MG-39: Buy credits with Stripe Checkout
 
-Requirements: BIL-3, BIL-5, BIL-7, BIL-6 (purchase link). **Needs Carlton:**
+Requirements: BIL-3, BIL-5, BIL-7, BIL-6 (purchase link). **Needs owner:**
 Stripe account, products and test keys in the app secret.
 
 Acceptance criteria:
@@ -596,7 +604,7 @@ Requirements: BIL-4, BIL-3 (expiry), BIL-2 (paid accounts stop getting grants).
 
 Acceptance criteria:
 
-- [ ] On each paid account's monthly billing date, a fee entry takes 2,500 credits plus 2,500 per extra 10,000 counted contacts over 2,500, from the oldest unexpired credits first.
+- [ ] On each paid account's monthly billing date, a fee entry takes 2,500 credits plus 2,500 per extra 10,000 counted contacts over 2,500, from the oldest unexpired credits first. A partial block rounds up: 2,501 to 12,500 counted contacts is one extra block (default; open in the decisions log).
 - [ ] If the balance can't cover the fee, sending pauses with reason `fee_unpaid` and resumes automatically after a purchase covers it.
 - [ ] A daily job writes expiry entries for purchased credits past 24 months.
 - [ ] Paid accounts stop receiving the free monthly grant.
@@ -720,10 +728,10 @@ Acceptance criteria:
 
 ### MG-52: Deploy pipeline
 
-Requirements: OPS-2, OPS-3. **Carlton merges** (workflows). **Needs Carlton:**
+Requirements: OPS-2, OPS-3. **Owner merges** (workflows). **Needs owner:**
 GitHub OIDC is switched off because the AWS project's policy denied creating
 the OIDC provider (decisions log, Nov 17). This ticket waits until that is
-lifted, or until Carlton decides how CI deploys without AWS keys in GitHub.
+lifted, or until the owner decides how CI deploys without AWS keys in GitHub.
 
 Acceptance criteria:
 
@@ -733,7 +741,7 @@ Acceptance criteria:
 
 ### MG-53: Monitoring and alarms
 
-Requirements: OPS-4. **Carlton merges** (infra), **needs Carlton** (apply,
+Requirements: OPS-4. **Owner merges** (infra), **needs owner** (apply,
 alert address).
 
 Acceptance criteria:
@@ -744,7 +752,7 @@ Acceptance criteria:
 
 ### MG-54: CLI releases
 
-Requirements: CLI-6. **Carlton merges** (workflows), **needs Carlton** (create
+Requirements: CLI-6. **Owner merges** (workflows), **needs owner** (create
 the Homebrew tap repo).
 
 Acceptance criteria:
@@ -765,7 +773,7 @@ Acceptance criteria:
 
 ### MG-56: Security scanning in CI
 
-Requirements: OPS-7. **Carlton merges** (workflows).
+Requirements: OPS-7. **Owner merges** (workflows).
 
 Acceptance criteria:
 
@@ -774,12 +782,12 @@ Acceptance criteria:
 
 ### MG-57: Policy pages
 
-Requirements: CMP-10. **Needs Carlton:** the legal text.
+Requirements: CMP-10. **Needs owner:** the legal text.
 
 Acceptance criteria:
 
 - [ ] Terms, privacy policy, anti-spam policy and DPA pages exist with clearly marked placeholder text, and signup links to them.
-- [ ] The PR lists what Carlton needs to supply or approve.
+- [ ] The PR lists what the owner needs to supply or approve.
 
 ### MG-58: End-to-end tests
 
@@ -803,7 +811,7 @@ Acceptance criteria:
 ### MG-60: Launch checklist
 
 Requirements: MVP done item 4, OPS-5, OPS-8, DES-8 acceptance. **Needs
-Carlton** throughout.
+owner** throughout.
 
 Acceptance criteria:
 

@@ -1,24 +1,40 @@
 # Decisions log
 
 Newest first. Each entry says who decided and whether it's confirmed. Anything
-marked **recommended** is a proposal Carlton hasn't confirmed yet; treat it as
-the default until he does, but don't build anything hard to undo on it.
+marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
+the default until the owner does, but don't build anything hard to undo on it.
+
+## 2026-11-18: No personal names in the repo
+
+Decided by the owner: "as a rule, let's not refer to me ... in the repo. just
+gremlin technologies is fine". Docs, code, commit messages, PRs and issues say
+"Gremlin Technologies", or "the owner" where a role reads better. Earlier
+mentions were replaced.
+
+## 2026-11-18: Open and click tracking source (default)
+
+Picked as a reversible default while writing the tickets, after review of
+PR 7. Opens and clicks come only from our own pixel and signed redirects
+(MG-37). SES's own open and click tracking is turned off for the configuration
+set, because with both on, links would be wrapped twice, opens counted twice,
+and the per-campaign off switch wouldn't turn tracking off. SES events are used
+for delivery, bounce, complaint, reject and delay only (MG-33).
 
 ## 2026-11-18: Reviewer agent merges PRs
 
-Decided by Carlton: "i want this to be as autonomous as possible. delegate a
+Decided by the owner: "i want this to be as autonomous as possible. delegate a
 reviewer agent and if it passes their review, allow them to merge it."
 
 - A separate reviewer agent reviews every PR. It merges when CI is green, the PR
   meets its ticket's acceptance criteria, and it follows `CLAUDE.md`. Otherwise
   it sends the PR back with comments. The author never merges its own PR.
 - PRs touching `infra/` (Terraform) or `.github/workflows/` (CI and deploy
-  credentials) wait for Carlton to merge. Carlton: "Keep those for me". The
+  credentials) wait for the owner to merge. The owner: "Keep those for me". The
   reviewer still reviews them.
 
 ## 2026-11-18: MVP decisions
 
-Decided by Carlton ("All defaults" to the ten proposals). Full requirements, with
+Decided by the owner ("All defaults" to the ten proposals). Full requirements, with
 acceptance criteria, are in `docs/mvp-requirements.md`.
 
 - **Billing ships in the MVP.** Stripe Checkout credit packs, and the $5 account
@@ -40,7 +56,7 @@ acceptance criteria, are in `docs/mvp-requirements.md`.
 
 ## 2026-11-17: Domain, DNS, and first apply
 
-Decided by Carlton.
+Decided by the owner.
 
 - **Domain: mailgoose.app** (registered at GoDaddy).
 - **DNS stays at GoDaddy** for the root domain, which carries live Microsoft 365
@@ -66,9 +82,9 @@ Found during the first apply, not decided:
 
 ## 2026-11-17: AWS Region
 
-Decided by Carlton.
+Decided by the owner.
 
-- **Region: us-east-2.** Carlton's AWS project is assigned us-east-2, and the
+- **Region: us-east-2.** The Gremlin Technologies AWS project is assigned us-east-2, and the
   project allows Regional resources only there. All Terraform (state bucket,
   backends, provider defaults) now uses us-east-2. Global services such as
   CloudFront, and WAF or CloudWatch Logs tied to them, may use us-east-1 when
@@ -77,7 +93,7 @@ Decided by Carlton.
 
 ## 2026-11-17
 
-Decided by Carlton in the PRD scoping call and follow-ups.
+Decided by the owner in the PRD scoping call and follow-ups.
 
 ### Product
 
@@ -135,11 +151,17 @@ Decided by Carlton in the PRD scoping call and follow-ups.
 
 - Dev plan and ticketing come after the PRD, not yet. (Superseded 2026-11-18:
   MVP tickets are in `docs/mvp-tickets.md`.)
-- Cloud Claude writes code on branches and opens PRs; Carlton's local Claude
-  Code does anything needing his AWS sign-in; Carlton merges. See `CLAUDE.md`.
+- Cloud Claude writes code on branches and opens PRs; the owner's local Claude
+  Code does anything needing the owner's AWS sign-in; the owner merges. See `CLAUDE.md`.
   (Merging changed 2026-11-18: a reviewer agent merges.)
 
 ## Open questions
 
+- How does prod get DNS: move mailgoose.app to Route 53, or delegate only
+  `api`, `app` and `mail`? (See 2026-11-17. Blocks MG-60.)
+- How does CI deploy without AWS keys in GitHub while the AWS project blocks
+  the OIDC role? (See 2026-11-17. Blocks MG-52.)
+- Monthly fee: does a partial block of 10,000 contacts round up? (Default: yes,
+  2,501 to 12,500 counted contacts is one extra block. MG-40.)
 - Anything in the earlier mailgoose repo worth reusing? (Default: no, fresh
   start.)

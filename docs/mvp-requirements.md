@@ -2,13 +2,13 @@
 
 > Snapshot of the [mailgoose MVP requirements Claude Doc](https://claude.ai/artifact/3HoHQGD5cGMo8SCjwmVqpZ) as of Nov 18, 2026. The Claude Doc is the live version; if they differ, trust the doc and refresh this copy.
 
-Nov 18, 2026 · @Carlton
+Nov 18, 2026 · Gremlin Technologies
 
 ## How to read this
 
 This turns the PRD into what the MVP must do, each piece with acceptance criteria that a ticket can be checked against. Signed off on Nov 18, 2026. The ticket breakdown is in `docs/mvp-tickets.md`.
 
-- **(stated)** comes from Carlton: the PRD call, the decisions log or the pricing choice.
+- **(stated)** comes from the owner: the PRD call, the decisions log or the pricing choice.
 - **(inferred)** started as Claude's proposal or standard practice. Since sign-off it is agreed scope; the tag only shows where the idea came from.
 - **[D1] to [D10]** mark spots tied to one of the decisions at the end. All ten were settled on Nov 18.
 - IDs like **AUTH-1** are there so tickets can point back to a requirement.
@@ -280,7 +280,7 @@ Acceptance:
 
 ## Decisions
 
-Decided by Carlton on Nov 18, 2026: all ten as below.
+Decided by the owner on Nov 18, 2026: all ten as below.
 
 1. **[D1] Billing in the MVP:** Stripe credit packs and the $5 fee from credits ship in the MVP; yearly card billing comes after.
 2. **[D2] Web sign-in:** emailed one-time codes, no passwords. Google sign-in and passwords come later if people ask.

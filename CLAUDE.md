@@ -50,13 +50,14 @@ scope; they only show where an idea came from.
   card billing later); web sign-in by emailed one-time codes; one person per
   account; HTML emails edited as code only; agent launch confirmed with a
   one-time code; one audience per account with tags; CLI only, no MCP server;
-  open and click tracking on by default with a per-campaign switch.
+  open and click tracking on by default with a per-campaign switch (our own
+  pixel and redirects only; SES tracking off).
 
 ## Working rules
 
-- **Two Claudes, one repo.** The cloud Claude (Carlton's Claude Duet "mailgoose"
+- **Two Claudes, one repo.** The cloud Claude (the owner's Claude Duet "mailgoose"
   channel) plans, writes the PRD and docs, and writes code on branches with pull
-  requests. Claude Code on Carlton's machine handles anything that needs his AWS
+  requests. Claude Code on the owner's machine handles anything that needs the owner's AWS
   sign-in: `terraform apply`, SES setup, checking real infrastructure. It also
   runs and debugs the app locally.
 - **Branches and PRs.** Work on a branch and open a pull request into `main`.
@@ -66,22 +67,25 @@ scope; they only show where an idea came from.
   acceptance criteria of its ticket (or, for a PR with no ticket, does what its
   description says); it follows the rules in this file. Anything else goes back
   to the author with review comments. PRs that touch `infra/` or
-  `.github/workflows/` are reviewed the same way but left for Carlton to merge
-  (his call, Nov 18).
+  `.github/workflows/` are reviewed the same way but left for the owner to merge
+  (the owner's call, Nov 18).
 - **AWS keys stay local.** No agent in the cloud holds AWS credentials. Later,
   deploys run from GitHub Actions through the OIDC deploy role, so no agent
   holds AWS keys at all.
 - **No secrets in the repo.** No keys, tokens, or `.tfvars` with secrets.
+- **No personal names (since Nov 18).** Don't name the owner anywhere in the
+  repo: docs, code, commit messages, PRs or issues. Write "Gremlin
+  Technologies", or "the owner" where a role reads better.
 - **Keep decisions current.** When a decision is made or changed, add a dated
   entry to `docs/decisions.md` in the same PR, and update the summary above if
   it changes.
 - **Don't decide product questions silently.** If work hits an open question in
   `docs/decisions.md`, pick a reversible default, say which in the PR, and leave
-  the question open for Carlton.
+  the question open for the owner.
 
 ## AWS rules (from the AWS Agent Toolkit)
 
-Added by the AWS Agent Toolkit setup on Carlton's machine. They apply to any
+Added by the AWS Agent Toolkit setup on the owner's machine. They apply to any
 agent working on AWS here; the AWS MCP tools they mention (`aws___...`) exist
 only in the local Claude Code. Where they conflict with the rules above, the
 rules above win. Re-running the toolkit setup replaces only the text between

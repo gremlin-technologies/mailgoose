@@ -2,7 +2,7 @@
 
 > Snapshot of the [mailgoose PRD Claude Doc](https://claude.ai/artifact/KSX9yAxv3jgmT1R1LqCUMq) as of Nov 17, 2026. The Claude Doc is the live version; if they differ, trust the doc and refresh this copy.
 
-Nov 17, 2026 · @Carlton
+Nov 17, 2026 · Gremlin Technologies
 
 ## Summary
 
