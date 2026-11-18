@@ -282,6 +282,12 @@ mailgoose domain delete example.com --yes
 With `MAIL_SENDER=fake` (the local default) SES is in memory and DNS answers
 every record, so local domains verify on the first check.
 
+**Not yet checked against real AWS.** Before relying on sending domains in
+staging, add one domain there from the owner's machine and confirm IAM allows
+`ses:CreateEmailIdentity` with `ConfigurationSetName` set. Some SES actions
+also check the configuration-set resource, which the stack's IAM statements
+don't list yet; if the call is denied, that resource needs adding in `infra/`.
+
 ## API conventions
 
 Every endpoint shares the plumbing in `internal/api` (MG-01):
