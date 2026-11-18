@@ -300,6 +300,24 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code string, meta Sessio
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Over the cap on wrong codes for this address, even the right code is
+	// refused until the window passes.
+	if err := lockWrongCodes(ctx, tx, email, now); err != nil {
+		hashCode(code, make([]byte, 16))
+		return nil, err
+	}
+	// wrong counts a wrong code against the address, whether or not it has an
+	// account or a live code, so the cap reveals nothing.
+	wrong := func() (*Session, error) {
+		if err := recordWrongCode(ctx, tx, email, now); err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return nil, ErrInvalidCode
+	}
+
 	var (
 		codeID     string
 		salt, hash []byte
@@ -323,23 +341,20 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code string, meta Sessio
 		// Spend the same time as a real check so the answer's timing doesn't
 		// say whether the address has a code.
 		hashCode(code, make([]byte, 16))
-		return nil, ErrInvalidCode
+		return wrong()
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find code: %w", err)
 	}
 	if attempts >= MaxCodeAttempts {
 		hashCode(code, salt)
-		return nil, ErrInvalidCode
+		return wrong()
 	}
 	if subtle.ConstantTimeCompare(hashCode(code, salt), hash) != 1 {
 		if _, err := tx.Exec(ctx, `UPDATE auth_codes SET attempts = attempts + 1 WHERE id = $1`, codeID); err != nil {
 			return nil, fmt.Errorf("count attempt: %w", err)
 		}
-		if err := tx.Commit(ctx); err != nil {
-			return nil, err
-		}
-		return nil, ErrInvalidCode
+		return wrong()
 	}
 
 	if _, err := tx.Exec(ctx, `UPDATE auth_codes SET used_at = $2 WHERE id = $1`, codeID, now); err != nil {

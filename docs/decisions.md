@@ -12,6 +12,14 @@ Picked while building MG-08; easy to change.
   counted together for sign-up and sign-in and kept in Postgres so they hold
   across API tasks. Addresses with no account count too, so the limit can't
   be used to tell which addresses have one.
+- **Wrong codes are capped per address across codes:** 10 an hour, counted
+  for every address whether or not it has an account or a live code. Over
+  the cap, even the right code gets 429 with `Retry-After` until the oldest
+  wrong one is an hour old. The per-code lock (5 tries) alone would allow 25
+  guesses an hour with 5 fresh codes. (Asked for in review.)
+- **Code requests for one address take a Postgres advisory lock**, so two at
+  the limit can't both pass. The per-IP count can still be off by a few in a
+  burst.
 - **Sign-in never says whether an address has an account:** the same 202
   either way, and no email to an unknown address. An account that hasn't
   finished signing up gets its sign-up code.

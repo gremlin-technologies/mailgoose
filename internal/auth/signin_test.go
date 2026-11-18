@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -176,5 +177,99 @@ func TestSessions(t *testing.T) {
 	h.clk.advance(SessionTTL)
 	if _, err := h.svc.SessionByToken(ctx, other.Token); !errors.Is(err, ErrNoSession) {
 		t.Errorf("expired session: err = %v", err)
+	}
+}
+
+// Wrong codes are capped per address across all its codes, so fresh codes
+// don't give an attacker fresh guesses.
+func TestWrongCodesCappedPerAddressAcrossCodes(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	activeUser(t, h, "pat@example.com")
+
+	wrongFor := func(code string) string {
+		if code == "000000" {
+			return "111111"
+		}
+		return "000000"
+	}
+	// Three fresh codes, with wrong tries spread across them: 4 + 4 + 2.
+	var code string
+	for _, tries := range []int{4, 4, 2} {
+		if err := h.svc.RequestSignIn(ctx, "pat@example.com", ""); err != nil {
+			t.Fatal(err)
+		}
+		code = h.lastCode(t, "pat@example.com")
+		for range tries {
+			if _, err := h.svc.Verify(ctx, "pat@example.com", wrongFor(code), SessionMeta{}); !errors.Is(err, ErrInvalidCode) {
+				t.Fatalf("wrong code: err = %v", err)
+			}
+		}
+		h.clk.advance(ResendInterval)
+	}
+
+	// The last code has had only 2 wrong tries, but the address is at the cap:
+	// the right code is refused, with when to try again.
+	_, err := h.svc.Verify(ctx, "PAT@example.com", code, SessionMeta{})
+	var rl *RateLimitError
+	if !errors.As(err, &rl) || rl.RetryAfter <= 0 || rl.RetryAfter > CodeRequestWindow {
+		t.Fatalf("right code over the cap: err = %v, want a RateLimitError", err)
+	}
+
+	// After the window, a fresh code works. (The old one has expired by then.)
+	h.clk.advance(CodeRequestWindow)
+	if err := h.svc.RequestSignIn(ctx, "pat@example.com", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Verify(ctx, "pat@example.com", h.lastCode(t, "pat@example.com"), SessionMeta{}); err != nil {
+		t.Errorf("right code after the window: %v", err)
+	}
+}
+
+// The cap counts addresses with no account or no live code too, and answers
+// the same way, so it reveals nothing.
+func TestWrongCodesCappedForUnknownAddresses(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	for i := range MaxWrongCodesPerEmail {
+		if _, err := h.svc.Verify(ctx, "nobody@example.com", "123456", SessionMeta{}); !errors.Is(err, ErrInvalidCode) {
+			t.Fatalf("try %d: err = %v", i+1, err)
+		}
+	}
+	var rl *RateLimitError
+	if _, err := h.svc.Verify(ctx, "nobody@example.com", "123456", SessionMeta{}); !errors.As(err, &rl) {
+		t.Errorf("over the cap: err = %v, want a RateLimitError", err)
+	}
+	// Another address isn't affected.
+	if _, err := h.svc.Verify(ctx, "somebody@example.com", "123456", SessionMeta{}); !errors.Is(err, ErrInvalidCode) {
+		t.Errorf("another address: err = %v", err)
+	}
+}
+
+// Concurrent requests for one address can't both take the last place.
+func TestCodeRequestLimitHoldsUnderConcurrentRequests(t *testing.T) {
+	h := newHarness(t)
+	var wg sync.WaitGroup
+	errs := make([]error, MaxCodeRequestsPerEmail*2)
+	for i := range errs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errs[i] = h.svc.RequestSignIn(context.Background(), "nobody@example.com", fmt.Sprintf("192.0.2.%d", i))
+		}()
+	}
+	wg.Wait()
+	ok := 0
+	for _, err := range errs {
+		var rl *RateLimitError
+		switch {
+		case err == nil:
+			ok++
+		case !errors.As(err, &rl):
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+	if ok != MaxCodeRequestsPerEmail {
+		t.Errorf("%d requests passed, want %d", ok, MaxCodeRequestsPerEmail)
 	}
 }

@@ -19,6 +19,13 @@ const (
 	codeRequestRetention    = 24 * time.Hour
 )
 
+// MaxWrongCodesPerEmail is how many wrong codes an address may enter across
+// all its codes within CodeRequestWindow. Over it, Verify refuses even the
+// right code until the oldest wrong one leaves the window. With at most 5
+// codes an hour and 5 tries each, the per-code lock alone would allow 25
+// guesses an hour.
+const MaxWrongCodesPerEmail = 10
+
 // RateLimitError says a code request went over a limit.
 type RateLimitError struct {
 	RetryAfter time.Duration
@@ -37,6 +44,11 @@ func (s *Service) limitCodeRequests(ctx context.Context, email, ip string, now t
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	key := strings.ToLower(email)
+	// Requests for one address wait for each other, so two at the limit can't
+	// both pass. (The per-IP count can still be off by a few under a burst.)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('auth_code_requests:' || $1, 0))`, key); err != nil {
+		return fmt.Errorf("lock code requests: %w", err)
+	}
 	since := now.Add(-CodeRequestWindow)
 	var perEmail, perIP int
 	var oldest *time.Time
@@ -173,4 +185,41 @@ func (s *Service) revoke(ctx context.Context, sql, id string) error {
 		return fmt.Errorf("revoke sessions: %w", err)
 	}
 	return tx.Commit(ctx)
+}
+
+// lockWrongCodes takes the address's lock for counting wrong codes, and
+// returns a *RateLimitError when it has entered MaxWrongCodesPerEmail wrong
+// codes within CodeRequestWindow.
+func lockWrongCodes(ctx context.Context, tx pgx.Tx, email string, now time.Time) error {
+	key := strings.ToLower(email)
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended('auth_code_failures:' || $1, 0))`, key); err != nil {
+		return fmt.Errorf("lock wrong codes: %w", err)
+	}
+	var n int
+	var oldest *time.Time
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*), min(created_at) FROM auth_code_failures WHERE email_lower = $1 AND created_at > $2`,
+		key, now.Add(-CodeRequestWindow)).Scan(&n, &oldest); err != nil {
+		return fmt.Errorf("count wrong codes: %w", err)
+	}
+	if n < MaxWrongCodesPerEmail {
+		return nil
+	}
+	retry := CodeRequestWindow
+	if oldest != nil {
+		retry = oldest.Add(CodeRequestWindow).Sub(now)
+	}
+	return &RateLimitError{RetryAfter: max(retry, time.Second)}
+}
+
+// recordWrongCode counts one wrong code for the address.
+func recordWrongCode(ctx context.Context, tx pgx.Tx, email string, now time.Time) error {
+	if _, err := tx.Exec(ctx, `INSERT INTO auth_code_failures (email_lower, created_at) VALUES ($1, $2)`,
+		strings.ToLower(email), now); err != nil {
+		return fmt.Errorf("record wrong code: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM auth_code_failures WHERE created_at < $1`, now.Add(-codeRequestRetention)); err != nil {
+		return fmt.Errorf("prune wrong codes: %w", err)
+	}
+	return nil
 }

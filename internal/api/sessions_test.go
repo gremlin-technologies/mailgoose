@@ -89,6 +89,21 @@ func TestCodeRequestLimitAnswers429(t *testing.T) {
 	}
 }
 
+func TestWrongCodeCapAnswers429(t *testing.T) {
+	h := authServer(t).Handler()
+	var rec *httptest.ResponseRecorder
+	for range auth.MaxWrongCodesPerEmail + 1 {
+		rec = do(t, h, sessionRequest("123456")(t))
+	}
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429: %s", rec.Code, rec.Body)
+	}
+	secs, err := strconv.Atoi(rec.Header().Get("Retry-After"))
+	if err != nil || secs < 1 || secs > int(auth.CodeRequestWindow.Seconds()) {
+		t.Errorf("Retry-After = %q", rec.Header().Get("Retry-After"))
+	}
+}
+
 // TestCrossOriginProtection covers who may send a cookie-authenticated
 // request that changes something.
 func TestCrossOriginProtection(t *testing.T) {

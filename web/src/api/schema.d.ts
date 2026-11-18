@@ -111,7 +111,9 @@ export interface paths {
          *     pending account becomes active, and the response sets an HttpOnly
          *     session cookie that lasts 30 days. A wrong, expired, used or locked
          *     code gets the same `invalid_code` error; a code stops working after 5
-         *     wrong tries.
+         *     wrong tries. After 10 wrong codes for one address within an hour,
+         *     across all its codes and whether or not it has an account, even the
+         *     right code gets 429 with `Retry-After` until the hour passes.
          */
         post: operations["createSession"];
         /**
