@@ -217,6 +217,20 @@ func (s *Service) save(ctx context.Context, accountID, id string, version int, c
 	return e, tx.Commit(ctx)
 }
 
+// ChangeBlocks saves the document op makes from the email's, if version is
+// still the email's version. op is one of AddBlock, UpdateBlock, MoveBlock
+// or RemoveBlock, bound to its arguments.
+func (s *Service) ChangeBlocks(ctx context.Context, accountID, id string, version int, op func(*Document) (*Document, error)) (*Email, error) {
+	return s.save(ctx, accountID, id, version, func(e *Email) error {
+		d, err := op(e.Document)
+		if err != nil {
+			return err
+		}
+		e.Document = d
+		return nil
+	})
+}
+
 // Duplicate copies an email under a new name ("Copy of" the old one when
 // name is ""). Block ids stay the same: they're unique within a document.
 func (s *Service) Duplicate(ctx context.Context, accountID, id, name string) (*Email, error) {

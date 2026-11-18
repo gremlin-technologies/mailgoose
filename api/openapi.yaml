@@ -1955,6 +1955,232 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/emails/{email_id}/blocks:
+    get:
+      operationId: listEmailBlocks
+      summary: List an email's blocks
+      description: |
+        Every block of a blocks email in document order, a columns block's
+        contents right after it, each with where it is. `version` is the
+        email's version, to name in the next change.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+      responses:
+        "200":
+          description: The blocks.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailBlockList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/InvalidBlockChange"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: addEmailBlock
+      summary: Add a block
+      description: |
+        Adds one block to a blocks email. Where it goes: `after` a block's id
+        (in that block's list), or `index` in the top level, or in column
+        `column` (0 left, 1 right) of the columns block `parent_id`. With no
+        position the block goes last, which at the top level is just before
+        the footer. The block is checked as in a whole document; leave out
+        its `id` to get a new one. `version` works as in updateEmail.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddEmailBlockRequest"
+      responses:
+        "201":
+          description: The block as saved, and the email with its new version.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailBlockChange"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/EmailVersionConflict"
+        "422":
+          $ref: "#/components/responses/InvalidBlockChange"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/emails/{email_id}/blocks/{block_id}:
+    patch:
+      operationId: updateEmailBlock
+      summary: Change a block's fields
+      description: |
+        Sets the `fields` given on one block, wherever it is. Fields left out
+        keep their values. The block's `id` and `type` can't change.
+        `version` works as in updateEmail.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+        - $ref: "#/components/parameters/BlockId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEmailBlockRequest"
+      responses:
+        "200":
+          description: The block as saved, and the email with its new version.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailBlockChange"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/BlockNotFound"
+        "409":
+          $ref: "#/components/responses/EmailVersionConflict"
+        "422":
+          $ref: "#/components/responses/InvalidBlockChange"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: removeEmailBlock
+      summary: Remove a block
+      description: |
+        Removes one block, and a columns block's contents with it. The footer
+        can't be removed. `version` is the email's version when you read it,
+        as in updateEmail.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+        - $ref: "#/components/parameters/BlockId"
+        - name: version
+          in: query
+          required: true
+          description: The email's version when you read it.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: The email as saved, with its new version.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Email"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/BlockNotFound"
+        "409":
+          $ref: "#/components/responses/EmailVersionConflict"
+        "422":
+          $ref: "#/components/responses/InvalidBlockChange"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/emails/{email_id}/blocks/{block_id}/move:
+    post:
+      operationId: moveEmailBlock
+      summary: Move a block
+      description: |
+        Moves one block, and a columns block's contents with it, to a new
+        place, given as in addEmailBlock. `index` is the place the block
+        ends up at. The footer can't move, and nothing can go after it.
+        `version` works as in updateEmail.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+        - $ref: "#/components/parameters/BlockId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveEmailBlockRequest"
+      responses:
+        "200":
+          description: The block as saved, and the email with its new version.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailBlockChange"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/BlockNotFound"
+        "409":
+          $ref: "#/components/responses/EmailVersionConflict"
+        "422":
+          $ref: "#/components/responses/InvalidBlockChange"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   securitySchemes:
     apiKey:
@@ -3413,6 +3639,113 @@ components:
           type: string
           minLength: 1
           maxLength: 200
+    AddEmailBlockRequest:
+      type: object
+      additionalProperties: false
+      required: [version, block]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: The version you read.
+        block:
+          type: object
+          description: |
+            A Block with at least its `type`. `id` and fields with defaults
+            may be left out. A footer can't be added; every blocks email
+            already has one.
+          required: [type]
+          properties:
+            type:
+              type: string
+        after:
+          $ref: "#/components/schemas/BlockId"
+        index:
+          type: integer
+          minimum: 0
+        parent_id:
+          $ref: "#/components/schemas/BlockId"
+        column:
+          type: integer
+          minimum: 0
+          maximum: 1
+    UpdateEmailBlockRequest:
+      type: object
+      additionalProperties: false
+      required: [version, fields]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: The version you read.
+        fields:
+          type: object
+          minProperties: 1
+          description: The block's fields to set, by name, as in its Block schema. Not `id` or `type`.
+    MoveEmailBlockRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      description: The new place, as in BlockPlace.
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: The version you read.
+        after:
+          $ref: "#/components/schemas/BlockId"
+        index:
+          type: integer
+          minimum: 0
+        parent_id:
+          $ref: "#/components/schemas/BlockId"
+        column:
+          type: integer
+          minimum: 0
+          maximum: 1
+    EmailBlockEntry:
+      type: object
+      additionalProperties: false
+      required: [block, path, parent_id, column, index]
+      properties:
+        block:
+          $ref: "#/components/schemas/Block"
+        path:
+          type: string
+          description: The block's place, as in an `invalid_document` error, such as `blocks[2].columns[0].blocks[1]`.
+        parent_id:
+          type: [string, "null"]
+          description: The columns block holding it; null at the top level.
+        column:
+          type: [integer, "null"]
+          description: Which column of `parent_id` holds it; null at the top level.
+        index:
+          type: integer
+          description: Its place in its list, 0 first.
+    EmailBlockList:
+      type: object
+      additionalProperties: false
+      required: [email_id, version, data]
+      properties:
+        email_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailBlockEntry"
+    EmailBlockChange:
+      type: object
+      additionalProperties: false
+      required: [block, email]
+      properties:
+        block:
+          $ref: "#/components/schemas/EmailBlockEntry"
+        email:
+          $ref: "#/components/schemas/Email"
     Error:
       type: object
       required: [error]
@@ -3490,6 +3823,13 @@ components:
       schema:
         type: string
         format: uuid
+    BlockId:
+      name: block_id
+      in: path
+      required: true
+      description: The block's `id`.
+      schema:
+        $ref: "#/components/schemas/BlockId"
     EmailId:
       name: email_id
       in: path
@@ -3612,6 +3952,33 @@ components:
         the place, such as `blocks[2].href`, and `details.path` holds it.
         `invalid_name` (empty or over 200 characters), `invalid_kind` (not
         blocks or html) or `kind_mismatch` (a document of the other kind).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InvalidBlockChange:
+      description: |
+        `kind_mismatch`: the email is html, which has no blocks.
+        `invalid_document`: the block or the fields break the schema, or the
+        change would (such as columns inside a column); `details.path` names
+        the place. `footer_locked`: the change would remove or move the
+        footer, add a second one, or put a block after it.
+        `invalid_position`: the place can't be used, such as `after` a block
+        that isn't there or `column` without `parent_id`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BlockNotFound:
+      description: |
+        `not_found`: there's no such email in this account.
+        `block_not_found`: the email has no block with that id.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
