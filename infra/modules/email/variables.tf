@@ -34,7 +34,7 @@ variable "dmarc_report_email" {
 }
 
 variable "event_types" {
-  description = "SES events published to SNS for the events worker."
+  description = "SES events published to SNS for the events worker. No OPEN or CLICK: with either here SES adds its own pixel and link rewriting, and mailgoose tracks opens and clicks itself (MG-37), so a campaign's tracking switch has to mean no tracking at all."
   type        = list(string)
-  default     = ["BOUNCE", "COMPLAINT", "DELIVERY", "REJECT", "RENDERING_FAILURE", "DELIVERY_DELAY", "OPEN", "CLICK"]
+  default     = ["BOUNCE", "COMPLAINT", "DELIVERY", "REJECT", "RENDERING_FAILURE", "DELIVERY_DELAY"]
 }
