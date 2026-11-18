@@ -22,8 +22,8 @@ module "stack" {
   deletion_protection      = false
 
   # 0 until the first app image is in ECR; raise to 1 after the first deploy.
-  api_desired_count    = 0
-  worker_desired_count = 0
+  api_desired_count    = 1
+  worker_desired_count = 1
   log_retention_days   = 14
 
   # Off until the AWS project allows the GitHub OIDC provider (see
