@@ -9,12 +9,17 @@ already use.
 
 - `docs/prd.md`: product requirements (scope, CLI, deliverability, risks).
 - `docs/pricing.md`: pricing research and the chosen plan.
+- `docs/mvp-requirements.md`: what the MVP must do, with requirement IDs
+  (AUTH-1, CAM-4 ...) and acceptance criteria. Tickets point back to these.
+- `docs/mvp-tickets.md`: the proposed MVP ticket breakdown, in order.
 - `docs/decisions.md`: dated log of decisions and open questions. **Read this
   first; it wins over anything older.**
 
-The PRD and pricing files are snapshots of Claude Docs; the Claude Doc is the
-live version. Lines marked "(inferred)" or "recommended" in them are proposals,
-not decisions.
+The PRD, pricing and MVP requirements files are snapshots of Claude Docs; the
+Claude Doc is the live version. In the PRD and pricing files, lines marked
+"(inferred)" or "recommended" are proposals, not decisions. The MVP
+requirements were signed off on Nov 18, so their "(inferred)" lines are agreed
+scope; they only show where an idea came from.
 
 ## Decided so far (summary; details in docs/decisions.md)
 
@@ -38,9 +43,14 @@ not decisions.
 - AWS layout: one account shared by staging and prod (kept apart by names, state
   keys and `Environment` tags). No production database standby until there are
   paying customers.
-- Recommended, not yet confirmed: RDS Postgres, ECS Fargate, SQS, SES with SNS
-  events, Terraform, one REST API with an OpenAPI spec shared by editor, CLI and
-  agents, designs stored as JSON blocks rendered server-side.
+- Confirmed Nov 18: RDS Postgres, ECS Fargate, SQS for the send queue, SES with
+  SNS events, Terraform, one REST API with an OpenAPI spec shared by web app, CLI
+  and agents, designs stored as JSON blocks rendered server-side.
+- MVP (Nov 18): billing ships (Stripe credit packs, $5 fee from credits; yearly
+  card billing later); web sign-in by emailed one-time codes; one person per
+  account; HTML emails edited as code only; agent launch confirmed with a
+  one-time code; one audience per account with tags; CLI only, no MCP server;
+  open and click tracking on by default with a per-campaign switch.
 
 ## Working rules
 
@@ -50,7 +60,14 @@ not decisions.
   sign-in: `terraform apply`, SES setup, checking real infrastructure. It also
   runs and debugs the app locally.
 - **Branches and PRs.** Work on a branch and open a pull request into `main`.
-  Never push to `main`. Carlton reviews and merges.
+  Never push to `main`, and never merge your own PR.
+- **Reviewer merges (since Nov 18).** A separate reviewer agent reviews each PR
+  and merges it only when all of these hold: CI is green; the PR meets the
+  acceptance criteria of its ticket (or, for a PR with no ticket, does what its
+  description says); it follows the rules in this file. Anything else goes back
+  to the author with review comments. PRs that touch `infra/` or
+  `.github/workflows/` are reviewed the same way but left for Carlton to merge
+  (his call, Nov 18).
 - **AWS keys stay local.** No agent in the cloud holds AWS credentials. Later,
   deploys run from GitHub Actions through the OIDC deploy role, so no agent
   holds AWS keys at all.
