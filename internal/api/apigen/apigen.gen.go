@@ -283,6 +283,18 @@ type ApiKeyList struct {
 // campaigns, change billing and manage keys.
 type ApiKeyScope string
 
+// CliTokenRequest defines model for CliTokenRequest.
+type CliTokenRequest struct {
+	// ClientName Names the token, such as the computer's name. Defaults to "CLI sign-up".
+	ClientName *string `json:"client_name,omitempty"`
+
+	// Code The six-digit code from the email.
+	//
+	// Examples: 042917
+	Code  string `json:"code"`
+	Email string `json:"email"`
+}
+
 // CodeSent defines model for CodeSent.
 type CodeSent struct {
 	// Message Examples: Check your email for a six-digit code.
@@ -602,6 +614,9 @@ type UpdateAccountJSONRequestBody = UpdateAccountRequest
 // CreateApiKeyJSONRequestBody defines body for CreateApiKey for application/json ContentType.
 type CreateApiKeyJSONRequestBody = CreateApiKeyRequest
 
+// CreateCliTokenJSONRequestBody defines body for CreateCliToken for application/json ContentType.
+type CreateCliTokenJSONRequestBody = CliTokenRequest
+
 // CreateDeviceLoginJSONRequestBody defines body for CreateDeviceLogin for application/json ContentType.
 type CreateDeviceLoginJSONRequestBody = CreateDeviceLoginRequest
 
@@ -640,6 +655,9 @@ type ServerInterface interface {
 	// RevokeApiKey Revoke an API key
 	// (DELETE /v1/api-keys/{key_id})
 	RevokeApiKey(w http.ResponseWriter, r *http.Request, keyId string)
+	// CreateCliToken Get a CLI token with an emailed code
+	// (POST /v1/cli-tokens)
+	CreateCliToken(w http.ResponseWriter, r *http.Request)
 	// RevokeCurrentCliToken Sign out the CLI
 	// (DELETE /v1/cli-tokens/current)
 	RevokeCurrentCliToken(w http.ResponseWriter, r *http.Request)
@@ -829,6 +847,20 @@ func (siw *ServerInterfaceWrapper) RevokeApiKey(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeApiKey(w, r, keyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateCliToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateCliToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateCliToken(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1254,6 +1286,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/whoami", wrapper.GetWhoami)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/signup", wrapper.CreateSignup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sign-in", wrapper.CreateSignIn)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/cli-tokens", wrapper.CreateCliToken)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions", wrapper.DeleteAllSessions)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions", wrapper.CreateSession)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions/current", wrapper.DeleteCurrentSession)

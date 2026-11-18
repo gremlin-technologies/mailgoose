@@ -374,6 +374,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/cli-tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get a CLI token with an emailed code
+         * @description Uses a code from `createSignup` or `createSignIn`, like
+         *     `createSession`, but answers with a full-scope CLI token instead of
+         *     setting a session cookie. This is how `mailgoose signup` finishes
+         *     without a browser: a person still has to read the code from the email
+         *     and type it in. On success a pending account becomes active. A wrong,
+         *     expired, used or locked code gets the same `invalid_code` error; a
+         *     code stops working after 5 wrong tries.
+         */
+        post: operations["createCliToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/sessions": {
         parameters: {
             query?: never;
@@ -676,6 +702,17 @@ export interface components {
              * @example 042917
              */
             code: string;
+        };
+        CliTokenRequest: {
+            /** Format: email */
+            email: string;
+            /**
+             * @description The six-digit code from the email.
+             * @example 042917
+             */
+            code: string;
+            /** @description Names the token, such as the computer's name. Defaults to "CLI sign-up". */
+            client_name?: string;
         };
         Session: {
             account: components["schemas"]["Account"];
@@ -1399,6 +1436,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CodeSent"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createCliToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CliTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed in; the token is shown only here. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceLoginToken"];
                 };
             };
             400: components["responses"]["BadRequest"];

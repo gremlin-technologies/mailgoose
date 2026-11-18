@@ -71,6 +71,38 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, sessionJSON(sess.Account, sess.User, sess.ExpiresAt))
 }
 
+// CreateCliToken is POST /v1/cli-tokens: an emailed code for a CLI token,
+// for `mailgoose signup`.
+func (s *Server) CreateCliToken(w http.ResponseWriter, r *http.Request) {
+	if s.authUnavailable(w) {
+		return
+	}
+	var req apigen.CliTokenRequest
+	if err := DecodeJSON(w, r, &req); err != nil {
+		WriteError(w, err)
+		return
+	}
+	clientName := ""
+	if req.ClientName != nil {
+		clientName = *req.ClientName
+	}
+	t, err := s.Auth.VerifyForCLI(r.Context(), req.Email, req.Code, clientName)
+	if errors.Is(err, auth.ErrInvalidCode) {
+		WriteError(w, Unprocessable("invalid_code", "That code is wrong, expired or already used.").
+			WithHint("Ask for a new code with `mailgoose signup` and use it within 10 minutes. A code stops working after 5 wrong tries."))
+		return
+	}
+	if s.authError(w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusCreated, apigen.DeviceLoginToken{
+		Token:   t.Token.Secret,
+		KeyId:   t.Token.ID,
+		Account: accountSummaryJSON(t.Account),
+		User:    userJSON(t.User),
+	})
+}
+
 // authError writes err when there is one and reports whether it did.
 func (s *Server) authError(w http.ResponseWriter, r *http.Request, err error) bool {
 	if err == nil {

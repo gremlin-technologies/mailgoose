@@ -288,6 +288,50 @@ func (s *Service) deleteCode(ctx context.Context, id string) (int64, error) {
 // Verify uses an emailed code. On success it activates a pending account and
 // starts a session.
 func (s *Service) Verify(ctx context.Context, rawEmail, code string, meta SessionMeta) (*Session, error) {
+	return s.verify(ctx, rawEmail, code, func(tx pgx.Tx, sess *Session, now time.Time) error {
+		token, err := newToken()
+		if err != nil {
+			return err
+		}
+		sess.Token = token
+		sess.ExpiresAt = now.Add(SessionTTL)
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO sessions (user_id, token_hash, created_at, expires_at, user_agent, ip)
+			VALUES ($1, $2, $3, $4, $5, $6)`,
+			sess.User.ID, TokenHash(token), now, sess.ExpiresAt, truncate(meta.UserAgent, 512), truncate(meta.IP, 64)); err != nil {
+			return fmt.Errorf("start session: %w", err)
+		}
+		return nil
+	})
+}
+
+// VerifyForCLI uses an emailed code like Verify, but gives out a full-scope
+// CLI token named clientName instead of starting a web session. It is how
+// `mailgoose signup` finishes without a browser.
+func (s *Service) VerifyForCLI(ctx context.Context, rawEmail, code, clientName string) (*DeviceLoginToken, error) {
+	name := strings.TrimSpace(clientName)
+	if name == "" {
+		name = "CLI sign-up"
+	}
+	name = truncate(name, maxClientName)
+	var out *DeviceLoginToken
+	_, err := s.verify(ctx, rawEmail, code, func(tx pgx.Tx, sess *Session, _ time.Time) error {
+		k, err := s.insertSecret(ctx, tx, sess.Account.ID, sess.User.ID, KindCLIToken, name, ScopeFull, prefixCLI)
+		if err != nil {
+			return err
+		}
+		out = &DeviceLoginToken{Token: k, Account: sess.Account, User: sess.User}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// verify checks and uses an emailed code, activates a pending account, and
+// calls finish in the same transaction to give out a session or token.
+func (s *Service) verify(ctx context.Context, rawEmail, code string, finish func(tx pgx.Tx, sess *Session, now time.Time) error) (*Session, error) {
 	email, err := NormalizeEmail(rawEmail)
 	if err != nil {
 		return nil, err
@@ -379,17 +423,8 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code string, meta Sessio
 		return nil, fmt.Errorf("record sign-in: %w", err)
 	}
 
-	token, err := newToken()
-	if err != nil {
+	if err := finish(tx, &sess, now); err != nil {
 		return nil, err
-	}
-	sess.Token = token
-	sess.ExpiresAt = now.Add(SessionTTL)
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO sessions (user_id, token_hash, created_at, expires_at, user_agent, ip)
-		VALUES ($1, $2, $3, $4, $5, $6)`,
-		sess.User.ID, TokenHash(token), now, sess.ExpiresAt, truncate(meta.UserAgent, 512), truncate(meta.IP, 64)); err != nil {
-		return nil, fmt.Errorf("start session: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err

@@ -4,6 +4,32 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: CLI sign-up (owner decision, confirmed)
+
+The owner chose to allow sign-up from the CLI, answering the question left
+open in MG-07.
+
+- **`mailgoose signup` uses the same emailed one-time code as the web.** Step 1
+  (`--email`, `--account-name`, `--accept-terms`) calls `createSignup` and
+  emails a code; step 2 (`--email`, `--code`) calls the new
+  `POST /v1/cli-tokens` (`createCliToken`), which uses the code like
+  `createSession` but answers with a full-scope CLI token instead of a
+  cookie. The CLI stores it like `mailgoose login`. The code lands in the
+  address's inbox, so a person still has to read it and pass it on; an agent
+  can't finish a sign-up alone.
+- **Same limits as the web:** code emails are capped at 5 an hour per address
+  and 20 an hour per IP (shared with `createSignIn`), a code locks after 5
+  wrong tries on either path, 10 wrong codes an hour for one address (across
+  codes and both paths) refuse even the right code until the hour passes,
+  and the per-IP request limit applies.
+- **`--accept-terms` is required** in step 1 and stands for the address
+  owner's acceptance of the terms of service and the anti-spam policy, as the
+  web checkbox does. (Reversible default.)
+- **Both steps take flags and never prompt**, so agents and scripts can run
+  them. An address that already has an account gets a sign-in code, and step
+  2 then signs the CLI in to that account. (Reversible default.)
+- `createSignup` leaves the CLI parity allowlist.
+
 ## 2026-11-18: Web app shell details (MG-41, reversible defaults)
 
 Picked while building MG-41; easy to change.
@@ -181,8 +207,9 @@ Picked while building MG-07; easy to change, and the owner may want to.
   brute force if the table leaked.
 - **Sign-up and the web session endpoint have no CLI command** and are in
   `api/cli-parity-allowlist.yaml`: signing up accepts the terms on the web
-  page, and the CLI gets access through `mailgoose login` (MG-10). Open for the
-  owner: should agents be able to start a sign-up from the CLI?
+  page, and the CLI gets access through `mailgoose login` (MG-10). The owner
+  then chose to allow sign-up from the CLI (see "CLI sign-up", 2026-11-18), so
+  `createSignup` now has a command.
 - **A wrong code locks after 5 tries** already in MG-07, since the endpoint
   exists now; MG-08 adds the per-address and per-IP limits on requesting codes.
 
