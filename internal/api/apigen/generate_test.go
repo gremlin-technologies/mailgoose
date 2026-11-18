@@ -5,8 +5,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sync"
 	"testing"
+
+	"github.com/gremlin-technologies/mailgoose/internal/nodetools"
 )
 
 // These tests are how CI checks the OpenAPI pipeline: the spec lints, and the
@@ -44,48 +45,16 @@ func TestGoTypesUpToDate(t *testing.T) {
 }
 
 func TestSpecLints(t *testing.T) {
-	web := nodeTools(t)
+	web := nodetools.Web(t)
 	run(t, root, filepath.Join(web, "node_modules/.bin/redocly"), "lint", "api/openapi.yaml", "--config", "api/redocly.yaml")
 }
 
 func TestTypeScriptClientUpToDate(t *testing.T) {
-	web := nodeTools(t)
+	web := nodetools.Web(t)
 	out := filepath.Join(t.TempDir(), "schema.d.ts")
 	run(t, web, "node_modules/.bin/openapi-typescript", "../api/openapi.yaml", "--output", out)
 	same(t, out, filepath.Join(web, "src/api/schema.d.ts"))
 	run(t, web, "node_modules/.bin/tsc", "--noEmit")
-}
-
-var (
-	installOnce sync.Once
-	installErr  error
-	installOut  []byte
-)
-
-// nodeTools returns the web package's directory with its npm packages
-// installed. Without npm the test skips locally and fails in CI, where
-// GitHub's runners have Node.
-func nodeTools(t *testing.T) string {
-	t.Helper()
-	web := filepath.Join(root, "web")
-	if _, err := exec.LookPath("npm"); err != nil {
-		if os.Getenv("CI") != "" {
-			t.Fatal("npm isn't installed; CI needs Node to check the spec and the TypeScript client")
-		}
-		t.Skip("npm isn't installed")
-	}
-	installOnce.Do(func() {
-		if _, err := os.Stat(filepath.Join(web, "node_modules/.bin/redocly")); err == nil {
-			return
-		}
-		cmd := exec.Command("npm", "ci", "--no-audit", "--no-fund")
-		cmd.Dir = web
-		installOut, installErr = cmd.CombinedOutput()
-	})
-	if installErr != nil {
-		t.Fatalf("npm ci: %v\n%s", installErr, installOut)
-	}
-	return web
 }
 
 func run(t *testing.T, dir, name string, args ...string) {

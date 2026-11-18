@@ -28,6 +28,9 @@ type Config struct {
 	// cookie-authenticated requests that change something (the web app's
 	// origin when it's served elsewhere). Comma-separated in WEB_ORIGINS.
 	WebOrigins []string
+	// WebDir is the built web app (web/dist) the API serves at /. Empty
+	// means the API serves no web app.
+	WebDir string
 
 	Database Database
 
@@ -122,6 +125,7 @@ func load(getenv func(string) string) (Config, error) {
 		SESConfigurationSet: getenv("SES_CONFIGURATION_SET"),
 		SystemSendingDomain: getenv("SYSTEM_SENDING_DOMAIN"),
 		SESIdentityTag:      getenv("SES_IDENTITY_TAG"),
+		WebDir:              getenv("WEB_DIR"),
 		MigrateOnStart:      migrate,
 		RateLimitPerMinute:  rateLimit,
 		AppSecrets:          secrets,

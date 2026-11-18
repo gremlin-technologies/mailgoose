@@ -109,3 +109,37 @@ func TestListenAndServeShutsDown(t *testing.T) {
 		t.Fatal("server did not shut down")
 	}
 }
+
+func TestWebAppGetsWhatTheAPIDoesNot(t *testing.T) {
+	srv := newServer(pinger{})
+	srv.Web = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "web app")
+	})
+	h := srv.Handler()
+	for _, tc := range []struct {
+		method, path string
+		web          bool
+	}{
+		{http.MethodGet, "/", true},
+		{http.MethodGet, "/sign-in", true},
+		{http.MethodHead, "/device", true},
+		{http.MethodGet, "/assets/index.js", true},
+		{http.MethodGet, "/healthz", false},
+		{http.MethodHead, "/readyz", false},
+		{http.MethodGet, "/v1", false},
+		{http.MethodGet, "/v1/no-such-thing", false},
+		{http.MethodGet, "/v1/signup", false}, // POST only: the API's 405
+		{http.MethodPost, "/sign-in", false},
+	} {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, nil))
+		gotWeb := rec.Header().Get("Content-Type") == "text/html"
+		if gotWeb != tc.web {
+			t.Errorf("%s %s went to the web app: %v, want %v (status %d)", tc.method, tc.path, gotWeb, tc.web, rec.Code)
+		}
+		if rec.Header().Get("X-Request-Id") == "" {
+			t.Errorf("%s %s has no X-Request-Id", tc.method, tc.path)
+		}
+	}
+}

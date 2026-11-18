@@ -10,3 +10,4 @@ dist
 .env.*
 compose.yaml
 web/node_modules
+web/dist

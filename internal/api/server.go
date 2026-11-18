@@ -14,6 +14,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
@@ -52,6 +53,9 @@ type Server struct {
 	// WebURL is where people reach the web app, for links such as the CLI
 	// login approval page. Empty means the request's own origin.
 	WebURL string
+	// Web serves the web app (internal/web) on every GET or HEAD that no API
+	// route matches. Nil means those get the API's JSON 404.
+	Web http.Handler
 	// Now is the clock for rate limits and idempotency; nil means time.Now.
 	Now func() time.Time
 }
@@ -73,14 +77,42 @@ func (s *Server) Handler() http.Handler {
 		store = &MemoryIdempotencyStore{}
 	}
 
-	var h http.Handler = s.routes()
+	mux := s.routes()
+	var h http.Handler = mux
 	h = (&Idempotency{Store: store, Now: now, Log: s.Log, Scope: callerIdempotencyScope}).Middleware(h)
 	h = s.authenticate(h, now)
 	h = s.crossOriginProtection(h)
 	h = (&RateLimiter{PerMinute: s.RateLimitPerMinute, Now: now, Key: sessionRateLimitKey}).Middleware(h)
 	h = s.logRequests(h)
 	h = s.recoverer(h)
-	return requestIDs(h)
+	api := requestIDs(h)
+	if s.Web == nil {
+		return api
+	}
+	// The web app skips the API's middleware: its files need no rate limit,
+	// session lookup or idempotency.
+	web := requestIDs(s.recoverer(s.Web))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isAPIRequest(mux, r) {
+			api.ServeHTTP(w, r)
+			return
+		}
+		web.ServeHTTP(w, r)
+	})
+}
+
+// isAPIRequest reports whether r is for the API rather than the web app:
+// anything under /v1, any other route the spec defines (such as /healthz),
+// and anything that isn't a GET or HEAD.
+func isAPIRequest(mux *http.ServeMux, r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return true
+	}
+	if r.URL.Path == "/v1" || strings.HasPrefix(r.URL.Path, "/v1/") {
+		return true
+	}
+	_, pattern := mux.Handler(r)
+	return pattern != "/"
 }
 
 // routes registers every operation in the spec, through the generated router,

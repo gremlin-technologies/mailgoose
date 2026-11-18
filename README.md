@@ -16,7 +16,8 @@ internal/config/   Server settings from environment variables.
 internal/mail/     Sends built messages: SES v2, or a fake for tests and local runs.
 internal/cli/      CLI commands and its config file.
 api/openapi.yaml   The API contract. Every endpoint gets a CLI command.
-web/               Web app package; for now only the generated TypeScript API client.
+internal/web/      Serves the built web app (WEB_DIR) at /.
+web/               Web app: React, TypeScript, Vite, and the generated API client.
 infra/             Terraform for AWS (see infra/README.md).
 docs/              PRD, pricing, decisions.
 ```
@@ -71,7 +72,8 @@ make test       # unit tests; database tests skip
 make test-db    # also runs the database tests against Postgres
 make vet lint   # go vet, golangci-lint v2
 make build      # bin/mailgoose and bin/mailgoosed
-make image      # server image for linux/arm64
+make web-check  # web app: ESLint, type check, Vitest
+make image      # server image for linux/arm64, web app included
 ```
 
 ### Changing the API
@@ -127,6 +129,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `DATABASE_SSLMODE` | Defaults to `require` (RDS forces TLS). |
 | `SEND_QUEUE_URL`, `SES_EVENTS_QUEUE_URL` | Queues the worker drains. Unset means idle. |
 | `SYSTEM_SENDING_DOMAIN` | mailgoose's own sending domain; sign-in codes come from `signin@` it. Defaults to `mail.localhost` when mail is captured (`MAIL_SENDER=fake`). Unset with SES, sign-up and sign-in answer 503. |
+| `WEB_DIR` | The built web app (`web/dist`) the API serves at `/`. The image sets it to `/srv/web`; unset, the API serves no web app. |
 | `WEB_ORIGINS` | Comma-separated origins, besides the API's own, that may send cookie-authenticated requests that change something, such as `https://app.staging.mailgoose.app`. Empty by default. |
 | `SES_CONFIGURATION_SET`, `SES_IDENTITY_TAG` | Read now, used once sending lands. |
 | `APP_SECRETS_JSON` | The `<env>/app` secret, a JSON object. |
@@ -158,6 +161,24 @@ signs out and `DELETE /v1/sessions` signs out everywhere. Code requests are
 limited to 5 an hour per address and 20 an hour per IP, and a browser request
 that changes something with the cookie must come from the API's own origin or
 one listed in `WEB_ORIGINS`.
+
+## Web app
+
+`web/` is the web app: React and TypeScript, built with Vite, talking to the
+API through the typed client in `web/src/api`. The API serves the built app
+from its own origin (`WEB_DIR`): every GET that no API route matches gets the
+app, so `/v1`, `/healthz` and `/readyz` stay the API's.
+
+```sh
+make web        # build web/dist; make dev then serves it at :8080
+make web-dev    # live reload on :5173, passing /v1 to the API from make dev
+make web-check  # ESLint, type check and Vitest
+```
+
+Pages so far: sign up, sign in with an emailed code, the CLI approval page
+(`/device`), and the signed-in layout with a placeholder for every MVP page.
+In development, sign-in codes land in `.local/mail` (`make mail`). CI runs
+the web checks and a production build through `go test ./internal/web`.
 
 ## API keys
 
@@ -191,8 +212,8 @@ mailgoose logout    # revokes the token and removes it from this computer
 `login` calls `POST /v1/device-logins`, prints the `XXXX-XXXX` code and the
 `/device` link on the web app (`PUBLIC_BASE_URL`), then polls
 `POST /v1/device-logins/token` every 5 seconds. The person approves on the web
-approval page (`/v1/device-logins/{code}/approve`, signed-in web session
-only; the page itself comes with MG-41). Requests expire after 10 minutes;
+approval page (`/device?code=…`, which calls
+`/v1/device-logins/{code}/approve`; signed-in web session only). Requests expire after 10 minutes;
 denied or expired exits 3. The token (`mg_cli_…`, full scope) goes in the OS
 keychain under the service `mailgoose` with the API URL as the account name,
 or in the config file (mode 0600) where there is no keychain. Logins are kept
