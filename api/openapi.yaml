@@ -7,7 +7,7 @@ info:
     here gets a matching `mailgoose` CLI command.
 
     Only the health endpoints exist so far. Authentication is a placeholder:
-    API keys sent as bearer tokens, which the CLI reads from `MAILGOOSE_TOKEN`
+    API keys sent as bearer tokens, which the CLI reads from `MAILGOOSE_API_KEY`
     or its config file. The real scheme (key format, scopes such as
     draft-only) comes with the auth ticket.
 servers:

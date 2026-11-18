@@ -58,13 +58,14 @@ make image      # server image for linux/arm64
 ```sh
 ./bin/mailgoose status --api-url http://localhost:8080
 ./bin/mailgoose config set api-url https://api.staging.mailgoose.app
-printf '%s' "$KEY" | ./bin/mailgoose config set token -
+printf '%s' "$KEY" | ./bin/mailgoose config set api-key -
 ./bin/mailgoose config show --json
 ```
 
-Every command takes `--json`. Nothing prompts. `MAILGOOSE_TOKEN` and
+Every command takes `--json`. Nothing prompts. `MAILGOOSE_API_KEY` and
 `MAILGOOSE_API_URL` override the config file, so agents can run headless. Exit
-codes: 0 ok, 1 error, 2 usage, 3 API unreachable or unhealthy.
+codes: 0 ok, 1 error (including an unreachable API), 2 usage, 3 auth,
+4 not found, 5 needs confirmation.
 
 ## Server configuration
 
