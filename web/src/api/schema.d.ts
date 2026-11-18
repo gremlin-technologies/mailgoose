@@ -534,10 +534,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List contacts
+         * @description The account's contacts, newest first. Filters combine; empty ones are ignored.
+         */
+        get: operations["listContacts"];
+        put?: never;
+        /**
+         * Add a contact
+         * @description Adds one contact. The address is stored in lower case and must be new
+         *     to the account. An address that was deleted after it unsubscribed,
+         *     bounced or complained comes back with that status, whatever
+         *     `status` asks for, so it isn't mailed again by mistake.
+         */
+        post: operations["createContact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/contacts/{contact_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Show a contact */
+        get: operations["getContact"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a contact
+         * @description Deletes the contact and everything about it. If it had unsubscribed,
+         *     bounced or complained, only a hash of its address stays, on the
+         *     account's suppression list, so adding the address again keeps that
+         *     status.
+         */
+        delete: operations["deleteContact"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a contact
+         * @description Changes only the fields sent; `null` removes a first or last name. A
+         *     contact that unsubscribed, bounced or complained can't be subscribed
+         *     again here (422 `contact_suppressed`): the person subscribes again
+         *     through a signup form. Bounced and complained come only from Amazon
+         *     SES.
+         */
+        patch: operations["updateContact"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description Only `subscribed` contacts receive campaigns. `unconfirmed` is waiting
+         *     for double opt-in or permission; `bounced` and `complained` come from
+         *     Amazon SES.
+         * @enum {string}
+         */
+        ContactStatus: "unconfirmed" | "subscribed" | "unsubscribed" | "bounced" | "complained";
+        /**
+         * @description How the contact was added. `manual` is the web app.
+         * @enum {string}
+         */
+        ContactSource: "form" | "import" | "api" | "manual";
+        Contact: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: email
+             * @description Stored in lower case.
+             * @example pat@example.com
+             */
+            email: string;
+            first_name: string | null;
+            last_name: string | null;
+            status: components["schemas"]["ContactStatus"];
+            source: components["schemas"]["ContactSource"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+            /** Format: date-time */
+            status_changed_at: string;
+        };
+        ContactList: {
+            data: components["schemas"]["Contact"][];
+            next_cursor: string | null;
+        };
+        CreateContactRequest: {
+            /** @example pat@example.com */
+            email: string;
+            first_name?: string | null;
+            last_name?: string | null;
+            /**
+             * @description Use `unconfirmed` for someone who hasn't yet given permission to be mailed.
+             * @default subscribed
+             * @enum {string}
+             */
+            status: "subscribed" | "unconfirmed" | "unsubscribed";
+            /**
+             * @description `manual` is for contacts a person typed in; agents and scripts leave it out.
+             * @default api
+             * @enum {string}
+             */
+            source: "api" | "manual";
+        };
+        UpdateContactRequest: {
+            email?: string;
+            first_name?: string | null;
+            last_name?: string | null;
+            /** @enum {string} */
+            status?: "subscribed" | "unconfirmed" | "unsubscribed";
+        };
         CreateDomainRequest: {
             /**
              * @description The domain to send from, such as `example.com` or `news.example.com`. Internationalized names are stored in their ASCII (punycode) form.
@@ -924,6 +1044,16 @@ export interface components {
         };
     };
     responses: {
+        /** @description `contact_exists`: the account already has a contact with that address. */
+        ContactConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /**
          * @description `domain_exists`: this account already has the domain.
          *     `domain_taken`: another mailgoose account has it.
@@ -1062,6 +1192,8 @@ export interface components {
         Cursor: string;
         /** @description The domain's `id`. */
         DomainId: string;
+        /** @description The contact's `id`. */
+        ContactId: string;
         /**
          * @description Makes a retry safe. A repeat with the same key and request within 24
          *     hours returns the stored response instead of running again; the same
@@ -1890,6 +2022,167 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["CrossOrigin"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listContacts: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Only contacts whose address contains this, ignoring case. */
+                email?: string;
+                /** @description Only contacts whose first, last or full name contains this, ignoring case. */
+                name?: string;
+                /** @description Only contacts with this status. */
+                status?: components["schemas"]["ContactStatus"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of contacts. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createContact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateContactRequest"];
+            };
+        };
+        responses: {
+            /** @description The new contact. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Contact"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            409: components["responses"]["ContactConflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getContact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The contact's `id`. */
+                contact_id: components["parameters"]["ContactId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The contact. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Contact"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteContact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The contact's `id`. */
+                contact_id: components["parameters"]["ContactId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    updateContact: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The contact's `id`. */
+                contact_id: components["parameters"]["ContactId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateContactRequest"];
+            };
+        };
+        responses: {
+            /** @description The contact as changed. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Contact"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["ContactConflict"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

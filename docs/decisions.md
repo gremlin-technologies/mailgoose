@@ -4,6 +4,28 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Contact details (MG-14, reversible defaults)
+
+Picked while building MG-14; easy to change.
+
+- **A contact added through the API or CLI is subscribed unless the request
+  says otherwise** (`unconfirmed` or `unsubscribed`). `source` is `api`, or
+  `manual` for the web app; forms and imports set their own.
+- **Only Amazon SES events set bounced and complained.** An unsubscribed,
+  bounced or complained contact can't be moved back to subscribed or
+  unconfirmed by the API, CLI or web app (422 `contact_suppressed`); the
+  person subscribes again through a signup form with double opt-in. Anyone
+  may unsubscribe a contact. Open for the owner: should an account be able to
+  resubscribe someone who unsubscribed, with a consent note?
+- **The suppression list keeps a SHA-256 of the account id and the address**,
+  not the address. Re-adding a suppressed address, or changing a contact's
+  address to one, gives it the suppressed status and removes the entry,
+  since the contact now carries the status.
+- **Search:** `email` and `name` match any part, ignoring case; `status` is
+  exact. Lists are newest first. The tag filter comes with tags in MG-15.
+- **Campaigns pick recipients only through `contacts.Recipients`,** which
+  returns subscribed contacts and nothing else.
+
 ## 2026-11-18: Mascot and UI direction (owner decision, confirmed)
 
 The owner picked the goose in `docs/brand/mascot.png` as the mascot.

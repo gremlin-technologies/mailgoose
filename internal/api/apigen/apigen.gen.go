@@ -101,6 +101,96 @@ func (e CodeSentStatus) Valid() bool {
 	}
 }
 
+// Defines values for ContactSource.
+const (
+	ContactSourceApi    ContactSource = "api"
+	ContactSourceForm   ContactSource = "form"
+	ContactSourceImport ContactSource = "import"
+	ContactSourceManual ContactSource = "manual"
+)
+
+// Valid indicates whether the value is a known member of the ContactSource enum.
+func (e ContactSource) Valid() bool {
+	switch e {
+	case ContactSourceApi:
+		return true
+	case ContactSourceForm:
+		return true
+	case ContactSourceImport:
+		return true
+	case ContactSourceManual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ContactStatus.
+const (
+	ContactStatusBounced      ContactStatus = "bounced"
+	ContactStatusComplained   ContactStatus = "complained"
+	ContactStatusSubscribed   ContactStatus = "subscribed"
+	ContactStatusUnconfirmed  ContactStatus = "unconfirmed"
+	ContactStatusUnsubscribed ContactStatus = "unsubscribed"
+)
+
+// Valid indicates whether the value is a known member of the ContactStatus enum.
+func (e ContactStatus) Valid() bool {
+	switch e {
+	case ContactStatusBounced:
+		return true
+	case ContactStatusComplained:
+		return true
+	case ContactStatusSubscribed:
+		return true
+	case ContactStatusUnconfirmed:
+		return true
+	case ContactStatusUnsubscribed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreateContactRequestSource.
+const (
+	CreateContactRequestSourceApi    CreateContactRequestSource = "api"
+	CreateContactRequestSourceManual CreateContactRequestSource = "manual"
+)
+
+// Valid indicates whether the value is a known member of the CreateContactRequestSource enum.
+func (e CreateContactRequestSource) Valid() bool {
+	switch e {
+	case CreateContactRequestSourceApi:
+		return true
+	case CreateContactRequestSourceManual:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreateContactRequestStatus.
+const (
+	CreateContactRequestStatusSubscribed   CreateContactRequestStatus = "subscribed"
+	CreateContactRequestStatusUnconfirmed  CreateContactRequestStatus = "unconfirmed"
+	CreateContactRequestStatusUnsubscribed CreateContactRequestStatus = "unsubscribed"
+)
+
+// Valid indicates whether the value is a known member of the CreateContactRequestStatus enum.
+func (e CreateContactRequestStatus) Valid() bool {
+	switch e {
+	case CreateContactRequestStatusSubscribed:
+		return true
+	case CreateContactRequestStatusUnconfirmed:
+		return true
+	case CreateContactRequestStatusUnsubscribed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreditSummaryPlan.
 const (
 	CreditSummaryPlanFree CreditSummaryPlan = "free"
@@ -272,6 +362,27 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for UpdateContactRequestStatus.
+const (
+	UpdateContactRequestStatusSubscribed   UpdateContactRequestStatus = "subscribed"
+	UpdateContactRequestStatusUnconfirmed  UpdateContactRequestStatus = "unconfirmed"
+	UpdateContactRequestStatusUnsubscribed UpdateContactRequestStatus = "unsubscribed"
+)
+
+// Valid indicates whether the value is a known member of the UpdateContactRequestStatus enum.
+func (e UpdateContactRequestStatus) Valid() bool {
+	switch e {
+	case UpdateContactRequestStatusSubscribed:
+		return true
+	case UpdateContactRequestStatusUnconfirmed:
+		return true
+	case UpdateContactRequestStatusUnsubscribed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for WhoamiAuthMethod.
 const (
 	WhoamiAuthMethodApiKey   WhoamiAuthMethod = "api_key"
@@ -395,6 +506,43 @@ type CodeSent struct {
 // CodeSentStatus defines model for CodeSent.Status.
 type CodeSentStatus string
 
+// Contact defines model for Contact.
+type Contact struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// Email Stored in lower case.
+	//
+	// Examples: pat@example.com
+	Email     string  `json:"email"`
+	FirstName *string `json:"first_name"`
+	Id        string  `json:"id"`
+	LastName  *string `json:"last_name"`
+
+	// Source How the contact was added. `manual` is the web app.
+	Source ContactSource `json:"source"`
+
+	// Status Only `subscribed` contacts receive campaigns. `unconfirmed` is waiting
+	// for double opt-in or permission; `bounced` and `complained` come from
+	// Amazon SES.
+	Status          ContactStatus `json:"status"`
+	StatusChangedAt time.Time     `json:"status_changed_at"`
+	UpdatedAt       time.Time     `json:"updated_at"`
+}
+
+// ContactList defines model for ContactList.
+type ContactList struct {
+	Data       []Contact `json:"data"`
+	NextCursor *string   `json:"next_cursor"`
+}
+
+// ContactSource How the contact was added. `manual` is the web app.
+type ContactSource string
+
+// ContactStatus Only `subscribed` contacts receive campaigns. `unconfirmed` is waiting
+// for double opt-in or permission; `bounced` and `complained` come from
+// Amazon SES.
+type ContactStatus string
+
 // CreateApiKeyRequest defines model for CreateApiKeyRequest.
 type CreateApiKeyRequest struct {
 	// Name Examples: Claude on my laptop
@@ -404,6 +552,26 @@ type CreateApiKeyRequest struct {
 	// campaigns, change billing and manage keys.
 	Scope ApiKeyScope `json:"scope"`
 }
+
+// CreateContactRequest defines model for CreateContactRequest.
+type CreateContactRequest struct {
+	// Email Examples: pat@example.com
+	Email     string  `json:"email"`
+	FirstName *string `json:"first_name,omitempty"`
+	LastName  *string `json:"last_name,omitempty"`
+
+	// Source `manual` is for contacts a person typed in; agents and scripts leave it out.
+	Source *CreateContactRequestSource `json:"source,omitempty"`
+
+	// Status Use `unconfirmed` for someone who hasn't yet given permission to be mailed.
+	Status *CreateContactRequestStatus `json:"status,omitempty"`
+}
+
+// CreateContactRequestSource `manual` is for contacts a person typed in; agents and scripts leave it out.
+type CreateContactRequestSource string
+
+// CreateContactRequestStatus Use `unconfirmed` for someone who hasn't yet given permission to be mailed.
+type CreateContactRequestStatus string
 
 // CreateDeviceLoginRequest defines model for CreateDeviceLoginRequest.
 type CreateDeviceLoginRequest struct {
@@ -704,6 +872,17 @@ type UpdateAccountRequest struct {
 	TimeZone *string `json:"time_zone,omitempty"`
 }
 
+// UpdateContactRequest defines model for UpdateContactRequest.
+type UpdateContactRequest struct {
+	Email     *string                     `json:"email,omitempty"`
+	FirstName *string                     `json:"first_name,omitempty"`
+	LastName  *string                     `json:"last_name,omitempty"`
+	Status    *UpdateContactRequestStatus `json:"status,omitempty"`
+}
+
+// UpdateContactRequestStatus defines model for UpdateContactRequest.Status.
+type UpdateContactRequestStatus string
+
 // User defines model for User.
 type User struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -730,6 +909,9 @@ type Whoami struct {
 // WhoamiAuthMethod defines model for Whoami.AuthMethod.
 type WhoamiAuthMethod string
 
+// ContactId defines model for ContactId.
+type ContactId = string
+
 // Cursor defines model for Cursor.
 type Cursor = string
 
@@ -744,6 +926,9 @@ type Limit = int
 
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
+
+// ContactConflict defines model for ContactConflict.
+type ContactConflict = Error
 
 // CrossOrigin defines model for CrossOrigin.
 type CrossOrigin = Error
@@ -781,6 +966,24 @@ type ListApiKeysParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListContactsParams defines parameters for ListContacts.
+type ListContactsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Email Only contacts whose address contains this, ignoring case.
+	Email *string `form:"email,omitempty" json:"email,omitempty"`
+
+	// Name Only contacts whose first, last or full name contains this, ignoring case.
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+
+	// Status Only contacts with this status.
+	Status *ContactStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
 // ListCreditTransactionsParams defines parameters for ListCreditTransactions.
 type ListCreditTransactionsParams struct {
 	// Limit Items per page.
@@ -810,6 +1013,12 @@ type CreateApiKeyJSONRequestBody = CreateApiKeyRequest
 
 // CreateCliTokenJSONRequestBody defines body for CreateCliToken for application/json ContentType.
 type CreateCliTokenJSONRequestBody = CliTokenRequest
+
+// CreateContactJSONRequestBody defines body for CreateContact for application/json ContentType.
+type CreateContactJSONRequestBody = CreateContactRequest
+
+// UpdateContactJSONRequestBody defines body for UpdateContact for application/json ContentType.
+type UpdateContactJSONRequestBody = UpdateContactRequest
 
 // CreateDeviceLoginJSONRequestBody defines body for CreateDeviceLogin for application/json ContentType.
 type CreateDeviceLoginJSONRequestBody = CreateDeviceLoginRequest
@@ -858,6 +1067,21 @@ type ServerInterface interface {
 	// RevokeCurrentCliToken Sign out the CLI
 	// (DELETE /v1/cli-tokens/current)
 	RevokeCurrentCliToken(w http.ResponseWriter, r *http.Request)
+	// ListContacts List contacts
+	// (GET /v1/contacts)
+	ListContacts(w http.ResponseWriter, r *http.Request, params ListContactsParams)
+	// CreateContact Add a contact
+	// (POST /v1/contacts)
+	CreateContact(w http.ResponseWriter, r *http.Request)
+	// DeleteContact Delete a contact
+	// (DELETE /v1/contacts/{contact_id})
+	DeleteContact(w http.ResponseWriter, r *http.Request, contactId ContactId)
+	// GetContact Show a contact
+	// (GET /v1/contacts/{contact_id})
+	GetContact(w http.ResponseWriter, r *http.Request, contactId ContactId)
+	// UpdateContact Change a contact
+	// (PATCH /v1/contacts/{contact_id})
+	UpdateContact(w http.ResponseWriter, r *http.Request, contactId ContactId)
 	// GetCredits Show the credit balance
 	// (GET /v1/credits)
 	GetCredits(w http.ResponseWriter, r *http.Request)
@@ -1087,6 +1311,183 @@ func (siw *ServerInterfaceWrapper) RevokeCurrentCliToken(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeCurrentCliToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListContacts operation middleware
+func (siw *ServerInterfaceWrapper) ListContacts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListContactsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "email" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "email", r.URL.Query(), &params.Email, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "email"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListContacts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateContact operation middleware
+func (siw *ServerInterfaceWrapper) CreateContact(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateContact(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteContact operation middleware
+func (siw *ServerInterfaceWrapper) DeleteContact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "contact_id" -------------
+	var contactId ContactId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "contact_id", r.PathValue("contact_id"), &contactId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "contact_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteContact(w, r, contactId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetContact operation middleware
+func (siw *ServerInterfaceWrapper) GetContact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "contact_id" -------------
+	var contactId ContactId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "contact_id", r.PathValue("contact_id"), &contactId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "contact_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetContact(w, r, contactId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateContact operation middleware
+func (siw *ServerInterfaceWrapper) UpdateContact(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "contact_id" -------------
+	var contactId ContactId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "contact_id", r.PathValue("contact_id"), &contactId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "contact_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateContact(w, r, contactId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1659,6 +2060,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/domains/{domain_id}", wrapper.DeleteDomain)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/domains/{domain_id}", wrapper.GetDomain)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/domains/{domain_id}/verify", wrapper.VerifyDomain)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contacts", wrapper.ListContacts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/contacts", wrapper.CreateContact)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/contacts/{contact_id}", wrapper.DeleteContact)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contacts/{contact_id}", wrapper.GetContact)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/contacts/{contact_id}", wrapper.UpdateContact)
 
 	return m
 }
