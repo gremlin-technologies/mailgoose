@@ -27,19 +27,37 @@ a separate binary, so no server code ships to customers.
 
 ## Run locally
 
-Needs Go 1.27+ and Docker.
+From a fresh clone to a running API, on macOS or Linux:
+
+1. **Install** Go 1.27 or later and Docker (Docker Desktop on macOS), and start
+   Docker.
+2. **Clone and start everything:**
+   ```sh
+   git clone https://github.com/gremlin-technologies/mailgoose
+   cd mailgoose
+   make dev
+   ```
+   `make dev` starts Postgres in Docker, applies migrations, then runs the API
+   on :8080 and the worker as local processes. Ctrl-C stops the API and worker;
+   `make down` stops Postgres.
+3. **Check it** from another terminal:
+   ```sh
+   curl localhost:8080/readyz       # {"status":"ok",...} once Postgres answers
+   make build && ./bin/mailgoose status --api-url http://localhost:8080
+   ```
+
+Mail never leaves your machine: locally the server uses the fake sender, which
+writes every message to `.local/mail/` as an `.eml` file. `make mail` lists the
+newest; open one in any mail client. Nothing locally has AWS settings, and the
+worker idles because it has no queue URLs. To use a Postgres you already run,
+set `DATABASE_URL` before `make dev`.
+
+Other ways to run it:
 
 ```sh
-docker compose up --build        # Postgres, API on :8080, worker
-curl localhost:8080/healthz      # {"status":"ok",...}
-curl localhost:8080/readyz       # also checks Postgres
-```
-
-Or run the Go processes directly against the compose Postgres:
-
-```sh
-make run-api                     # migrates, then serves on :8080
-make run-worker                  # idles: no queue URLs locally
+docker compose up --build        # everything in containers; mail is kept in memory
+make run-api                     # just the API, against the compose Postgres
+make run-worker                  # just the worker (idles: no queue URLs locally)
 ```
 
 The API applies pending migrations when it starts (`MIGRATE_ON_START`, default
