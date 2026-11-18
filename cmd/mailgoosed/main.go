@@ -30,6 +30,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/db"
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
+	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
@@ -94,7 +95,9 @@ func serve(ctx context.Context, log *slog.Logger) error {
 
 	srv := &api.Server{Log: log, RateLimitPerMinute: cfg.RateLimitPerMinute, TrustedOrigins: cfg.WebOrigins,
 		// The API serves the web app (MG-41), so its public URL is the web app's.
-		WebURL: cfg.PublicBaseURL}
+		WebURL: cfg.PublicBaseURL,
+		// The email check fetches links, never private addresses.
+		Links: &emailcheck.HTTPLinks{}}
 	if cfg.WebDir != "" {
 		app, err := web.New(os.DirFS(cfg.WebDir))
 		if err != nil {

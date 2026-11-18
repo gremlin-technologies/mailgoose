@@ -113,15 +113,36 @@ func Lint(doc *emails.Document) []*TagError {
 
 // Compile renders a blocks document for an account.
 func Compile(doc *emails.Document, acct Account) (*Template, error) {
+	t, problems, err := compileBlocks(doc, acct)
+	if err != nil {
+		return nil, err
+	}
+	if len(problems) > 0 {
+		return nil, problems
+	}
+	return t, nil
+}
+
+// Draft renders an email of either kind even when Lint (or, for html, the
+// tag check) finds problems, and returns them with it; a bad tag stays in
+// the output as text. The email check (MG-26) uses it to look at the rest
+// of an email that has tag problems. Nothing is sent from a draft: sending
+// goes through Compile or CompileHTML, which refuse problems.
+func Draft(doc *emails.Document, acct Account) (*Template, Problems, error) {
+	if doc.HTML != nil {
+		return compileHTML(doc, acct)
+	}
+	return compileBlocks(doc, acct)
+}
+
+func compileBlocks(doc *emails.Document, acct Account) (*Template, Problems, error) {
 	if doc.Kind() != emails.KindBlocks {
-		return nil, ErrNotBlocks
+		return nil, nil, ErrNotBlocks
 	}
 	if strings.TrimSpace(acct.PostalAddress) == "" {
-		return nil, ErrNoPostalAddress
+		return nil, nil, ErrNoPostalAddress
 	}
-	if errs := Lint(doc); len(errs) > 0 {
-		return nil, Problems(errs)
-	}
+	problems := Problems(Lint(doc))
 	r := &renderer{doc: doc, acct: acct, width: doc.Settings.ContentWidth}
 	if r.width <= 0 {
 		r.width = emails.DefaultSettings().ContentWidth
@@ -129,7 +150,18 @@ func Compile(doc *emails.Document, acct Account) (*Template, error) {
 	subject, _ := findTags(doc.Settings.Subject, "")
 	htmlParts, _ := findTags(r.html(), "")
 	textParts, _ := findTags(r.text(), "")
-	return &Template{subject: subject, html: htmlParts, text: textParts}, nil
+	return &Template{subject: subject, html: htmlParts, text: textParts}, problems, nil
+}
+
+// Has reports whether the email's HTML uses the merge tag, such as
+// TagUnsubscribeURL.
+func (t *Template) Has(tag string) bool {
+	for _, s := range t.html {
+		if s.tag == tag {
+			return true
+		}
+	}
+	return false
 }
 
 // Styles shared by the blocks.

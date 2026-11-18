@@ -4,6 +4,29 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Email check (MG-26, reversible defaults)
+
+Picked while building MG-26; easy to change.
+
+- **Which link problems block a launch:** a link that isn't a full web
+  address, a page that answers 404 or 410, or a site whose name doesn't
+  exist. Other error statuses (403, 429, 5xx) and timeouts are warnings,
+  since many sites refuse automated requests. `http://` links are a
+  warning.
+- **Images without alt text are a warning**, not an error.
+- **Size:** over 102 KB as rendered is an error; over 90 KB is a warning,
+  since link tracking adds a little at send time.
+- **Link limits:** 3 seconds per link, 10 seconds in all, 8 at a time, up
+  to 50 links and 5 redirects. Links beyond those are reported as not
+  checked.
+- **Private addresses are never fetched.** The guard runs on the address
+  each connection dials, with no proxy, so DNS names and redirects can't
+  get around it.
+- **The From address checked** is the email's own, else the account's
+  default.
+- **The check answers 200 with `ok: false`** when there are errors; a
+  draft-scoped key may run it.
+
 ## 2026-11-18: Email preview (MG-25, reversible defaults)
 
 Picked while building MG-25; easy to change.

@@ -429,6 +429,66 @@ func (e DomainStatus) Valid() bool {
 	}
 }
 
+// Defines values for EmailCheckIssueCode.
+const (
+	EmailCheckIssueCodeBrokenLink           EmailCheckIssueCode = "broken_link"
+	EmailCheckIssueCodeEmptyEmail           EmailCheckIssueCode = "empty_email"
+	EmailCheckIssueCodeInsecureLink         EmailCheckIssueCode = "insecure_link"
+	EmailCheckIssueCodeInvalidHtml          EmailCheckIssueCode = "invalid_html"
+	EmailCheckIssueCodeLinkNotChecked       EmailCheckIssueCode = "link_not_checked"
+	EmailCheckIssueCodeLinkUnreachable      EmailCheckIssueCode = "link_unreachable"
+	EmailCheckIssueCodeMergeTag             EmailCheckIssueCode = "merge_tag"
+	EmailCheckIssueCodeMissingAlt           EmailCheckIssueCode = "missing_alt"
+	EmailCheckIssueCodeMissingFrom          EmailCheckIssueCode = "missing_from"
+	EmailCheckIssueCodeMissingPostalAddress EmailCheckIssueCode = "missing_postal_address"
+	EmailCheckIssueCodeMissingSubject       EmailCheckIssueCode = "missing_subject"
+	EmailCheckIssueCodeMissingUnsubscribe   EmailCheckIssueCode = "missing_unsubscribe"
+	EmailCheckIssueCodeNearSizeLimit        EmailCheckIssueCode = "near_size_limit"
+	EmailCheckIssueCodeTooLarge             EmailCheckIssueCode = "too_large"
+	EmailCheckIssueCodeUnsupportedCss       EmailCheckIssueCode = "unsupported_css"
+	EmailCheckIssueCodeUnverifiedFrom       EmailCheckIssueCode = "unverified_from"
+)
+
+// Valid indicates whether the value is a known member of the EmailCheckIssueCode enum.
+func (e EmailCheckIssueCode) Valid() bool {
+	switch e {
+	case EmailCheckIssueCodeBrokenLink:
+		return true
+	case EmailCheckIssueCodeEmptyEmail:
+		return true
+	case EmailCheckIssueCodeInsecureLink:
+		return true
+	case EmailCheckIssueCodeInvalidHtml:
+		return true
+	case EmailCheckIssueCodeLinkNotChecked:
+		return true
+	case EmailCheckIssueCodeLinkUnreachable:
+		return true
+	case EmailCheckIssueCodeMergeTag:
+		return true
+	case EmailCheckIssueCodeMissingAlt:
+		return true
+	case EmailCheckIssueCodeMissingFrom:
+		return true
+	case EmailCheckIssueCodeMissingPostalAddress:
+		return true
+	case EmailCheckIssueCodeMissingSubject:
+		return true
+	case EmailCheckIssueCodeMissingUnsubscribe:
+		return true
+	case EmailCheckIssueCodeNearSizeLimit:
+		return true
+	case EmailCheckIssueCodeTooLarge:
+		return true
+	case EmailCheckIssueCodeUnsupportedCss:
+		return true
+	case EmailCheckIssueCodeUnverifiedFrom:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for EmailKind.
 const (
 	EmailKindBlocks EmailKind = "blocks"
@@ -1482,6 +1542,33 @@ type EmailBlockList struct {
 	EmailId string            `json:"email_id"`
 	Version int               `json:"version"`
 }
+
+// EmailCheck defines model for EmailCheck.
+type EmailCheck struct {
+	Errors []EmailCheckIssue `json:"errors"`
+
+	// Ok True when there are no errors, so the email can be sent.
+	Ok       bool              `json:"ok"`
+	Warnings []EmailCheckIssue `json:"warnings"`
+}
+
+// EmailCheckIssue defines model for EmailCheckIssue.
+type EmailCheckIssue struct {
+	Code EmailCheckIssueCode `json:"code"`
+
+	// Line The line of an html email's markup it's on.
+	Line    *int   `json:"line,omitempty"`
+	Message string `json:"message"`
+
+	// Path The block field or setting it's about, such as `blocks[2].alt` or `settings.subject`.
+	Path *string `json:"path,omitempty"`
+
+	// Url The link it's about.
+	Url *string `json:"url,omitempty"`
+}
+
+// EmailCheckIssueCode defines model for EmailCheckIssue.Code.
+type EmailCheckIssueCode string
 
 // EmailDocument A BlockDocument for a blocks email, an HtmlDocument for an html one.
 type EmailDocument struct {
@@ -3150,6 +3237,9 @@ type ServerInterface interface {
 	// MoveEmailBlock Move a block
 	// (POST /v1/emails/{email_id}/blocks/{block_id}/move)
 	MoveEmailBlock(w http.ResponseWriter, r *http.Request, emailId EmailId, blockId BlockId)
+	// CheckEmail Check an email before sending it
+	// (POST /v1/emails/{email_id}/check)
+	CheckEmail(w http.ResponseWriter, r *http.Request, emailId EmailId)
 	// ReplaceEmailDocument Replace an email's whole document
 	// (PUT /v1/emails/{email_id}/document)
 	ReplaceEmailDocument(w http.ResponseWriter, r *http.Request, emailId EmailId)
@@ -4359,6 +4449,32 @@ func (siw *ServerInterfaceWrapper) MoveEmailBlock(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// CheckEmail operation middleware
+func (siw *ServerInterfaceWrapper) CheckEmail(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CheckEmail(w, r, emailId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ReplaceEmailDocument operation middleware
 func (siw *ServerInterfaceWrapper) ReplaceEmailDocument(w http.ResponseWriter, r *http.Request) {
 
@@ -5069,6 +5185,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/emails/{email_id}/document", wrapper.ReplaceEmailDocument)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/emails/{email_id}/html", wrapper.ImportEmailHtml)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails/{email_id}/preview", wrapper.PreviewEmail)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/check", wrapper.CheckEmail)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/duplicate", wrapper.DuplicateEmail)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails/{email_id}/blocks", wrapper.ListEmailBlocks)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/blocks", wrapper.AddEmailBlock)
