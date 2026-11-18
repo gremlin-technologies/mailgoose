@@ -83,6 +83,57 @@ func (e CodeSentStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreditSummaryPlan.
+const (
+	CreditSummaryPlanFree CreditSummaryPlan = "free"
+	CreditSummaryPlanPaid CreditSummaryPlan = "paid"
+)
+
+// Valid indicates whether the value is a known member of the CreditSummaryPlan enum.
+func (e CreditSummaryPlan) Valid() bool {
+	switch e {
+	case CreditSummaryPlanFree:
+		return true
+	case CreditSummaryPlanPaid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreditTransactionType.
+const (
+	CreditTransactionTypeExpiry   CreditTransactionType = "expiry"
+	CreditTransactionTypeFee      CreditTransactionType = "fee"
+	CreditTransactionTypeGrant    CreditTransactionType = "grant"
+	CreditTransactionTypePurchase CreditTransactionType = "purchase"
+	CreditTransactionTypeRelease  CreditTransactionType = "release"
+	CreditTransactionTypeReserve  CreditTransactionType = "reserve"
+	CreditTransactionTypeSpend    CreditTransactionType = "spend"
+)
+
+// Valid indicates whether the value is a known member of the CreditTransactionType enum.
+func (e CreditTransactionType) Valid() bool {
+	switch e {
+	case CreditTransactionTypeExpiry:
+		return true
+	case CreditTransactionTypeFee:
+		return true
+	case CreditTransactionTypeGrant:
+		return true
+	case CreditTransactionTypePurchase:
+		return true
+	case CreditTransactionTypeRelease:
+		return true
+	case CreditTransactionTypeReserve:
+		return true
+	case CreditTransactionTypeSpend:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatus.
 const (
 	HealthStatusOk HealthStatus = "ok"
@@ -171,6 +222,51 @@ type CreatedApiKey struct {
 	// Examples: mg_live_9w2k4m1qz7d8c3x5v6b0n1p2r3s4t5u6
 	Secret string `json:"secret"`
 }
+
+// CreditSummary defines model for CreditSummary.
+type CreditSummary struct {
+	// Balance Credits available now, not counting any reserved for a send in progress.
+	Balance int64 `json:"balance"`
+
+	// NextGrantAt When the next 1,000 free credits arrive; null on the paid plan.
+	NextGrantAt *time.Time        `json:"next_grant_at"`
+	Plan        CreditSummaryPlan `json:"plan"`
+}
+
+// CreditSummaryPlan defines model for CreditSummary.Plan.
+type CreditSummaryPlan string
+
+// CreditTransaction defines model for CreditTransaction.
+type CreditTransaction struct {
+	// Amount Credits added (positive) or taken (negative).
+	Amount    int64     `json:"amount"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// ExpiresAt When a grant's or purchase's credits expire; null for other types.
+	ExpiresAt *time.Time `json:"expires_at"`
+	Id        string     `json:"id"`
+
+	// Ref What the transaction is for, such as a campaign id; empty when there's nothing to point to.
+	Ref string `json:"ref"`
+
+	// Type `grant` is a free monthly grant and `purchase` a bought credit pack.
+	// `reserve` holds credits for a send and `release` gives back what it
+	// didn't use. `spend` is credits used directly, `fee` the monthly
+	// account fee and `expiry` credits that ran out.
+	Type CreditTransactionType `json:"type"`
+}
+
+// CreditTransactionList defines model for CreditTransactionList.
+type CreditTransactionList struct {
+	Data       []CreditTransaction `json:"data"`
+	NextCursor *string             `json:"next_cursor"`
+}
+
+// CreditTransactionType `grant` is a free monthly grant and `purchase` a bought credit pack.
+// `reserve` holds credits for a send and `release` gives back what it
+// didn't use. `spend` is credits used directly, `fee` the monthly
+// account fee and `expiry` credits that ran out.
+type CreditTransactionType string
 
 // Error defines model for Error.
 type Error struct {
@@ -295,6 +391,15 @@ type ListApiKeysParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListCreditTransactionsParams defines parameters for ListCreditTransactions.
+type ListCreditTransactionsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // CreateApiKeyJSONRequestBody defines body for CreateApiKey for application/json ContentType.
 type CreateApiKeyJSONRequestBody = CreateApiKeyRequest
 
@@ -324,6 +429,12 @@ type ServerInterface interface {
 	// RevokeApiKey Revoke an API key
 	// (DELETE /v1/api-keys/{key_id})
 	RevokeApiKey(w http.ResponseWriter, r *http.Request, keyId string)
+	// GetCredits Show the credit balance
+	// (GET /v1/credits)
+	GetCredits(w http.ResponseWriter, r *http.Request)
+	// ListCreditTransactions List credit transactions
+	// (GET /v1/credits/transactions)
+	ListCreditTransactions(w http.ResponseWriter, r *http.Request, params ListCreditTransactionsParams)
 	// DeleteAllSessions Sign out everywhere
 	// (DELETE /v1/sessions)
 	DeleteAllSessions(w http.ResponseWriter, r *http.Request)
@@ -458,6 +569,66 @@ func (siw *ServerInterfaceWrapper) RevokeApiKey(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeApiKey(w, r, keyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCredits operation middleware
+func (siw *ServerInterfaceWrapper) GetCredits(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCredits(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCreditTransactions operation middleware
+func (siw *ServerInterfaceWrapper) ListCreditTransactions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCreditTransactionsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCreditTransactions(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -676,6 +847,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/api-keys", wrapper.ListApiKeys)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/api-keys", wrapper.CreateApiKey)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/api-keys/{key_id}", wrapper.RevokeApiKey)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/credits", wrapper.GetCredits)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/credits/transactions", wrapper.ListCreditTransactions)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/signup", wrapper.CreateSignup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sign-in", wrapper.CreateSignIn)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions", wrapper.DeleteAllSessions)

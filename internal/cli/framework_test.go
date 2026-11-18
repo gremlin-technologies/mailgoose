@@ -184,6 +184,12 @@ func TestNoCommandWaitsForInput(t *testing.T) {
 	srv := apiStub(t, map[string]func(http.ResponseWriter){
 		"/healthz":     func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"status":"ok","version":"v1"}`)) },
 		"/v1/api-keys": func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },
+		"/v1/credits": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"balance":0,"plan":"paid","next_grant_at":null}`))
+		},
+		"/v1/credits/transactions": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`))
+		},
 	})
 	for _, c := range NewApp().Commands() {
 		t.Run(c.Command, func(t *testing.T) {

@@ -1,0 +1,315 @@
+package credits
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
+)
+
+type harness struct {
+	ledger *Ledger
+	db     *pgxpool.Pool
+	now    time.Time
+	mu     sync.Mutex
+}
+
+func newHarness(t *testing.T) *harness {
+	t.Helper()
+	h := &harness{db: dbtest.New(t), now: time.Date(2026, 1, 31, 9, 0, 0, 0, time.UTC)}
+	h.ledger = &Ledger{DB: h.db, Now: h.clock}
+	return h
+}
+
+func (h *harness) clock() time.Time {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.now
+}
+
+func (h *harness) set(t time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.now = t
+}
+
+// account makes an account activated at the harness's current time.
+func (h *harness) account(t *testing.T, plan string) string {
+	t.Helper()
+	var id string
+	if err := h.db.QueryRow(context.Background(),
+		`INSERT INTO accounts (name, status, plan, activated_at) VALUES ('A', 'active', $1, $2) RETURNING id`,
+		plan, h.clock()).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func (h *harness) balance(t *testing.T, id string) int64 {
+	t.Helper()
+	s, err := h.ledger.Summary(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s.Balance
+}
+
+func (h *harness) types(t *testing.T, id string) []string {
+	t.Helper()
+	hist, err := h.ledger.History(context.Background(), id, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for i := len(hist) - 1; i >= 0; i-- {
+		out = append(out, hist[i].Type)
+	}
+	return out
+}
+
+func TestFreeGrantAndExpiry(t *testing.T) {
+	h := newHarness(t)
+	id := h.account(t, "free")
+
+	s, err := h.ledger.Summary(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Balance != FreeMonthlyGrant || s.Plan != "free" || s.NextGrantAt == nil ||
+		!s.NextGrantAt.Equal(time.Date(2026, 2, 28, 9, 0, 0, 0, time.UTC)) {
+		t.Fatalf("summary = %+v (next %v)", s, s.NextGrantAt)
+	}
+	// Reading again in the same month grants nothing more.
+	if b := h.balance(t, id); b != FreeMonthlyGrant {
+		t.Errorf("balance = %d", b)
+	}
+
+	if _, err := h.ledger.Debit(context.Background(), id, TypeSpend, 300, ""); err != nil {
+		t.Fatal(err)
+	}
+	// The anniversary of Jan 31 in February is the 28th. The 700 left expire
+	// and a new 1,000 arrive.
+	h.set(time.Date(2026, 2, 28, 9, 0, 0, 0, time.UTC))
+	if b := h.balance(t, id); b != FreeMonthlyGrant {
+		t.Errorf("after the anniversary: balance = %d, want %d", b, FreeMonthlyGrant)
+	}
+	want := []string{"grant", "spend", "expiry", "grant"}
+	if got := h.types(t, id); !equal(got, want) {
+		t.Errorf("history = %v, want %v", got, want)
+	}
+
+	// Months with no activity get no backfill: only the current grant.
+	h.set(time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC))
+	if b := h.balance(t, id); b != FreeMonthlyGrant {
+		t.Errorf("months later: balance = %d", b)
+	}
+}
+
+func TestPaidAccountsGetNoGrant(t *testing.T) {
+	h := newHarness(t)
+	id := h.account(t, "paid")
+	s, err := h.ledger.Summary(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Balance != 0 || s.NextGrantAt != nil {
+		t.Errorf("summary = %+v", s)
+	}
+	if _, err := h.ledger.Debit(context.Background(), id, TypeFee, 1, ""); !errors.Is(err, ErrInsufficientCredits) {
+		t.Errorf("debit with nothing: err = %v", err)
+	}
+}
+
+func TestPendingAccountsGetNoGrant(t *testing.T) {
+	h := newHarness(t)
+	var id string
+	if err := h.db.QueryRow(context.Background(), `INSERT INTO accounts (name) VALUES ('P') RETURNING id`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	if b := h.balance(t, id); b != 0 {
+		t.Errorf("pending account balance = %d", b)
+	}
+}
+
+func TestDebitsUseTheLotExpiringFirst(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	id := h.account(t, "free")
+	h.balance(t, id) // the free grant, expiring Feb 28
+	// A purchase lasting 24 months (MG-39 makes these).
+	var purchase int64
+	if err := h.db.QueryRow(ctx, `INSERT INTO credit_transactions (account_id, type, amount, expires_at) VALUES ($1, 'purchase', 10000, $2) RETURNING id`,
+		id, h.clock().AddDate(2, 0, 0)).Scan(&purchase); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := h.ledger.Debit(ctx, id, TypeReserve, 1500, "campaign-1"); err != nil {
+		t.Fatal(err)
+	}
+	// 1,000 from the grant, 500 from the purchase.
+	var fromPurchase int64
+	if err := h.db.QueryRow(ctx, `SELECT -sum(amount) FROM credit_allocations WHERE lot_id = $1`, purchase).Scan(&fromPurchase); err != nil {
+		t.Fatal(err)
+	}
+	if fromPurchase != 500 {
+		t.Errorf("taken from the purchase = %d, want 500", fromPurchase)
+	}
+
+	// Releasing 600 gives the purchase its 500 back first, then 100 to the grant.
+	got, err := h.ledger.Release(ctx, id, "campaign-1", 600)
+	if err != nil || got != 600 {
+		t.Fatalf("release = %d, %v", got, err)
+	}
+	if b := h.balance(t, id); b != 11000-1500+600 {
+		t.Errorf("balance = %d", b)
+	}
+	// Releasing more than is held gives back only what's left.
+	if got, err := h.ledger.Release(ctx, id, "campaign-1", 5000); err != nil || got != 900 {
+		t.Errorf("release the rest = %d, %v; want 900", got, err)
+	}
+	if got, err := h.ledger.Release(ctx, id, "campaign-1", 1); err != nil || got != 0 {
+		t.Errorf("release with nothing held = %d, %v", got, err)
+	}
+
+	// At the next anniversary the grant's unused credits expire; the
+	// purchase's don't.
+	h.set(time.Date(2026, 2, 28, 9, 0, 0, 0, time.UTC))
+	if b := h.balance(t, id); b != 10000+FreeMonthlyGrant {
+		t.Errorf("after the anniversary: balance = %d", b)
+	}
+}
+
+func TestReleaseAfterExpiryExpiresAgain(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	id := h.account(t, "free")
+	if _, err := h.ledger.Debit(ctx, id, TypeReserve, 400, "c"); err != nil {
+		t.Fatal(err)
+	}
+	h.set(time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC))
+	// The old grant expired with 400 still reserved; giving them back now
+	// mustn't revive expired credits.
+	if _, err := h.ledger.Release(ctx, id, "c", 400); err != nil {
+		t.Fatal(err)
+	}
+	if b := h.balance(t, id); b != FreeMonthlyGrant {
+		t.Errorf("balance = %d, want %d", b, FreeMonthlyGrant)
+	}
+}
+
+func TestBalanceNeverGoesNegative(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	id := h.account(t, "free")
+	h.balance(t, id)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 20)
+	for i := range 20 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := h.ledger.Debit(ctx, id, TypeReserve, 100, string(rune('a'+i)))
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	ok, short := 0, 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			ok++
+		case errors.Is(err, ErrInsufficientCredits):
+			short++
+		default:
+			t.Errorf("debit: %v", err)
+		}
+	}
+	if ok != 10 || short != 10 {
+		t.Errorf("%d debits went through and %d were refused, want 10 and 10", ok, short)
+	}
+	if b := h.balance(t, id); b != 0 {
+		t.Errorf("balance = %d, want 0", b)
+	}
+	var lowest int64
+	if err := h.db.QueryRow(ctx, `
+		SELECT min(running) FROM (
+		    SELECT sum(amount) OVER (ORDER BY id) AS running FROM credit_transactions WHERE account_id = $1) r`,
+		id).Scan(&lowest); err != nil {
+		t.Fatal(err)
+	}
+	if lowest < 0 {
+		t.Errorf("the balance went to %d along the way", lowest)
+	}
+}
+
+func TestHistoryPages(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	id := h.account(t, "free")
+	for range 3 {
+		if _, err := h.ledger.Debit(ctx, id, TypeSpend, 10, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, err := h.ledger.History(ctx, id, 0, 2)
+	if err != nil || len(first) != 2 || first[0].ID < first[1].ID {
+		t.Fatalf("first page = %+v, %v", first, err)
+	}
+	rest, err := h.ledger.History(ctx, id, first[1].ID, 10)
+	if err != nil || len(rest) != 2 || rest[1].Type != TypeGrant {
+		t.Errorf("rest = %+v, %v", rest, err)
+	}
+}
+
+func TestBadDebits(t *testing.T) {
+	h := newHarness(t)
+	id := h.account(t, "free")
+	for _, tc := range []struct {
+		typ string
+		n   int64
+	}{{TypeGrant, 1}, {TypeSpend, 0}, {TypeSpend, -5}} {
+		if _, err := h.ledger.Debit(context.Background(), id, tc.typ, tc.n, ""); err == nil {
+			t.Errorf("Debit(%s, %d) succeeded", tc.typ, tc.n)
+		}
+	}
+	if _, err := h.ledger.Summary(context.Background(), "00000000-0000-4000-8000-000000000000"); !errors.Is(err, ErrNoAccount) {
+		t.Errorf("unknown account: err = %v", err)
+	}
+}
+
+func TestPeriod(t *testing.T) {
+	anchor := time.Date(2026, 1, 31, 9, 0, 0, 0, time.UTC)
+	for _, tc := range []struct{ now, start, next string }{
+		{"2026-01-31T09:00:00Z", "2026-01-31T09:00:00Z", "2026-02-28T09:00:00Z"},
+		{"2026-02-28T08:59:59Z", "2026-01-31T09:00:00Z", "2026-02-28T09:00:00Z"},
+		{"2026-02-28T09:00:00Z", "2026-02-28T09:00:00Z", "2026-03-31T09:00:00Z"},
+		{"2026-04-30T10:00:00Z", "2026-04-30T09:00:00Z", "2026-05-31T09:00:00Z"},
+		{"2027-02-01T00:00:00Z", "2027-01-31T09:00:00Z", "2027-02-28T09:00:00Z"},
+		{"2028-02-29T09:00:00Z", "2028-02-29T09:00:00Z", "2028-03-31T09:00:00Z"},
+	} {
+		now, _ := time.Parse(time.RFC3339, tc.now)
+		start, next := period(anchor, now)
+		if start.Format(time.RFC3339) != tc.start || next.Format(time.RFC3339) != tc.next {
+			t.Errorf("period(%s) = %s, %s; want %s, %s", tc.now, start.Format(time.RFC3339), next.Format(time.RFC3339), tc.start, tc.next)
+		}
+	}
+}
+
+func equal(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

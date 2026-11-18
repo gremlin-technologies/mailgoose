@@ -89,6 +89,22 @@ var contractCases = map[string][]contractCase{
 			req: bearer(request(http.MethodDelete, "/v1/api-keys/"+noSuchID)), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodDelete, "/v1/api-keys/"+noSuchID)), status: http.StatusServiceUnavailable},
 	},
+	"getCredits": {
+		{name: "draft key", server: draftKey(authServer), req: bearer(request(http.MethodGet, "/v1/credits")), status: http.StatusOK},
+		{name: "web session", server: authServer, before: signedIn, req: withSession(request(http.MethodGet, "/v1/credits")), status: http.StatusOK},
+		{name: "no credentials", server: authServer, req: request(http.MethodGet, "/v1/credits"), status: http.StatusUnauthorized},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/credits"))),
+			req: bearer(request(http.MethodGet, "/v1/credits")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodGet, "/v1/credits")), status: http.StatusServiceUnavailable},
+	},
+	"listCreditTransactions": {
+		{name: "web session", server: authServer, before: signedIn, req: withSession(request(http.MethodGet, "/v1/credits/transactions?limit=10")), status: http.StatusOK},
+		{name: "bad cursor", server: draftKey(authServer), req: bearer(request(http.MethodGet, "/v1/credits/transactions?cursor="+EncodeCursor("x"))), status: http.StatusBadRequest},
+		{name: "no credentials", server: authServer, req: request(http.MethodGet, "/v1/credits/transactions"), status: http.StatusUnauthorized},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/credits/transactions"))),
+			req: bearer(request(http.MethodGet, "/v1/credits/transactions")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodGet, "/v1/credits/transactions")), status: http.StatusServiceUnavailable},
+	},
 	"createSignIn": {
 		{name: "known address", server: authServer, before: signedIn, req: jsonRequest(http.MethodPost, "/v1/sign-in", signInBody), status: http.StatusAccepted},
 		{name: "unknown address", server: authServer, req: jsonRequest(http.MethodPost, "/v1/sign-in", signInBody), status: http.StatusAccepted},

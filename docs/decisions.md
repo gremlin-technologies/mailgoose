@@ -4,6 +4,29 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Credit ledger details (MG-12, reversible defaults)
+
+Picked while building MG-12; easy to change.
+
+- **Grants and expiries are applied when the account is next read or
+  debited, not by a scheduled job.** Every credits read or debit first
+  catches the account up under its row lock, so the result is the same as a
+  job running at each anniversary, with nothing to schedule or monitor.
+- **The anniversary is the activation time.** A free account activated on
+  Jan 31 at 09:00 gets its grants on Feb 28, Mar 31, Apr 30 and so on, each
+  at 09:00 UTC (short months use their last day).
+- **No backfill.** An account untouched for three months gets one grant (the
+  current month's) when it's next read, not three.
+- **Credits come in lots.** Each grant or purchase is a lot with its own
+  expiry; debits use the lot that expires first and record which lots they
+  took from, so expiring a lot removes exactly what's left of it, and a
+  release puts credits back in the lots they came from (latest expiry first).
+  Credits released after their lot expired are expired again at once.
+- **Paid accounts get no free grant.** What happens to a free account's
+  grants when it buys its first pack is MG-39's call.
+- **Reading credits is allowed to draft keys**; buying them (MG-39) will need
+  a full key.
+
 ## 2026-11-18: API key details (MG-09, reversible defaults)
 
 Picked while building MG-09; easy to change.

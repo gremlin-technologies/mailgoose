@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 )
@@ -29,8 +30,9 @@ func authServer(t *testing.T) *Server {
 	outboxes.Store(t, fake)
 	t.Cleanup(func() { outboxes.Delete(t) })
 	return &Server{
-		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		DB:  db,
+		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:      db,
+		Credits: &credits.Ledger{DB: db},
 		Auth: &auth.Service{
 			DB:   db,
 			Mail: fake,
