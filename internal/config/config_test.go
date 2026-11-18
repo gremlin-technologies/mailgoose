@@ -114,3 +114,14 @@ func TestMailSenderSetting(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemSendingDomainDefault(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || cfg.SystemSendingDomain != "mail.localhost" {
+		t.Fatalf("local default = %q, %v", cfg.SystemSendingDomain, err)
+	}
+	cfg, err = load(env(map[string]string{"APP_ENV": "staging"}))
+	if err != nil || cfg.SystemSendingDomain != "" {
+		t.Fatalf("staging without SYSTEM_SENDING_DOMAIN = %q, %v; want empty", cfg.SystemSendingDomain, err)
+	}
+}

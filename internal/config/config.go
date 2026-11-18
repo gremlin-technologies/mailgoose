@@ -130,6 +130,10 @@ func load(getenv func(string) string) (Config, error) {
 			cfg.MailSender = "fake"
 		}
 	}
+	// Mail captured locally needs no real domain.
+	if cfg.SystemSendingDomain == "" && cfg.MailSender == "fake" {
+		cfg.SystemSendingDomain = "mail.localhost"
+	}
 	cfg.MailCaptureDir = getenv("MAIL_CAPTURE_DIR")
 	switch {
 	case cfg.MailSender != "ses" && cfg.MailSender != "fake":

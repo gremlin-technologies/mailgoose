@@ -8,7 +8,59 @@ package apigen
 import (
 	"fmt"
 	"net/http"
+	"time"
 )
+
+// Defines values for AccountPlan.
+const (
+	AccountPlanFree AccountPlan = "free"
+	AccountPlanPaid AccountPlan = "paid"
+)
+
+// Valid indicates whether the value is a known member of the AccountPlan enum.
+func (e AccountPlan) Valid() bool {
+	switch e {
+	case AccountPlanFree:
+		return true
+	case AccountPlanPaid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AccountStatus.
+const (
+	AccountStatusActive  AccountStatus = "active"
+	AccountStatusPending AccountStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the AccountStatus enum.
+func (e AccountStatus) Valid() bool {
+	switch e {
+	case AccountStatusActive:
+		return true
+	case AccountStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CodeSentStatus.
+const (
+	CodeSentStatusCodeSent CodeSentStatus = "code_sent"
+)
+
+// Valid indicates whether the value is a known member of the CodeSentStatus enum.
+func (e CodeSentStatus) Valid() bool {
+	switch e {
+	case CodeSentStatusCodeSent:
+		return true
+	default:
+		return false
+	}
+}
 
 // Defines values for HealthStatus.
 const (
@@ -24,6 +76,31 @@ func (e HealthStatus) Valid() bool {
 		return false
 	}
 }
+
+// Account defines model for Account.
+type Account struct {
+	CreatedAt time.Time     `json:"created_at"`
+	Id        string        `json:"id"`
+	Name      string        `json:"name"`
+	Plan      AccountPlan   `json:"plan"`
+	Status    AccountStatus `json:"status"`
+}
+
+// AccountPlan defines model for Account.Plan.
+type AccountPlan string
+
+// AccountStatus defines model for Account.Status.
+type AccountStatus string
+
+// CodeSent defines model for CodeSent.
+type CodeSent struct {
+	// Message Examples: Check your email for a six-digit code.
+	Message string         `json:"message"`
+	Status  CodeSentStatus `json:"status"`
+}
+
+// CodeSentStatus defines model for CodeSent.Status.
+type CodeSentStatus string
 
 // Error defines model for Error.
 type Error struct {
@@ -61,6 +138,42 @@ type Health struct {
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
+// Session defines model for Session.
+type Session struct {
+	Account   Account   `json:"account"`
+	ExpiresAt time.Time `json:"expires_at"`
+	User      User      `json:"user"`
+}
+
+// SessionRequest defines model for SessionRequest.
+type SessionRequest struct {
+	// Code The six-digit code from the email.
+	//
+	// Examples: 042917
+	Code  string `json:"code"`
+	Email string `json:"email"`
+}
+
+// SignupRequest defines model for SignupRequest.
+type SignupRequest struct {
+	// AcceptedTerms Must be `true`: the person accepts the terms of service and the
+	// anti-spam policy. Anything else is a 422 `terms_not_accepted`.
+	AcceptedTerms bool `json:"accepted_terms"`
+
+	// AccountName Examples: Pat's Bakery
+	AccountName string `json:"account_name"`
+
+	// Email Examples: pat@example.com
+	Email string `json:"email"`
+}
+
+// User defines model for User.
+type User struct {
+	CreatedAt time.Time `json:"created_at"`
+	Email     string    `json:"email"`
+	Id        string    `json:"id"`
+}
+
 // Cursor defines model for Cursor.
 type Cursor = string
 
@@ -76,8 +189,20 @@ type BadRequest = Error
 // IdempotencyConflict defines model for IdempotencyConflict.
 type IdempotencyConflict = Error
 
+// ServiceUnavailable defines model for ServiceUnavailable.
+type ServiceUnavailable = Error
+
 // TooManyRequests defines model for TooManyRequests.
 type TooManyRequests = Error
+
+// ValidationFailed defines model for ValidationFailed.
+type ValidationFailed = Error
+
+// CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
+type CreateSessionJSONRequestBody = SessionRequest
+
+// CreateSignupJSONRequestBody defines body for CreateSignup for application/json ContentType.
+type CreateSignupJSONRequestBody = SignupRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -87,6 +212,12 @@ type ServerInterface interface {
 	// GetReadiness Readiness check
 	// (GET /readyz)
 	GetReadiness(w http.ResponseWriter, r *http.Request)
+	// CreateSession Start a web session with an emailed code
+	// (POST /v1/sessions)
+	CreateSession(w http.ResponseWriter, r *http.Request)
+	// CreateSignup Sign up
+	// (POST /v1/signup)
+	CreateSignup(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -117,6 +248,34 @@ func (siw *ServerInterfaceWrapper) GetReadiness(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReadiness(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSession operation middleware
+func (siw *ServerInterfaceWrapper) CreateSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSignup operation middleware
+func (siw *ServerInterfaceWrapper) CreateSignup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSignup(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -248,6 +407,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealth)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadiness)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/signup", wrapper.CreateSignup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions", wrapper.CreateSession)
 
 	return m
 }

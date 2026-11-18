@@ -22,6 +22,9 @@ const specPath = "../../api/openapi.yaml"
 type contractCase struct {
 	name   string
 	server func(t *testing.T) *Server
+	// before, if set, sends requests through the same handler first, for
+	// cases such as rate limiting that need earlier requests.
+	before func(t *testing.T, h http.Handler)
 	req    func(t *testing.T) *http.Request
 	status int
 }
@@ -40,6 +43,22 @@ var contractCases = map[string][]contractCase{
 		{name: "database down", server: serverWith(pinger{err: errors.New("down")}), req: request(http.MethodGet, "/readyz"), status: http.StatusServiceUnavailable},
 		{name: "no database", server: serverWith(nil), req: request(http.MethodGet, "/readyz"), status: http.StatusServiceUnavailable},
 	},
+	"createSignup": {
+		{name: "new address", server: authServer, req: jsonRequest(http.MethodPost, "/v1/signup", signupBody), status: http.StatusAccepted},
+		{name: "malformed", server: authServer, req: jsonRequest(http.MethodPost, "/v1/signup", `{"email":`), status: http.StatusBadRequest},
+		{name: "terms not accepted", server: authServer, req: jsonRequest(http.MethodPost, "/v1/signup", `{"email":"pat@example.com","account_name":"Pat","accepted_terms":false}`), status: http.StatusUnprocessableEntity},
+		{name: "rate limited", server: rateLimitedAuthServer, before: send(jsonRequest(http.MethodPost, "/v1/signup", signupBody)),
+			req: jsonRequest(http.MethodPost, "/v1/signup", signupBody), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: jsonRequest(http.MethodPost, "/v1/signup", signupBody), status: http.StatusServiceUnavailable},
+	},
+	"createSession": {
+		{name: "right code", server: authServer, before: signedUp, req: sessionRequest(""), status: http.StatusCreated},
+		{name: "malformed", server: authServer, req: jsonRequest(http.MethodPost, "/v1/sessions", `[]`), status: http.StatusBadRequest},
+		{name: "wrong code", server: authServer, before: signedUp, req: sessionRequest("wrong"), status: http.StatusUnprocessableEntity},
+		{name: "rate limited", server: rateLimitedAuthServer, before: send(sessionRequest("wrong")),
+			req: sessionRequest("wrong"), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: sessionRequest("wrong"), status: http.StatusServiceUnavailable},
+	},
 }
 
 func serverWith(db Pinger) func(*testing.T) *Server {
@@ -48,6 +67,19 @@ func serverWith(db Pinger) func(*testing.T) *Server {
 
 func request(method, path string) func(*testing.T) *http.Request {
 	return func(*testing.T) *http.Request { return httptest.NewRequest(method, path, nil) }
+}
+
+func jsonRequest(method, path, body string) func(*testing.T) *http.Request {
+	return func(*testing.T) *http.Request {
+		r := httptest.NewRequest(method, path, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		return r
+	}
+}
+
+// send runs req through the handler and ignores the answer.
+func send(req func(*testing.T) *http.Request) func(*testing.T, http.Handler) {
+	return func(t *testing.T, h http.Handler) { h.ServeHTTP(httptest.NewRecorder(), req(t)) }
 }
 
 type specOperation struct {
@@ -109,9 +141,19 @@ func TestContract(t *testing.T) {
 				t.Fatalf("%s %s has no entry in contractCases", op.method, op.path)
 			}
 			tested := map[int]bool{}
+			skipped := false
 			for _, c := range cases {
 				t.Run(c.name, func(t *testing.T) {
+					defer func() {
+						if t.Skipped() {
+							skipped = true
+						}
+					}()
 					s := c.server(t)
+					h := s.Handler()
+					if c.before != nil {
+						c.before(t, h)
+					}
 					req := c.req(t)
 					if req.Method != op.method {
 						t.Fatalf("case sends %s, operation is %s", req.Method, op.method)
@@ -121,7 +163,7 @@ func TestContract(t *testing.T) {
 					}
 
 					rec := httptest.NewRecorder()
-					s.Handler().ServeHTTP(rec, req)
+					h.ServeHTTP(rec, req)
 					resp := rec.Result()
 					defer func() { _ = resp.Body.Close() }()
 					if resp.StatusCode != c.status {
@@ -140,6 +182,10 @@ func TestContract(t *testing.T) {
 					}
 					tested[resp.StatusCode] = true
 				})
+			}
+			if skipped {
+				t.Log("some cases were skipped (no test database), so response coverage isn't checked")
+				return
 			}
 			for _, code := range op.statuses {
 				if !tested[code] {

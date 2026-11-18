@@ -125,12 +125,29 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `DATABASE_URL` | Local only. Takes precedence over the variables above. |
 | `DATABASE_SSLMODE` | Defaults to `require` (RDS forces TLS). |
 | `SEND_QUEUE_URL`, `SES_EVENTS_QUEUE_URL` | Queues the worker drains. Unset means idle. |
-| `SES_CONFIGURATION_SET`, `SYSTEM_SENDING_DOMAIN`, `SES_IDENTITY_TAG` | Read now, used once sending lands. |
+| `SYSTEM_SENDING_DOMAIN` | mailgoose's own sending domain; sign-in codes come from `signin@` it. Defaults to `mail.localhost` when mail is captured (`MAIL_SENDER=fake`). Unset with SES, sign-up and sign-in answer 503. |
+| `SES_CONFIGURATION_SET`, `SES_IDENTITY_TAG` | Read now, used once sending lands. |
 | `APP_SECRETS_JSON` | The `<env>/app` secret, a JSON object. |
 | `MIGRATE_ON_START` | `false` to skip migrations at API start. |
 | `RATE_LIMIT_PER_MINUTE` | Requests per minute per API key (or per IP without one), with bursts up to the same number. Default 600; `0` turns limiting off. Counted per API task. |
 | `MAIL_SENDER` | `ses` or `fake`. Defaults to `fake` when `APP_ENV=local` and `ses` otherwise; prod refuses `fake`. The fake records mail and never calls AWS. |
 | `MAIL_CAPTURE_DIR` | With the fake sender, write each message as an `.eml` file here. |
+
+## Sign up and sessions
+
+`POST /v1/signup` makes a pending account on the free plan and emails a
+six-digit code; `POST /v1/sessions` with that code activates the account and
+sets the `mg_session` cookie (HttpOnly, Secure, SameSite=Lax, 30 days). Codes
+are stored as Argon2id hashes, last 10 minutes, work once and stop after 5
+wrong tries. Locally the code lands in `.local/mail` (`make mail`):
+
+```sh
+curl -s localhost:8080/v1/signup -H 'Content-Type: application/json' \
+  -d '{"email":"pat@example.com","account_name":"Pat","accepted_terms":true}'
+make mail   # read the code
+curl -si localhost:8080/v1/sessions -H 'Content-Type: application/json' \
+  -d '{"email":"pat@example.com","code":"123456"}'
+```
 
 ## API conventions
 

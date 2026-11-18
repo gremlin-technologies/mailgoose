@@ -6,6 +6,15 @@ generate:
   std-http-server: true
 output-options:
   skip-prune: true
+  # Plain strings for these formats: handlers validate input themselves, so a
+  # bad address is a 422 with our error code, not a JSON decoding error.
+  type-mapping:
+    string:
+      formats:
+        email:
+          type: string
+        uuid:
+          type: string
 compatibility:
   # Enum constants get their type's name (HealthStatusOk, not Ok), so two
   # enums with the same value never collide.

@@ -45,10 +45,113 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sign up
+         * @description Creates a pending account on the free plan and emails a six-digit code
+         *     to the address; using the code with `createSession` activates the
+         *     account. The answer is the same whether or not the address already
+         *     has an account: an address with an active account gets a sign-in code
+         *     instead, and no new account is made. A repeat within a minute sends no
+         *     new email.
+         */
+        post: operations["createSignup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a web session with an emailed code
+         * @description Uses a code from `createSignup` (and, later, sign-in). On success a
+         *     pending account becomes active, and the response sets an HttpOnly
+         *     session cookie that lasts 30 days. A wrong, expired, used or locked
+         *     code gets the same `invalid_code` error; a code stops working after 5
+         *     wrong tries.
+         */
+        post: operations["createSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        SignupRequest: {
+            /**
+             * Format: email
+             * @example pat@example.com
+             */
+            email: string;
+            /** @example Pat's Bakery */
+            account_name: string;
+            /**
+             * @description Must be `true`: the person accepts the terms of service and the
+             *     anti-spam policy. Anything else is a 422 `terms_not_accepted`.
+             */
+            accepted_terms: boolean;
+        };
+        CodeSent: {
+            /** @enum {string} */
+            status: "code_sent";
+            /** @example Check your email for a six-digit code. */
+            message: string;
+        };
+        SessionRequest: {
+            /** Format: email */
+            email: string;
+            /**
+             * @description The six-digit code from the email.
+             * @example 042917
+             */
+            code: string;
+        };
+        Session: {
+            account: components["schemas"]["Account"];
+            user: components["schemas"]["User"];
+            /** Format: date-time */
+            expires_at: string;
+        };
+        Account: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            status: "pending" | "active";
+            /** @enum {string} */
+            plan: "free" | "paid";
+            /** Format: date-time */
+            created_at: string;
+        };
+        User: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            /** Format: date-time */
+            created_at: string;
+        };
         Health: {
             /** @enum {string} */
             status: "ok";
@@ -80,6 +183,33 @@ export interface components {
         };
     };
     responses: {
+        /**
+         * @description The request is well formed but a field is wrong. `code` says which
+         *     problem, such as `invalid_email`, `invalid_account_name`,
+         *     `terms_not_accepted` or `invalid_code`.
+         */
+        ValidationFailed: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `service_unavailable`: a dependency the endpoint needs (the database)
+         *     isn't configured or reachable. Try again later.
+         */
+        ServiceUnavailable: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description The request is malformed. */
         BadRequest: {
             headers: {
@@ -195,6 +325,66 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    createSignup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignupRequest"];
+            };
+        };
+        responses: {
+            /** @description A code is on its way, if the address can receive one. */
+            202: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CodeSent"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Signed in. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    /** @description `mg_session`, HttpOnly, Secure, SameSite=Lax, 30 days. */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
 }
