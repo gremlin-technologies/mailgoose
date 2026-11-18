@@ -526,13 +526,36 @@ type Contact struct {
 	// Amazon SES.
 	Status          ContactStatus `json:"status"`
 	StatusChangedAt time.Time     `json:"status_changed_at"`
-	UpdatedAt       time.Time     `json:"updated_at"`
+
+	// Tags The contact's tags, by name.
+	Tags      []TagRef  `json:"tags"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ContactFilter Matches contacts as `listContacts` does; fields left out don't filter.
+type ContactFilter struct {
+	Email *string `json:"email,omitempty"`
+	Name  *string `json:"name,omitempty"`
+
+	// Status Only `subscribed` contacts receive campaigns. `unconfirmed` is waiting
+	// for double opt-in or permission; `bounced` and `complained` come from
+	// Amazon SES.
+	Status *ContactStatus `json:"status,omitempty"`
+	TagId  *string        `json:"tag_id,omitempty"`
 }
 
 // ContactList defines model for ContactList.
 type ContactList struct {
 	Data       []Contact `json:"data"`
 	NextCursor *string   `json:"next_cursor"`
+}
+
+// ContactSelection Exactly one of `contact_ids` and `filter`.
+type ContactSelection struct {
+	ContactIds *[]string `json:"contact_ids,omitempty"`
+
+	// Filter Matches contacts as `listContacts` does; fields left out don't filter.
+	Filter *ContactFilter `json:"filter,omitempty"`
 }
 
 // ContactSource How the contact was added. `manual` is the web app.
@@ -586,6 +609,12 @@ type CreateDomainRequest struct {
 	// Name The domain to send from, such as `example.com` or `news.example.com`. Internationalized names are stored in their ASCII (punycode) form.
 	//
 	// Examples: example.com
+	Name string `json:"name"`
+}
+
+// CreateTagRequest defines model for CreateTagRequest.
+type CreateTagRequest struct {
+	// Name Unique in the account, ignoring case; one line, no commas.
 	Name string `json:"name"`
 }
 
@@ -821,6 +850,11 @@ type PollDeviceLoginRequest struct {
 	DeviceCode string `json:"device_code"`
 }
 
+// RenameTagRequest defines model for RenameTagRequest.
+type RenameTagRequest struct {
+	Name string `json:"name"`
+}
+
 // Session defines model for Session.
 type Session struct {
 	Account   Account   `json:"account"`
@@ -854,6 +888,47 @@ type SignupRequest struct {
 
 	// Email Examples: pat@example.com
 	Email string `json:"email"`
+}
+
+// Tag defines model for Tag.
+type Tag struct {
+	// ContactCount How many contacts have the tag, whatever their status.
+	ContactCount int       `json:"contact_count"`
+	CreatedAt    time.Time `json:"created_at"`
+	Id           string    `json:"id"`
+
+	// Name Examples: newsletter
+	Name string `json:"name"`
+}
+
+// TagChange defines model for TagChange.
+type TagChange struct {
+	// Changed How many gained or lost the tag; the others already had it or didn't.
+	Changed int `json:"changed"`
+
+	// Matched How many of the account's contacts were selected.
+	Matched int `json:"matched"`
+}
+
+// TagDeleted defines model for TagDeleted.
+type TagDeleted struct {
+	// CampaignsUpdated How many draft or scheduled campaigns had the tag among their recipients.
+	CampaignsUpdated int `json:"campaigns_updated"`
+
+	// ContactsUntagged How many contacts had the tag.
+	ContactsUntagged int `json:"contacts_untagged"`
+}
+
+// TagList defines model for TagList.
+type TagList struct {
+	Data       []Tag   `json:"data"`
+	NextCursor *string `json:"next_cursor"`
+}
+
+// TagRef defines model for TagRef.
+type TagRef struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // UpdateAccountRequest defines model for UpdateAccountRequest.
@@ -924,6 +999,9 @@ type IdempotencyKey = string
 // Limit defines model for Limit.
 type Limit = int
 
+// TagId defines model for TagId.
+type TagId = string
+
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
 
@@ -947,6 +1025,9 @@ type NotFound = Error
 
 // ServiceUnavailable defines model for ServiceUnavailable.
 type ServiceUnavailable = Error
+
+// TagConflict defines model for TagConflict.
+type TagConflict = Error
 
 // TooManyRequests defines model for TooManyRequests.
 type TooManyRequests = Error
@@ -982,6 +1063,9 @@ type ListContactsParams struct {
 
 	// Status Only contacts with this status.
 	Status *ContactStatus `form:"status,omitempty" json:"status,omitempty"`
+
+	// TagId Only contacts with this tag.
+	TagId *string `form:"tag_id,omitempty" json:"tag_id,omitempty"`
 }
 
 // ListCreditTransactionsParams defines parameters for ListCreditTransactions.
@@ -1002,6 +1086,18 @@ type ListDomainsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 
 	// Name Only the domain with this name, such as `example.com`.
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+}
+
+// ListTagsParams defines parameters for ListTags.
+type ListTagsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Name Only the tag with this name, ignoring case.
 	Name *string `form:"name,omitempty" json:"name,omitempty"`
 }
 
@@ -1037,6 +1133,18 @@ type CreateSignInJSONRequestBody = SignInRequest
 
 // CreateSignupJSONRequestBody defines body for CreateSignup for application/json ContentType.
 type CreateSignupJSONRequestBody = SignupRequest
+
+// CreateTagJSONRequestBody defines body for CreateTag for application/json ContentType.
+type CreateTagJSONRequestBody = CreateTagRequest
+
+// RenameTagJSONRequestBody defines body for RenameTag for application/json ContentType.
+type RenameTagJSONRequestBody = RenameTagRequest
+
+// TagContactsJSONRequestBody defines body for TagContacts for application/json ContentType.
+type TagContactsJSONRequestBody = ContactSelection
+
+// UntagContactsJSONRequestBody defines body for UntagContacts for application/json ContentType.
+type UntagContactsJSONRequestBody = ContactSelection
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -1136,6 +1244,24 @@ type ServerInterface interface {
 	// CreateSignup Sign up
 	// (POST /v1/signup)
 	CreateSignup(w http.ResponseWriter, r *http.Request)
+	// ListTags List tags
+	// (GET /v1/tags)
+	ListTags(w http.ResponseWriter, r *http.Request, params ListTagsParams)
+	// CreateTag Create a tag
+	// (POST /v1/tags)
+	CreateTag(w http.ResponseWriter, r *http.Request)
+	// DeleteTag Delete a tag
+	// (DELETE /v1/tags/{tag_id})
+	DeleteTag(w http.ResponseWriter, r *http.Request, tagId TagId)
+	// RenameTag Rename a tag
+	// (PATCH /v1/tags/{tag_id})
+	RenameTag(w http.ResponseWriter, r *http.Request, tagId TagId)
+	// TagContacts Tag contacts
+	// (POST /v1/tags/{tag_id}/contacts)
+	TagContacts(w http.ResponseWriter, r *http.Request, tagId TagId)
+	// UntagContacts Untag contacts
+	// (POST /v1/tags/{tag_id}/contacts/remove)
+	UntagContacts(w http.ResponseWriter, r *http.Request, tagId TagId)
 	// GetWhoami Who is calling
 	// (GET /v1/whoami)
 	GetWhoami(w http.ResponseWriter, r *http.Request)
@@ -1390,6 +1516,19 @@ func (siw *ServerInterfaceWrapper) ListContacts(w http.ResponseWriter, r *http.R
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "tag_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag_id", r.URL.Query(), &params.TagId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tag_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag_id", Err: err})
 		}
 		return
 	}
@@ -1898,6 +2037,183 @@ func (siw *ServerInterfaceWrapper) CreateSignup(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListTags operation middleware
+func (siw *ServerInterfaceWrapper) ListTags(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTagsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTags(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateTag operation middleware
+func (siw *ServerInterfaceWrapper) CreateTag(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateTag(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteTag operation middleware
+func (siw *ServerInterfaceWrapper) DeleteTag(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tag_id" -------------
+	var tagId TagId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tag_id", r.PathValue("tag_id"), &tagId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteTag(w, r, tagId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RenameTag operation middleware
+func (siw *ServerInterfaceWrapper) RenameTag(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tag_id" -------------
+	var tagId TagId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tag_id", r.PathValue("tag_id"), &tagId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RenameTag(w, r, tagId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TagContacts operation middleware
+func (siw *ServerInterfaceWrapper) TagContacts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tag_id" -------------
+	var tagId TagId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tag_id", r.PathValue("tag_id"), &tagId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TagContacts(w, r, tagId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UntagContacts operation middleware
+func (siw *ServerInterfaceWrapper) UntagContacts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "tag_id" -------------
+	var tagId TagId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "tag_id", r.PathValue("tag_id"), &tagId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UntagContacts(w, r, tagId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetWhoami operation middleware
 func (siw *ServerInterfaceWrapper) GetWhoami(w http.ResponseWriter, r *http.Request) {
 
@@ -2065,6 +2381,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/contacts/{contact_id}", wrapper.DeleteContact)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contacts/{contact_id}", wrapper.GetContact)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/contacts/{contact_id}", wrapper.UpdateContact)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/tags", wrapper.ListTags)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tags", wrapper.CreateTag)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/tags/{tag_id}", wrapper.DeleteTag)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/tags/{tag_id}", wrapper.RenameTag)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tags/{tag_id}/contacts", wrapper.TagContacts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tags/{tag_id}/contacts/remove", wrapper.UntagContacts)
 
 	return m
 }

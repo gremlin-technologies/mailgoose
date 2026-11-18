@@ -593,6 +593,94 @@ export interface paths {
         patch: operations["updateContact"];
         trace?: never;
     };
+    "/v1/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List tags
+         * @description The account's tags by name, each with how many contacts have it.
+         */
+        get: operations["listTags"];
+        put?: never;
+        /** Create a tag */
+        post: operations["createTag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tags/{tag_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a tag
+         * @description Takes the tag off every contact and off the recipients of draft and
+         *     scheduled campaigns, then deletes it. The response counts both.
+         */
+        delete: operations["deleteTag"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a tag
+         * @description Contacts keep the tag under its new name.
+         */
+        patch: operations["renameTag"];
+        trace?: never;
+    };
+    "/v1/tags/{tag_id}/contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tag contacts
+         * @description Puts the tag on the contacts listed in `contact_ids` (up to 1,000), or
+         *     on every contact matching `filter`; an empty filter is every contact.
+         *     Ids that aren't this account's are skipped.
+         */
+        post: operations["tagContacts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tags/{tag_id}/contacts/remove": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Untag contacts
+         * @description Takes the tag off the selected contacts, chosen as in `tagContacts`.
+         */
+        post: operations["untagContacts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -622,6 +710,8 @@ export interface components {
             last_name: string | null;
             status: components["schemas"]["ContactStatus"];
             source: components["schemas"]["ContactSource"];
+            /** @description The contact's tags, by name. */
+            tags: components["schemas"]["TagRef"][];
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -657,6 +747,57 @@ export interface components {
             last_name?: string | null;
             /** @enum {string} */
             status?: "subscribed" | "unconfirmed" | "unsubscribed";
+        };
+        TagRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        Tag: {
+            /** Format: uuid */
+            id: string;
+            /** @example newsletter */
+            name: string;
+            /** @description How many contacts have the tag, whatever their status. */
+            contact_count: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        TagList: {
+            data: components["schemas"]["Tag"][];
+            next_cursor: string | null;
+        };
+        CreateTagRequest: {
+            /** @description Unique in the account, ignoring case; one line, no commas. */
+            name: string;
+        };
+        RenameTagRequest: {
+            name: string;
+        };
+        TagDeleted: {
+            /** @description How many contacts had the tag. */
+            contacts_untagged: number;
+            /** @description How many draft or scheduled campaigns had the tag among their recipients. */
+            campaigns_updated: number;
+        };
+        /** @description Matches contacts as `listContacts` does; fields left out don't filter. */
+        ContactFilter: {
+            email?: string;
+            name?: string;
+            status?: components["schemas"]["ContactStatus"];
+            /** Format: uuid */
+            tag_id?: string;
+        };
+        /** @description Exactly one of `contact_ids` and `filter`. */
+        ContactSelection: {
+            contact_ids?: string[];
+            filter?: components["schemas"]["ContactFilter"];
+        };
+        TagChange: {
+            /** @description How many of the account's contacts were selected. */
+            matched: number;
+            /** @description How many gained or lost the tag; the others already had it or didn't. */
+            changed: number;
         };
         CreateDomainRequest: {
             /**
@@ -1044,6 +1185,16 @@ export interface components {
         };
     };
     responses: {
+        /** @description `tag_exists`: the account already has a tag with that name, ignoring case. */
+        TagConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description `contact_exists`: the account already has a contact with that address. */
         ContactConflict: {
             headers: {
@@ -1194,6 +1345,8 @@ export interface components {
         DomainId: string;
         /** @description The contact's `id`. */
         ContactId: string;
+        /** @description The tag's `id`. */
+        TagId: string;
         /**
          * @description Makes a retry safe. A repeat with the same key and request within 24
          *     hours returns the stored response instead of running again; the same
@@ -2039,6 +2192,8 @@ export interface operations {
                 name?: string;
                 /** @description Only contacts with this status. */
                 status?: components["schemas"]["ContactStatus"];
+                /** @description Only contacts with this tag. */
+                tag_id?: string;
             };
             header?: never;
             path?: never;
@@ -2182,6 +2337,206 @@ export interface operations {
             403: components["responses"]["CrossOrigin"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["ContactConflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listTags: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Only the tag with this name, ignoring case. */
+                name?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of tags. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createTag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateTagRequest"];
+            };
+        };
+        responses: {
+            /** @description The new tag. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tag"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            409: components["responses"]["TagConflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteTag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tag's `id`. */
+                tag_id: components["parameters"]["TagId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What deleting the tag changed. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagDeleted"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    renameTag: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tag's `id`. */
+                tag_id: components["parameters"]["TagId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameTagRequest"];
+            };
+        };
+        responses: {
+            /** @description The renamed tag. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Tag"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TagConflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    tagContacts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tag's `id`. */
+                tag_id: components["parameters"]["TagId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactSelection"];
+            };
+        };
+        responses: {
+            /** @description How many contacts were selected and how many gained the tag. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    untagContacts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The tag's `id`. */
+                tag_id: components["parameters"]["TagId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactSelection"];
+            };
+        };
+        responses: {
+            /** @description How many contacts were selected and how many lost the tag. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TagChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];

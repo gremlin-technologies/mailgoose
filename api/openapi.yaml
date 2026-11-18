@@ -1006,6 +1006,13 @@ paths:
           description: Only contacts with this status.
           schema:
             $ref: "#/components/schemas/ContactStatus"
+        - name: tag_id
+          in: query
+          required: false
+          description: Only contacts with this tag.
+          schema:
+            type: string
+            format: uuid
       responses:
         "200":
           description: A page of contacts.
@@ -1175,6 +1182,242 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/tags:
+    get:
+      operationId: listTags
+      summary: List tags
+      description: The account's tags by name, each with how many contacts have it.
+      tags: [tags]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: name
+          in: query
+          required: false
+          description: Only the tag with this name, ignoring case.
+          schema:
+            type: string
+            maxLength: 50
+      responses:
+        "200":
+          description: A page of tags.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: createTag
+      summary: Create a tag
+      tags: [tags]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTagRequest"
+      responses:
+        "201":
+          description: The new tag.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/TagConflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/tags/{tag_id}:
+    patch:
+      operationId: renameTag
+      summary: Rename a tag
+      description: Contacts keep the tag under its new name.
+      tags: [tags]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/TagId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameTagRequest"
+      responses:
+        "200":
+          description: The renamed tag.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tag"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/TagConflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: deleteTag
+      summary: Delete a tag
+      description: |
+        Takes the tag off every contact and off the recipients of draft and
+        scheduled campaigns, then deletes it. The response counts both.
+      tags: [tags]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/TagId"
+      responses:
+        "200":
+          description: What deleting the tag changed.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagDeleted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/tags/{tag_id}/contacts:
+    post:
+      operationId: tagContacts
+      summary: Tag contacts
+      description: |
+        Puts the tag on the contacts listed in `contact_ids` (up to 1,000), or
+        on every contact matching `filter`; an empty filter is every contact.
+        Ids that aren't this account's are skipped.
+      tags: [tags]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/TagId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactSelection"
+      responses:
+        "200":
+          description: How many contacts were selected and how many gained the tag.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagChange"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/tags/{tag_id}/contacts/remove:
+    post:
+      operationId: untagContacts
+      summary: Untag contacts
+      description: Takes the tag off the selected contacts, chosen as in `tagContacts`.
+      tags: [tags]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/TagId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContactSelection"
+      responses:
+        "200":
+          description: How many contacts were selected and how many lost the tag.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagChange"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   securitySchemes:
     apiKey:
@@ -1200,7 +1443,7 @@ components:
       description: How the contact was added. `manual` is the web app.
     Contact:
       type: object
-      required: [id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at]
+      required: [id, email, first_name, last_name, status, source, tags, created_at, updated_at, status_changed_at]
       properties:
         id:
           type: string
@@ -1218,6 +1461,11 @@ components:
           $ref: "#/components/schemas/ContactStatus"
         source:
           $ref: "#/components/schemas/ContactSource"
+        tags:
+          type: array
+          description: The contact's tags, by name.
+          items:
+            $ref: "#/components/schemas/TagRef"
         created_at:
           type: string
           format: date-time
@@ -1279,6 +1527,110 @@ components:
         status:
           type: string
           enum: [subscribed, unconfirmed, unsubscribed]
+    TagRef:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+    Tag:
+      type: object
+      required: [id, name, contact_count, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples: [newsletter]
+        contact_count:
+          type: integer
+          description: How many contacts have the tag, whatever their status.
+        created_at:
+          type: string
+          format: date-time
+    TagList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
+        next_cursor:
+          type: [string, "null"]
+    CreateTagRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: Unique in the account, ignoring case; one line, no commas.
+    RenameTagRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+    TagDeleted:
+      type: object
+      required: [contacts_untagged, campaigns_updated]
+      properties:
+        contacts_untagged:
+          type: integer
+          description: How many contacts had the tag.
+        campaigns_updated:
+          type: integer
+          description: How many draft or scheduled campaigns had the tag among their recipients.
+    ContactFilter:
+      type: object
+      additionalProperties: false
+      description: Matches contacts as `listContacts` does; fields left out don't filter.
+      properties:
+        email:
+          type: string
+          maxLength: 254
+        name:
+          type: string
+          maxLength: 201
+        status:
+          $ref: "#/components/schemas/ContactStatus"
+        tag_id:
+          type: string
+          format: uuid
+    ContactSelection:
+      type: object
+      additionalProperties: false
+      description: Exactly one of `contact_ids` and `filter`.
+      properties:
+        contact_ids:
+          type: array
+          minItems: 1
+          maxItems: 1000
+          items:
+            type: string
+            format: uuid
+        filter:
+          $ref: "#/components/schemas/ContactFilter"
+    TagChange:
+      type: object
+      required: [matched, changed]
+      properties:
+        matched:
+          type: integer
+          description: How many of the account's contacts were selected.
+        changed:
+          type: integer
+          description: How many gained or lost the tag; the others already had it or didn't.
     CreateDomainRequest:
       type: object
       required: [name]
@@ -1848,6 +2200,14 @@ components:
       schema:
         type: string
         format: uuid
+    TagId:
+      name: tag_id
+      in: path
+      required: true
+      description: The tag's `id`.
+      schema:
+        type: string
+        format: uuid
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -1877,6 +2237,15 @@ components:
       schema:
         type: integer
   responses:
+    TagConflict:
+      description: "`tag_exists`: the account already has a tag with that name, ignoring case."
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     ContactConflict:
       description: "`contact_exists`: the account already has a contact with that address."
       headers:

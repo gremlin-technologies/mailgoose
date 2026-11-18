@@ -56,6 +56,7 @@ func contactJSON(c *contacts.Contact) apigen.Contact {
 		LastName:        c.LastName,
 		Status:          apigen.ContactStatus(c.Status),
 		Source:          apigen.ContactSource(c.Source),
+		Tags:            tagRefsJSON(c.Tags),
 		CreatedAt:       c.CreatedAt.UTC(),
 		UpdatedAt:       c.UpdatedAt.UTC(),
 		StatusChangedAt: c.StatusChangedAt.UTC(),
@@ -111,6 +112,13 @@ func (s *Server) ListContacts(w http.ResponseWriter, r *http.Request, params api
 			return
 		}
 		f.Status = string(*params.Status)
+	}
+	if params.TagId != nil {
+		if !uuidPattern.MatchString(*params.TagId) {
+			WriteError(w, BadRequest("invalid_parameter", "tag_id must be a tag's id."))
+			return
+		}
+		f.TagID = *params.TagId
 	}
 	cs, err := s.Contacts.List(r.Context(), c.AccountID, f, after, pr.Limit+1)
 	if s.contactError(w, r, err) {
