@@ -90,6 +90,9 @@ func health() apigen.Health {
 	if info.Commit != "" {
 		h.Commit = &info.Commit
 	}
+	if info.BuildDate != "" {
+		h.BuildDate = &info.BuildDate
+	}
 	return h
 }
 

@@ -150,9 +150,12 @@ func TestStatusUnavailable(t *testing.T) {
 	if code := h.run("status", "--json", "--api-url", srv.URL); code != ExitError {
 		t.Fatalf("exit %d, want %d", code, ExitError)
 	}
-	var e map[string]map[string]any
-	if err := json.Unmarshal(h.out.Bytes(), &e); err != nil || e["error"]["exit_code"] != float64(ExitError) {
-		t.Errorf("error output %q", h.out)
+	if h.out.Len() != 0 {
+		t.Errorf("stdout should be empty on error, got %q", h.out)
+	}
+	var e map[string]map[string]string
+	if err := json.Unmarshal(h.errOut.Bytes(), &e); err != nil || e["error"]["code"] != "http_503" {
+		t.Errorf("error output %q", h.errOut)
 	}
 }
 

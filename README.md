@@ -80,10 +80,17 @@ printf '%s' "$KEY" | ./bin/mailgoose config set api-key -
 ./bin/mailgoose config show --json
 ```
 
-Every command takes `--json`. Nothing prompts. `MAILGOOSE_API_KEY` and
+Every command takes `--json`: output goes to stdout, and errors go to stderr
+in the API's error shape. Nothing prompts; with no value for something, a
+command exits 2 and names the flag to pass. `MAILGOOSE_API_KEY` and
 `MAILGOOSE_API_URL` override the config file, so agents can run headless. Exit
-codes: 0 ok, 1 error (including an unreachable API), 2 usage, 3 auth,
-4 not found, 5 needs confirmation.
+codes (`mailgoose help exit-codes`): 0 ok, 1 error (including an unreachable
+API), 2 usage, 3 auth, 4 not found, 5 needs confirmation.
+
+Each command declares the API operation it calls with `calls("operationId",
+cmd)`, or `local(cmd)` if it calls none; `mailgoose commands --json` lists
+them, and a test fails on any command that declares neither. API requests go
+through `App.call`, which maps the API's error responses to exit codes.
 
 ## Server configuration
 

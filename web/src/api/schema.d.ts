@@ -56,6 +56,11 @@ export interface components {
             version: string;
             /** @example a1b2c3d */
             commit?: string;
+            /**
+             * @description When the server binary was built (RFC 3339), if known.
+             * @example 2026-11-18T12:00:00Z
+             */
+            build_date?: string;
         };
         Error: {
             error: {

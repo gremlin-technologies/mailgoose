@@ -19,11 +19,12 @@ ARG TARGETOS
 ARG TARGETARCH
 ARG VERSION=dev
 ARG COMMIT=
+ARG BUILD_DATE=
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath \
-      -ldflags "-s -w -X github.com/gremlin-technologies/mailgoose/internal/version.Version=${VERSION} -X github.com/gremlin-technologies/mailgoose/internal/version.Commit=${COMMIT}" \
+      -ldflags "-s -w -X github.com/gremlin-technologies/mailgoose/internal/version.Version=${VERSION} -X github.com/gremlin-technologies/mailgoose/internal/version.Commit=${COMMIT} -X github.com/gremlin-technologies/mailgoose/internal/version.BuildDate=${BUILD_DATE}" \
       -o /out/mailgoosed ./cmd/mailgoosed
 
 # distroless/static: CA certificates and tzdata, no shell, runs as uid 65532.

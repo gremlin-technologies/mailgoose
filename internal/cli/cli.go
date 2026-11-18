@@ -14,49 +14,15 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 )
-
-// Exit codes, documented so agents can branch on them. These follow the MVP
-// CLI requirements; an unreachable or unhealthy API is a plain error (1).
-const (
-	ExitOK    = 0
-	ExitError = 1
-	ExitUsage = 2
-	// ExitAuth means the API key is missing, invalid or lacks permission.
-	ExitAuth = 3
-	// ExitNotFound means the named resource doesn't exist.
-	ExitNotFound = 4
-	// ExitNeedsConfirmation means the command needs an explicit confirmation,
-	// such as launching a campaign without --confirm.
-	ExitNeedsConfirmation = 5
-)
-
-// exitError carries an exit code with an error.
-type exitError struct {
-	code int
-	err  error
-}
-
-func (e *exitError) Error() string { return e.err.Error() }
-func (e *exitError) Unwrap() error { return e.err }
-
-// Code returns the exit code for err.
-func Code(err error) int {
-	if err == nil {
-		return ExitOK
-	}
-	var ee *exitError
-	if errors.As(err, &ee) {
-		return ee.code
-	}
-	return ExitError
-}
 
 // App holds the CLI's dependencies, so tests can swap them.
 type App struct {
@@ -65,23 +31,30 @@ type App struct {
 	Stderr io.Writer
 	Getenv func(string) string
 	HTTP   *http.Client
+	// IsTerminal reports whether stdin is a terminal. Nothing prompts today;
+	// a future prompt must check it and fall back to needFlag without one.
+	IsTerminal func() bool
 
 	jsonOut bool
 	apiURL  string
+	// extra commands, for tests.
+	extra []*cobra.Command
 }
 
 // NewApp returns an App wired to the real process.
 func NewApp() *App {
 	return &App{
-		Stdin:  os.Stdin,
-		Stdout: os.Stdout,
-		Stderr: os.Stderr,
-		Getenv: os.Getenv,
-		HTTP:   &http.Client{Timeout: 30 * time.Second},
+		Stdin:      os.Stdin,
+		Stdout:     os.Stdout,
+		Stderr:     os.Stderr,
+		Getenv:     os.Getenv,
+		HTTP:       &http.Client{Timeout: 30 * time.Second},
+		IsTerminal: func() bool { return term.IsTerminal(int(os.Stdin.Fd())) }, //nolint:gosec // a file descriptor fits in an int
 	}
 }
 
-// Run executes the CLI with args and returns the process exit code.
+// Run executes the CLI with args and returns the process exit code. Output
+// goes to stdout; errors go to stderr, as JSON with --json.
 func (a *App) Run(ctx context.Context, args []string) int {
 	root := a.rootCmd()
 	root.SetArgs(args)
@@ -92,17 +65,23 @@ func (a *App) Run(ctx context.Context, args []string) int {
 	if err == nil {
 		return ExitOK
 	}
-	code := Code(err)
-	if code == ExitError && isUsageError(err) {
-		code = ExitUsage
-	}
-	if a.jsonOut {
-		a.printJSON(map[string]any{"error": map[string]any{"message": err.Error(), "exit_code": code}})
+	e := asError(err)
+	// A flag parsing error comes before --json is parsed, so look for it too.
+	if a.jsonOut || slices.Contains(args, "--json") {
+		enc := json.NewEncoder(a.Stderr)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(map[string]any{"error": map[string]string{"code": e.Code, "message": e.Message, "hint": e.Hint}})
 	} else {
-		fmt.Fprintln(a.Stderr, "Error:", err)
+		fmt.Fprintln(a.Stderr, "Error:", e.Message)
+		if e.Hint != "" {
+			fmt.Fprintln(a.Stderr, "Hint:", e.Hint)
+		}
 	}
-	return code
+	return e.Exit
 }
+
+// Commands lists every runnable command and the API operation it calls.
+func (a *App) Commands() []CommandInfo { return Registry(a.rootCmd()) }
 
 func isUsageError(err error) bool {
 	msg := err.Error()
@@ -128,7 +107,12 @@ machine-readable output. Set MAILGOOSE_API_KEY to run headless.`,
 	root.PersistentFlags().BoolVar(&a.jsonOut, "json", false, "print machine-readable JSON")
 	root.PersistentFlags().StringVar(&a.apiURL, "api-url", "", "API base URL (overrides "+EnvAPIURL+" and the config file)")
 
-	root.AddCommand(a.versionCmd(), a.statusCmd(), a.configCmd())
+	root.AddCommand(a.versionCmd(), a.statusCmd(), a.configCmd(), a.commandsCmd(), &cobra.Command{
+		Use:   "exit-codes",
+		Short: "What each exit code means",
+		Long:  exitCodesHelp,
+	})
+	root.AddCommand(a.extra...)
 	return root
 }
 
@@ -143,7 +127,7 @@ func (a *App) settings() (Settings, error) {
 	}
 	s := Resolve(a.apiURL, a.Getenv, path, fc)
 	if err := ValidateAPIURL(s.APIURL); err != nil {
-		return Settings{}, &exitError{code: ExitUsage, err: err}
+		return Settings{}, usageError(err.Error(), "Pass --api-url https://... or set "+EnvAPIURL+".")
 	}
 	return s, nil
 }
@@ -155,9 +139,9 @@ func (a *App) printJSON(v any) {
 }
 
 func (a *App) versionCmd() *cobra.Command {
-	return &cobra.Command{
+	return local(&cobra.Command{
 		Use:   "version",
-		Short: "Print the CLI version",
+		Short: "Print the CLI version, commit and build date",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			v := version.Get()
@@ -165,18 +149,41 @@ func (a *App) versionCmd() *cobra.Command {
 				a.printJSON(v)
 				return nil
 			}
-			if v.Commit != "" {
-				fmt.Fprintf(a.Stdout, "mailgoose %s (%s)\n", v.Version, v.Commit)
-			} else {
-				fmt.Fprintf(a.Stdout, "mailgoose %s\n", v.Version)
+			fmt.Fprintf(a.Stdout, "mailgoose %s\ncommit  %s\nbuilt   %s\n", v.Version, orUnknown(v.Commit), orUnknown(v.BuildDate))
+			return nil
+		},
+	})
+}
+
+func orUnknown(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
+}
+
+func (a *App) commandsCmd() *cobra.Command {
+	return local(&cobra.Command{
+		Use:    "commands",
+		Short:  "List every command and the API operation it calls",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			reg := Registry(cmd.Root())
+			if a.jsonOut {
+				a.printJSON(reg)
+				return nil
+			}
+			for _, c := range reg {
+				fmt.Fprintf(a.Stdout, "%-24s %s\n", c.Command, orNone(c.Operation))
 			}
 			return nil
 		},
-	}
+	})
 }
 
 func (a *App) statusCmd() *cobra.Command {
-	return &cobra.Command{
+	return calls("getHealth", &cobra.Command{
 		Use:   "status",
 		Short: "Check that the API is reachable",
 		Args:  cobra.NoArgs,
@@ -185,25 +192,13 @@ func (a *App) statusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			req, err := http.NewRequestWithContext(cmd.Context(), http.MethodGet, s.APIURL+"/healthz", nil)
-			if err != nil {
-				return err
-			}
-			req.Header.Set("User-Agent", "mailgoose-cli/"+version.Get().Version)
-			resp, err := a.HTTP.Do(req)
-			if err != nil {
-				return fmt.Errorf("cannot reach %s: %w", s.APIURL, err)
-			}
-			defer func() { _ = resp.Body.Close() }()
-
 			var body struct {
 				Status  string `json:"status"`
 				Version string `json:"version"`
 				Commit  string `json:"commit"`
 			}
-			_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body)
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("%s answered %s", s.APIURL, resp.Status)
+			if err := a.call(cmd.Context(), http.MethodGet, "/healthz", nil, &body, false); err != nil {
+				return err
 			}
 			if a.jsonOut {
 				a.printJSON(map[string]any{
@@ -217,7 +212,7 @@ func (a *App) statusCmd() *cobra.Command {
 			fmt.Fprintf(a.Stdout, "%s is %s (server %s)\n", s.APIURL, body.Status, body.Version)
 			return nil
 		},
-	}
+	})
 }
 
 func (a *App) configCmd() *cobra.Command {
@@ -226,7 +221,7 @@ func (a *App) configCmd() *cobra.Command {
 		Short: "Show or change CLI settings",
 	}
 
-	show := &cobra.Command{
+	show := local(&cobra.Command{
 		Use:   "show",
 		Short: "Show the settings in effect and where each comes from",
 		Args:  cobra.NoArgs,
@@ -250,9 +245,9 @@ func (a *App) configCmd() *cobra.Command {
 			fmt.Fprintf(a.Stdout, "file     %s\n", s.ConfigPath)
 			return nil
 		},
-	}
+	})
 
-	set := &cobra.Command{
+	set := local(&cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Save a setting: api-url, or api-key (pass - to read the key from stdin)",
 		Example: `  mailgoose config set api-url https://api.staging.mailgoose.app
@@ -272,7 +267,7 @@ func (a *App) configCmd() *cobra.Command {
 			case "api-url":
 				value = strings.TrimRight(value, "/")
 				if err := ValidateAPIURL(value); err != nil {
-					return &exitError{code: ExitUsage, err: err}
+					return usageError(err.Error(), "")
 				}
 				fc.APIURL = value
 			case "api-key":
@@ -284,11 +279,11 @@ func (a *App) configCmd() *cobra.Command {
 					value = strings.TrimSpace(line)
 				}
 				if value == "" {
-					return &exitError{code: ExitUsage, err: errors.New("API key is empty")}
+					return usageError("API key is empty.", "Pass the key as an argument, or pipe it in with - as the value.")
 				}
 				fc.APIKey = value
 			default:
-				return &exitError{code: ExitUsage, err: fmt.Errorf("unknown setting %q; use api-url or api-key", key)}
+				return usageError(fmt.Sprintf("Unknown setting %q.", key), "Use api-url or api-key.")
 			}
 			if err := SaveFile(path, fc); err != nil {
 				return err
@@ -300,9 +295,9 @@ func (a *App) configCmd() *cobra.Command {
 			fmt.Fprintf(a.Stdout, "Saved %s to %s\n", key, path)
 			return nil
 		},
-	}
+	})
 
-	unset := &cobra.Command{
+	unset := local(&cobra.Command{
 		Use:   "unset <key>",
 		Short: "Remove a saved setting: api-url or api-key",
 		Args:  cobra.ExactArgs(1),
@@ -321,7 +316,7 @@ func (a *App) configCmd() *cobra.Command {
 			case "api-key":
 				fc.APIKey = ""
 			default:
-				return &exitError{code: ExitUsage, err: fmt.Errorf("unknown setting %q; use api-url or api-key", args[0])}
+				return usageError(fmt.Sprintf("Unknown setting %q.", args[0]), "Use api-url or api-key.")
 			}
 			if err := SaveFile(path, fc); err != nil {
 				return err
@@ -333,7 +328,7 @@ func (a *App) configCmd() *cobra.Command {
 			fmt.Fprintf(a.Stdout, "Removed %s from %s\n", args[0], path)
 			return nil
 		},
-	}
+	})
 
 	cmd.AddCommand(show, set, unset)
 	return cmd
