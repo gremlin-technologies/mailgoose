@@ -1,0 +1,98 @@
+name: Deploy staging
+
+# Builds the image, pushes it to ECR and deploys it to staging, authenticating
+# to AWS with GitHub's OIDC token: no AWS keys are stored in GitHub.
+#
+# DORMANT until the repository variable STAGING_DEPLOY_ROLE_ARN is set (a
+# variable, not a secret: a role ARN is not sensitive). Without it the job is
+# skipped. Set it only after the AWS project allows the GitHub OIDC provider
+# and infra/global and infra/envs/staging have been applied with it on; see
+# infra/README.md, "Turning on CI deploys".
+#
+# The role trusts only this repository's main branch (infra/envs/staging), so a
+# run from any other ref or repository cannot assume it.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-2
+  ECR_REPO: mailgoose
+  CLUSTER: mailgoose-staging
+  API_SERVICE: mailgoose-staging-api
+  WORKER_SERVICE: mailgoose-staging-worker
+
+jobs:
+  deploy:
+    name: Build, push and deploy
+    if: >-
+      github.repository == 'gremlin-technologies/mailgoose' &&
+      github.ref == 'refs/heads/main' &&
+      vars.STAGING_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write # lets the job request the OIDC token AWS verifies
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.STAGING_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gh-deploy-staging-${{ github.run_id }}
+
+      - name: Work out image name and whether it is already in ECR
+        id: image
+        run: |
+          set -euo pipefail
+          account="$(aws sts get-caller-identity --query Account --output text)"
+          registry="${account}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          tag="${GITHUB_SHA::12}"
+          echo "registry=${registry}" >> "$GITHUB_OUTPUT"
+          echo "ref=${registry}/${ECR_REPO}:${tag}" >> "$GITHUB_OUTPUT"
+          # Tags are immutable, so a re-run of the same commit must not push again.
+          if aws ecr describe-images --repository-name "${ECR_REPO}" --image-ids "imageTag=${tag}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v4
+        if: steps.image.outputs.exists == 'false'
+
+      - name: Log in to ECR
+        if: steps.image.outputs.exists == 'false'
+        env:
+          REGISTRY: ${{ steps.image.outputs.registry }}
+        run: aws ecr get-login-password --region "${AWS_REGION}" | docker login --username AWS --password-stdin "${REGISTRY}"
+
+      - uses: docker/build-push-action@v7
+        if: steps.image.outputs.exists == 'false'
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          provenance: false
+          tags: ${{ steps.image.outputs.ref }}
+          build-args: |
+            VERSION=${{ github.sha }}
+            COMMIT=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Migrate and deploy
+        env:
+          IMAGE: ${{ steps.image.outputs.ref }}
+          STARTED_BY: gh-${{ github.run_id }}
+        run: scripts/ci/deploy-ecs.sh
