@@ -813,6 +813,31 @@ type AccountSettings struct {
 // AccountSettingsPlan defines model for AccountSettings.Plan.
 type AccountSettingsPlan string
 
+// AddEmailBlockRequest defines model for AddEmailBlockRequest.
+type AddEmailBlockRequest struct {
+	// After Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	After *BlockId `json:"after,omitempty"`
+
+	// Block A Block with at least its `type`. `id` and fields with defaults
+	// may be left out. A footer can't be added; every blocks email
+	// already has one.
+	Block struct {
+		Type string `json:"type"`
+	} `json:"block"`
+	Column *int `json:"column,omitempty"`
+	Index  *int `json:"index,omitempty"`
+
+	// ParentId Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	ParentId *BlockId `json:"parent_id,omitempty"`
+
+	// Version The version you read.
+	Version int `json:"version"`
+}
+
 // Align defines model for Align.
 type Align string
 
@@ -1358,6 +1383,37 @@ type Email struct {
 	Version int `json:"version"`
 }
 
+// EmailBlockChange defines model for EmailBlockChange.
+type EmailBlockChange struct {
+	Block EmailBlockEntry `json:"block"`
+	Email Email           `json:"email"`
+}
+
+// EmailBlockEntry defines model for EmailBlockEntry.
+type EmailBlockEntry struct {
+	// Block One block of a document, by `type` (DES-2).
+	Block Block `json:"block"`
+
+	// Column Which column of `parent_id` holds it; null at the top level.
+	Column *int `json:"column"`
+
+	// Index Its place in its list, 0 first.
+	Index int `json:"index"`
+
+	// ParentId The columns block holding it; null at the top level.
+	ParentId *string `json:"parent_id"`
+
+	// Path The block's place, as in an `invalid_document` error, such as `blocks[2].columns[0].blocks[1]`.
+	Path string `json:"path"`
+}
+
+// EmailBlockList defines model for EmailBlockList.
+type EmailBlockList struct {
+	Data    []EmailBlockEntry `json:"data"`
+	EmailId string            `json:"email_id"`
+	Version int               `json:"version"`
+}
+
 // EmailDocument A BlockDocument for a blocks email, an HtmlDocument for an html one.
 type EmailDocument struct {
 	union json.RawMessage
@@ -1619,6 +1675,24 @@ type ImportList struct {
 // ImportStatus defines model for ImportStatus.
 type ImportStatus string
 
+// MoveEmailBlockRequest The new place, as in BlockPlace.
+type MoveEmailBlockRequest struct {
+	// After Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	After  *BlockId `json:"after,omitempty"`
+	Column *int     `json:"column,omitempty"`
+	Index  *int     `json:"index,omitempty"`
+
+	// ParentId Stable for the block's life: edits and moves keep it. Leave it out
+	// when adding a block to get a new one (`b_` and ten letters and
+	// digits). Unique within the document.
+	ParentId *BlockId `json:"parent_id,omitempty"`
+
+	// Version The version you read.
+	Version int `json:"version"`
+}
+
 // PollDeviceLoginRequest defines model for PollDeviceLoginRequest.
 type PollDeviceLoginRequest struct {
 	DeviceCode string `json:"device_code"`
@@ -1826,6 +1900,15 @@ type UpdateContactRequest struct {
 // UpdateContactRequestStatus defines model for UpdateContactRequest.Status.
 type UpdateContactRequestStatus string
 
+// UpdateEmailBlockRequest defines model for UpdateEmailBlockRequest.
+type UpdateEmailBlockRequest struct {
+	// Fields The block's fields to set, by name, as in its Block schema. Not `id` or `type`.
+	Fields map[string]interface{} `json:"fields"`
+
+	// Version The version you read.
+	Version int `json:"version"`
+}
+
 // UpdateEmailRequest defines model for UpdateEmailRequest.
 type UpdateEmailRequest struct {
 	Name *string `json:"name,omitempty"`
@@ -1890,6 +1973,9 @@ type TagId = string
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
 
+// BlockNotFound defines model for BlockNotFound.
+type BlockNotFound = Error
+
 // ContactConflict defines model for ContactConflict.
 type ContactConflict = Error
 
@@ -1913,6 +1999,9 @@ type IdempotencyConflict = Error
 
 // ImportRefused defines model for ImportRefused.
 type ImportRefused = Error
+
+// InvalidBlockChange defines model for InvalidBlockChange.
+type InvalidBlockChange = Error
 
 // InvalidEmail defines model for InvalidEmail.
 type InvalidEmail = Error
@@ -2019,6 +2108,12 @@ type ListEmailsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// RemoveEmailBlockParams defines parameters for RemoveEmailBlock.
+type RemoveEmailBlockParams struct {
+	// Version The email's version when you read it.
+	Version int `form:"version" json:"version"`
+}
+
 // ListImportsParams defines parameters for ListImports.
 type ListImportsParams struct {
 	// Limit Items per page.
@@ -2078,6 +2173,15 @@ type CreateEmailJSONRequestBody = CreateEmailRequest
 
 // UpdateEmailJSONRequestBody defines body for UpdateEmail for application/json ContentType.
 type UpdateEmailJSONRequestBody = UpdateEmailRequest
+
+// AddEmailBlockJSONRequestBody defines body for AddEmailBlock for application/json ContentType.
+type AddEmailBlockJSONRequestBody = AddEmailBlockRequest
+
+// UpdateEmailBlockJSONRequestBody defines body for UpdateEmailBlock for application/json ContentType.
+type UpdateEmailBlockJSONRequestBody = UpdateEmailBlockRequest
+
+// MoveEmailBlockJSONRequestBody defines body for MoveEmailBlock for application/json ContentType.
+type MoveEmailBlockJSONRequestBody = MoveEmailBlockRequest
 
 // ReplaceEmailDocumentJSONRequestBody defines body for ReplaceEmailDocument for application/json ContentType.
 type ReplaceEmailDocumentJSONRequestBody = ReplaceEmailDocumentRequest
@@ -2906,6 +3010,21 @@ type ServerInterface interface {
 	// UpdateEmail Rename an email or change its settings
 	// (PATCH /v1/emails/{email_id})
 	UpdateEmail(w http.ResponseWriter, r *http.Request, emailId EmailId)
+	// ListEmailBlocks List an email's blocks
+	// (GET /v1/emails/{email_id}/blocks)
+	ListEmailBlocks(w http.ResponseWriter, r *http.Request, emailId EmailId)
+	// AddEmailBlock Add a block
+	// (POST /v1/emails/{email_id}/blocks)
+	AddEmailBlock(w http.ResponseWriter, r *http.Request, emailId EmailId)
+	// RemoveEmailBlock Remove a block
+	// (DELETE /v1/emails/{email_id}/blocks/{block_id})
+	RemoveEmailBlock(w http.ResponseWriter, r *http.Request, emailId EmailId, blockId BlockId, params RemoveEmailBlockParams)
+	// UpdateEmailBlock Change a block's fields
+	// (PATCH /v1/emails/{email_id}/blocks/{block_id})
+	UpdateEmailBlock(w http.ResponseWriter, r *http.Request, emailId EmailId, blockId BlockId)
+	// MoveEmailBlock Move a block
+	// (POST /v1/emails/{email_id}/blocks/{block_id}/move)
+	MoveEmailBlock(w http.ResponseWriter, r *http.Request, emailId EmailId, blockId BlockId)
 	// ReplaceEmailDocument Replace an email's whole document
 	// (PUT /v1/emails/{email_id}/document)
 	ReplaceEmailDocument(w http.ResponseWriter, r *http.Request, emailId EmailId)
@@ -3903,6 +4022,179 @@ func (siw *ServerInterfaceWrapper) UpdateEmail(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// ListEmailBlocks operation middleware
+func (siw *ServerInterfaceWrapper) ListEmailBlocks(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEmailBlocks(w, r, emailId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddEmailBlock operation middleware
+func (siw *ServerInterfaceWrapper) AddEmailBlock(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddEmailBlock(w, r, emailId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveEmailBlock operation middleware
+func (siw *ServerInterfaceWrapper) RemoveEmailBlock(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "block_id" -------------
+	var blockId BlockId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "block_id", r.PathValue("block_id"), &blockId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "block_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RemoveEmailBlockParams
+
+	// ------------- Required query parameter "version" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "version", r.URL.Query(), &params.Version, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "version"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "version", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveEmailBlock(w, r, emailId, blockId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateEmailBlock operation middleware
+func (siw *ServerInterfaceWrapper) UpdateEmailBlock(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "block_id" -------------
+	var blockId BlockId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "block_id", r.PathValue("block_id"), &blockId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "block_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateEmailBlock(w, r, emailId, blockId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// MoveEmailBlock operation middleware
+func (siw *ServerInterfaceWrapper) MoveEmailBlock(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "block_id" -------------
+	var blockId BlockId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "block_id", r.PathValue("block_id"), &blockId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "block_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MoveEmailBlock(w, r, emailId, blockId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ReplaceEmailDocument operation middleware
 func (siw *ServerInterfaceWrapper) ReplaceEmailDocument(w http.ResponseWriter, r *http.Request) {
 
@@ -4543,6 +4835,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/emails/{email_id}", wrapper.UpdateEmail)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/emails/{email_id}/document", wrapper.ReplaceEmailDocument)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/duplicate", wrapper.DuplicateEmail)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails/{email_id}/blocks", wrapper.ListEmailBlocks)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/blocks", wrapper.AddEmailBlock)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/emails/{email_id}/blocks/{block_id}", wrapper.RemoveEmailBlock)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/emails/{email_id}/blocks/{block_id}", wrapper.UpdateEmailBlock)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/blocks/{block_id}/move", wrapper.MoveEmailBlock)
 
 	return m
 }

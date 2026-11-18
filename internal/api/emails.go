@@ -27,9 +27,21 @@ func (s *Server) emailsCaller(w http.ResponseWriter, r *http.Request) *Caller {
 func (s *Server) emailError(w http.ResponseWriter, r *http.Request, err error) bool {
 	var docErr *emails.DocError
 	var verErr *emails.VersionError
+	var posErr *emails.PositionError
 	switch {
 	case err == nil:
 		return false
+	case errors.As(err, &posErr):
+		WriteError(w, Unprocessable("invalid_position", "That place can't be used: "+posErr.Message+".").
+			WithHint("Give after on its own, or index, or parent_id and column (0 left, 1 right) with an optional index."))
+	case errors.Is(err, emails.ErrFooterLocked):
+		WriteError(w, Unprocessable("footer_locked", "The footer stays the last block: it can't be removed, moved or added, and nothing goes after it."))
+	case errors.Is(err, emails.ErrNotBlocks):
+		WriteError(w, Unprocessable("kind_mismatch", "This is an html email, which has no blocks.").
+			WithHint("Change its html with `mailgoose email replace`."))
+	case errors.Is(err, emails.ErrBlockNotFound):
+		WriteError(w, NotFound("block_not_found", "This email has no block with that id.").
+			WithHint("`mailgoose email blocks list <email>` shows each block's id."))
 	case errors.As(err, &docErr):
 		WriteError(w, Unprocessable("invalid_document", "The document isn't valid: "+docErr.Error()+".").
 			WithHint("The BlockDocument and HtmlDocument schemas in the API reference list every block type and field.").

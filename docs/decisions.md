@@ -4,6 +4,30 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Block operation details (MG-20, reversible defaults)
+
+Picked while building MG-20; easy to change.
+
+- **One endpoint per operation**: list, add, update (PATCH the block's
+  `fields`), move and remove under `/v1/emails/{id}/blocks`. Each change
+  names the version read, like every other email change; remove takes it as
+  `?version=`. Add, update and move answer with the block where it now is and
+  the whole email; remove answers with the email.
+- **Places:** `after` a block id on its own, or `index` (where the block ends
+  up) at the top level, or `parent_id` plus `column` with an optional `index`.
+  No place means last, which at the top level is just before the footer.
+- **The footer is locked:** it can't be removed, moved or added, and nothing
+  goes after it (422 `footer_locked`). Its text can still be updated.
+- **Listing an html email's blocks** is a 422 `kind_mismatch`, not an empty
+  list, so an agent learns it's on the wrong kind of email.
+- **CLI:** `mailgoose email blocks list|add|update|move|remove`. Common fields
+  have flags (`--text`, `--level`, `--align`, `--src`, `--alt`, `--href`,
+  `--width`, `--color`, `--thickness`, `--height`, `--background-color`,
+  `--text-color`); `--data` takes any fields as JSON and flags win over it.
+  `--in` and `--column` place a block in a column. `--type columns` without
+  `--data` starts with two empty columns. Without `--version` a change applies
+  to the email as it is now. Removing a block needs no `--yes`.
+
 ## 2026-11-18: Email document details (MG-19, reversible defaults)
 
 Picked while building MG-19; easy to change.

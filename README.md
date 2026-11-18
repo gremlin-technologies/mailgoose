@@ -347,6 +347,29 @@ mailgoose email list
 mailgoose email delete <id> --yes
 ```
 
+### Block operations
+
+`internal/emails/blocks.go` changes one block at a time: list, add, update,
+move and remove, at the top level or inside a columns block's columns. Each
+works on the document's JSON and reads the result back through
+`ParseDocument`, so a single change obeys every rule a whole document does.
+A place is `after` a block, an `index` at the top level, or `parent_id` and
+`column` (0 left, 1 right) with an optional `index`. With no place a block
+goes last, which at the top level is just before the footer. The footer
+can't be removed, moved or added, and nothing goes after it
+(`footer_locked`); a place that can't be used is `invalid_position`.
+
+```sh
+mailgoose email blocks list <id>
+mailgoose email blocks add <id> --type heading --text "Hi"
+mailgoose email blocks add <id> --type columns --index 1
+mailgoose email blocks add <id> --type image --src https://cdn.example/a.jpg --in <columns-id> --column 0
+mailgoose email blocks add <id> --type social --data '{"links": [{"network": "instagram", "url": "https://instagram.com/x"}]}'
+mailgoose email blocks update <id> <block-id> --text "Hello" --level 2
+mailgoose email blocks move <id> <block-id> --after <other-block-id>
+mailgoose email blocks remove <id> <block-id>
+```
+
 ## Sending domains
 
 Campaigns go out from an address at a domain the customer owns.

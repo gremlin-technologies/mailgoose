@@ -922,6 +922,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/emails/{email_id}/blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List an email's blocks
+         * @description Every block of a blocks email in document order, a columns block's
+         *     contents right after it, each with where it is. `version` is the
+         *     email's version, to name in the next change.
+         */
+        get: operations["listEmailBlocks"];
+        put?: never;
+        /**
+         * Add a block
+         * @description Adds one block to a blocks email. Where it goes: `after` a block's id
+         *     (in that block's list), or `index` in the top level, or in column
+         *     `column` (0 left, 1 right) of the columns block `parent_id`. With no
+         *     position the block goes last, which at the top level is just before
+         *     the footer. The block is checked as in a whole document; leave out
+         *     its `id` to get a new one. `version` works as in updateEmail.
+         */
+        post: operations["addEmailBlock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/emails/{email_id}/blocks/{block_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a block
+         * @description Removes one block, and a columns block's contents with it. The footer
+         *     can't be removed. `version` is the email's version when you read it,
+         *     as in updateEmail.
+         */
+        delete: operations["removeEmailBlock"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a block's fields
+         * @description Sets the `fields` given on one block, wherever it is. Fields left out
+         *     keep their values. The block's `id` and `type` can't change.
+         *     `version` works as in updateEmail.
+         */
+        patch: operations["updateEmailBlock"];
+        trace?: never;
+    };
+    "/v1/emails/{email_id}/blocks/{block_id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move a block
+         * @description Moves one block, and a columns block's contents with it, to a new
+         *     place, given as in addEmailBlock. `index` is the place the block
+         *     ends up at. The footer can't move, and nothing can go after it.
+         *     `version` works as in updateEmail.
+         */
+        post: operations["moveEmailBlock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1839,6 +1921,58 @@ export interface components {
         DuplicateEmailRequest: {
             name?: string;
         };
+        AddEmailBlockRequest: {
+            /** @description The version you read. */
+            version: number;
+            /**
+             * @description A Block with at least its `type`. `id` and fields with defaults
+             *     may be left out. A footer can't be added; every blocks email
+             *     already has one.
+             */
+            block: {
+                type: string;
+            };
+            after?: components["schemas"]["BlockId"];
+            index?: number;
+            parent_id?: components["schemas"]["BlockId"];
+            column?: number;
+        };
+        UpdateEmailBlockRequest: {
+            /** @description The version you read. */
+            version: number;
+            /** @description The block's fields to set, by name, as in its Block schema. Not `id` or `type`. */
+            fields: Record<string, never>;
+        };
+        /** @description The new place, as in BlockPlace. */
+        MoveEmailBlockRequest: {
+            /** @description The version you read. */
+            version: number;
+            after?: components["schemas"]["BlockId"];
+            index?: number;
+            parent_id?: components["schemas"]["BlockId"];
+            column?: number;
+        };
+        EmailBlockEntry: {
+            block: components["schemas"]["Block"];
+            /** @description The block's place, as in an `invalid_document` error, such as `blocks[2].columns[0].blocks[1]`. */
+            path: string;
+            /** @description The columns block holding it; null at the top level. */
+            parent_id: string | null;
+            /** @description Which column of `parent_id` holds it; null at the top level. */
+            column: number | null;
+            /** @description Its place in its list, 0 first. */
+            index: number;
+        };
+        EmailBlockList: {
+            /** Format: uuid */
+            email_id: string;
+            version: number;
+            data: components["schemas"]["EmailBlockEntry"][];
+        };
+        EmailBlockChange: {
+            block: components["schemas"]["EmailBlockEntry"];
+            email: components["schemas"]["Email"];
+        };
         Error: {
             error: {
                 /**
@@ -1963,6 +2097,37 @@ export interface components {
          *     blocks or html) or `kind_mismatch` (a document of the other kind).
          */
         InvalidEmail: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `kind_mismatch`: the email is html, which has no blocks.
+         *     `invalid_document`: the block or the fields break the schema, or the
+         *     change would (such as columns inside a column); `details.path` names
+         *     the place. `footer_locked`: the change would remove or move the
+         *     footer, add a second one, or put a block after it.
+         *     `invalid_position`: the place can't be used, such as `after` a block
+         *     that isn't there or `column` without `parent_id`.
+         */
+        InvalidBlockChange: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `not_found`: there's no such email in this account.
+         *     `block_not_found`: the email has no block with that id.
+         */
+        BlockNotFound: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -2100,6 +2265,8 @@ export interface components {
         TagId: string;
         /** @description The import's `id`. */
         ImportId: string;
+        /** @description The block's `id`. */
+        BlockId: components["schemas"]["BlockId"];
         /** @description The email's `id`. */
         EmailId: string;
         /**
@@ -3712,6 +3879,185 @@ export interface operations {
             403: components["responses"]["CrossOrigin"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["InvalidEmail"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listEmailBlocks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The blocks. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailBlockList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidBlockChange"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    addEmailBlock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddEmailBlockRequest"];
+            };
+        };
+        responses: {
+            /** @description The block as saved, and the email with its new version. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailBlockChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["EmailVersionConflict"];
+            422: components["responses"]["InvalidBlockChange"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    removeEmailBlock: {
+        parameters: {
+            query: {
+                /** @description The email's version when you read it. */
+                version: number;
+            };
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+                /** @description The block's `id`. */
+                block_id: components["parameters"]["BlockId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The email as saved, with its new version. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Email"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["BlockNotFound"];
+            409: components["responses"]["EmailVersionConflict"];
+            422: components["responses"]["InvalidBlockChange"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    updateEmailBlock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+                /** @description The block's `id`. */
+                block_id: components["parameters"]["BlockId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateEmailBlockRequest"];
+            };
+        };
+        responses: {
+            /** @description The block as saved, and the email with its new version. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailBlockChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["BlockNotFound"];
+            409: components["responses"]["EmailVersionConflict"];
+            422: components["responses"]["InvalidBlockChange"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    moveEmailBlock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+                /** @description The block's `id`. */
+                block_id: components["parameters"]["BlockId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveEmailBlockRequest"];
+            };
+        };
+        responses: {
+            /** @description The block as saved, and the email with its new version. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailBlockChange"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["BlockNotFound"];
+            409: components["responses"]["EmailVersionConflict"];
+            422: components["responses"]["InvalidBlockChange"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };
