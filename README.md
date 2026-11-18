@@ -68,7 +68,10 @@ make lint-api   # Redocly lint (recommended-strict, settings in api/redocly.yaml
 `make generate` and `make lint-api` need Node 22+. A new operation doesn't
 compile until `api.Server` has its handler, and `TestContract` in
 `internal/api/contract_test.go` needs a case for each response the operation
-documents. CI's `go test` runs the lint, checks that both generated files match
+documents. Every operation also needs a `mailgoose` command that declares it
+with `calls()` (`internal/cli/registry.go`), unless
+`api/cli-parity-allowlist.yaml` lists it with a reason; `TestCLIParity` checks
+that. CI's `go test` runs the lint, checks that both generated files match
 the spec, and validates every contract case's response against the spec.
 
 ### CLI

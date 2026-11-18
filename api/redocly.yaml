@@ -1,5 +1,5 @@
 # Redocly lint settings for api/openapi.yaml. `make lint-api` runs them, and
-# so do the Go tests in internal/api/spec, which is how CI checks them.
+# so do the Go tests in internal/api/apigen, which is how CI checks them.
 # recommended-strict turns every warning into an error.
 extends:
   - recommended-strict
