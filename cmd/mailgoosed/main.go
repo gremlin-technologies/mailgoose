@@ -82,7 +82,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	log = log.With("env", cfg.AppEnv)
 	log.Info("starting api", "version", version.Get().Version)
 
-	srv := &api.Server{Log: log}
+	srv := &api.Server{Log: log, RateLimitPerMinute: cfg.RateLimitPerMinute}
 	if cfg.Database.Configured() {
 		pool, err := openDB(ctx, cfg)
 		if err != nil {
@@ -90,6 +90,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		}
 		defer pool.Close()
 		srv.DB = pool
+		srv.Idempotency = api.PGIdempotencyStore{DB: pool}
 
 		if cfg.MigrateOnStart {
 			if err := migrateUp(ctx, log, pool); err != nil {
@@ -97,7 +98,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 			}
 		}
 	} else {
-		log.Warn("no database configured; /readyz will report unavailable")
+		log.Warn("no database configured; /readyz will report unavailable and idempotency keys stay in memory")
 	}
 
 	return api.ListenAndServe(ctx, log, ":"+strconv.Itoa(cfg.Port), srv.Handler())

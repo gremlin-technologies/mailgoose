@@ -6,6 +6,19 @@ info:
     One REST API shared by the web app, the CLI and AI agents. Every endpoint
     here gets a matching `mailgoose` CLI command.
 
+    Conventions every endpoint follows:
+
+    - Errors use the `Error` schema: `{"error": {"code", "message", "hint"}}`,
+      with a stable `code` to branch on.
+    - Lists take the `Limit` and `Cursor` parameters and return
+      `{"data": [...], "next_cursor": "..." | null}`.
+    - Every response carries `X-Request-Id`.
+    - POST, PUT, PATCH and DELETE accept an `Idempotency-Key` header; a repeat
+      within 24 hours returns the stored response with
+      `Idempotent-Replayed: true`.
+    - Requests are rate limited per API key; responses carry `RateLimit-Limit`
+      and `RateLimit-Remaining`, and a 429 carries `Retry-After`.
+
     Only the health endpoints exist so far. Authentication is a placeholder:
     API keys sent as bearer tokens, which the CLI reads from `MAILGOOSE_API_KEY`
     or its config file. The real scheme (key format, scopes such as
@@ -30,6 +43,9 @@ paths:
       responses:
         "200":
           description: The API is up.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
           content:
             application/json:
               schema:
@@ -44,12 +60,18 @@ paths:
       responses:
         "200":
           description: The API and its database are up.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
         "503":
           description: The database is not configured or not reachable.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
           content:
             application/json:
               schema:
@@ -77,10 +99,12 @@ components:
     Error:
       type: object
       required: [error]
+      additionalProperties: false
       properties:
         error:
           type: object
-          required: [code, message]
+          required: [code, message, hint]
+          additionalProperties: false
           properties:
             code:
               type: string
@@ -89,3 +113,88 @@ components:
             message:
               type: string
               description: Human-readable explanation.
+            hint:
+              type: string
+              description: What to do about it. Empty when there's nothing to add.
+              examples: ["Wait 20 seconds (see Retry-After) and try again."]
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Items per page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    Cursor:
+      name: cursor
+      in: query
+      description: The `next_cursor` of the previous page. Leave it out for the first page.
+      schema:
+        type: string
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: |
+        Makes a retry safe. A repeat with the same key and request within 24
+        hours returns the stored response instead of running again; the same
+        key with a different request is a 422 `idempotency_key_reused`.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+  headers:
+    X-Request-Id:
+      description: Identifies this request in our logs. Quote it when reporting a problem.
+      schema:
+        type: string
+    RateLimit-Limit:
+      description: Requests allowed per minute for this API key.
+      schema:
+        type: integer
+    RateLimit-Remaining:
+      description: Requests left before the limit applies.
+      schema:
+        type: integer
+    Retry-After:
+      description: Seconds to wait before retrying.
+      schema:
+        type: integer
+  responses:
+    BadRequest:
+      description: The request is malformed.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooManyRequests:
+      description: Rate limited (`rate_limited`).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+        RateLimit-Limit:
+          $ref: "#/components/headers/RateLimit-Limit"
+        RateLimit-Remaining:
+          $ref: "#/components/headers/RateLimit-Remaining"
+        Retry-After:
+          $ref: "#/components/headers/Retry-After"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    IdempotencyConflict:
+      description: |
+        `idempotency_key_reused` (422): the key was used for a different
+        request. `idempotency_request_in_progress` (409) is returned instead
+        while the first request with the key is still running.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

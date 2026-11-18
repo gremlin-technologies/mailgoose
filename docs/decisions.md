@@ -4,6 +4,20 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: API conventions (MG-01, reversible defaults)
+
+Picked while building MG-01; technical and easy to change.
+
+- **Rate limits are counted in memory on each API task**, 600 requests a
+  minute per API key (or per IP without credentials) by default
+  (`RATE_LIMIT_PER_MINUTE`). With N tasks a key can get up to N times that;
+  fine while staging and prod run one or two tasks. Move the buckets to
+  Postgres if it needs to be exact.
+- **Idempotency keys live in Postgres** (`idempotency_keys`), so every task sees
+  them. Until API keys exist (MG-09) they are scoped by a hash of the
+  `Authorization` header, and requests without credentials skip idempotency;
+  MG-09 switches the scope to the account.
+
 ## 2026-11-18: No personal names in the repo
 
 Decided by the owner: "as a rule, let's not refer to me ... in the repo. just

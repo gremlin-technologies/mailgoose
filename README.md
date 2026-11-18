@@ -47,7 +47,7 @@ run them by hand: `mailgoosed migrate up|down|status`.
 
 ```sh
 make test       # unit tests; database tests skip
-make test-db    # also runs migrations and credential rotation against Postgres
+make test-db    # also runs the database tests against Postgres
 make vet lint   # go vet, golangci-lint v2
 make build      # bin/mailgoose and bin/mailgoosed
 make image      # server image for linux/arm64
@@ -82,6 +82,27 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `SES_CONFIGURATION_SET`, `SYSTEM_SENDING_DOMAIN`, `SES_IDENTITY_TAG` | Read now, used once sending lands. |
 | `APP_SECRETS_JSON` | The `<env>/app` secret, a JSON object. |
 | `MIGRATE_ON_START` | `false` to skip migrations at API start. |
+| `RATE_LIMIT_PER_MINUTE` | Requests per minute per API key (or per IP without one), with bursts up to the same number. Default 600; `0` turns limiting off. Counted per API task. |
+
+## API conventions
+
+Every endpoint shares the plumbing in `internal/api` (MG-01):
+
+- **Errors** are `{"error": {"code", "message", "hint"}}`. `code` is stable;
+  branch on it, not on the message. Build them with `api.BadRequest`,
+  `api.NotFound` and friends and write them with `api.WriteError`; any other
+  error becomes a generic 500 and is only logged.
+- **Lists** take `?limit=` (1 to 100, default 50) and `?cursor=`, and return
+  `{"data": [...], "next_cursor": "..." | null}`. Handlers fetch `limit + 1`
+  rows in keyset order after `PageRequest.After` and call `api.NewPage`.
+- **Request IDs:** every response has `X-Request-Id`, and every log line made
+  with the request's context carries it as `request_id`.
+- **Idempotency:** POST, PUT, PATCH and DELETE with an `Idempotency-Key`
+  header replay the stored response for 24 hours; the same key with a
+  different request is a 422 `idempotency_key_reused`. Keys live in the
+  `idempotency_keys` table.
+- **Rate limits:** `RateLimit-Limit` and `RateLimit-Remaining` on every
+  response, and a 429 `rate_limited` with `Retry-After` past the limit.
 
 ## First staging image
 

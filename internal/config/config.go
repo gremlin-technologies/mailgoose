@@ -41,6 +41,11 @@ type Config struct {
 	// MigrateOnStart runs pending database migrations when the API starts.
 	MigrateOnStart bool
 
+	// RateLimitPerMinute is how many API requests one key (or one IP, for
+	// requests without credentials) may make a minute, with bursts up to the
+	// same number. Zero turns rate limiting off.
+	RateLimitPerMinute int
+
 	// AppSecrets holds the JSON object injected from the <env>/app secret.
 	AppSecrets map[string]string
 }
@@ -78,6 +83,11 @@ func load(getenv func(string) string) (Config, error) {
 	errs = append(errs, err)
 	migrate, err := boolEnv(getenv, "MIGRATE_ON_START", true)
 	errs = append(errs, err)
+	rateLimit, err := intEnv(getenv, "RATE_LIMIT_PER_MINUTE", 600)
+	errs = append(errs, err)
+	if rateLimit < 0 {
+		errs = append(errs, errors.New("RATE_LIMIT_PER_MINUTE must be 0 (off) or more"))
+	}
 
 	secrets, err := parseAppSecrets(getenv("APP_SECRETS_JSON"))
 	errs = append(errs, err)
@@ -101,6 +111,7 @@ func load(getenv func(string) string) (Config, error) {
 		SystemSendingDomain: getenv("SYSTEM_SENDING_DOMAIN"),
 		SESIdentityTag:      getenv("SES_IDENTITY_TAG"),
 		MigrateOnStart:      migrate,
+		RateLimitPerMinute:  rateLimit,
 		AppSecrets:          secrets,
 	}
 

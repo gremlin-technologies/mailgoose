@@ -1,12 +1,13 @@
 // Package api is the mailgoose HTTP API.
 //
-// The contract lives in api/openapi.yaml. Today it has only the health
-// endpoints the load balancer and the CLI use.
+// The contract lives in api/openapi.yaml. Every handler shares the plumbing in
+// this package: one error shape (errors.go), cursor pagination
+// (pagination.go), request IDs (requestid.go), idempotency keys
+// (idempotency.go) and per-key rate limits (ratelimit.go).
 package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -25,17 +26,46 @@ type Server struct {
 	Log *slog.Logger
 	// DB is checked by /readyz. Nil means no database is configured.
 	DB Pinger
+	// Idempotency stores Idempotency-Key responses. Nil keeps keys in memory,
+	// which is only right for tests and a single local process.
+	Idempotency IdempotencyStore
+	// RateLimitPerMinute is the per-key request limit. Zero turns it off.
+	RateLimitPerMinute int
+	// Now is the clock for rate limits and idempotency; nil means time.Now.
+	Now func() time.Time
 }
 
-// Handler returns the API's routes wrapped in logging and panic recovery.
+// Handler returns the API's routes wrapped in the shared middleware. From the
+// outside in: request ID, panic recovery, request log, rate limit,
+// idempotency, routes.
 func (s *Server) Handler() http.Handler {
+	if s.Log == nil {
+		s.Log = slog.New(slog.DiscardHandler)
+	}
+	s.Log = slog.New(LogWithRequestIDs(s.Log.Handler()))
+	now := s.Now
+	if now == nil {
+		now = time.Now
+	}
+	store := s.Idempotency
+	if store == nil {
+		store = &MemoryIdempotencyStore{}
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		writeError(w, http.StatusNotFound, "not_found", "No such endpoint.")
+		WriteError(w, NotFound("not_found", "No such endpoint.").
+			WithHint("See the API reference for the endpoints and methods that exist."))
 	})
-	return s.recoverer(s.logRequests(mux))
+
+	var h http.Handler = mux
+	h = (&Idempotency{Store: store, Now: now, Log: s.Log}).Middleware(h)
+	h = (&RateLimiter{PerMinute: s.RateLimitPerMinute, Now: now}).Middleware(h)
+	h = s.logRequests(h)
+	h = s.recoverer(h)
+	return requestIDs(h)
 }
 
 type healthResponse struct {
@@ -64,26 +94,6 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, healthResponse{Status: "ok", Info: version.Get()})
-}
-
-// ErrorBody is the shape of every error response.
-type ErrorBody struct {
-	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-	} `json:"error"`
-}
-
-func writeError(w http.ResponseWriter, status int, code, msg string) {
-	var b ErrorBody
-	b.Error.Code, b.Error.Message = code, msg
-	writeJSON(w, status, b)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
 }
 
 type statusRecorder struct {
@@ -122,7 +132,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 					panic(v)
 				}
 				s.Log.ErrorContext(r.Context(), "panic in handler", "panic", v, "path", r.URL.Path)
-				writeError(w, http.StatusInternalServerError, "internal", "Something went wrong.")
+				WriteError(w, Internal())
 			}
 		}()
 		next.ServeHTTP(w, r)
