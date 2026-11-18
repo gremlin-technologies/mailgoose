@@ -44,14 +44,14 @@ func TestCampaignsAgainstAPI(t *testing.T) {
 	}
 	c := h.jsonOut(t)
 	id := c["id"].(string)
-	if c["status"] != "draft" || c["recipient_count"] != 1.0 || c["send_at"] != at.Format(time.RFC3339) {
+	if c["status"] != "draft" || c["recipient_count"] != 1.0 || c["send_at"] != at.Format(time.RFC3339) || c["tracking"] != true {
 		t.Errorf("created %v", c)
 	}
 
 	if code := h.run("campaign", "get", id); code != ExitOK {
 		t.Fatalf("get: exit %d %s", code, h.errOut)
 	}
-	for _, want := range []string{"VIP preview", "Status:", "draft", "subscribed contacts tagged VIP", "Recipients now:  1", emailID} {
+	for _, want := range []string{"VIP preview", "Status:", "draft", "subscribed contacts tagged VIP", "Recipients now:  1", "Tracking:", "opens and clicks", emailID} {
 		if !strings.Contains(h.out.String(), want) {
 			t.Errorf("get lacks %q:\n%s", want, h.out)
 		}
@@ -64,6 +64,12 @@ func TestCampaignsAgainstAPI(t *testing.T) {
 		if !strings.Contains(h.out.String(), want) {
 			t.Errorf("update lacks %q:\n%s", want, h.out)
 		}
+	}
+	if code := h.run("campaign", "update", id, "--tracking=false", "--json"); code != ExitOK || h.jsonOut(t)["tracking"] != false {
+		t.Errorf("tracking off: exit %d %s %s", code, h.out, h.errOut)
+	}
+	if code := h.run("campaign", "create", "--name", "Untracked", "--email", emailID, "--all", "--tracking=false", "--json"); code != ExitOK || h.jsonOut(t)["tracking"] != false {
+		t.Errorf("create untracked: exit %d %s %s", code, h.out, h.errOut)
 	}
 	if code := h.run("campaign", "update", id, "--name", "x", "--version", "1"); code != ExitError || !strings.Contains(h.errOut.String(), "changed since") {
 		t.Errorf("stale: exit %d %s", code, h.errOut)

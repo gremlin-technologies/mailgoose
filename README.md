@@ -649,6 +649,33 @@ event isn't counted twice. Open and click events from SES are dropped
 events that can't be read, with a warning in the log; only a database
 error leaves a message on the queue to be tried again.
 
+### Open and click tracking
+
+Tracking is on for a new campaign; `tracking: false` (CLI
+`--tracking=false`) turns it off, and it's fixed at launch like the rest.
+A tracked copy gets, after its merge tags are filled in:
+
+- **An open pixel:** a 1x1 image at `<app URL>/t/o/<token>`, just before
+  `</body>`.
+- **Tracked links:** every `<a href>` to an `http` or `https` address
+  becomes `<app URL>/t/c/<token>`. The unsubscribe link, `mailto:` and
+  other links, and links over 2,000 characters are left as they are, and so
+  is the plain-text part. Test sends are never tracked.
+
+A token (`internal/tracking`) names the account, campaign and send record,
+and for a click the link's position in the email and where it goes, signed
+with the account's unsubscribe key under another label. The redirect needs
+no database lookup but that key (cached), so it can't be pointed anywhere
+else: a changed token gets a 400 page and no `Location`. `GET /t/c/<token>`
+records a click (and an open, if the copy has none yet, since the pixel may
+have been blocked) in `engagement_events` and answers 302. `GET /t/o/<token>`
+always answers with the pixel, recording only a valid token. Nothing about
+the person's IP or browser is stored. Like `/u/`, these are recipient pages
+outside the spec and the API's sign-in, with their own per-IP limit of
+20,000 a minute (mail providers fetch images through a few proxies).
+`TestClickLatency` and `BenchmarkTrackedClick` (`internal/api`) time the
+redirect.
+
 ### Account health and send limits
 
 **Send limits.** A new account may send 1,000 campaign emails in any 24
@@ -717,7 +744,7 @@ These are pages for recipients, not API operations: they're outside the
 OpenAPI spec and the API's sign-in, cross-origin and idempotency layers,
 with their own per-IP limit of 1,200 a minute (one-click POSTs come from a
 mail provider's few servers). Request logs show the path as
-`/u/[token]`.
+`/u/[token]` (and `/t/o/[token]`, `/t/c/[token]` for tracking).
 
 ## Signup forms
 

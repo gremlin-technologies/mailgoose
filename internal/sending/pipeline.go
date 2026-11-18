@@ -18,6 +18,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
+	"github.com/gremlin-technologies/mailgoose/internal/tracking"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
 
@@ -393,6 +394,8 @@ type sendable struct {
 	paused bool
 	copy   launchCopy
 	signer *unsubscribe.Signer
+	// links makes tracked addresses; nil when tracking is off.
+	links *tracking.Links
 }
 
 func (p *Pipeline) loadCampaign(ctx context.Context, b Batch) (*sendable, error) {
@@ -416,6 +419,11 @@ func (p *Pipeline) loadCampaign(ctx context.Context, b Batch) (*sendable, error)
 	}
 	if s.signer, err = p.Unsubscribe.Signer(ctx, b.AccountID); err != nil {
 		return nil, err
+	}
+	if s.copy.Tracking {
+		if s.links, err = tracking.NewLinks(s.signer, p.BaseURL, b.CampaignID); err != nil {
+			return nil, err
+		}
 	}
 	return &s, nil
 }
@@ -501,6 +509,12 @@ func (p *Pipeline) sendOne(ctx context.Context, b Batch, s *sendable, id int64) 
 		return err
 	}
 	m := s.copy.Template.Personalize(render.Recipient{Email: r.email, FirstName: r.first, LastName: r.last, UnsubscribeURL: url})
+	if s.links != nil {
+		unsub := strings.TrimRight(p.BaseURL, "/") + unsubscribe.PathPrefix
+		m.HTML = render.Track(m.HTML, s.links.For(id), func(href string) bool {
+			return href == url || strings.HasPrefix(href, unsub)
+		})
+	}
 	msg := mail.Message{
 		From:       s.copy.From,
 		To:         mail.Address{Email: r.email},

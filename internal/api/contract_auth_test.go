@@ -21,6 +21,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
+	"github.com/gremlin-technologies/mailgoose/internal/tracking"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
 
@@ -37,6 +38,12 @@ var outboxes sync.Map // *testing.T -> *mail.Fake
 var testDBs sync.Map // *testing.T -> *pgxpool.Pool
 
 func authServer(t *testing.T) *Server {
+	t.Helper()
+	return authServerTB(t)
+}
+
+// authServerTB is authServer for benchmarks too.
+func authServerTB(t testing.TB) *Server {
 	t.Helper()
 	db := dbtest.New(t)
 	fake := &mail.Fake{}
@@ -66,6 +73,7 @@ func authServer(t *testing.T) *Server {
 		Domains: s.Domains, Unsubscribe: s.Unsubscribe, Mail: fake}
 	s.Signups = &signups.Service{DB: db, Forms: s.Forms, Settings: s.Auth, Domains: s.Domains, Mail: fake}
 	s.Admin = &admin.Service{DB: db, Sending: s.Sending}
+	s.Tracking = &tracking.Service{DB: db, Unsubscribe: s.Unsubscribe}
 	return s
 }
 

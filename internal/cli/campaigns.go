@@ -28,6 +28,7 @@ type campaign struct {
 	} `json:"recipients"`
 	RecipientCount *int       `json:"recipient_count,omitempty"`
 	SendAt         *time.Time `json:"send_at"`
+	Tracking       bool       `json:"tracking"`
 	Status         string     `json:"status"`
 	Version        int        `json:"version"`
 	LastTest       *struct {
@@ -165,6 +166,13 @@ func (c campaign) sendTime(loc *time.Location) string {
 	return c.SendAt.In(loc).Format(timeLayout)
 }
 
+func tracking(on bool) string {
+	if on {
+		return "opens and clicks"
+	}
+	return "off"
+}
+
 func (a *App) printCampaign(ctx context.Context, c campaign, verb string) {
 	if a.jsonOut {
 		a.printJSON(c)
@@ -191,6 +199,7 @@ func (a *App) printCampaign(ctx context.Context, c campaign, verb string) {
 		fmt.Fprintf(tw, "Recipients now:\t%d\n", *c.RecipientCount)
 	}
 	fmt.Fprintf(tw, "Send:\t%s\n", c.sendTime(a.loc()))
+	fmt.Fprintf(tw, "Tracking:\t%s\n", tracking(c.Tracking))
 	if verb == "" {
 		test := "none yet (`mailgoose campaign test " + c.ID + "`)"
 		if c.LastTest != nil {
@@ -273,6 +282,7 @@ as it is.`,
 	list.Flags().StringVar(&status, "status", "", "only this status: draft, scheduled, sending, sent, cancelled, paused or failed")
 
 	var name, emailID, sendAt string
+	var track bool
 	var cr recipientFlags
 	create := calls("createCampaign", &cobra.Command{
 		Use:   "create",
@@ -298,6 +308,9 @@ Nothing is sent until it's launched.`,
 				return usageError("Say who gets it.", "Pass --all for every subscribed contact, or --tag for contacts with a tag.")
 			}
 			body := map[string]any{"name": name, "email_id": emailID, "recipients": recipients}
+			if cmd.Flags().Changed("tracking") {
+				body["tracking"] = track
+			}
 			if sendAt != "" {
 				at, err := a.parseSendAt(cmd.Context(), "send-at", sendAt)
 				if err != nil {
@@ -316,6 +329,7 @@ Nothing is sent until it's launched.`,
 	create.Flags().StringVar(&name, "name", "", "the campaign's name, for you (required)")
 	create.Flags().StringVar(&emailID, "email", "", "the id of the email to send (required)")
 	create.Flags().StringVar(&sendAt, "send-at", "", `when to send: a time, or now for when launched (the default)`)
+	create.Flags().BoolVar(&track, "tracking", true, "count opens and clicks; --tracking=false sends it untracked")
 	cr.register(create)
 
 	get := calls("getCampaign", &cobra.Command{
@@ -337,6 +351,7 @@ Nothing is sent until it's launched.`,
 	})
 
 	var newName, newEmail, newSendAt string
+	var newTrack bool
 	var ur recipientFlags
 	var version int
 	update := calls("updateCampaign", &cobra.Command{
@@ -361,6 +376,9 @@ is refused if the campaign changed since you read it.`,
 			if flags.Changed("email") {
 				body["email_id"] = newEmail
 			}
+			if flags.Changed("tracking") {
+				body["tracking"] = newTrack
+			}
 			if flags.Changed("send-at") {
 				at, err := a.parseSendAt(cmd.Context(), "send-at", newSendAt)
 				if err != nil {
@@ -376,7 +394,7 @@ is refused if the campaign changed since you read it.`,
 				body["recipients"] = recipients
 			}
 			if len(body) == 0 {
-				return usageError("Nothing to change.", "Pass --name, --email, --all, --tag or --send-at.")
+				return usageError("Nothing to change.", "Pass --name, --email, --all, --tag, --send-at or --tracking.")
 			}
 			if flags.Changed("version") {
 				body["version"] = version
@@ -392,6 +410,7 @@ is refused if the campaign changed since you read it.`,
 	update.Flags().StringVar(&newName, "name", "", "a new name")
 	update.Flags().StringVar(&newEmail, "email", "", "the id of another email to send")
 	update.Flags().StringVar(&newSendAt, "send-at", "", "when to send: a time, or now for when launched")
+	update.Flags().BoolVar(&newTrack, "tracking", true, "count opens and clicks (--tracking=false turns it off)")
 	update.Flags().IntVar(&version, "version", 0, "the version you read; the change fails if the campaign changed since")
 	ur.register(update)
 

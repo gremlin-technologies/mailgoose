@@ -102,6 +102,42 @@ func (s *Service) Signer(ctx context.Context, accountID string) (*Signer, error)
 	return &Signer{account: account, key: key}, nil
 }
 
+// ErrNoKey means the account has never signed a link, so no link can be
+// its.
+var ErrNoKey = errors.New("the account has no link key")
+
+// Existing returns the signer for an account that has a key already,
+// reading it only: ErrNoKey when it has none. Checking a link uses it, so
+// a forged link can't make keys.
+func (s *Service) Existing(ctx context.Context, accountID string) (*Signer, error) {
+	account, err := uuid.Parse(accountID)
+	if err != nil {
+		return nil, ErrNoKey
+	}
+	var key []byte
+	err = s.DB.QueryRow(ctx, `SELECT key FROM unsubscribe_keys WHERE account_id = $1`, accountID).Scan(&key)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNoKey
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &Signer{account: account, key: key}, nil
+}
+
+// AccountID is the account the signer signs for.
+func (g *Signer) AccountID() string { return g.account.String() }
+
+// Sum signs msg with the account's key under label. Other signed links
+// (open and click tracking) share the key; the label keeps their
+// signatures apart from unsubscribe tokens' and from each other's.
+func (g *Signer) Sum(label string, msg []byte) []byte {
+	m := hmac.New(sha256.New, g.key)
+	m.Write([]byte(label + "\x00"))
+	m.Write(msg)
+	return m.Sum(nil)
+}
+
 // Token is the token for a contact, for a campaign or (campaignID "") for
 // no campaign, as in a test send.
 func (g *Signer) Token(contactID, campaignID string) (string, error) {

@@ -40,6 +40,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/sesevents"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
+	"github.com/gremlin-technologies/mailgoose/internal/tracking"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 	"github.com/gremlin-technologies/mailgoose/internal/web"
@@ -129,6 +130,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		srv.Forms = &forms.Service{DB: pool}
 		srv.Campaigns = &campaigns.Service{DB: pool}
 		srv.Unsubscribe = &unsubscribe.Service{DB: pool}
+		srv.Tracking = &tracking.Service{DB: pool, Unsubscribe: srv.Unsubscribe}
 		if srv.Domains, err = newDomains(ctx, cfg, pool, log); err != nil {
 			return err
 		}

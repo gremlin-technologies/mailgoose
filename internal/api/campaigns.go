@@ -73,7 +73,7 @@ func validCampaignID(w http.ResponseWriter, id string) bool {
 
 func campaignJSON(c *campaigns.Campaign) apigen.Campaign {
 	out := apigen.Campaign{Id: c.ID, Name: c.Name, EmailId: c.EmailID, Status: apigen.CampaignStatus(c.Status),
-		Version: c.Version, CreatedAt: c.CreatedAt.UTC(), UpdatedAt: c.UpdatedAt.UTC(),
+		Tracking: c.Tracking, Version: c.Version, CreatedAt: c.CreatedAt.UTC(), UpdatedAt: c.UpdatedAt.UTC(),
 		Recipients: apigen.CampaignRecipients{All: c.AllContacts, Tags: make([]apigen.TagRef, len(c.Tags))}}
 	if c.SendAt != nil {
 		at := c.SendAt.UTC()
@@ -126,11 +126,13 @@ type campaignBody struct {
 	EmailID    *string                 `json:"email_id"`
 	Recipients *apigen.RecipientsInput `json:"recipients"`
 	SendAt     json.RawMessage         `json:"send_at"`
+	Tracking   *bool                   `json:"tracking"`
 	Version    *int                    `json:"version"`
 }
 
 func (b *campaignBody) changes() (campaigns.Changes, *Error) {
-	ch := campaigns.Changes{Name: b.Name, EmailID: b.EmailID, Recipients: recipientsInput(b.Recipients), Version: b.Version}
+	ch := campaigns.Changes{Name: b.Name, EmailID: b.EmailID, Recipients: recipientsInput(b.Recipients),
+		Tracking: b.Tracking, Version: b.Version}
 	switch {
 	case len(b.SendAt) == 0:
 	case string(b.SendAt) == "null":
