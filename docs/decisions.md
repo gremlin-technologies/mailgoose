@@ -455,3 +455,9 @@ Decided by the owner in the PRD scoping call and follow-ups.
   2,501 to 12,500 counted contacts is one extra block. MG-40.)
 - Anything in the earlier mailgoose repo worth reusing? (Default: no, fresh
   start.)
+- Sending domains: can an account hold a domain it never verifies? Today an
+  account that adds someone else's domain keeps it by running `domain verify`
+  each time it fails, which restarts the 72 hours, and the real owner only
+  gets `domain_taken`. (Default: unchanged for now. One option: once a
+  domain's first 72 hours have passed unverified, any account may take it
+  over, so whoever sets up the DNS wins. MG-13.)

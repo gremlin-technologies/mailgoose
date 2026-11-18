@@ -3,6 +3,7 @@ package domains
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -215,6 +216,45 @@ func TestAddRefusals(t *testing.T) {
 	}
 	if _, err := h.svc.Add(ctx, h.acc2, "example.com"); !errors.Is(err, ErrTaken) {
 		t.Errorf("other account while pending: %v", err)
+	}
+}
+
+// TestAddRace adds the same new name from two accounts at once. Exactly one
+// Add wins; every loser gets ErrTaken or ErrExists, never a database error.
+func TestAddRace(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	for round := range 5 {
+		name := fmt.Sprintf("race%d.example.com", round)
+		const n = 8
+		errs := make([]error, n)
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		for i := range n {
+			acc := h.acc
+			if i%2 == 1 {
+				acc = h.acc2
+			}
+			wg.Go(func() {
+				<-start
+				_, errs[i] = h.svc.Add(ctx, acc, name)
+			})
+		}
+		close(start)
+		wg.Wait()
+		wins := 0
+		for _, err := range errs {
+			switch {
+			case err == nil:
+				wins++
+			case errors.Is(err, ErrTaken), errors.Is(err, ErrExists):
+			default:
+				t.Errorf("%s: unexpected error %v", name, err)
+			}
+		}
+		if wins != 1 {
+			t.Errorf("%s: %d adds won, want 1", name, wins)
+		}
 	}
 }
 

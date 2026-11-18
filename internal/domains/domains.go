@@ -22,6 +22,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/net/idna"
 	"golang.org/x/net/publicsuffix"
@@ -283,6 +284,11 @@ func (s *Service) Add(ctx context.Context, accountID, rawName string) (*Domain, 
 			VALUES ($1, $2, $3, $4, $5) RETURNING id`,
 			accountID, name, MailFromPrefix+"."+name, now, now.Add(CheckFor)).Scan(&id)
 	})
+	if isUniqueViolation(err) {
+		// Another Add of the same name committed between our read and our
+		// insert; report it the way a later Add would see it.
+		return nil, s.raceLoser(ctx, accountID, name)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -301,6 +307,28 @@ func (s *Service) Add(ctx context.Context, accountID, rawName string) (*Domain, 
 		return nil, fmt.Errorf("save domain: %w", err)
 	}
 	return s.Get(ctx, accountID, id)
+}
+
+// raceLoser is the error for an Add that lost a race to insert name.
+func (s *Service) raceLoser(ctx context.Context, accountID, name string) error {
+	var owner string
+	err := s.DB.QueryRow(ctx, `SELECT account_id FROM domains WHERE name = $1`, name).Scan(&owner)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// The winner's SES call failed and it removed its row; retrying works.
+		return ErrTaken
+	case err != nil:
+		return err
+	case owner == accountID:
+		return ErrExists
+	default:
+		return ErrTaken
+	}
+}
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 // Get returns one domain of accountID.
