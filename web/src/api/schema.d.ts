@@ -552,7 +552,9 @@ export interface paths {
          * @description Adds one contact. The address is stored in lower case and must be new
          *     to the account. An address that was deleted after it unsubscribed,
          *     bounced or complained comes back with that status, whatever
-         *     `status` asks for, so it isn't mailed again by mistake.
+         *     `status` asks for, so it isn't mailed again by mistake. A free
+         *     account holds at most 500 counted contacts (unconfirmed and
+         *     subscribed); one more gets 402 `contact_limit`.
          */
         post: operations["createContact"];
         delete?: never;
@@ -1181,12 +1183,33 @@ export interface components {
                  * @example Wait 20 seconds (see Retry-After) and try again.
                  */
                 hint: string;
+                /**
+                 * @description Extra facts some errors carry; absent otherwise. A
+                 *     `contact_limit` has `limit` and `count`.
+                 */
+                details?: {
+                    [key: string]: unknown;
+                };
             };
         };
     };
     responses: {
         /** @description `tag_exists`: the account already has a tag with that name, ignoring case. */
         TagConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `contact_limit`: a free account holds at most 500 counted contacts
+         *     (unconfirmed and subscribed). `details.limit` is the limit and
+         *     `details.count` the counted contacts now. Paid accounts have no cap.
+         */
+        ContactLimit: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -2242,6 +2265,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            402: components["responses"]["ContactLimit"];
             403: components["responses"]["CrossOrigin"];
             409: components["responses"]["ContactConflict"];
             422: components["responses"]["ValidationFailed"];

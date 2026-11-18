@@ -4,6 +4,26 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Contact limit details (MG-16, reversible defaults)
+
+Picked while building MG-16; easy to change.
+
+- **Counted contacts are subscribed plus unconfirmed**, as the ticket says.
+  Unsubscribed, bounced and complained don't count, so adding an
+  unsubscribed contact, or a suppressed address that comes back unsubscribed,
+  works at the limit.
+- **The limit is checked inside the write, with the account row locked**, so
+  concurrent adds can't both take the last place. A free account at 500 gets
+  402 `contact_limit`; the error body carries `details.limit` and
+  `details.count`. Error bodies may now have an optional `details` object, and
+  the CLI passes it through in `--json` errors.
+- **Which routes check it:** creating a contact now, and a status change that
+  makes a contact counted. Today no API status change can (an unsubscribed
+  contact can't be subscribed again through the API), so the first real
+  status-change route is form re-subscribe in MG-36. CSV import (MG-17) and
+  form signups (MG-36) call the same check and add their own tests.
+- **The plan comes from `accounts.plan`**; anything but `free` has no cap.
+
 ## 2026-11-18: Tag details (MG-15, reversible defaults)
 
 Picked while building MG-15; easy to change.

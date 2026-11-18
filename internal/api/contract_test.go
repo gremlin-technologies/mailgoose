@@ -186,6 +186,7 @@ var contractCases = map[string][]contractCase{
 		{name: "already added", server: fullKey(authServer), before: addedContact,
 			req: bearer(jsonRequest(http.MethodPost, "/v1/contacts", `{"email":"PAT@example.com"}`)), status: http.StatusConflict},
 		{name: "invalid email", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/contacts", `{"email":"pat"}`)), status: http.StatusUnprocessableEntity},
+		{name: "over the free limit", server: atContactLimit(fullKey(authServer)), req: bearer(jsonRequest(http.MethodPost, "/v1/contacts", `{"email":"over@example.com"}`)), status: http.StatusPaymentRequired},
 		{name: "no credentials", server: authServer, req: jsonRequest(http.MethodPost, "/v1/contacts", `{"email":"pat@example.com"}`), status: http.StatusUnauthorized},
 		{name: "from another site", server: authServer, before: signedIn,
 			req: fromAnotherSite(withSession(jsonRequest(http.MethodPost, "/v1/contacts", `{"email":"pat@example.com"}`))), status: http.StatusForbidden},

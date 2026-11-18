@@ -28,6 +28,9 @@ type Error struct {
 	Code    string
 	Message string
 	Hint    string
+	// Details are the API's extra facts for some errors, such as the limit
+	// and count of a contact_limit; nil otherwise.
+	Details map[string]any
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -88,4 +91,5 @@ const exitCodesHelp = `Every mailgoose command exits with one of these codes:
 
 With --json, errors go to stderr as
   {"error": {"code": "...", "message": "...", "hint": "..."}}
-and output goes to stdout only.`
+plus "details" when the API gives some, such as "limit" and "count" for
+contact_limit. Output goes to stdout only.`

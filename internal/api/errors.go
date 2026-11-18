@@ -19,9 +19,19 @@ type Error struct {
 	Message string
 	// Hint says what to do about it. It may be empty.
 	Hint string
+	// Details are extra facts some errors carry, such as the limit and count
+	// of a contact_limit. Usually nil.
+	Details map[string]any
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
+
+// WithDetails returns a copy of e with its details set.
+func (e *Error) WithDetails(d map[string]any) *Error {
+	c := *e
+	c.Details = d
+	return &c
+}
 
 // WithHint returns a copy of e with its hint set.
 func (e *Error) WithHint(hint string) *Error {
@@ -43,41 +53,53 @@ type ErrorDetail struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Hint    string `json:"hint"`
+	// Details is left out when empty.
+	Details map[string]any `json:"details,omitempty"`
 }
 
 // Constructors for the statuses the API uses. The code is the caller's, so
 // it can say exactly what failed (such as "invalid_cursor" for a 400).
 
 // BadRequest is a 400: the request is malformed.
-func BadRequest(code, msg string) *Error { return &Error{http.StatusBadRequest, code, msg, ""} }
+func BadRequest(code, msg string) *Error {
+	return &Error{Status: http.StatusBadRequest, Code: code, Message: msg}
+}
 
 // Unauthorized is a 401: no valid credentials.
-func Unauthorized(code, msg string) *Error { return &Error{http.StatusUnauthorized, code, msg, ""} }
+func Unauthorized(code, msg string) *Error {
+	return &Error{Status: http.StatusUnauthorized, Code: code, Message: msg}
+}
 
 // Forbidden is a 403: valid credentials that may not do this.
-func Forbidden(code, msg string) *Error { return &Error{http.StatusForbidden, code, msg, ""} }
+func Forbidden(code, msg string) *Error {
+	return &Error{Status: http.StatusForbidden, Code: code, Message: msg}
+}
 
 // NotFound is a 404.
-func NotFound(code, msg string) *Error { return &Error{http.StatusNotFound, code, msg, ""} }
+func NotFound(code, msg string) *Error {
+	return &Error{Status: http.StatusNotFound, Code: code, Message: msg}
+}
 
 // Conflict is a 409: the request clashes with the current state.
-func Conflict(code, msg string) *Error { return &Error{http.StatusConflict, code, msg, ""} }
+func Conflict(code, msg string) *Error {
+	return &Error{Status: http.StatusConflict, Code: code, Message: msg}
+}
 
 // Unprocessable is a 422: well-formed, but the values are not acceptable.
 func Unprocessable(code, msg string) *Error {
-	return &Error{http.StatusUnprocessableEntity, code, msg, ""}
+	return &Error{Status: http.StatusUnprocessableEntity, Code: code, Message: msg}
 }
 
 // TooManyRequests is a 429.
 func TooManyRequests(code, msg string) *Error {
-	return &Error{http.StatusTooManyRequests, code, msg, ""}
+	return &Error{Status: http.StatusTooManyRequests, Code: code, Message: msg}
 }
 
 // Internal is a 500. Its message never carries the underlying error, which
 // goes to the log instead.
 func Internal() *Error {
-	return &Error{http.StatusInternalServerError, "internal", "Something went wrong on our side.",
-		"Try again. If it keeps happening, contact support with the X-Request-Id header."}
+	return &Error{Status: http.StatusInternalServerError, Code: "internal", Message: "Something went wrong on our side.",
+		Hint: "Try again. If it keeps happening, contact support with the X-Request-Id header."}
 }
 
 // WriteError writes err as an error response. An error that isn't an *Error
@@ -87,7 +109,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	if !errors.As(err, &e) {
 		e = Internal()
 	}
-	writeJSON(w, e.Status, ErrorBody{Error: ErrorDetail{Code: e.Code, Message: e.Message, Hint: e.Hint}})
+	writeJSON(w, e.Status, ErrorBody{Error: ErrorDetail{Code: e.Code, Message: e.Message, Hint: e.Hint, Details: e.Details}})
 }
 
 func writeError(w http.ResponseWriter, status int, code, msg string) {
@@ -120,8 +142,8 @@ func DecodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
 		var tooBig *http.MaxBytesError
 		switch {
 		case errors.As(err, &tooBig):
-			return &Error{http.StatusRequestEntityTooLarge, "request_too_large",
-				fmt.Sprintf("The request body is over %d bytes.", MaxBodyBytes), ""}
+			return &Error{Status: http.StatusRequestEntityTooLarge, Code: "request_too_large",
+				Message: fmt.Sprintf("The request body is over %d bytes.", MaxBodyBytes)}
 		case errors.Is(err, io.EOF):
 			return BadRequest("invalid_json", "The request body is empty.").WithHint("Send a JSON object.")
 		default:

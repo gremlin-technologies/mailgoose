@@ -31,6 +31,9 @@ func contactsStub(t *testing.T) (*harness, *[]seenRequest) {
 		one := "/v1/contacts/" + testContactID
 		other := strings.Replace(testContact("xpat@example.com", "subscribed"), testContactID, "9f8e7d6c-5b4a-4392-8170-6f5e4d3c2b1a", 1)
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/contacts" && req.body["email"] == "over@example.com":
+			w.WriteHeader(http.StatusPaymentRequired)
+			_, _ = w.Write([]byte(`{"error":{"code":"contact_limit","message":"A free account holds at most 500 contacts.","hint":"Delete contacts.","details":{"limit":500,"count":500}}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/contacts":
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(testContact("pat@example.com", "unsubscribed")))
@@ -138,5 +141,30 @@ func TestContactsListAndDelete(t *testing.T) {
 	}
 	if len(*seen) != 1 || (*seen)[0].method != http.MethodDelete {
 		t.Errorf("requests = %+v", *seen)
+	}
+}
+
+func TestContactsAddOverLimit(t *testing.T) {
+	h, _ := contactsStub(t)
+	if code := h.run("contacts", "add", "over@example.com"); code != ExitError {
+		t.Errorf("exit %d", code)
+	}
+	if !strings.Contains(h.errOut.String(), "at most 500") {
+		t.Errorf("stderr = %s", h.errOut)
+	}
+	if code := h.run("contacts", "add", "over@example.com", "--json"); code != ExitError {
+		t.Errorf("json: exit %d", code)
+	}
+	var body struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Details map[string]int `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(h.errOut.Bytes(), &body); err != nil {
+		t.Fatalf("%v: %s", err, h.errOut)
+	}
+	if body.Error.Code != "contact_limit" || body.Error.Details["limit"] != 500 || body.Error.Details["count"] != 500 {
+		t.Errorf("json error = %s", h.errOut)
 	}
 }
