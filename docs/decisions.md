@@ -4,6 +4,42 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Sending domain details (MG-13, reversible defaults)
+
+Picked while building MG-13; easy to change.
+
+- **The MAIL FROM subdomain is `bounce.<domain>`,** with an MX to
+  `feedback-smtp.us-east-2.amazonses.com` and an SPF TXT including
+  `amazonses.com`. If its MX goes missing later, SES falls back to its own
+  MAIL FROM rather than refusing to send.
+- **The DMARC record is only suggested** (`v=DMARC1; p=none;`), and only when
+  neither the domain nor, for a subdomain, its organizational domain has one.
+  It doesn't count toward verification.
+- **Verified means every required record is found and SES reports the
+  identity verified for sending.** A record lookup that times out or errors
+  counts as missing, with the error in `detail`.
+- **The 5-minute re-check runs in the API service, not the worker.** Only the
+  API's task role may read SES identities today, so this avoids an infra
+  change. Due rows are claimed with `FOR UPDATE SKIP LOCKED`, so several API
+  tasks don't check the same domain twice. It can move to the worker once
+  the worker role has `ses:GetEmailIdentity`.
+- **After 72 hours a pending domain is marked failed.** A manual
+  `domain verify` on a failed domain checks again and, if the records are
+  now right, verifies it; otherwise it starts another 72 hours. If SES itself
+  had given up on DKIM, the identity is made again with new DKIM records, and
+  the response says `records_changed: true`.
+- **A domain belongs to one account.** Another account can take a name over
+  only once the first account's attempt has failed. SES identities are tagged
+  `mg_account=<id>` plus the environment tag; one SES already has that isn't
+  tagged with this account is refused as `domain_unavailable`.
+- **Known limit:** staging and prod share one AWS account, so SES has one
+  identity per name across both, and the same customer domain can't be added
+  in both environments at once.
+- **mailgoose.app and the system sending domain, and their subdomains, can't
+  be added.**
+- **The From check (`RequireVerifiedFrom`) accepts an address at a verified
+  domain or any of its subdomains,** which SES also allows.
+
 ## 2026-11-18: CLI sign-up (owner decision, confirmed)
 
 The owner chose to allow sign-up from the CLI, answering the question left

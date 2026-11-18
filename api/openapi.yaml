@@ -793,6 +793,187 @@ paths:
           $ref: "#/components/responses/CrossOrigin"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/domains:
+    get:
+      operationId: listDomains
+      summary: List sending domains
+      description: The account's sending domains, oldest first, each with its DNS records and the result of its last check.
+      tags: [domains]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: name
+          in: query
+          required: false
+          description: Only the domain with this name, such as `example.com`.
+          schema:
+            type: string
+            maxLength: 253
+      responses:
+        "200":
+          description: A page of domains.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: createDomain
+      summary: Add a sending domain
+      description: |
+        Sets the domain up in Amazon SES, with DKIM signing and a MAIL FROM
+        subdomain (`bounce.<domain>`), and answers with the DNS records to
+        add: three DKIM CNAMEs, the MAIL FROM MX and SPF TXT, and a suggested
+        DMARC TXT when the domain has no DMARC policy. Campaigns can only be
+        sent from a verified domain. The domain is checked every 5 minutes for
+        72 hours; `verifyDomain` checks it at once.
+      tags: [domains]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDomainRequest"
+      responses:
+        "201":
+          description: The new domain, with the records to add.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Domain"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/DomainConflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/domains/{domain_id}:
+    get:
+      operationId: getDomain
+      summary: Show a sending domain
+      description: The domain, its DNS records and the result of its last check.
+      tags: [domains]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/DomainId"
+      responses:
+        "200":
+          description: The domain.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Domain"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: deleteDomain
+      summary: Remove a sending domain
+      description: |
+        Removes the domain and its Amazon SES identity. Mail can no longer be
+        sent from it. The DNS records can then be deleted.
+      tags: [domains]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/DomainId"
+      responses:
+        "204":
+          description: Removed.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/domains/{domain_id}/verify:
+    post:
+      operationId: verifyDomain
+      summary: Check a sending domain now
+      description: |
+        Looks up each DNS record and reports it as `found`, `missing` or
+        `wrong`, and asks Amazon SES whether it has verified the domain. The
+        domain is verified when every required record is found and SES
+        agrees. Checking a failed domain starts another 72 hours of background
+        checks; if SES had given up on its DKIM records, the domain is set up
+        again with new ones, and `records_changed` is true.
+      tags: [domains]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/DomainId"
+      responses:
+        "200":
+          description: The domain, as just checked.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Domain"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   securitySchemes:
     apiKey:
@@ -805,6 +986,112 @@ components:
       name: mg_session
       description: The web session cookie that `createSession` sets.
   schemas:
+    CreateDomainRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          maxLength: 253
+          description: The domain to send from, such as `example.com` or `news.example.com`. Internationalized names are stored in their ASCII (punycode) form.
+          examples: [example.com]
+    DomainStatus:
+      type: string
+      enum: [pending, verified, failed]
+      description: |
+        `pending` until every required record is found and Amazon SES has
+        verified the domain; `verified` after that; `failed` when 72 hours of
+        checks passed without it.
+    DnsRecord:
+      type: object
+      required: [purpose, type, name, value, priority, required, status, found, detail]
+      properties:
+        purpose:
+          type: string
+          enum: [dkim, mail_from_mx, mail_from_spf, dmarc]
+        type:
+          type: string
+          enum: [CNAME, MX, TXT]
+        name:
+          type: string
+          description: The full record name, such as `abc._domainkey.example.com`.
+        value:
+          type: string
+        priority:
+          type: [integer, "null"]
+          description: The MX priority; null for other types.
+        required:
+          type: boolean
+          description: Whether the domain needs this record to verify. The DMARC record is only suggested.
+        status:
+          type: string
+          enum: [found, missing, wrong, unchecked]
+          description: What the last check found; `unchecked` before the first check.
+        found:
+          type: array
+          items:
+            type: string
+          description: The values the lookup returned, when there were any.
+        detail:
+          type: [string, "null"]
+          description: What is wrong, or why the lookup failed.
+    Domain:
+      type: object
+      required: [id, name, status, mail_from_domain, records, ses_status, created_at, last_checked_at, check_until, verified_at, failed_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          examples: [example.com]
+        status:
+          $ref: "#/components/schemas/DomainStatus"
+        mail_from_domain:
+          type: string
+          description: The MAIL FROM subdomain, where bounces go.
+          examples: [bounce.example.com]
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/DnsRecord"
+        ses_status:
+          type: [string, "null"]
+          description: |
+            Amazon SES's DKIM verification status at the last check: `pending`,
+            `success`, `failed`, `temporary_failure`, `not_started`, or
+            `not_found` and `unknown` when SES couldn't say. Null before the
+            first check.
+        created_at:
+          type: string
+          format: date-time
+        last_checked_at:
+          type: [string, "null"]
+          format: date-time
+        check_until:
+          type: string
+          format: date-time
+          description: When background checks of a pending domain stop.
+        verified_at:
+          type: [string, "null"]
+          format: date-time
+        failed_at:
+          type: [string, "null"]
+          format: date-time
+        records_changed:
+          type: boolean
+          description: Only in `verifyDomain` responses. True when the domain was set up again with new DKIM records, which replace the old ones in DNS.
+    DomainList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Domain"
+        next_cursor:
+          type: [string, "null"]
     CreateApiKeyRequest:
       type: object
       required: [name, scope]
@@ -1252,6 +1539,14 @@ components:
       description: The `next_cursor` of the previous page. Leave it out for the first page.
       schema:
         type: string
+    DomainId:
+      name: domain_id
+      in: path
+      required: true
+      description: The domain's `id`.
+      schema:
+        type: string
+        format: uuid
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -1281,6 +1576,19 @@ components:
       schema:
         type: integer
   responses:
+    DomainConflict:
+      description: |
+        `domain_exists`: this account already has the domain.
+        `domain_taken`: another mailgoose account has it.
+        `domain_unavailable`: the domain is already set up in Amazon SES
+        outside mailgoose's reach. Contact support for either of the last two.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     ValidationFailed:
       description: |
         The request is well formed but a field is wrong. `code` says which
@@ -1295,8 +1603,9 @@ components:
             $ref: "#/components/schemas/Error"
     ServiceUnavailable:
       description: |
-        `service_unavailable`: a dependency the endpoint needs (the database)
-        isn't configured or reachable. Try again later.
+        `service_unavailable`: a dependency the endpoint needs (the database,
+        or Amazon SES for domains) isn't configured or reachable. Try again
+        later.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

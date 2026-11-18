@@ -9,13 +9,16 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
+	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
@@ -25,6 +28,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/config"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/db"
+	"github.com/gremlin-technologies/mailgoose/internal/domains"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 	"github.com/gremlin-technologies/mailgoose/internal/web"
@@ -106,6 +110,9 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		srv.DB = pool
 		srv.Idempotency = api.PGIdempotencyStore{DB: pool}
 		srv.Credits = &credits.Ledger{DB: pool}
+		if srv.Domains, err = newDomains(ctx, cfg, pool, log); err != nil {
+			return err
+		}
 
 		if cfg.SystemSendingDomain == "" {
 			log.Warn("SYSTEM_SENDING_DOMAIN is not set; sign-up and sign-in will answer 503")
@@ -129,11 +136,47 @@ func serve(ctx context.Context, log *slog.Logger) error {
 				return err
 			}
 		}
+		// Pending domains are re-checked here rather than in the worker,
+		// because only the API's role may read SES identities.
+		go srv.Domains.RecheckLoop(ctx, time.Minute)
 	} else {
 		log.Warn("no database configured; /readyz will report unavailable and idempotency keys stay in memory")
 	}
 
 	return api.ListenAndServe(ctx, log, ":"+strconv.Itoa(cfg.Port), srv.Handler())
+}
+
+// newDomains builds the sending-domains service: real SES and DNS, or with
+// MAIL_SENDER=fake an in-memory SES and a DNS that answers every record, so
+// local domains verify without touching AWS.
+func newDomains(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*domains.Service, error) {
+	tags, err := domains.ParseTags(cfg.SESIdentityTag)
+	if err != nil {
+		return nil, err
+	}
+	svc := &domains.Service{
+		DB:               pool,
+		Region:           cfg.AWSRegion,
+		IdentityTags:     tags,
+		ConfigurationSet: cfg.SESConfigurationSet,
+		Reserved:         []string{"mailgoose.app"},
+		Log:              log,
+	}
+	if cfg.SystemSendingDomain != "" {
+		svc.Reserved = append(svc.Reserved, cfg.SystemSendingDomain)
+	}
+	if cfg.MailSender == "fake" {
+		svc.SES = &domains.FakeSES{}
+		svc.DNS = domains.LocalDNS{Region: cfg.AWSRegion}
+		return svc, nil
+	}
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.AWSRegion))
+	if err != nil {
+		return nil, fmt.Errorf("load AWS config: %w", err)
+	}
+	svc.SES = sesv2.NewFromConfig(awsCfg)
+	svc.DNS = net.DefaultResolver
+	return svc, nil
 }
 
 func runWorker(ctx context.Context, log *slog.Logger) error {
