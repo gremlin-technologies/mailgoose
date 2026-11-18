@@ -7,3 +7,5 @@
 # An entry for an operation that has a command, or that isn't in the spec,
 # fails the check too, so the list stays short and true.
 getReadiness: Load balancer and deploy probe. `mailgoose status` checks liveness through getHealth.
+createSignup: Signing up accepts the terms and the anti-spam policy, which the person does on the web page. CLI access comes after, with `mailgoose login` (MG-10).
+createSession: Web session sign-in; it sets a browser cookie. The CLI signs in with `mailgoose login` (MG-10).

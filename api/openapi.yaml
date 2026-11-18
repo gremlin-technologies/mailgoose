@@ -19,7 +19,8 @@ info:
     - Requests are rate limited per API key; responses carry `RateLimit-Limit`
       and `RateLimit-Remaining`, and a 429 carries `Retry-After`.
 
-    Only the health endpoints exist so far. Authentication is a placeholder:
+    Sign-up and code sign-in exist; the web app uses a session cookie. API
+    authentication is a placeholder:
     API keys sent as bearer tokens, which the CLI reads from `MAILGOOSE_API_KEY`
     or its config file. The real scheme (key format, scopes such as
     draft-only) comes with the auth ticket.
@@ -76,6 +77,83 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /v1/signup:
+    post:
+      operationId: createSignup
+      summary: Sign up
+      description: |
+        Creates a pending account on the free plan and emails a six-digit code
+        to the address; using the code with `createSession` activates the
+        account. The answer is the same whether or not the address already
+        has an account: an address with an active account gets a sign-in code
+        instead, and no new account is made. A repeat within a minute sends no
+        new email.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+      responses:
+        "202":
+          description: A code is on its way, if the address can receive one.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeSent"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/sessions:
+    post:
+      operationId: createSession
+      summary: Start a web session with an emailed code
+      description: |
+        Uses a code from `createSignup` (and, later, sign-in). On success a
+        pending account becomes active, and the response sets an HttpOnly
+        session cookie that lasts 30 days. A wrong, expired, used or locked
+        code gets the same `invalid_code` error; a code stops working after 5
+        wrong tries.
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionRequest"
+      responses:
+        "201":
+          description: Signed in.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+            Set-Cookie:
+              description: "`mg_session`, HttpOnly, Secure, SameSite=Lax, 30 days."
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   securitySchemes:
     apiKey:
@@ -83,6 +161,91 @@ components:
       scheme: bearer
       description: "Placeholder. An account API key, sent as `Authorization: Bearer <key>`."
   schemas:
+    SignupRequest:
+      type: object
+      required: [email, account_name, accepted_terms]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          examples: [pat@example.com]
+        account_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          examples: [Pat's Bakery]
+        accepted_terms:
+          type: boolean
+          description: |
+            Must be `true`: the person accepts the terms of service and the
+            anti-spam policy. Anything else is a 422 `terms_not_accepted`.
+    CodeSent:
+      type: object
+      required: [status, message]
+      properties:
+        status:
+          type: string
+          enum: [code_sent]
+        message:
+          type: string
+          examples: ["Check your email for a six-digit code."]
+    SessionRequest:
+      type: object
+      required: [email, code]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        code:
+          type: string
+          description: The six-digit code from the email.
+          examples: ["042917"]
+    Session:
+      type: object
+      required: [account, user, expires_at]
+      properties:
+        account:
+          $ref: "#/components/schemas/Account"
+        user:
+          $ref: "#/components/schemas/User"
+        expires_at:
+          type: string
+          format: date-time
+    Account:
+      type: object
+      required: [id, name, status, plan, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum: [pending, active]
+        plan:
+          type: string
+          enum: [free, paid]
+        created_at:
+          type: string
+          format: date-time
+    User:
+      type: object
+      required: [id, email, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        created_at:
+          type: string
+          format: date-time
     Health:
       type: object
       required: [status, version]
@@ -166,6 +329,29 @@ components:
       schema:
         type: integer
   responses:
+    ValidationFailed:
+      description: |
+        The request is well formed but a field is wrong. `code` says which
+        problem, such as `invalid_email`, `invalid_account_name`,
+        `terms_not_accepted` or `invalid_code`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ServiceUnavailable:
+      description: |
+        `service_unavailable`: a dependency the endpoint needs (the database)
+        isn't configured or reachable. Try again later.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     BadRequest:
       description: The request is malformed.
       headers:

@@ -4,6 +4,26 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Sign-up details (MG-07, reversible defaults)
+
+Picked while building MG-07; easy to change, and the owner may want to.
+
+- **Codes come from `signin@` the system sending domain**, named "mailgoose",
+  with the code in the subject so it shows in a notification.
+- **Signing up with an address that already has an active account** gets the
+  same 202 and an email with a sign-in code instead of a new account. A
+  pending account that signs up again gets a new code and takes the newer
+  account name. One email a minute per address at most.
+- **Codes are hashed with Argon2id** (OWASP minimum settings, per-code salt).
+  A six-digit code has only a million values, so a plain hash would fall to
+  brute force if the table leaked.
+- **Sign-up and the web session endpoint have no CLI command** and are in
+  `api/cli-parity-allowlist.yaml`: signing up accepts the terms on the web
+  page, and the CLI gets access through `mailgoose login` (MG-10). Open for the
+  owner: should agents be able to start a sign-up from the CLI?
+- **A wrong code locks after 5 tries** already in MG-07, since the endpoint
+  exists now; MG-08 adds the per-address and per-IP limits on requesting codes.
+
 ## 2026-11-18: OpenAPI pipeline (MG-02, reversible defaults)
 
 Picked while building MG-02; technical and easy to change.

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
+	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 )
 
@@ -37,6 +38,9 @@ type Server struct {
 	Idempotency IdempotencyStore
 	// RateLimitPerMinute is the per-key request limit. Zero turns it off.
 	RateLimitPerMinute int
+	// Auth signs people up and in. Nil (no database) makes those endpoints
+	// answer 503.
+	Auth *auth.Service
 	// Now is the clock for rate limits and idempotency; nil means time.Now.
 	Now func() time.Time
 }

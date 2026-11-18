@@ -21,8 +21,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api"
+	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/config"
 	"github.com/gremlin-technologies/mailgoose/internal/db"
+	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 	"github.com/gremlin-technologies/mailgoose/internal/worker"
 )
@@ -91,6 +93,21 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		defer pool.Close()
 		srv.DB = pool
 		srv.Idempotency = api.PGIdempotencyStore{DB: pool}
+
+		if cfg.SystemSendingDomain == "" {
+			log.Warn("SYSTEM_SENDING_DOMAIN is not set; sign-up and sign-in will answer 503")
+		} else {
+			sender, err := mail.New(ctx, cfg)
+			if err != nil {
+				return err
+			}
+			srv.Auth = &auth.Service{
+				DB:   pool,
+				Mail: sender,
+				From: mail.Address{Name: "mailgoose", Email: "signin@" + cfg.SystemSendingDomain},
+				Log:  log,
+			}
+		}
 
 		if cfg.MigrateOnStart {
 			if err := migrateUp(ctx, log, pool); err != nil {
