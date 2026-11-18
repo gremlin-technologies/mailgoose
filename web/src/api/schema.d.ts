@@ -683,6 +683,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/imports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List CSV imports
+         * @description The account's imports, newest first.
+         */
+        get: operations["listImports"];
+        put?: never;
+        /**
+         * Import contacts from a CSV file
+         * @description Checks the file and queues it; the import runs in the background, so
+         *     poll `getImport` until `status` is `done` or `failed`. The first row
+         *     is the header. Columns for email, first name and last name are found
+         *     from common headers ("Email", "Email Address", "First Name",
+         *     "Surname" and so on), or named in `columns`. Commas, semicolons and
+         *     tabs all work as separators.
+         *
+         *     Imported contacts are `unconfirmed` unless `permission_confirmed` says
+         *     the account has these people's permission to mail them; then they're
+         *     `subscribed`. Rows with a bad address, a repeat of an earlier row, an
+         *     address already in the account, a suppressed address, or one past a
+         *     free account's 500-contact limit are skipped and listed by
+         *     `listImportSkippedRows`. Existing contacts aren't changed.
+         *
+         *     An account's first import of more than 2,000 rows, or an import that
+         *     would take a free account past its limit, is held for review: its
+         *     contacts are added but not mailed until mailgoose approves it.
+         *
+         *     The request body can be up to 10 MB.
+         */
+        post: operations["createImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/imports/{import_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an import
+         * @description How far the import got, what it added and how many rows it skipped, by reason.
+         */
+        get: operations["getImport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/imports/{import_id}/skipped-rows": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List an import's skipped rows
+         * @description Every row the import didn't add and why, in file order.
+         */
+        get: operations["listImportSkippedRows"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -800,6 +882,111 @@ export interface components {
             matched: number;
             /** @description How many gained or lost the tag; the others already had it or didn't. */
             changed: number;
+        };
+        /** @description The header of the column each field comes from. Leave a field out to have it found from common headers. */
+        ImportColumns: {
+            /** @example Email Address */
+            email?: string;
+            first_name?: string;
+            last_name?: string;
+        };
+        CreateImportRequest: {
+            /**
+             * @description The whole CSV file as UTF-8 text, header row first.
+             * @example email,first_name
+             *     pat@example.com,Pat
+             */
+            csv: string;
+            /** @description The file's name, to tell imports apart later. */
+            file_name?: string | null;
+            columns?: components["schemas"]["ImportColumns"];
+            /** @description Tags, by name or id, put on every contact the import adds. They must exist. */
+            tags?: string[];
+            /**
+             * @description True says the account has these people's permission to mail them,
+             *     so they're added `subscribed`. Otherwise they're `unconfirmed` and
+             *     don't receive campaigns.
+             * @default false
+             */
+            permission_confirmed: boolean;
+        };
+        /** @enum {string} */
+        ImportStatus: "queued" | "running" | "done" | "failed";
+        /**
+         * @description `invalid_email`: not an email address. `invalid_row`: the row
+         *     couldn't be read as CSV (a stray quote, say). `duplicate`: the same
+         *     address is on an earlier row. `exists`: the account already has the
+         *     contact, which is left as it is. `suppressed`: the address
+         *     unsubscribed, bounced or complained before. `over_limit`: a free
+         *     account was full.
+         * @enum {string}
+         */
+        SkipReason: "invalid_email" | "invalid_row" | "duplicate" | "exists" | "suppressed" | "over_limit";
+        Import: {
+            /** Format: uuid */
+            id: string;
+            file_name: string | null;
+            status: components["schemas"]["ImportStatus"];
+            /**
+             * @description The status added contacts get; `subscribed` only when permission was confirmed.
+             * @enum {string}
+             */
+            contact_status: "subscribed" | "unconfirmed";
+            /** @description The header of the column each field came from; null when the file has none. */
+            columns: {
+                email: string;
+                first_name: string | null;
+                last_name: string | null;
+            };
+            /** @description Tags put on the added contacts. A tag deleted since is left out. */
+            tags: components["schemas"]["TagRef"][];
+            /** @description Contact rows in the file, not counting the header and blank rows. */
+            total_rows: number;
+            processed_rows: number;
+            /** @description Contacts added. */
+            imported: number;
+            skipped: number;
+            skipped_by_reason: {
+                invalid_email: number;
+                invalid_row: number;
+                duplicate: number;
+                exists: number;
+                suppressed: number;
+                over_limit: number;
+            };
+            /**
+             * @description A `held` import's contacts aren't mailed until mailgoose approves it.
+             * @enum {string}
+             */
+            review: "none" | "held" | "approved";
+            /**
+             * @description Why a held import is held: `large_first_import` or
+             *     `over_contact_limit`.
+             */
+            hold_reason: string | null;
+            /** @description Why a `failed` import stopped. */
+            error: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
+        };
+        ImportList: {
+            data: components["schemas"]["Import"][];
+            next_cursor: string | null;
+        };
+        SkippedRow: {
+            /** @description The row's line in the file, where the header is 1. */
+            row: number;
+            /** @description The email cell as written; empty when the row couldn't be read. */
+            email: string;
+            reason: components["schemas"]["SkipReason"];
+        };
+        SkippedRowList: {
+            data: components["schemas"]["SkippedRow"][];
+            next_cursor: string | null;
         };
         CreateDomainRequest: {
             /**
@@ -1218,6 +1405,33 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /**
+         * @description The file can't be imported, and nothing was queued. `code` says why:
+         *     `no_rows`, `no_email_column` (name the column in `columns.email`),
+         *     `invalid_mapping` (a named column isn't in the header),
+         *     `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes),
+         *     `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found` or
+         *     `too_many_tags`.
+         */
+        ImportRefused: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description `request_too_large`: the request body is over the operation's limit. */
+        RequestTooLarge: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description `contact_exists`: the account already has a contact with that address. */
         ContactConflict: {
             headers: {
@@ -1370,6 +1584,8 @@ export interface components {
         ContactId: string;
         /** @description The tag's `id`. */
         TagId: string;
+        /** @description The import's `id`. */
+        ImportId: string;
         /**
          * @description Makes a retry safe. A repeat with the same key and request within 24
          *     hours returns the stored response instead of running again; the same
@@ -2562,6 +2778,131 @@ export interface operations {
             403: components["responses"]["CrossOrigin"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listImports: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of imports. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateImportRequest"];
+            };
+        };
+        responses: {
+            /** @description The import, queued. */
+            202: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Import"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            413: components["responses"]["RequestTooLarge"];
+            422: components["responses"]["ImportRefused"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The import's `id`. */
+                import_id: components["parameters"]["ImportId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The import. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Import"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listImportSkippedRows: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The import's `id`. */
+                import_id: components["parameters"]["ImportId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of skipped rows. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkippedRowList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

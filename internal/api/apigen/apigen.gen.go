@@ -362,6 +362,99 @@ func (e HealthStatus) Valid() bool {
 	}
 }
 
+// Defines values for ImportContactStatus.
+const (
+	ImportContactStatusSubscribed  ImportContactStatus = "subscribed"
+	ImportContactStatusUnconfirmed ImportContactStatus = "unconfirmed"
+)
+
+// Valid indicates whether the value is a known member of the ImportContactStatus enum.
+func (e ImportContactStatus) Valid() bool {
+	switch e {
+	case ImportContactStatusSubscribed:
+		return true
+	case ImportContactStatusUnconfirmed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImportReview.
+const (
+	ImportReviewApproved ImportReview = "approved"
+	ImportReviewHeld     ImportReview = "held"
+	ImportReviewNone     ImportReview = "none"
+)
+
+// Valid indicates whether the value is a known member of the ImportReview enum.
+func (e ImportReview) Valid() bool {
+	switch e {
+	case ImportReviewApproved:
+		return true
+	case ImportReviewHeld:
+		return true
+	case ImportReviewNone:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImportStatus.
+const (
+	ImportStatusDone    ImportStatus = "done"
+	ImportStatusFailed  ImportStatus = "failed"
+	ImportStatusQueued  ImportStatus = "queued"
+	ImportStatusRunning ImportStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the ImportStatus enum.
+func (e ImportStatus) Valid() bool {
+	switch e {
+	case ImportStatusDone:
+		return true
+	case ImportStatusFailed:
+		return true
+	case ImportStatusQueued:
+		return true
+	case ImportStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SkipReason.
+const (
+	SkipReasonDuplicate    SkipReason = "duplicate"
+	SkipReasonExists       SkipReason = "exists"
+	SkipReasonInvalidEmail SkipReason = "invalid_email"
+	SkipReasonInvalidRow   SkipReason = "invalid_row"
+	SkipReasonOverLimit    SkipReason = "over_limit"
+	SkipReasonSuppressed   SkipReason = "suppressed"
+)
+
+// Valid indicates whether the value is a known member of the SkipReason enum.
+func (e SkipReason) Valid() bool {
+	switch e {
+	case SkipReasonDuplicate:
+		return true
+	case SkipReasonExists:
+		return true
+	case SkipReasonInvalidEmail:
+		return true
+	case SkipReasonInvalidRow:
+		return true
+	case SkipReasonOverLimit:
+		return true
+	case SkipReasonSuppressed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateContactRequestStatus.
 const (
 	UpdateContactRequestStatusSubscribed   UpdateContactRequestStatus = "subscribed"
@@ -612,6 +705,29 @@ type CreateDomainRequest struct {
 	Name string `json:"name"`
 }
 
+// CreateImportRequest defines model for CreateImportRequest.
+type CreateImportRequest struct {
+	// Columns The header of the column each field comes from. Leave a field out to have it found from common headers.
+	Columns *ImportColumns `json:"columns,omitempty"`
+
+	// Csv The whole CSV file as UTF-8 text, header row first.
+	//
+	// Examples: email,first_name
+	// pat@example.com,Pat
+	Csv string `json:"csv"`
+
+	// FileName The file's name, to tell imports apart later.
+	FileName *string `json:"file_name,omitempty"`
+
+	// PermissionConfirmed True says the account has these people's permission to mail them,
+	// so they're added `subscribed`. Otherwise they're `unconfirmed` and
+	// don't receive campaigns.
+	PermissionConfirmed *bool `json:"permission_confirmed,omitempty"`
+
+	// Tags Tags, by name or id, put on every contact the import adds. They must exist.
+	Tags *[]string `json:"tags,omitempty"`
+}
+
 // CreateTagRequest defines model for CreateTagRequest.
 type CreateTagRequest struct {
 	// Name Unique in the account, ignoring case; one line, no commas.
@@ -849,6 +965,77 @@ type Health struct {
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
+// Import defines model for Import.
+type Import struct {
+	// Columns The header of the column each field came from; null when the file has none.
+	Columns struct {
+		Email     string  `json:"email"`
+		FirstName *string `json:"first_name"`
+		LastName  *string `json:"last_name"`
+	} `json:"columns"`
+
+	// ContactStatus The status added contacts get; `subscribed` only when permission was confirmed.
+	ContactStatus ImportContactStatus `json:"contact_status"`
+	CreatedAt     time.Time           `json:"created_at"`
+
+	// Error Why a `failed` import stopped.
+	Error      *string    `json:"error"`
+	FileName   *string    `json:"file_name"`
+	FinishedAt *time.Time `json:"finished_at"`
+
+	// HoldReason Why a held import is held: `large_first_import` or
+	// `over_contact_limit`.
+	HoldReason *string `json:"hold_reason"`
+	Id         string  `json:"id"`
+
+	// Imported Contacts added.
+	Imported      int `json:"imported"`
+	ProcessedRows int `json:"processed_rows"`
+
+	// Review A `held` import's contacts aren't mailed until mailgoose approves it.
+	Review          ImportReview `json:"review"`
+	Skipped         int          `json:"skipped"`
+	SkippedByReason struct {
+		Duplicate    int `json:"duplicate"`
+		Exists       int `json:"exists"`
+		InvalidEmail int `json:"invalid_email"`
+		InvalidRow   int `json:"invalid_row"`
+		OverLimit    int `json:"over_limit"`
+		Suppressed   int `json:"suppressed"`
+	} `json:"skipped_by_reason"`
+	StartedAt *time.Time   `json:"started_at"`
+	Status    ImportStatus `json:"status"`
+
+	// Tags Tags put on the added contacts. A tag deleted since is left out.
+	Tags []TagRef `json:"tags"`
+
+	// TotalRows Contact rows in the file, not counting the header and blank rows.
+	TotalRows int `json:"total_rows"`
+}
+
+// ImportContactStatus The status added contacts get; `subscribed` only when permission was confirmed.
+type ImportContactStatus string
+
+// ImportReview A `held` import's contacts aren't mailed until mailgoose approves it.
+type ImportReview string
+
+// ImportColumns The header of the column each field comes from. Leave a field out to have it found from common headers.
+type ImportColumns struct {
+	// Email Examples: Email Address
+	Email     *string `json:"email,omitempty"`
+	FirstName *string `json:"first_name,omitempty"`
+	LastName  *string `json:"last_name,omitempty"`
+}
+
+// ImportList defines model for ImportList.
+type ImportList struct {
+	Data       []Import `json:"data"`
+	NextCursor *string  `json:"next_cursor"`
+}
+
+// ImportStatus defines model for ImportStatus.
+type ImportStatus string
+
 // PollDeviceLoginRequest defines model for PollDeviceLoginRequest.
 type PollDeviceLoginRequest struct {
 	DeviceCode string `json:"device_code"`
@@ -892,6 +1079,37 @@ type SignupRequest struct {
 
 	// Email Examples: pat@example.com
 	Email string `json:"email"`
+}
+
+// SkipReason `invalid_email`: not an email address. `invalid_row`: the row
+// couldn't be read as CSV (a stray quote, say). `duplicate`: the same
+// address is on an earlier row. `exists`: the account already has the
+// contact, which is left as it is. `suppressed`: the address
+// unsubscribed, bounced or complained before. `over_limit`: a free
+// account was full.
+type SkipReason string
+
+// SkippedRow defines model for SkippedRow.
+type SkippedRow struct {
+	// Email The email cell as written; empty when the row couldn't be read.
+	Email string `json:"email"`
+
+	// Reason `invalid_email`: not an email address. `invalid_row`: the row
+	// couldn't be read as CSV (a stray quote, say). `duplicate`: the same
+	// address is on an earlier row. `exists`: the account already has the
+	// contact, which is left as it is. `suppressed`: the address
+	// unsubscribed, bounced or complained before. `over_limit`: a free
+	// account was full.
+	Reason SkipReason `json:"reason"`
+
+	// Row The row's line in the file, where the header is 1.
+	Row int `json:"row"`
+}
+
+// SkippedRowList defines model for SkippedRowList.
+type SkippedRowList struct {
+	Data       []SkippedRow `json:"data"`
+	NextCursor *string      `json:"next_cursor"`
 }
 
 // Tag defines model for Tag.
@@ -1000,6 +1218,9 @@ type DomainId = string
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
 
+// ImportId defines model for ImportId.
+type ImportId = string
+
 // Limit defines model for Limit.
 type Limit = int
 
@@ -1027,8 +1248,14 @@ type Forbidden = Error
 // IdempotencyConflict defines model for IdempotencyConflict.
 type IdempotencyConflict = Error
 
+// ImportRefused defines model for ImportRefused.
+type ImportRefused = Error
+
 // NotFound defines model for NotFound.
 type NotFound = Error
+
+// RequestTooLarge defines model for RequestTooLarge.
+type RequestTooLarge = Error
 
 // ServiceUnavailable defines model for ServiceUnavailable.
 type ServiceUnavailable = Error
@@ -1096,6 +1323,24 @@ type ListDomainsParams struct {
 	Name *string `form:"name,omitempty" json:"name,omitempty"`
 }
 
+// ListImportsParams defines parameters for ListImports.
+type ListImportsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListImportSkippedRowsParams defines parameters for ListImportSkippedRows.
+type ListImportSkippedRowsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListTagsParams defines parameters for ListTags.
 type ListTagsParams struct {
 	// Limit Items per page.
@@ -1131,6 +1376,9 @@ type PollDeviceLoginJSONRequestBody = PollDeviceLoginRequest
 
 // CreateDomainJSONRequestBody defines body for CreateDomain for application/json ContentType.
 type CreateDomainJSONRequestBody = CreateDomainRequest
+
+// CreateImportJSONRequestBody defines body for CreateImport for application/json ContentType.
+type CreateImportJSONRequestBody = CreateImportRequest
 
 // CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
 type CreateSessionJSONRequestBody = SessionRequest
@@ -1233,6 +1481,18 @@ type ServerInterface interface {
 	// VerifyDomain Check a sending domain now
 	// (POST /v1/domains/{domain_id}/verify)
 	VerifyDomain(w http.ResponseWriter, r *http.Request, domainId DomainId)
+	// ListImports List CSV imports
+	// (GET /v1/imports)
+	ListImports(w http.ResponseWriter, r *http.Request, params ListImportsParams)
+	// CreateImport Import contacts from a CSV file
+	// (POST /v1/imports)
+	CreateImport(w http.ResponseWriter, r *http.Request)
+	// GetImport Get an import
+	// (GET /v1/imports/{import_id})
+	GetImport(w http.ResponseWriter, r *http.Request, importId ImportId)
+	// ListImportSkippedRows List an import's skipped rows
+	// (GET /v1/imports/{import_id}/skipped-rows)
+	ListImportSkippedRows(w http.ResponseWriter, r *http.Request, importId ImportId, params ListImportSkippedRowsParams)
 	// DeleteAllSessions Sign out everywhere
 	// (DELETE /v1/sessions)
 	DeleteAllSessions(w http.ResponseWriter, r *http.Request)
@@ -1960,6 +2220,147 @@ func (siw *ServerInterfaceWrapper) VerifyDomain(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListImports operation middleware
+func (siw *ServerInterfaceWrapper) ListImports(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListImportsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListImports(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateImport operation middleware
+func (siw *ServerInterfaceWrapper) CreateImport(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateImport(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetImport operation middleware
+func (siw *ServerInterfaceWrapper) GetImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "import_id" -------------
+	var importId ImportId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "import_id", r.PathValue("import_id"), &importId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "import_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetImport(w, r, importId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListImportSkippedRows operation middleware
+func (siw *ServerInterfaceWrapper) ListImportSkippedRows(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "import_id" -------------
+	var importId ImportId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "import_id", r.PathValue("import_id"), &importId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "import_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListImportSkippedRowsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListImportSkippedRows(w, r, importId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteAllSessions operation middleware
 func (siw *ServerInterfaceWrapper) DeleteAllSessions(w http.ResponseWriter, r *http.Request) {
 
@@ -2394,6 +2795,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/tags/{tag_id}", wrapper.RenameTag)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tags/{tag_id}/contacts", wrapper.TagContacts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tags/{tag_id}/contacts/remove", wrapper.UntagContacts)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports", wrapper.ListImports)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports", wrapper.CreateImport)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}", wrapper.GetImport)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}/skipped-rows", wrapper.ListImportSkippedRows)
 
 	return m
 }

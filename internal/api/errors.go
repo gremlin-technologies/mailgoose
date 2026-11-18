@@ -132,18 +132,23 @@ const MaxBodyBytes = 1 << 20
 // bodies over MaxBodyBytes are errors, so typos in field names surface as 400s
 // rather than being silently ignored.
 func DecodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
+	return decodeJSON(w, r, v, MaxBodyBytes)
+}
+
+// decodeJSON is DecodeJSON with its own body limit.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any, maxBytes int64) error {
 	if ct := r.Header.Get("Content-Type"); ct != "" && !strings.HasPrefix(ct, "application/json") {
 		return BadRequest("unsupported_content_type", "Send the request body as JSON.").
 			WithHint("Set Content-Type: application/json.")
 	}
-	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, MaxBodyBytes))
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBytes))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
 		var tooBig *http.MaxBytesError
 		switch {
 		case errors.As(err, &tooBig):
 			return &Error{Status: http.StatusRequestEntityTooLarge, Code: "request_too_large",
-				Message: fmt.Sprintf("The request body is over %d bytes.", MaxBodyBytes)}
+				Message: fmt.Sprintf("The request body is over %d bytes.", maxBytes)}
 		case errors.Is(err, io.EOF):
 			return BadRequest("invalid_json", "The request body is empty.").WithHint("Send a JSON object.")
 		default:

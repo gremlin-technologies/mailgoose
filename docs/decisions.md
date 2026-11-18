@@ -4,6 +4,36 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: CSV import details (MG-17, reversible defaults)
+
+Picked while building MG-17; easy to change.
+
+- **Limits per import:** a file up to 10 MB and 100,000 rows, and at most 20
+  tags. Larger files are refused (413 or 422 `file_too_large`,
+  `too_many_rows`). The request body limit is raised for this one route only.
+- **Imports wait in Postgres, not SQS.** The worker claims queued imports with
+  a lease and works in batches of 1,000 rows, so a crash or deploy picks up
+  where it stopped; after three stops the import fails. No infra change.
+- **Existing contacts are skipped as `exists`** and left as they are, tags
+  included. Repeats inside the file are `duplicate`, suppressed addresses are
+  `suppressed`, rows that won't parse are `invalid_row`. A quote that never
+  closes refuses the whole file, since every later row would be wrong.
+- **Over the free limit:** rows past 500 counted contacts are skipped as
+  `over_limit` and the import is held. Paid accounts have no cap.
+- **"First import"** means no earlier import that didn't fail. A first import
+  over 2,000 rows is held. Held contacts are stored but aren't campaign
+  recipients until an admin approves them (MG-34). The contacts API doesn't
+  show a held flag yet.
+- **Columns:** named with `columns` (`--map` in the CLI) or detected from
+  common headers; the delimiter (comma, semicolon or tab) is detected from the
+  header line and a UTF-8 BOM is ignored. Names over 100 characters are cut,
+  not skipped.
+- **Tags must exist**, by name or id. A per-row tags column waits for MG-18's
+  export round trip.
+- **The file is deleted when the import finishes; the skipped-row report is
+  kept**, and it holds the raw addresses. MG-18's erase should remove an
+  address from it too.
+
 ## 2026-11-18: Contact limit details (MG-16, reversible defaults)
 
 Picked while building MG-16; easy to change.

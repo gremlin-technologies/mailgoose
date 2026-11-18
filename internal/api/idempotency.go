@@ -154,7 +154,7 @@ func (m *Idempotency) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxBodyBytes))
+		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, bodyLimit(r)))
 		if err != nil {
 			WriteError(w, &Error{Status: http.StatusRequestEntityTooLarge, Code: "request_too_large", Message: "The request body is too large."})
 			return

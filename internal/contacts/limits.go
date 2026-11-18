@@ -44,26 +44,36 @@ func (s *Service) CountedContacts(ctx context.Context, accountID string) (int, e
 // account would take a free account over FreeContactLimit. It locks the
 // account row, so concurrent adds to one account wait for each other and
 // can't both slip under the limit. Import (MG-17) and form signups (MG-36)
-// call it too, in the transaction that adds the contacts.
+// call it, or lockedCount, in the transaction that adds the contacts.
 func ensureRoom(ctx context.Context, tx pgx.Tx, accountID string, adding int) error {
 	if adding <= 0 {
 		return nil
 	}
+	count, capped, err := lockedCount(ctx, tx, accountID)
+	if err != nil {
+		return err
+	}
+	if capped && count+adding > FreeContactLimit {
+		return &LimitError{Limit: FreeContactLimit, Count: count}
+	}
+	return nil
+}
+
+// lockedCount locks the account row and returns its counted contacts.
+// capped is false for paid accounts, which have no cap.
+func lockedCount(ctx context.Context, tx pgx.Tx, accountID string) (count int, capped bool, err error) {
 	var plan string
 	if err := tx.QueryRow(ctx, `SELECT plan FROM accounts WHERE id = $1 FOR UPDATE`, accountID).Scan(&plan); err != nil {
-		return fmt.Errorf("read plan: %w", err)
+		return 0, false, fmt.Errorf("read plan: %w", err)
 	}
 	if plan != "free" {
-		return nil
+		return 0, false, nil
 	}
 	var n int
 	if err := tx.QueryRow(ctx, `
 		SELECT count(*) FROM contacts WHERE account_id = $1 AND status IN ('unconfirmed', 'subscribed')`,
 		accountID).Scan(&n); err != nil {
-		return err
+		return 0, false, err
 	}
-	if n+adding > FreeContactLimit {
-		return &LimitError{Limit: FreeContactLimit, Count: n}
-	}
-	return nil
+	return n, true, nil
 }

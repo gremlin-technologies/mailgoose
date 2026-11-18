@@ -1422,6 +1422,157 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/imports:
+    get:
+      operationId: listImports
+      summary: List CSV imports
+      description: The account's imports, newest first.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of imports.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: createImport
+      summary: Import contacts from a CSV file
+      description: |
+        Checks the file and queues it; the import runs in the background, so
+        poll `getImport` until `status` is `done` or `failed`. The first row
+        is the header. Columns for email, first name and last name are found
+        from common headers ("Email", "Email Address", "First Name",
+        "Surname" and so on), or named in `columns`. Commas, semicolons and
+        tabs all work as separators.
+
+        Imported contacts are `unconfirmed` unless `permission_confirmed` says
+        the account has these people's permission to mail them; then they're
+        `subscribed`. Rows with a bad address, a repeat of an earlier row, an
+        address already in the account, a suppressed address, or one past a
+        free account's 500-contact limit are skipped and listed by
+        `listImportSkippedRows`. Existing contacts aren't changed.
+
+        An account's first import of more than 2,000 rows, or an import that
+        would take a free account past its limit, is held for review: its
+        contacts are added but not mailed until mailgoose approves it.
+
+        The request body can be up to 10 MB.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateImportRequest"
+      responses:
+        "202":
+          description: The import, queued.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Import"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "422":
+          $ref: "#/components/responses/ImportRefused"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/imports/{import_id}:
+    get:
+      operationId: getImport
+      summary: Get an import
+      description: How far the import got, what it added and how many rows it skipped, by reason.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ImportId"
+      responses:
+        "200":
+          description: The import.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Import"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/imports/{import_id}/skipped-rows:
+    get:
+      operationId: listImportSkippedRows
+      summary: List an import's skipped rows
+      description: Every row the import didn't add and why, in file order.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ImportId"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of skipped rows.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SkippedRowList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   securitySchemes:
     apiKey:
@@ -1635,6 +1786,173 @@ components:
         changed:
           type: integer
           description: How many gained or lost the tag; the others already had it or didn't.
+    ImportColumns:
+      type: object
+      additionalProperties: false
+      description: The header of the column each field comes from. Leave a field out to have it found from common headers.
+      properties:
+        email:
+          type: string
+          maxLength: 200
+          examples: [Email Address]
+        first_name:
+          type: string
+          maxLength: 200
+        last_name:
+          type: string
+          maxLength: 200
+    CreateImportRequest:
+      type: object
+      required: [csv]
+      additionalProperties: false
+      properties:
+        csv:
+          type: string
+          description: The whole CSV file as UTF-8 text, header row first.
+          examples: ["email,first_name\npat@example.com,Pat\n"]
+        file_name:
+          type: [string, "null"]
+          maxLength: 255
+          description: The file's name, to tell imports apart later.
+        columns:
+          $ref: "#/components/schemas/ImportColumns"
+        tags:
+          type: array
+          maxItems: 20
+          description: Tags, by name or id, put on every contact the import adds. They must exist.
+          items:
+            type: string
+        permission_confirmed:
+          type: boolean
+          default: false
+          description: |
+            True says the account has these people's permission to mail them,
+            so they're added `subscribed`. Otherwise they're `unconfirmed` and
+            don't receive campaigns.
+    ImportStatus:
+      type: string
+      enum: [queued, running, done, failed]
+    SkipReason:
+      type: string
+      enum: [invalid_email, invalid_row, duplicate, exists, suppressed, over_limit]
+      description: |
+        `invalid_email`: not an email address. `invalid_row`: the row
+        couldn't be read as CSV (a stray quote, say). `duplicate`: the same
+        address is on an earlier row. `exists`: the account already has the
+        contact, which is left as it is. `suppressed`: the address
+        unsubscribed, bounced or complained before. `over_limit`: a free
+        account was full.
+    Import:
+      type: object
+      required: [id, file_name, status, contact_status, columns, tags, total_rows, processed_rows, imported, skipped,
+        skipped_by_reason, review, hold_reason, error, created_at, started_at, finished_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        file_name:
+          type: [string, "null"]
+        status:
+          $ref: "#/components/schemas/ImportStatus"
+        contact_status:
+          type: string
+          enum: [subscribed, unconfirmed]
+          description: The status added contacts get; `subscribed` only when permission was confirmed.
+        columns:
+          type: object
+          required: [email, first_name, last_name]
+          description: The header of the column each field came from; null when the file has none.
+          properties:
+            email:
+              type: string
+            first_name:
+              type: [string, "null"]
+            last_name:
+              type: [string, "null"]
+        tags:
+          type: array
+          description: Tags put on the added contacts. A tag deleted since is left out.
+          items:
+            $ref: "#/components/schemas/TagRef"
+        total_rows:
+          type: integer
+          description: Contact rows in the file, not counting the header and blank rows.
+        processed_rows:
+          type: integer
+        imported:
+          type: integer
+          description: Contacts added.
+        skipped:
+          type: integer
+        skipped_by_reason:
+          type: object
+          required: [invalid_email, invalid_row, duplicate, exists, suppressed, over_limit]
+          properties:
+            invalid_email:
+              type: integer
+            invalid_row:
+              type: integer
+            duplicate:
+              type: integer
+            exists:
+              type: integer
+            suppressed:
+              type: integer
+            over_limit:
+              type: integer
+        review:
+          type: string
+          enum: [none, held, approved]
+          description: A `held` import's contacts aren't mailed until mailgoose approves it.
+        hold_reason:
+          type: [string, "null"]
+          description: |
+            Why a held import is held: `large_first_import` or
+            `over_contact_limit`.
+        error:
+          type: [string, "null"]
+          description: Why a `failed` import stopped.
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: [string, "null"]
+          format: date-time
+        finished_at:
+          type: [string, "null"]
+          format: date-time
+    ImportList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Import"
+        next_cursor:
+          type: [string, "null"]
+    SkippedRow:
+      type: object
+      required: [row, email, reason]
+      properties:
+        row:
+          type: integer
+          description: The row's line in the file, where the header is 1.
+        email:
+          type: string
+          description: The email cell as written; empty when the row couldn't be read.
+        reason:
+          $ref: "#/components/schemas/SkipReason"
+    SkippedRowList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SkippedRow"
+        next_cursor:
+          type: [string, "null"]
     CreateDomainRequest:
       type: object
       required: [name]
@@ -2218,6 +2536,14 @@ components:
       schema:
         type: string
         format: uuid
+    ImportId:
+      name: import_id
+      in: path
+      required: true
+      description: The import's `id`.
+      schema:
+        type: string
+        format: uuid
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -2261,6 +2587,30 @@ components:
         `contact_limit`: a free account holds at most 500 counted contacts
         (unconfirmed and subscribed). `details.limit` is the limit and
         `details.count` the counted contacts now. Paid accounts have no cap.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ImportRefused:
+      description: |
+        The file can't be imported, and nothing was queued. `code` says why:
+        `no_rows`, `no_email_column` (name the column in `columns.email`),
+        `invalid_mapping` (a named column isn't in the header),
+        `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes),
+        `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found` or
+        `too_many_tags`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RequestTooLarge:
+      description: "`request_too_large`: the request body is over the operation's limit."
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
