@@ -1,0 +1,75 @@
+package config
+
+import (
+	"strings"
+	"testing"
+)
+
+func env(m map[string]string) func(string) string {
+	return func(k string) string { return m[k] }
+}
+
+func TestLoadDefaults(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.Port != 8080 || cfg.AppEnv != "local" || cfg.AWSRegion != "us-east-2" {
+		t.Errorf("unexpected defaults: %+v", cfg)
+	}
+	if !cfg.MigrateOnStart {
+		t.Error("MigrateOnStart should default to true")
+	}
+	if cfg.Database.Configured() {
+		t.Error("database should not be configured")
+	}
+}
+
+// The names below are the ones infra/modules/stack sets on the ECS tasks.
+func TestLoadFromStackEnv(t *testing.T) {
+	cfg, err := load(env(map[string]string{
+		"APP_ENV":               "staging",
+		"AWS_REGION":            "us-east-2",
+		"PORT":                  "8080",
+		"DATABASE_HOST":         "db.example.internal",
+		"DATABASE_PORT":         "5432",
+		"DATABASE_NAME":         "mailgoose",
+		"DATABASE_SECRET_ARN":   "arn:aws:secretsmanager:us-east-2:123:secret:rds!db-abc",
+		"SEND_QUEUE_URL":        "https://sqs.us-east-2.amazonaws.com/123/mailgoose-staging-send",
+		"SES_EVENTS_QUEUE_URL":  "https://sqs.us-east-2.amazonaws.com/123/mailgoose-staging-ses-events",
+		"SES_CONFIGURATION_SET": "mailgoose-staging",
+		"SYSTEM_SENDING_DOMAIN": "mail.staging.mailgoose.app",
+		"SES_IDENTITY_TAG":      "Environment=staging",
+		"PUBLIC_BASE_URL":       "https://api.staging.mailgoose.app",
+		"APP_SECRETS_JSON":      `{"STRIPE_SECRET_KEY":"sk_test","N":3}`,
+	}))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !cfg.Database.UsesSecret() {
+		t.Error("expected Secrets Manager credentials")
+	}
+	if cfg.Database.SSLMode != "require" {
+		t.Errorf("SSLMode = %q, want require", cfg.Database.SSLMode)
+	}
+	if cfg.AppSecrets["STRIPE_SECRET_KEY"] != "sk_test" || cfg.AppSecrets["N"] != "3" {
+		t.Errorf("AppSecrets = %v", cfg.AppSecrets)
+	}
+}
+
+func TestLoadErrors(t *testing.T) {
+	_, err := load(env(map[string]string{
+		"PORT":             "eighty",
+		"MIGRATE_ON_START": "maybe",
+		"APP_SECRETS_JSON": "[]",
+		"DATABASE_HOST":    "db",
+	}))
+	if err == nil {
+		t.Fatal("expected errors")
+	}
+	for _, want := range []string{"PORT", "MIGRATE_ON_START", "APP_SECRETS_JSON", "DATABASE_SECRET_ARN"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %s", err, want)
+		}
+	}
+}

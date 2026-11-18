@@ -1,0 +1,91 @@
+openapi: 3.1.0
+info:
+  title: mailgoose API
+  version: 0.1.0
+  description: |
+    One REST API shared by the web app, the CLI and AI agents. Every endpoint
+    here gets a matching `mailgoose` CLI command.
+
+    Only the health endpoints exist so far. Authentication is a placeholder:
+    API keys sent as bearer tokens, which the CLI reads from `MAILGOOSE_TOKEN`
+    or its config file. The real scheme (key format, scopes such as
+    draft-only) comes with the auth ticket.
+servers:
+  - url: https://api.staging.mailgoose.app
+    description: Staging
+  - url: http://localhost:8080
+    description: Local
+security:
+  - apiKey: []
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Liveness check
+      description: |
+        Says the process is up. The load balancer polls it, so it does not
+        check the database. The CLI's `mailgoose status` calls it.
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: The API is up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /readyz:
+    get:
+      operationId: getReadiness
+      summary: Readiness check
+      description: Like /healthz, and also checks that the database answers.
+      tags: [health]
+      security: []
+      responses:
+        "200":
+          description: The API and its database are up.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: The database is not configured or not reachable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: "Placeholder. An account API key, sent as `Authorization: Bearer <key>`."
+  schemas:
+    Health:
+      type: object
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+          examples: [v0.1.0]
+        commit:
+          type: string
+          examples: [a1b2c3d]
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Stable, machine-readable error code.
+              examples: [database_unavailable]
+            message:
+              type: string
+              description: Human-readable explanation.
