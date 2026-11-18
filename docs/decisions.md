@@ -65,6 +65,12 @@ Decided by Carlton in the PRD scoping call and follow-ups.
   - One REST API with an OpenAPI spec, shared by the editor, CLI and agents
   - Designs stored as JSON blocks, rendered server-side to email-safe HTML
 
+- **One AWS account** for staging and prod. The two are kept apart by name
+  prefixes, separate state keys and VPCs, and `Environment` tags that scope each
+  environment's SES permissions. Separate accounts can come later if needed.
+- **No standby (Multi-AZ) for the production database for now.** Turn it on once
+  there are paying customers; it roughly doubles the database cost.
+
 ### Process
 
 - Dev plan and ticketing come after the PRD, not yet.
@@ -77,8 +83,6 @@ Decided by Carlton in the PRD scoping call and follow-ups.
   way in?
 - Is the one-time-code check (see PRD, CLI requirements) the right way to
   enforce agent launch confirmation?
-- One AWS account, or separate accounts per environment?
-- Standby (Multi-AZ) for the production database?
 - SQS or River on Postgres for the send queue?
 - One audience with tags, or separate lists per account?
 - Ship an MCP server alongside the CLI, or CLI only?

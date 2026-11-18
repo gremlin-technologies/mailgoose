@@ -43,6 +43,26 @@ All plain AWS provider resources, no community modules, so every line is
 readable and `terraform validate` works offline. The VPC could be swapped for
 `terraform-aws-modules/vpc/aws` later if it grows.
 
+## One AWS account
+
+Staging and prod live in the same AWS account (decided Nov 17, 2026). They stay
+apart by:
+
+- **Names:** every resource starts with `mailgoose-staging-` or `mailgoose-prod-`.
+- **State:** separate keys in the state bucket (`envs/staging/...`, `envs/prod/...`).
+- **Network:** separate VPCs (`10.10.0.0/16` and `10.20.0.0/16`).
+- **Tags:** the providers tag everything `Environment = staging | prod`. Each
+  environment's app can only create, change, delete and send from SES identities
+  tagged with its own environment, and only its own configuration set may publish
+  to its own SES events topic.
+- **IAM:** task roles, deploy roles and secrets are per environment and scoped by ARN.
+
+What they still share, by the nature of one account: the SES sending quota, sandbox
+status and account-level suppression list, the ECR image repository, and the GitHub
+OIDC provider. A staging test that bounces a lot can dent prod's SES reputation, so
+send staging tests to SES's mailbox simulator addresses where possible. Moving to
+separate accounts later means a second state bucket and re-running global per account.
+
 ## Cost notes (rough, before email volume)
 
 Per environment, at the defaults: ALB ~$17/mo, RDS db.t4g.micro ~$12/mo
@@ -116,7 +136,9 @@ for an admin user or SSO role in the target account.
   connections and re-read on an auth failure, rather than once at startup.
 - **Customer sending domains** are not in Terraform. The API creates SES
   identities for them at runtime (its task role allows `ses:CreateEmailIdentity`
-  and friends) and shows the customer the DKIM records to add.
+  and friends) and shows the customer the DKIM records to add. Every identity it
+  creates must carry the tag in `SES_IDENTITY_TAG` (`Environment=<env>`), or IAM
+  refuses the create, and later reads, updates and sends.
 - **Every send passes the configuration set** (`SES_CONFIGURATION_SET`) so events
   reach the events queue.
 - Containers run with a read-only root filesystem; write temp files to a mounted

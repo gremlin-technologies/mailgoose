@@ -51,6 +51,14 @@ data "aws_iam_policy_document" "events_topic" {
       variable = "aws:SourceAccount"
       values   = [data.aws_caller_identity.current.account_id]
     }
+
+    # Staging and prod share the account, so only this environment's
+    # configuration set may publish to this environment's topic.
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceArn"
+      values   = [aws_sesv2_configuration_set.this.arn]
+    }
   }
 }
 
