@@ -73,3 +73,19 @@ func TestLoadErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestRateLimitSetting(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || cfg.RateLimitPerMinute != 600 {
+		t.Fatalf("default = %d, %v; want 600", cfg.RateLimitPerMinute, err)
+	}
+	cfg, err = load(env(map[string]string{"RATE_LIMIT_PER_MINUTE": "0"}))
+	if err != nil || cfg.RateLimitPerMinute != 0 {
+		t.Fatalf("0 should turn limiting off: %d, %v", cfg.RateLimitPerMinute, err)
+	}
+	for _, bad := range []string{"-1", "lots"} {
+		if _, err := load(env(map[string]string{"RATE_LIMIT_PER_MINUTE": bad})); err == nil {
+			t.Errorf("RATE_LIMIT_PER_MINUTE=%q should be an error", bad)
+		}
+	}
+}
