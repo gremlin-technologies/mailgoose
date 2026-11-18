@@ -34,6 +34,7 @@ not decisions.
   credits by default, yearly card billing as the alternative.
 - Stack: Go for backend, workers and CLI; TypeScript and React for the web app
   and editor; AWS from day one.
+- AWS Region: us-east-2 for everything Regional (the project allows no other).
 - Recommended, not yet confirmed: RDS Postgres, ECS Fargate, SQS, SES with SNS
   events, Terraform, one REST API with an OpenAPI spec shared by editor, CLI and
   agents, designs stored as JSON blocks rendered server-side.
