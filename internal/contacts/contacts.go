@@ -479,9 +479,10 @@ func (s *Service) List(ctx context.Context, accountID string, f Filter, after *C
 // Recipients returns up to limit of the account's contacts that may be sent
 // a campaign, in id order after afterID ("" for the first batch). Campaign
 // sending (MG-30) selects its audience only through here, so an
-// unconfirmed, unsubscribed, bounced or complained contact is never mailed.
+// unconfirmed, unsubscribed, bounced or complained contact is never mailed,
+// and neither is one from an import held for review.
 func (s *Service) Recipients(ctx context.Context, accountID, afterID string, limit int) ([]*Contact, error) {
-	q := `SELECT ` + columns + ` FROM contacts WHERE account_id = $1 AND status = '` + StatusSubscribed + `'`
+	q := `SELECT ` + columns + ` FROM contacts WHERE account_id = $1 AND status = '` + StatusSubscribed + `' AND held_import_id IS NULL`
 	args := []any{accountID}
 	if afterID != "" {
 		args = append(args, afterID)

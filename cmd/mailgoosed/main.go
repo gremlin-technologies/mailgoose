@@ -65,7 +65,7 @@ func newRoot(log *slog.Logger) *cobra.Command {
 		},
 		&cobra.Command{
 			Use:   "worker",
-			Short: "Drain the send and SES events queues",
+			Short: "Drain the send and SES events queues, and run CSV imports",
 			Args:  cobra.NoArgs,
 			RunE:  func(cmd *cobra.Command, _ []string) error { return runWorker(cmd.Context(), log) },
 		},
@@ -202,7 +202,26 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 		}
 		w.SQS = sqs.NewFromConfig(awsCfg)
 	}
-	return w.Run(ctx)
+
+	// CSV imports wait in Postgres, not SQS, so they need no queue.
+	if !cfg.Database.Configured() {
+		log.Warn("no database configured; CSV imports won't run")
+		return w.Run(ctx)
+	}
+	pool, err := openDB(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	imports := &contacts.Service{DB: pool}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		imports.RunImports(ctx, log.With("job", "import"), 2*time.Second)
+	}()
+	err = w.Run(ctx)
+	<-done
+	return err
 }
 
 func newMigrateCmd(log *slog.Logger) *cobra.Command {

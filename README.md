@@ -293,6 +293,19 @@ mailgoose contacts list --tag vip
 mailgoose tags delete vip --yes   # says how many contacts lost it
 ```
 
+Import a CSV with `mailgoose import`. Columns are detected from common headers
+or named with `--map`; contacts are `unconfirmed` unless you pass
+`--permission-confirmed`. Imports run in the worker (`contacts.Service.RunImports`), and
+the result lists every skipped row with its reason. A first import over 2,000
+rows, or one that would pass the free limit, is held: its contacts aren't
+campaign recipients until an admin approves it.
+
+```sh
+mailgoose import contacts.csv --map email=Email --tag newsletter --permission-confirmed --wait
+mailgoose import status <id>      # progress, then skipped rows
+mailgoose import list
+```
+
 ## Sending domains
 
 Campaigns go out from an address at a domain the customer owns.
