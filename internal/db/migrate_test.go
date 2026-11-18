@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/pressly/goose/v3"
 
 	"github.com/gremlin-technologies/mailgoose/internal/config"
@@ -103,6 +104,17 @@ func TestOpenRefetchesSecretAfterAuthFailure(t *testing.T) {
 	}
 
 	ctx := context.Background()
+
+	// A Postgres with trust auth accepts any password, so a stale one can't be
+	// simulated. Detect that directly, so a regression in the rotation code
+	// still fails below instead of turning into a skip.
+	wrong := *u
+	wrong.User = url.UserPassword(u.User.Username(), "definitely-not-the-password")
+	if conn, err := pgx.Connect(ctx, wrong.String()); err == nil {
+		_ = conn.Close(ctx)
+		t.Skip("this Postgres accepts any password (trust auth)")
+	}
+
 	pool, err := Open(ctx, cfg, src)
 	if err != nil {
 		t.Fatal(err)
@@ -110,7 +122,7 @@ func TestOpenRefetchesSecretAfterAuthFailure(t *testing.T) {
 	defer pool.Close()
 
 	if err := pool.Ping(ctx); err == nil {
-		t.Skip("this Postgres accepts any password (trust auth), so a stale password can't be simulated")
+		t.Fatal("expected the stale password to fail")
 	}
 	if err := pool.Ping(ctx); err != nil {
 		t.Fatalf("second ping should use the re-read secret: %v", err)
