@@ -910,6 +910,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/emails/{email_id}/html": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Replace an html email's markup
+         * @description Swaps an html email's markup for `html`, whole, after checking it.
+         *     Errors stop the import and nothing changes: malformed markup,
+         *     script elements, forms, frames, embedded objects, external
+         *     stylesheets, inline event handlers, `javascript:` addresses, no
+         *     `{{unsubscribe_url}}`, or more than 102 KB. CSS that major clients
+         *     drop is only a warning; the import goes ahead and returns them.
+         *     Every problem has the line it's on. Settings stay as they are.
+         *     When sent, an email that doesn't show the account's postal address
+         *     gets it in a footer at the bottom. `version` works as in
+         *     updateEmail.
+         */
+        put: operations["importEmailHtml"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/emails/{email_id}/duplicate": {
         parameters: {
             query?: never;
@@ -1870,7 +1899,7 @@ export interface components {
             settings: components["schemas"]["EmailSettings"];
             blocks: components["schemas"]["Block"][];
         };
-        /** @description An html email's settings and its markup (MG-22 adds the checks for sending). */
+        /** @description An html email's settings and its markup. importEmailHtml lists the checks the markup must pass. */
         HtmlDocument: {
             /** @constant */
             schema_version: 1;
@@ -1927,6 +1956,24 @@ export interface components {
             /** @description The version you read. */
             version: number;
             document: components["schemas"]["EmailDocument"];
+        };
+        ImportEmailHtmlRequest: {
+            /** @description The version you read. */
+            version: number;
+            /** @description The whole markup. Over 102 KB is refused as `too_large`. */
+            html: string;
+        };
+        ImportEmailHtmlResult: {
+            email: components["schemas"]["Email"];
+            /** @description CSS that some clients drop; the email still sends. */
+            warnings: components["schemas"]["HtmlIssue"][];
+        };
+        HtmlIssue: {
+            /** @description The line it's on, counting from 1. */
+            line: number;
+            /** @enum {string} */
+            code: "malformed_markup" | "script" | "form" | "iframe" | "embedded_object" | "external_stylesheet" | "event_handler" | "javascript_url" | "missing_unsubscribe" | "too_large" | "unsupported_css";
+            message: string;
         };
         DuplicateEmailRequest: {
             name?: string;
@@ -2105,8 +2152,26 @@ export interface components {
          *     the place, such as `blocks[2].href`, and `details.path` holds it.
          *     `invalid_name` (empty or over 200 characters), `invalid_kind` (not
          *     blocks or html) or `kind_mismatch` (a document of the other kind).
+         *     `invalid_html`: an html document's markup has errors, listed in
+         *     `details.issues` as importEmailHtml describes; empty markup is
+         *     allowed.
          */
         InvalidEmail: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `invalid_html`: the markup has errors and nothing changed.
+         *     `details.issues` lists each, with its `line`, `code` and `message`;
+         *     `message` names the first. `kind_mismatch`: the email is a blocks
+         *     email, which has no markup.
+         */
+        InvalidHtml: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -3882,6 +3947,42 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["EmailVersionConflict"];
             422: components["responses"]["InvalidEmail"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    importEmailHtml: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ImportEmailHtmlRequest"];
+            };
+        };
+        responses: {
+            /** @description The email as saved, with its new version, and any warnings. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportEmailHtmlResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["EmailVersionConflict"];
+            422: components["responses"]["InvalidHtml"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

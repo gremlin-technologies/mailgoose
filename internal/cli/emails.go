@@ -465,7 +465,7 @@ the document replaces the email as it is now.`,
 	})
 	del.Flags().BoolVar(&yes, "yes", false, "confirm the delete")
 
-	cmd.AddCommand(list, create, get, update, replace, duplicate, del, a.emailBlocksCmd())
+	cmd.AddCommand(list, create, get, update, replace, a.emailImportHTMLCmd(), duplicate, del, a.emailBlocksCmd())
 	return cmd
 }
 

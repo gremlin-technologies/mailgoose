@@ -1,0 +1,23 @@
+<!-- want: -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Spring menu</title>
+<style>
+  body { margin: 0; font-family: Georgia, serif; }
+  .btn { background: #825142; color: #fff; }
+</style>
+</head>
+<body>
+<table role="presentation" width="600">
+  <tr><td><h1>Spring is here, {{first_name|friend}}</h1></td></tr>
+  <tr><td><p>Fresh loaves every morning.<p>See you soon.</td></tr>
+  <tr><td><img src="https://cdn.example.com/loaf.png" alt="A loaf"><br/></td></tr>
+  <tr><td><a href="https://example.com" class="btn">Order</a></td></tr>
+</table>
+<!--[if mso]><table><tr><td><![endif]-->
+<p><a href="{{ unsubscribe_url }}">Unsubscribe</a></p>
+<!--[if mso]></td></tr></table><![endif]-->
+</body>
+</html>

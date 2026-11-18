@@ -36,7 +36,7 @@ func addedEmailFrom(body string) func(*testing.T, http.Handler) {
 
 var (
 	addedBlockEmail = addedEmailFrom(blockOpsEmail)
-	addedHTMLEmail  = addedEmailFrom(`{"name":"Plain","kind":"html","document":{"html":"<p>Hi</p>"}}`)
+	addedHTMLEmail  = addedEmailFrom(`{"name":"Plain","kind":"html","document":{"html":"<p>Hi</p><a href=\"{{unsubscribe_url}}\">Unsubscribe</a>"}}`)
 )
 
 func TestEmailBlocksFlow(t *testing.T) {

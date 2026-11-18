@@ -1,0 +1,20 @@
+<!-- want: -->
+<!-- warn: unsupported_css:6 unsupported_css:7 unsupported_css:8 unsupported_css:9 unsupported_css:10 unsupported_css:11 unsupported_css:13 unsupported_css:17 -->
+<html>
+<head>
+<style>
+  .hero { position: relative; }
+  .row { display: flex; }
+  .row > div { flex-grow: 1; }
+  :root { --brand: #825142; }
+  .b { color: var(--brand); }
+  @font-face { font-family: Goose; src: url(https://cdn.example.com/goose.woff2); }
+  .ok { color: #333; }
+  .spin { transform: rotate(3deg); animation: spin 1s; }
+</style>
+</head>
+<body>
+<img src="https://cdn.example.com/a.png" alt="" style="object-fit: cover; width: 100%">
+<a href="{{unsubscribe_url}}">Unsubscribe</a>
+</body>
+</html>

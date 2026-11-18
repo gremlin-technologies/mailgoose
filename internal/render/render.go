@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	// ErrNotBlocks means the email is html; MG-22 handles those.
+	// ErrNotBlocks means the email is html; CompileHTML handles those.
 	ErrNotBlocks = errors.New("only a blocks email can be rendered")
 	// ErrNoPostalAddress means the account has no postal address, which
 	// every footer must carry (CMP-2).
