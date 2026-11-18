@@ -9,6 +9,8 @@ data "aws_route53_zone" "main" {
 }
 
 data "aws_iam_openid_connect_provider" "github" {
+  count = var.enable_github_deploy ? 1 : 0
+
   url = "https://token.actions.githubusercontent.com"
 }
 
@@ -312,9 +314,10 @@ module "worker" {
 
 module "deploy_role" {
   source = "../github-deploy-role"
+  count  = var.enable_github_deploy ? 1 : 0
 
   name                = "${local.name}-github-deploy"
-  oidc_provider_arn   = data.aws_iam_openid_connect_provider.github.arn
+  oidc_provider_arn   = data.aws_iam_openid_connect_provider.github[0].arn
   github_repository   = var.github_repository
   allowed_subjects    = var.github_deploy_subjects
   ecr_repository_arns = [data.aws_ecr_repository.app.arn]

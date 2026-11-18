@@ -40,5 +40,5 @@ output "ecs_cluster_name" {
 }
 
 output "github_deploy_role_arn" {
-  value = module.deploy_role.role_arn
+  value = one(module.deploy_role[*].role_arn)
 }

@@ -3,10 +3,27 @@
 Terraform for running mailgoose on AWS: a Go API and Go workers on ECS Fargate,
 Postgres on RDS, SQS for send jobs, SES for delivery, behind an ALB with TLS.
 
-Nothing here has been applied to any AWS account yet. Placeholders to replace
-before the first apply: `domain = "example.com"` in each `terraform.tfvars`,
+Applied so far: `bootstrap` (state bucket `mailgoose-tfstate-680484232605`),
+`global`, and `envs/staging`. Prod has not been applied.
+
 Everything runs in `us-east-2`, the Region assigned to Carlton's AWS project.
 Regional resources can't be created in any other Region.
+
+## DNS
+
+`mailgoose.app` is registered at GoDaddy, and its DNS stays there: it carries
+live Microsoft 365 email (MX, SPF, verification TXT) and the website. Route 53
+hosts only the delegated zone `staging.mailgoose.app`, created by `global`
+(`hosted_zone_name`). GoDaddy has an NS record for `staging` pointing at that
+zone's four name servers (`terraform output hosted_zone_name_servers` in
+`global`). Everything staging creates (`api.staging`, `app.staging`,
+`mail.staging`, DKIM, MAIL FROM, DMARC) lives in that zone.
+
+Prod uses `api.`, `app.` and `mail.mailgoose.app`, which aren't under one
+subdomain. Before prod's first apply, either move all of mailgoose.app's DNS
+to Route 53 (copy every GoDaddy record first, M365 ones included) or delegate
+those names separately. Nothing in this Terraform touches the apex, `www`, or
+the M365 records.
 
 ## Layout
 
@@ -99,7 +116,8 @@ for an admin user or SSO role in the target account.
    `create_hosted_zone = false`.
 
 3. **Push a first image** tagged `bootstrap` to the ECR repo (or set
-   `api_desired_count`/`worker_desired_count` to 0 for the first apply).
+   `api_desired_count`/`worker_desired_count` to 0 for the first apply, as
+   staging currently does).
 
 4. **Staging, then prod.** Set `domain` in each `terraform.tfvars`.
    ```sh
