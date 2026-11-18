@@ -56,6 +56,9 @@ type Service struct {
 	Mail mgmail.Sender
 	// From is mailgoose's own sending address for codes.
 	From mgmail.Address
+	// LiveKeys makes new API keys start mg_live_ (production) instead of
+	// mg_test_.
+	LiveKeys bool
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 	Log *slog.Logger

@@ -105,7 +105,9 @@ func serve(ctx context.Context, log *slog.Logger) error {
 				DB:   pool,
 				Mail: sender,
 				From: mail.Address{Name: "mailgoose", Email: "signin@" + cfg.SystemSendingDomain},
-				Log:  log,
+				// Production keys start mg_live_; staging and local ones mg_test_.
+				LiveKeys: cfg.AppEnv == "prod",
+				Log:      log,
 			}
 		}
 

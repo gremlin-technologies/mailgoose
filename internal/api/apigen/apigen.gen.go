@@ -6,9 +6,12 @@
 package apigen
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/oapi-codegen/runtime"
 )
 
 // Defines values for AccountPlan.
@@ -41,6 +44,24 @@ func (e AccountStatus) Valid() bool {
 	case AccountStatusActive:
 		return true
 	case AccountStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ApiKeyScope.
+const (
+	ApiKeyScopeDraft ApiKeyScope = "draft"
+	ApiKeyScopeFull  ApiKeyScope = "full"
+)
+
+// Valid indicates whether the value is a known member of the ApiKeyScope enum.
+func (e ApiKeyScope) Valid() bool {
+	switch e {
+	case ApiKeyScopeDraft:
+		return true
+	case ApiKeyScopeFull:
 		return true
 	default:
 		return false
@@ -92,6 +113,35 @@ type AccountPlan string
 // AccountStatus defines model for Account.Status.
 type AccountStatus string
 
+// ApiKey defines model for ApiKey.
+type ApiKey struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// Hint The secret's prefix and last four characters, to tell keys apart.
+	//
+	// Examples: mg_live_…k3x9
+	Hint string `json:"hint"`
+	Id   string `json:"id"`
+
+	// LastUsedAt When the key last made a request, to the minute; null if never.
+	LastUsedAt *time.Time `json:"last_used_at"`
+	Name       string     `json:"name"`
+
+	// Scope `full` can do everything. `draft` can do everything except launch
+	// campaigns, change billing and manage keys.
+	Scope ApiKeyScope `json:"scope"`
+}
+
+// ApiKeyList defines model for ApiKeyList.
+type ApiKeyList struct {
+	Data       []ApiKey `json:"data"`
+	NextCursor *string  `json:"next_cursor"`
+}
+
+// ApiKeyScope `full` can do everything. `draft` can do everything except launch
+// campaigns, change billing and manage keys.
+type ApiKeyScope string
+
 // CodeSent defines model for CodeSent.
 type CodeSent struct {
 	// Message Examples: Check your email for a six-digit code.
@@ -101,6 +151,26 @@ type CodeSent struct {
 
 // CodeSentStatus defines model for CodeSent.Status.
 type CodeSentStatus string
+
+// CreateApiKeyRequest defines model for CreateApiKeyRequest.
+type CreateApiKeyRequest struct {
+	// Name Examples: Claude on my laptop
+	Name string `json:"name"`
+
+	// Scope `full` can do everything. `draft` can do everything except launch
+	// campaigns, change billing and manage keys.
+	Scope ApiKeyScope `json:"scope"`
+}
+
+// CreatedApiKey defines model for CreatedApiKey.
+type CreatedApiKey struct {
+	Key ApiKey `json:"key"`
+
+	// Secret The key itself. It's shown only in this response.
+	//
+	// Examples: mg_live_9w2k4m1qz7d8c3x5v6b0n1p2r3s4t5u6
+	Secret string `json:"secret"`
+}
 
 // Error defines model for Error.
 type Error struct {
@@ -195,8 +265,14 @@ type BadRequest = Error
 // CrossOrigin defines model for CrossOrigin.
 type CrossOrigin = Error
 
+// Forbidden defines model for Forbidden.
+type Forbidden = Error
+
 // IdempotencyConflict defines model for IdempotencyConflict.
 type IdempotencyConflict = Error
+
+// NotFound defines model for NotFound.
+type NotFound = Error
 
 // ServiceUnavailable defines model for ServiceUnavailable.
 type ServiceUnavailable = Error
@@ -209,6 +285,18 @@ type Unauthorized = Error
 
 // ValidationFailed defines model for ValidationFailed.
 type ValidationFailed = Error
+
+// ListApiKeysParams defines parameters for ListApiKeys.
+type ListApiKeysParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// CreateApiKeyJSONRequestBody defines body for CreateApiKey for application/json ContentType.
+type CreateApiKeyJSONRequestBody = CreateApiKeyRequest
 
 // CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
 type CreateSessionJSONRequestBody = SessionRequest
@@ -227,6 +315,15 @@ type ServerInterface interface {
 	// GetReadiness Readiness check
 	// (GET /readyz)
 	GetReadiness(w http.ResponseWriter, r *http.Request)
+	// ListApiKeys List API keys
+	// (GET /v1/api-keys)
+	ListApiKeys(w http.ResponseWriter, r *http.Request, params ListApiKeysParams)
+	// CreateApiKey Create an API key
+	// (POST /v1/api-keys)
+	CreateApiKey(w http.ResponseWriter, r *http.Request)
+	// RevokeApiKey Revoke an API key
+	// (DELETE /v1/api-keys/{key_id})
+	RevokeApiKey(w http.ResponseWriter, r *http.Request, keyId string)
 	// DeleteAllSessions Sign out everywhere
 	// (DELETE /v1/sessions)
 	DeleteAllSessions(w http.ResponseWriter, r *http.Request)
@@ -275,6 +372,92 @@ func (siw *ServerInterfaceWrapper) GetReadiness(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReadiness(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListApiKeys operation middleware
+func (siw *ServerInterfaceWrapper) ListApiKeys(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListApiKeysParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListApiKeys(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateApiKey operation middleware
+func (siw *ServerInterfaceWrapper) CreateApiKey(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateApiKey(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeApiKey operation middleware
+func (siw *ServerInterfaceWrapper) RevokeApiKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "key_id" -------------
+	var keyId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "key_id", r.PathValue("key_id"), &keyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "key_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeApiKey(w, r, keyId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -490,6 +673,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealth)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadiness)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/api-keys", wrapper.ListApiKeys)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/api-keys", wrapper.CreateApiKey)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/api-keys/{key_id}", wrapper.RevokeApiKey)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/signup", wrapper.CreateSignup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sign-in", wrapper.CreateSignIn)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions", wrapper.DeleteAllSessions)

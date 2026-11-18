@@ -76,8 +76,8 @@ type Idempotency struct {
 // DefaultIdempotencyScope scopes keys to the request's credentials (a hash of
 // the Authorization header). Requests without credentials skip idempotency:
 // scoping them by IP could hand one caller's response to another behind the
-// same address. When accounts and API keys exist (MG-09), the scope becomes
-// the account ID.
+// same address. The server uses callerIdempotencyScope, which scopes keys to
+// the account and the credential; this is its fallback.
 func DefaultIdempotencyScope(r *http.Request) string {
 	auth := r.Header.Get("Authorization")
 	if auth == "" {

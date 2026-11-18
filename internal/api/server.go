@@ -51,7 +51,7 @@ type Server struct {
 
 // Handler returns the API's routes wrapped in the shared middleware. From the
 // outside in: request ID, panic recovery, request log, rate limit,
-// cross-origin protection, idempotency, routes.
+// cross-origin protection, authentication, idempotency, routes.
 func (s *Server) Handler() http.Handler {
 	if s.Log == nil {
 		s.Log = slog.New(slog.DiscardHandler)
@@ -67,9 +67,10 @@ func (s *Server) Handler() http.Handler {
 	}
 
 	var h http.Handler = s.routes()
-	h = (&Idempotency{Store: store, Now: now, Log: s.Log}).Middleware(h)
+	h = (&Idempotency{Store: store, Now: now, Log: s.Log, Scope: callerIdempotencyScope}).Middleware(h)
+	h = s.authenticate(h, now)
 	h = s.crossOriginProtection(h)
-	h = (&RateLimiter{PerMinute: s.RateLimitPerMinute, Now: now}).Middleware(h)
+	h = (&RateLimiter{PerMinute: s.RateLimitPerMinute, Now: now, Key: sessionRateLimitKey}).Middleware(h)
 	h = s.logRequests(h)
 	h = s.recoverer(h)
 	return requestIDs(h)
