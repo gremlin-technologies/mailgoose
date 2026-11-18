@@ -1,8 +1,10 @@
 # mailgoose MVP tickets
 
 Approved by the owner on Nov 18, 2026. Each ticket is also a GitHub issue in
-this repo (title `MG-NN: ...`, body = its section below), with one GitHub
-milestone per milestone here. If a ticket changes, change both.
+this repo (title `MG-NN: ...`, body = its section below), issues #9 to #69 in
+order (issue number = MG number + 9). Labels give the milestone (`M0
+Foundation` ...), size, `owner merges` and `needs owner`. If a ticket changes,
+change both.
 
 Requirement IDs (AUTH-1, CAM-4 ...) point to `docs/mvp-requirements.md`.
 
