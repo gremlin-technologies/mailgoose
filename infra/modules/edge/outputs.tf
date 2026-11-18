@@ -8,6 +8,10 @@ output "alb_dns_name" {
 
 output "api_target_group_arn" {
   value = aws_lb_target_group.api.arn
+
+  # ECS refuses a target group that no listener uses yet, so anything taking
+  # this ARN (the API service) must wait for the HTTPS listener.
+  depends_on = [aws_lb_listener.https]
 }
 
 output "https_listener_arn" {
