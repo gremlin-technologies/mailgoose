@@ -27,6 +27,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
+	"github.com/gremlin-technologies/mailgoose/internal/reports"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
 	"github.com/gremlin-technologies/mailgoose/internal/tracking"
@@ -81,6 +82,8 @@ type Server struct {
 	// database, which makes tracked links answer 503 (the pixel still
 	// loads).
 	Tracking *tracking.Service
+	// Reports counts campaign results; nil answers 503.
+	Reports *reports.Service
 	// Admin backs the mailgoose staff tools (OPS-6); nil without a
 	// database, which makes them answer 503.
 	Admin *admin.Service

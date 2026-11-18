@@ -22,6 +22,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/reports"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
@@ -57,6 +58,7 @@ func liveAPI(t *testing.T) *harness {
 	srv.Sending = &sending.Service{DB: db, Campaigns: srv.Campaigns, Emails: srv.Emails, Settings: srv.Auth,
 		Domains: &domains.Service{DB: db}, Unsubscribe: srv.Unsubscribe, Mail: outbox}
 	srv.Signups = &signups.Service{DB: db, Forms: srv.Forms, Settings: srv.Auth, Domains: &domains.Service{DB: db}, Mail: outbox}
+	srv.Reports = &reports.Service{DB: db}
 	var accountID, userID string
 	if err := db.QueryRow(ctx, `INSERT INTO accounts (name, status) VALUES ('Test', 'active') RETURNING id`).Scan(&accountID); err != nil {
 		t.Fatal(err)

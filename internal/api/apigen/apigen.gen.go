@@ -1328,6 +1328,55 @@ type CampaignRecipients struct {
 	Tags []TagRef `json:"tags"`
 }
 
+// CampaignReport defines model for CampaignReport.
+type CampaignReport struct {
+	// Archived True when the raw events are gone and these are the numbers saved 12 months after launch.
+	Archived bool `json:"archived"`
+
+	// AsOf When these numbers were counted.
+	AsOf time.Time `json:"as_of"`
+
+	// Bounced Copies that hard bounced.
+	Bounced    int    `json:"bounced"`
+	CampaignId string `json:"campaign_id"`
+
+	// Clicks Null when the campaign wasn't tracked.
+	Clicks *ReportClicks `json:"clicks"`
+
+	// Complaints Copies marked as spam.
+	Complaints int `json:"complaints"`
+
+	// CreditsUsed Credits the campaign took. While it's sending, this includes the
+	// credits held for copies still to go.
+	CreditsUsed int `json:"credits_used"`
+
+	// Delivered Copies SES delivered to the receiving mail server.
+	Delivered int `json:"delivered"`
+
+	// LaunchedAt When it was launched; null for a draft.
+	LaunchedAt *time.Time `json:"launched_at"`
+
+	// Links Clicks per link, in the email's order; only links someone clicked.
+	Links []ReportLink `json:"links"`
+
+	// Opens Null when the campaign wasn't tracked.
+	Opens *ReportOpens `json:"opens"`
+
+	// Recipients Copies sent.
+	Recipients int `json:"recipients"`
+
+	// Status `draft` is being set up; `scheduled` is launched and waiting for its
+	// send time; `sending`, then `sent`. `cancelled` was stopped by the
+	// account, `paused` by us mid-send, and `failed` couldn't finish.
+	Status CampaignStatus `json:"status"`
+
+	// Tracking Whether opens and clicks were counted.
+	Tracking bool `json:"tracking"`
+
+	// Unsubscribes People who unsubscribed from this campaign's link.
+	Unsubscribes int `json:"unsubscribes"`
+}
+
 // CampaignStatus `draft` is being set up; `scheduled` is launched and waiting for its
 // send time; `sending`, then `sent`. `cancelled` was stopped by the
 // account, `paused` by us mid-send, and `failed` couldn't finish.
@@ -2366,6 +2415,40 @@ type ReplaceEmailDocumentRequest struct {
 
 	// Version The version you read.
 	Version int `json:"version"`
+}
+
+// ReportClicks defines model for ReportClicks.
+type ReportClicks struct {
+	// Total All clicks.
+	Total int `json:"total"`
+
+	// Unique Copies with at least one click.
+	Unique int `json:"unique"`
+}
+
+// ReportLink defines model for ReportLink.
+type ReportLink struct {
+	// Position The link's place among the email's links, from 1.
+	Position     int `json:"position"`
+	TotalClicks  int `json:"total_clicks"`
+	UniqueClicks int `json:"unique_clicks"`
+
+	// Url Where it goes. When merge tags make it differ between copies,
+	// only the site (scheme and host), so no one person's link shows.
+	Url string `json:"url"`
+
+	// Varies True when the address differs between copies.
+	Varies bool `json:"varies"`
+}
+
+// ReportOpens defines model for ReportOpens.
+type ReportOpens struct {
+	// Estimated Always true: mail apps that load images for privacy open every
+	// copy, and those that block images open none.
+	Estimated bool `json:"estimated"`
+
+	// Unique Copies opened at least once (or clicked).
+	Unique int `json:"unique"`
 }
 
 // RescheduleCampaignRequest defines model for RescheduleCampaignRequest.
@@ -3839,6 +3922,9 @@ type ServerInterface interface {
 	// LaunchCampaign Launch a campaign, after confirmation
 	// (POST /v1/campaigns/{campaign_id}/launch)
 	LaunchCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
+	// GetCampaignReport Get a campaign's report
+	// (GET /v1/campaigns/{campaign_id}/report)
+	GetCampaignReport(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
 	// RescheduleCampaign Move a scheduled campaign's send time
 	// (POST /v1/campaigns/{campaign_id}/reschedule)
 	RescheduleCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
@@ -4677,6 +4763,32 @@ func (siw *ServerInterfaceWrapper) LaunchCampaign(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.LaunchCampaign(w, r, campaignId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCampaignReport operation middleware
+func (siw *ServerInterfaceWrapper) GetCampaignReport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "campaign_id" -------------
+	var campaignId CampaignId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "campaign_id", r.PathValue("campaign_id"), &campaignId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "campaign_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCampaignReport(w, r, campaignId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6605,6 +6717,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/test", wrapper.TestCampaign)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/launch", wrapper.LaunchCampaign)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/cancel", wrapper.CancelCampaign)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/report", wrapper.GetCampaignReport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/reschedule", wrapper.RescheduleCampaign)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails", wrapper.ListEmails)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails", wrapper.CreateEmail)

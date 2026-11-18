@@ -1082,6 +1082,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/campaigns/{campaign_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a campaign's report
+         * @description What happened to a campaign (REP-1, REP-2): copies sent, delivered,
+         *     hard bounced, complaints, unsubscribes, unique opens (always an
+         *     estimate), unique and total clicks, credits used, and clicks per
+         *     link. It's counted from the stored events when asked, so it's as
+         *     fresh as they are (deliveries, bounces and complaints arrive from
+         *     SES within a minute or two). A draft's numbers are all 0. Raw events
+         *     are kept 12 months after launch; after that the report is the one
+         *     saved then, with `archived` true.
+         */
+        get: operations["getCampaignReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/campaigns/{campaign_id}/reschedule": {
         parameters: {
             query?: never;
@@ -2609,6 +2636,74 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        CampaignReport: {
+            /** Format: uuid */
+            campaign_id: string;
+            status: components["schemas"]["CampaignStatus"];
+            /**
+             * Format: date-time
+             * @description When it was launched; null for a draft.
+             */
+            launched_at: string | null;
+            /** @description Whether opens and clicks were counted. */
+            tracking: boolean;
+            /** @description Copies sent. */
+            recipients: number;
+            /** @description Copies SES delivered to the receiving mail server. */
+            delivered: number;
+            /** @description Copies that hard bounced. */
+            bounced: number;
+            /** @description Copies marked as spam. */
+            complaints: number;
+            /** @description People who unsubscribed from this campaign's link. */
+            unsubscribes: number;
+            /** @description Null when the campaign wasn't tracked. */
+            opens: components["schemas"]["ReportOpens"] | null;
+            /** @description Null when the campaign wasn't tracked. */
+            clicks: components["schemas"]["ReportClicks"] | null;
+            /**
+             * @description Credits the campaign took. While it's sending, this includes the
+             *     credits held for copies still to go.
+             */
+            credits_used: number;
+            /** @description Clicks per link, in the email's order; only links someone clicked. */
+            links: components["schemas"]["ReportLink"][];
+            /** @description True when the raw events are gone and these are the numbers saved 12 months after launch. */
+            archived: boolean;
+            /**
+             * Format: date-time
+             * @description When these numbers were counted.
+             */
+            as_of: string;
+        };
+        ReportOpens: {
+            /** @description Copies opened at least once (or clicked). */
+            unique: number;
+            /**
+             * @description Always true: mail apps that load images for privacy open every
+             *     copy, and those that block images open none.
+             */
+            estimated: boolean;
+        };
+        ReportClicks: {
+            /** @description Copies with at least one click. */
+            unique: number;
+            /** @description All clicks. */
+            total: number;
+        };
+        ReportLink: {
+            /** @description The link's place among the email's links, from 1. */
+            position: number;
+            /**
+             * @description Where it goes. When merge tags make it differ between copies,
+             *     only the site (scheme and host), so no one person's link shows.
+             */
+            url: string;
+            /** @description True when the address differs between copies. */
+            varies: boolean;
+            unique_clicks: number;
+            total_clicks: number;
         };
         CampaignLaunch: {
             /**
@@ -5300,6 +5395,35 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["CampaignConflict"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getCampaignReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The campaign's `id`. */
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CampaignReport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

@@ -292,6 +292,14 @@ var contractCases = map[string][]contractCase{
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/campaigns"))), req: bearer(campaignPath(http.MethodGet, "")), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(campaignPath(http.MethodGet, "")), status: http.StatusServiceUnavailable},
 	},
+	"getCampaignReport": {
+		{name: "found", server: draftKey(authServer), before: addedCampaign, req: bearer(campaignReportPath()), status: http.StatusOK},
+		{name: "bad id", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/campaigns/spring/report")), status: http.StatusBadRequest},
+		{name: "unknown", server: fullKey(authServer), req: bearer(campaignReportPath()), status: http.StatusNotFound},
+		{name: "no credentials", server: authServer, req: campaignReportPath(), status: http.StatusUnauthorized},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/campaigns"))), req: bearer(campaignReportPath()), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(campaignReportPath()), status: http.StatusServiceUnavailable},
+	},
 	"updateCampaign": {
 		{name: "changed", server: draftKey(authServer), before: addedCampaign, req: bearer(campaignPath(http.MethodPatch, `{"name":"Summer"}`)), status: http.StatusOK},
 		{name: "malformed", server: fullKey(authServer), before: addedCampaign, req: bearer(campaignPath(http.MethodPatch, `{"name":1}`)), status: http.StatusBadRequest},

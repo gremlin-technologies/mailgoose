@@ -23,6 +23,28 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Campaign reports (MG-38, reversible defaults)
+
+Picked while building MG-38; easy to change.
+
+- **Counted when asked**, not rolled up: the report is one query over the
+  stored events, so it's as fresh as they are (well inside 5 minutes).
+- **Recipients** are the copies actually sent; skipped ones aren't counted.
+- **Bounced** counts hard bounces only. Soft bounces that later delivered
+  aren't bounces.
+- **Unsubscribes** count people who used this campaign's link, once each.
+- **Credits used** is what the campaign holds net of what came back; while
+  it's sending that includes credits for copies still to go.
+- **Untracked campaigns** report opens and clicks as null, not 0.
+- **Per-link clicks** are by the link's position in the email. A link
+  whose address differs per copy (merge tags) shows only its site, so no
+  one person's link is in the report.
+- **12-month retention** is per campaign: once a finished campaign was
+  launched more than 12 months ago, its report is saved and all its raw
+  events deleted together, so its numbers don't drift. Other events are
+  deleted when they're 12 months old. Unsubscribe and consent records and
+  the send records themselves are not raw events and are kept.
+
 ## 2026-11-18: Open and click tracking (MG-37, reversible defaults)
 
 Picked while building MG-37; easy to change.
