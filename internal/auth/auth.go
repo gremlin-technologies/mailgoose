@@ -84,6 +84,8 @@ type SignUpInput struct {
 	Email         string
 	AccountName   string
 	AcceptedTerms bool
+	// IP is the client's address, for the per-IP limit on code requests.
+	IP string
 }
 
 // Account is an account as the API shows it.
@@ -172,6 +174,9 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 		return err
 	}
 	now := s.now()
+	if err := s.limitCodeRequests(ctx, email, in.IP, now); err != nil {
+		return err
+	}
 
 	tx, err := s.DB.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -226,6 +231,13 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 		}
 	}
 
+	return s.issueCode(ctx, tx, userID, accountID, storedEmail, purpose, now)
+}
+
+// issueCode stores a new code for the user, replacing any unused one, commits
+// tx and emails the code. If the email can't be sent the code is dropped, so
+// a retry isn't held back by ResendInterval.
+func (s *Service) issueCode(ctx context.Context, tx pgx.Tx, userID, accountID, to, purpose string, now time.Time) error {
 	code, err := newCode()
 	if err != nil {
 		return err
@@ -234,7 +246,6 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 	if _, err := rand.Read(salt); err != nil {
 		return err
 	}
-	// A new code replaces any earlier one.
 	if _, err := tx.Exec(ctx, `DELETE FROM auth_codes WHERE user_id = $1 AND used_at IS NULL`, userID); err != nil {
 		return fmt.Errorf("clear codes: %w", err)
 	}
@@ -248,9 +259,7 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
-
-	if _, err := s.Mail.Send(ctx, codeMessage(s.From, storedEmail, code, purpose, accountID)); err != nil {
-		// Drop the unsent code so a retry isn't held back by ResendInterval.
+	if _, err := s.Mail.Send(ctx, codeMessage(s.From, to, code, purpose, accountID)); err != nil {
 		if _, derr := s.deleteCode(context.WithoutCancel(ctx), codeID); derr != nil {
 			s.log().ErrorContext(ctx, "drop unsent code", "err", derr)
 		}
@@ -291,6 +300,24 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code string, meta Sessio
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	// Over the cap on wrong codes for this address, even the right code is
+	// refused until the window passes.
+	if err := lockWrongCodes(ctx, tx, email, now); err != nil {
+		hashCode(code, make([]byte, 16))
+		return nil, err
+	}
+	// wrong counts a wrong code against the address, whether or not it has an
+	// account or a live code, so the cap reveals nothing.
+	wrong := func() (*Session, error) {
+		if err := recordWrongCode(ctx, tx, email, now); err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return nil, ErrInvalidCode
+	}
+
 	var (
 		codeID     string
 		salt, hash []byte
@@ -314,23 +341,20 @@ func (s *Service) Verify(ctx context.Context, rawEmail, code string, meta Sessio
 		// Spend the same time as a real check so the answer's timing doesn't
 		// say whether the address has a code.
 		hashCode(code, make([]byte, 16))
-		return nil, ErrInvalidCode
+		return wrong()
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find code: %w", err)
 	}
 	if attempts >= MaxCodeAttempts {
 		hashCode(code, salt)
-		return nil, ErrInvalidCode
+		return wrong()
 	}
 	if subtle.ConstantTimeCompare(hashCode(code, salt), hash) != 1 {
 		if _, err := tx.Exec(ctx, `UPDATE auth_codes SET attempts = attempts + 1 WHERE id = $1`, codeID); err != nil {
 			return nil, fmt.Errorf("count attempt: %w", err)
 		}
-		if err := tx.Commit(ctx); err != nil {
-			return nil, err
-		}
-		return nil, ErrInvalidCode
+		return wrong()
 	}
 
 	if _, err := tx.Exec(ctx, `UPDATE auth_codes SET used_at = $2 WHERE id = $1`, codeID, now); err != nil {

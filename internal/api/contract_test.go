@@ -59,6 +59,33 @@ var contractCases = map[string][]contractCase{
 			req: sessionRequest("wrong"), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: sessionRequest("wrong"), status: http.StatusServiceUnavailable},
 	},
+	"createSignIn": {
+		{name: "known address", server: authServer, before: signedIn, req: jsonRequest(http.MethodPost, "/v1/sign-in", signInBody), status: http.StatusAccepted},
+		{name: "unknown address", server: authServer, req: jsonRequest(http.MethodPost, "/v1/sign-in", signInBody), status: http.StatusAccepted},
+		{name: "malformed", server: authServer, req: jsonRequest(http.MethodPost, "/v1/sign-in", `{"email":1}`), status: http.StatusBadRequest},
+		{name: "bad address", server: authServer, req: jsonRequest(http.MethodPost, "/v1/sign-in", `{"email":"not an address"}`), status: http.StatusUnprocessableEntity},
+		{name: "rate limited", server: rateLimitedAuthServer, before: send(jsonRequest(http.MethodPost, "/v1/sign-in", signInBody)),
+			req: jsonRequest(http.MethodPost, "/v1/sign-in", signInBody), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: jsonRequest(http.MethodPost, "/v1/sign-in", signInBody), status: http.StatusServiceUnavailable},
+	},
+	"getCurrentSession": {
+		{name: "signed in", server: authServer, before: signedIn, req: withSession(request(http.MethodGet, "/v1/sessions/current")), status: http.StatusOK},
+		{name: "no cookie", server: authServer, req: request(http.MethodGet, "/v1/sessions/current"), status: http.StatusUnauthorized},
+		{name: "unknown session", server: authServer, req: withSession(request(http.MethodGet, "/v1/sessions/current")), status: http.StatusUnauthorized},
+		{name: "no database", server: serverWith(nil), req: withSession(request(http.MethodGet, "/v1/sessions/current")), status: http.StatusServiceUnavailable},
+	},
+	"deleteCurrentSession": {
+		{name: "signed in", server: authServer, before: signedIn, req: withSession(request(http.MethodDelete, "/v1/sessions/current")), status: http.StatusNoContent},
+		{name: "no cookie", server: authServer, req: request(http.MethodDelete, "/v1/sessions/current"), status: http.StatusUnauthorized},
+		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(request(http.MethodDelete, "/v1/sessions/current"))), status: http.StatusForbidden},
+		{name: "no database", server: serverWith(nil), req: withSession(request(http.MethodDelete, "/v1/sessions/current")), status: http.StatusServiceUnavailable},
+	},
+	"deleteAllSessions": {
+		{name: "signed in", server: authServer, before: signedIn, req: withSession(request(http.MethodDelete, "/v1/sessions")), status: http.StatusNoContent},
+		{name: "no cookie", server: authServer, req: request(http.MethodDelete, "/v1/sessions"), status: http.StatusUnauthorized},
+		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(request(http.MethodDelete, "/v1/sessions"))), status: http.StatusForbidden},
+		{name: "no database", server: serverWith(nil), req: withSession(request(http.MethodDelete, "/v1/sessions")), status: http.StatusServiceUnavailable},
+	},
 }
 
 func serverWith(db Pinger) func(*testing.T) *Server {

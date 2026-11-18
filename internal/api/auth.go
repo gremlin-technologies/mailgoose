@@ -3,7 +3,6 @@ package api
 import (
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
@@ -35,6 +34,7 @@ func (s *Server) CreateSignup(w http.ResponseWriter, r *http.Request) {
 		Email:         req.Email,
 		AccountName:   req.AccountName,
 		AcceptedTerms: req.AcceptedTerms,
+		IP:            ClientIP(r),
 	})
 	if s.authError(w, r, err) {
 		return
@@ -67,37 +67,19 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	if s.authError(w, r, err) {
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     SessionCookie,
-		Value:    sess.Token,
-		Path:     "/",
-		Expires:  sess.ExpiresAt,
-		MaxAge:   int(time.Until(sess.ExpiresAt).Seconds()),
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteLaxMode,
-	})
-	writeJSON(w, http.StatusCreated, apigen.Session{
-		Account: apigen.Account{
-			Id:        sess.Account.ID,
-			Name:      sess.Account.Name,
-			Status:    apigen.AccountStatus(sess.Account.Status),
-			Plan:      apigen.AccountPlan(sess.Account.Plan),
-			CreatedAt: sess.Account.CreatedAt.UTC(),
-		},
-		User: apigen.User{
-			Id:        sess.User.ID,
-			Email:     sess.User.Email,
-			CreatedAt: sess.User.CreatedAt.UTC(),
-		},
-		ExpiresAt: sess.ExpiresAt.UTC(),
-	})
+	setSessionCookie(w, sess.Token, sess.ExpiresAt)
+	writeJSON(w, http.StatusCreated, sessionJSON(sess.Account, sess.User, sess.ExpiresAt))
 }
 
 // authError writes err when there is one and reports whether it did.
 func (s *Server) authError(w http.ResponseWriter, r *http.Request, err error) bool {
 	if err == nil {
 		return false
+	}
+	var rl *auth.RateLimitError
+	if errors.As(err, &rl) {
+		writeRateLimited(w, rl.RetryAfter)
+		return true
 	}
 	var ve *auth.ValidationError
 	if errors.As(err, &ve) {

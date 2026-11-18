@@ -9,3 +9,7 @@
 getReadiness: Load balancer and deploy probe. `mailgoose status` checks liveness through getHealth.
 createSignup: Signing up accepts the terms and the anti-spam policy, which the person does on the web page. CLI access comes after, with `mailgoose login` (MG-10).
 createSession: Web session sign-in; it sets a browser cookie. The CLI signs in with `mailgoose login` (MG-10).
+createSignIn: Emails a code for a web session. The CLI signs in with `mailgoose login` (MG-10).
+getCurrentSession: Reads the browser's session cookie. The CLI's own sign-in state comes with `mailgoose login` (MG-10).
+deleteCurrentSession: Ends the browser's session cookie. The CLI signs out with `mailgoose logout` (MG-10).
+deleteAllSessions: Ends every browser session, from the web app's account page. CLI tokens are revoked with the CLI's own commands (MG-10).

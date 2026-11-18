@@ -24,6 +24,10 @@ type Config struct {
 	Port int
 	// PublicBaseURL is the URL people and the CLI reach the API at.
 	PublicBaseURL string
+	// WebOrigins are origins, besides the API's own, allowed to send
+	// cookie-authenticated requests that change something (the web app's
+	// origin when it's served elsewhere). Comma-separated in WEB_ORIGINS.
+	WebOrigins []string
 
 	Database Database
 
@@ -121,6 +125,12 @@ func load(getenv func(string) string) (Config, error) {
 		MigrateOnStart:      migrate,
 		RateLimitPerMinute:  rateLimit,
 		AppSecrets:          secrets,
+	}
+
+	for _, o := range strings.Split(getenv("WEB_ORIGINS"), ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			cfg.WebOrigins = append(cfg.WebOrigins, o)
+		}
 	}
 
 	cfg.MailSender = getenv("MAIL_SENDER")

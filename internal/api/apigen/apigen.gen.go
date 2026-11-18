@@ -154,6 +154,12 @@ type SessionRequest struct {
 	Email string `json:"email"`
 }
 
+// SignInRequest defines model for SignInRequest.
+type SignInRequest struct {
+	// Email Examples: pat@example.com
+	Email string `json:"email"`
+}
+
 // SignupRequest defines model for SignupRequest.
 type SignupRequest struct {
 	// AcceptedTerms Must be `true`: the person accepts the terms of service and the
@@ -186,6 +192,9 @@ type Limit = int
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
 
+// CrossOrigin defines model for CrossOrigin.
+type CrossOrigin = Error
+
 // IdempotencyConflict defines model for IdempotencyConflict.
 type IdempotencyConflict = Error
 
@@ -195,11 +204,17 @@ type ServiceUnavailable = Error
 // TooManyRequests defines model for TooManyRequests.
 type TooManyRequests = Error
 
+// Unauthorized defines model for Unauthorized.
+type Unauthorized = Error
+
 // ValidationFailed defines model for ValidationFailed.
 type ValidationFailed = Error
 
 // CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
 type CreateSessionJSONRequestBody = SessionRequest
+
+// CreateSignInJSONRequestBody defines body for CreateSignIn for application/json ContentType.
+type CreateSignInJSONRequestBody = SignInRequest
 
 // CreateSignupJSONRequestBody defines body for CreateSignup for application/json ContentType.
 type CreateSignupJSONRequestBody = SignupRequest
@@ -212,9 +227,21 @@ type ServerInterface interface {
 	// GetReadiness Readiness check
 	// (GET /readyz)
 	GetReadiness(w http.ResponseWriter, r *http.Request)
+	// DeleteAllSessions Sign out everywhere
+	// (DELETE /v1/sessions)
+	DeleteAllSessions(w http.ResponseWriter, r *http.Request)
 	// CreateSession Start a web session with an emailed code
 	// (POST /v1/sessions)
 	CreateSession(w http.ResponseWriter, r *http.Request)
+	// DeleteCurrentSession Sign out
+	// (DELETE /v1/sessions/current)
+	DeleteCurrentSession(w http.ResponseWriter, r *http.Request)
+	// GetCurrentSession Who is signed in
+	// (GET /v1/sessions/current)
+	GetCurrentSession(w http.ResponseWriter, r *http.Request)
+	// CreateSignIn Email a sign-in code
+	// (POST /v1/sign-in)
+	CreateSignIn(w http.ResponseWriter, r *http.Request)
 	// CreateSignup Sign up
 	// (POST /v1/signup)
 	CreateSignup(w http.ResponseWriter, r *http.Request)
@@ -257,11 +284,67 @@ func (siw *ServerInterfaceWrapper) GetReadiness(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// DeleteAllSessions operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAllSessions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteAllSessions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateSession operation middleware
 func (siw *ServerInterfaceWrapper) CreateSession(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteCurrentSession operation middleware
+func (siw *ServerInterfaceWrapper) DeleteCurrentSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteCurrentSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCurrentSession operation middleware
+func (siw *ServerInterfaceWrapper) GetCurrentSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCurrentSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSignIn operation middleware
+func (siw *ServerInterfaceWrapper) CreateSignIn(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSignIn(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -408,7 +491,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealth)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadiness)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/signup", wrapper.CreateSignup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sign-in", wrapper.CreateSignIn)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions", wrapper.DeleteAllSessions)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions", wrapper.CreateSession)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions/current", wrapper.DeleteCurrentSession)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sessions/current", wrapper.GetCurrentSession)
 
 	return m
 }

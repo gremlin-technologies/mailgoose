@@ -41,13 +41,17 @@ type Server struct {
 	// Auth signs people up and in. Nil (no database) makes those endpoints
 	// answer 503.
 	Auth *auth.Service
+	// TrustedOrigins are other origins (such as the web app's, when it isn't
+	// served from the API's own origin) allowed to send cookie-authenticated
+	// requests that change something. The API's own origin always is.
+	TrustedOrigins []string
 	// Now is the clock for rate limits and idempotency; nil means time.Now.
 	Now func() time.Time
 }
 
 // Handler returns the API's routes wrapped in the shared middleware. From the
 // outside in: request ID, panic recovery, request log, rate limit,
-// idempotency, routes.
+// cross-origin protection, idempotency, routes.
 func (s *Server) Handler() http.Handler {
 	if s.Log == nil {
 		s.Log = slog.New(slog.DiscardHandler)
@@ -64,6 +68,7 @@ func (s *Server) Handler() http.Handler {
 
 	var h http.Handler = s.routes()
 	h = (&Idempotency{Store: store, Now: now, Log: s.Log}).Middleware(h)
+	h = s.crossOriginProtection(h)
 	h = (&RateLimiter{PerMinute: s.RateLimitPerMinute, Now: now}).Middleware(h)
 	h = s.logRequests(h)
 	h = s.recoverer(h)
