@@ -4,6 +4,28 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Email renderer (MG-21, reversible defaults)
+
+Picked while building MG-21; easy to change.
+
+- **Social links render as text** ("Instagram · Website"), not icons, until
+  image hosting lands (MG-23). Icons need hosted images.
+- **HTML emails aren't rendered by the block renderer.** MG-22 validates
+  them and adds the postal address footer.
+- **No postal address, no render.** `Compile` refuses an account without
+  one, so no campaign email can leave without it (CMP-2).
+- **Merge values are HTML-escaped**, also inside links, and never
+  URL-encoded. A link that is a whole tag (`{{unsubscribe_url}}`) is filled
+  as is.
+- **Fallbacks** work on first name, last name and email, up to 100
+  characters, without `{` or `}`. The unsubscribe link takes none.
+- **Links in text** must be `https://`, `http://`, `mailto:` or a whole
+  merge tag; anything else is a lint error.
+- **Look:** system font stack, 16px body text, near-black text on white,
+  a light grey page, dark buttons by default. These are the email's
+  defaults, not the app's brand; a customer's email shouldn't look like
+  mailgoose.
+
 ## 2026-11-18: Deleting an account, and the settings pages (MG-43, reversible defaults)
 
 Picked while building MG-43; easy to change. No ticket covered AUTH-6's API,

@@ -387,6 +387,28 @@ mailgoose email blocks move <id> <block-id> --after <other-block-id>
 mailgoose email blocks remove <id> <block-id>
 ```
 
+### Rendering
+
+`internal/render` turns a block document into the email that goes out: a
+table-based HTML part with inline styles (plus a small `<style>` block that
+stacks columns and shrinks images on screens narrower than the content
+width) and a plain-text part. `render.Compile` does the work once per email
+and returns a template; `Template.Personalize` fills the merge tags for one
+recipient, so a campaign compiles once and personalizes per contact.
+
+Merge tags are `{{first_name}}`, `{{last_name}}`, `{{email}}` and
+`{{unsubscribe_url}}`. The first three take a fallback for an empty value,
+as in `{{first_name|there}}`. Values are HTML-escaped in the HTML part.
+`render.Lint` reports unknown or malformed tags and unsafe links with the
+block path, and `Compile` refuses a document with any. Every footer carries
+the account's postal address and an unsubscribe link the customer can't
+remove; `Compile` refuses an account without a postal address. HTML emails
+(kind `html`) aren't rendered here; MG-22 handles them.
+
+Golden files in `internal/render/testdata` show every block type at 600 and
+480 pixels. After an intended change to the output, rewrite them with
+`go test ./internal/render -update` and review the diff.
+
 ## Sending domains
 
 Campaigns go out from an address at a domain the customer owns.

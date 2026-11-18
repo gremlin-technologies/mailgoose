@@ -1,0 +1,11 @@
+Order now: https://example.com/order?a=1&b=2
+
+Leave the list: https://u.mailgoose.app/u/abc123
+
+----------
+
+Pat's Bakery
+12 Main St
+Springfield, IL 62701
+
+Unsubscribe: https://u.mailgoose.app/u/abc123
