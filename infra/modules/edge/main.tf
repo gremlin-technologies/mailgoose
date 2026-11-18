@@ -15,7 +15,7 @@ resource "aws_route53_record" "cert_validation" {
     for o in aws_acm_certificate.this.domain_validation_options : o.domain_name => o
   }
 
-  zone_id         = var.zone_id
+  zone_id         = var.zone_ids[each.value.domain_name]
   name            = each.value.resource_record_name
   type            = each.value.resource_record_type
   records         = [each.value.resource_record_value]
@@ -123,7 +123,7 @@ resource "aws_lb_listener" "https" {
 resource "aws_route53_record" "alias" {
   for_each = toset(var.hostnames)
 
-  zone_id = var.zone_id
+  zone_id = var.zone_ids[each.value]
   name    = each.value
   type    = "A"
 

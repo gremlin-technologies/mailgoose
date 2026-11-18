@@ -6,31 +6,62 @@ Postgres on RDS, SQS for send jobs, SES for delivery, behind an ALB with TLS.
 Applied so far: `bootstrap` (state bucket `mailgoose-tfstate-680484232605`),
 `global`, and `envs/staging`. Prod has not been applied.
 
-Everything runs in `us-east-2`, the Region assigned to Carlton's AWS project.
+Everything runs in `us-east-2`, the Region assigned to the Gremlin Technologies AWS project.
 Regional resources can't be created in any other Region.
 
 ## DNS
 
 `mailgoose.app` is registered at GoDaddy, and its DNS stays there: it carries
-live Microsoft 365 email (MX, SPF, verification TXT) and the website. Route 53
-hosts only the delegated zone `staging.mailgoose.app`, created by `global`
-(`hosted_zone_name`). GoDaddy has an NS record for `staging` pointing at that
-zone's four name servers (`terraform output hosted_zone_name_servers` in
-`global`). Everything staging creates (`api.staging`, `app.staging`,
-`mail.staging`, DKIM, MAIL FROM, DMARC) lives in that zone.
+live Microsoft 365 email (MX, SPF, autodiscover, verification TXT) and the
+website. Route 53 hosts only delegated subdomains. A delegation is a set of NS
+records at GoDaddy for one name; it takes over that name and everything beneath
+it, and nothing else. Nothing in this Terraform touches the apex, `www`,
+`autodiscover`, `email`, `_dmarc` or any Microsoft 365 record.
 
-Prod uses `api.`, `app.` and `mail.mailgoose.app`, which aren't under one
-subdomain. Before prod's first apply, either move all of mailgoose.app's DNS
-to Route 53 (copy every GoDaddy record first, M365 ones included) or delegate
-those names separately. Nothing in this Terraform touches the apex, `www`, or
-the M365 records.
+- **Staging:** one zone, `staging.mailgoose.app`, created by `global`
+  (`hosted_zone_name`). GoDaddy has an NS record for `staging` pointing at it
+  (`terraform output hosted_zone_name_servers` in `global`). Everything staging
+  creates lives in it: `api.staging`, `app.staging`, `mail.staging`, DKIM,
+  MAIL FROM, DMARC.
+- **Prod:** three zones, created by `prod-dns`, because the names are not under
+  one subdomain:
+
+  | Zone | Holds |
+  | --- | --- |
+  | `api.mailgoose.app` | alias to the load balancer, ACM validation record |
+  | `app.mailgoose.app` | alias to the load balancer, ACM validation record |
+  | `mail.mailgoose.app` | mailgoose's SES sending domain: the three Easy DKIM CNAMEs, `bounce.mail` (custom MAIL FROM MX and SPF) and `_dmarc.mail` |
+
+  `envs/prod` looks the zones up by name (`zone_overrides`) and adds the records.
+  Each zone costs about $0.50/month (an estimate; check Route 53 pricing).
+
+SES and ACM work from these subdomain zones: SES verifies the sending domain
+with DKIM CNAMEs under `mail.mailgoose.app`, the custom MAIL FROM domain is a
+subdomain of it, and ACM validates `api` and `app` with CNAMEs under those
+names. Neither needs a record at the apex. If a CAA record is ever added at the
+apex, it must allow `amazon.com`, or ACM will refuse to issue.
+
+### Setting up prod DNS
+
+In this order, with AWS credentials for the project:
+
+1. `cd infra/prod-dns && terraform init -backend-config="bucket=<state_bucket>"`,
+   then `terraform plan` (expect three zones, nothing else) and `apply`.
+2. `terraform output godaddy_ns_records`. At GoDaddy, add each as an NS record
+   (name is the label: `api`, `app` or `mail`; value is the name server). Twelve
+   records, four per label. Add nothing else and change nothing that is there.
+3. Wait until the delegation resolves, for each of the three labels:
+   `dig NS api.mailgoose.app +short` returns the four `awsdns` names.
+4. Only then apply `envs/prod`. Its certificate validation waits for the
+   delegation, so applying first just stalls.
 
 ## Layout
 
 ```
 infra/
   bootstrap/        S3 bucket for Terraform state. Run once, local state.
-  global/           Account-wide: Route 53 zone, GitHub OIDC provider, ECR repo.
+  global/           Account-wide: staging Route 53 zone, GitHub OIDC provider, ECR repo.
+  prod-dns/         Prod's three delegated Route 53 zones (api, app, mail). Apply before envs/prod.
   envs/
     staging/        Thin root: calls modules/stack with staging sizes.
     prod/           Thin root: calls modules/stack with prod sizes.

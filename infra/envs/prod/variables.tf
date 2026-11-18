@@ -4,7 +4,7 @@ variable "region" {
 }
 
 variable "domain" {
-  description = "Root domain (the Route 53 zone from infra/global)."
+  description = "Root domain. Its DNS stays at GoDaddy; api, app and mail are delegated zones from infra/prod-dns."
   type        = string
 }
 
