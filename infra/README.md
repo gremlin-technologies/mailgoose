@@ -5,7 +5,8 @@ Postgres on RDS, SQS for send jobs, SES for delivery, behind an ALB with TLS.
 
 Nothing here has been applied to any AWS account yet. Placeholders to replace
 before the first apply: `domain = "example.com"` in each `terraform.tfvars`,
-and the region (`us-east-1`) if you want another one.
+Everything runs in `us-east-2`, the Region assigned to Carlton's AWS project.
+Regional resources can't be created in any other Region.
 
 ## Layout
 
@@ -146,5 +147,5 @@ for an admin user or SSO role in the target account.
 ## Not here yet
 
 GitHub Actions workflows, autoscaling, CloudWatch alarms, WAF, a custom
-open/click tracking domain, backups to a second region, and hosting the web
+open/click tracking domain, and hosting the web
 editor on S3 + CloudFront (the API service can serve it for now).

@@ -4,6 +4,17 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal Carlton hasn't confirmed yet; treat it as
 the default until he does, but don't build anything hard to undo on it.
 
+## 2026-11-17: AWS Region
+
+Decided by Carlton.
+
+- **Region: us-east-2.** Carlton's AWS project is assigned us-east-2, and the
+  project allows Regional resources only there. All Terraform (state bucket,
+  backends, provider defaults) now uses us-east-2. Global services such as
+  CloudFront, and WAF or CloudWatch Logs tied to them, may use us-east-1 when
+  required. Cross-Region features (replication, multi-Region keys, backups to a
+  second Region, Route 53 latency/geo/failover routing) are not available.
+
 ## 2026-11-17
 
 Decided by Carlton in the PRD scoping call and follow-ups.
@@ -72,8 +83,6 @@ Decided by Carlton in the PRD scoping call and follow-ups.
   way in?
 - Is the one-time-code check (see PRD, CLI requirements) the right way to
   enforce agent launch confirmation?
-- AWS region: Carlton's AWS profile uses us-east-2; the Terraform sketch in PR #1
-  defaults to us-east-1.
 - SQS or River on Postgres for the send queue?
 - One audience with tags, or separate lists per account?
 - Ship an MCP server alongside the CLI, or CLI only?

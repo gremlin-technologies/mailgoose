@@ -13,7 +13,7 @@ terraform {
   # use_lockfile gives native S3 state locking (Terraform 1.10+), no DynamoDB table.
   backend "s3" {
     key          = "global/terraform.tfstate"
-    region       = "us-east-1"
+    region       = "us-east-2"
     encrypt      = true
     use_lockfile = true
   }

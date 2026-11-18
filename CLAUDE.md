@@ -34,6 +34,7 @@ not decisions.
   credits by default, yearly card billing as the alternative.
 - Stack: Go for backend, workers and CLI; TypeScript and React for the web app
   and editor; AWS from day one.
+- AWS Region: us-east-2 for everything Regional (the project allows no other).
 - AWS layout: one account shared by staging and prod (kept apart by names, state
   keys and `Environment` tags). No production database standby until there are
   paying customers.
