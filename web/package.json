@@ -1,22 +1,44 @@
 {
   "name": "@mailgoose/web",
   "private": true,
-  "description": "The mailgoose web app. For now it holds only the API client generated from api/openapi.yaml; the app itself comes with MG-41.",
+  "description": "The mailgoose web app: React and TypeScript, built with Vite and served by the API (WEB_DIR). src/api/schema.d.ts is generated from api/openapi.yaml.",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "generate": "openapi-typescript ../api/openapi.yaml --output src/api/schema.d.ts",
-    "lint:api": "redocly lint ../api/openapi.yaml --config ../api/redocly.yaml",
-    "typecheck": "tsc --noEmit"
+    "lint:api": "redocly lint ../api/openapi.yaml --config ../api/redocly.yaml"
   },
   "dependencies": {
-    "openapi-fetch": "0.17.0"
+    "openapi-fetch": "0.17.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-router": "8.5.1"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@redocly/cli": "2.79.0",
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.12",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "eslint": "10.15.0",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "globals": "17.14.0",
+    "jsdom": "31.0.1",
     "openapi-typescript": "7.13.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.73.0",
+    "vite": "8.3.8",
+    "vitest": "5.1.1"
   }
 }

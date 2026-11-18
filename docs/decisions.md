@@ -4,6 +4,37 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Web app shell details (MG-41, reversible defaults)
+
+Picked while building MG-41; easy to change.
+
+- **The API serves the web app from its own origin.** The image builds
+  `web/dist` and sets `WEB_DIR=/srv/web`; every GET or HEAD that no API route
+  matches gets the app (index.html for page paths, the file for assets), and
+  `/v1`, `/healthz` and `/readyz` stay the API's. One origin means the session
+  cookie and the same-origin check need no CORS or `WEB_ORIGINS`, and the CLI's
+  `/device` link (built from `PUBLIC_BASE_URL`) lands on the app. A separate
+  `app.` host can come later with `WEB_ORIGINS`.
+- **Plain React with React Router, no UI kit or data library.** The typed
+  openapi-fetch client from MG-02 talks to the API; pages handle errors through
+  one helper that shows the API's message and hint.
+- **The app's pages:** `/signup`, `/sign-in`, `/device?code=` (the CLI approval
+  page, signed in only, outside the app layout) and a signed-in layout with
+  Dashboard, Emails, Campaigns, Contacts, Tags, Signup forms, Domains, API keys,
+  Credits and Settings. Reports live under each campaign. Signed-out visitors
+  go to sign in and come back after (`?next=`, same-site paths only).
+- **Static file rules:** hashed files under `/assets` cache for a year;
+  index.html is `no-cache`; dotfiles and missing files with an extension are
+  404s. The app is served with a Content-Security-Policy that allows only its
+  own scripts and refuses framing (`frame-ancestors 'none'`, `X-Frame-Options:
+  DENY`), so the approval page can't be clickjacked.
+- **CI runs the web checks through `go test`** (`internal/web`): ESLint, the
+  TypeScript check, the Vitest tests and a production build, like the OpenAPI
+  checks from MG-02. That keeps `.github/workflows` unchanged; a separate web
+  job can replace it once a workflow change is due anyway.
+- **The sign-up page's terms line has no links yet;** the policy pages come
+  with MG-57.
+
 ## 2026-11-18: CLI device login details (MG-10, reversible defaults)
 
 Picked while building MG-10; easy to change.

@@ -11,7 +11,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 )
 
-// devicePagePath is the web app's approval page (MG-41 builds it).
+// devicePagePath is the web app's approval page (web/src/pages/Device.tsx).
 const devicePagePath = "/device"
 
 // CreateDeviceLogin is POST /v1/device-logins.

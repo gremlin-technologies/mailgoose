@@ -125,3 +125,14 @@ func TestSystemSendingDomainDefault(t *testing.T) {
 		t.Fatalf("staging without SYSTEM_SENDING_DOMAIN = %q, %v; want empty", cfg.SystemSendingDomain, err)
 	}
 }
+
+func TestWebDirSetting(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || cfg.WebDir != "" {
+		t.Fatalf("default WebDir = %q, %v; want empty (no web app)", cfg.WebDir, err)
+	}
+	cfg, err = load(env(map[string]string{"WEB_DIR": "/srv/web"}))
+	if err != nil || cfg.WebDir != "/srv/web" {
+		t.Fatalf("WebDir = %q, %v", cfg.WebDir, err)
+	}
+}

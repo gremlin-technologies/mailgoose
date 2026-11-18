@@ -1,0 +1,82 @@
+import { cleanup, render } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router";
+import { afterEach } from "vitest";
+
+import { AppRoutes } from "../App";
+import { createApiClient } from "../api/client";
+import { ApiProvider } from "../api/context";
+import { SessionProvider } from "../session";
+
+afterEach(cleanup);
+
+type Reply = { status: number; body?: unknown };
+/** Answers one request; gets the parsed JSON body, if any. */
+type Route = (body: unknown) => Reply;
+
+export type Call = { method: string; path: string; body: unknown };
+
+/**
+ * A fake API: routes keyed "METHOD /path" answer requests, and every request
+ * is recorded in calls. Anything unrouted is a 404, like the real API.
+ */
+export function fakeApi(routes: Record<string, Route>) {
+  const calls: Call[] = [];
+  const fetch = async (req: Request): Promise<Response> => {
+    const url = new URL(req.url);
+    const text = await req.text();
+    const body: unknown = text ? JSON.parse(text) : undefined;
+    const key = `${req.method} ${url.pathname}`;
+    calls.push({ method: req.method, path: url.pathname, body });
+    const route = routes[key];
+    const reply = route ? route(body) : apiError(404, "not_found", "No such endpoint.");
+    return new Response(reply.body === undefined ? null : JSON.stringify(reply.body), {
+      status: reply.status,
+      headers: reply.body === undefined ? {} : { "Content-Type": "application/json" },
+    });
+  };
+  return { fetch, calls };
+}
+
+export function apiError(status: number, code: string, message: string, hint = ""): Reply {
+  return { status, body: { error: { code, message, hint } } };
+}
+
+export const session = {
+  account: {
+    id: "7c1d0f7e-8f43-4a8e-9d35-2b8a7c6e1a10",
+    name: "Pat's Bakery",
+    status: "active",
+    plan: "free",
+    created_at: "2026-11-18T10:00:00Z",
+  },
+  user: { id: "0b6f5f7e-2a43-4c8e-8d35-1b8a7c6e1a11", email: "pat@example.com", created_at: "2026-11-18T10:00:00Z" },
+  expires_at: "2026-12-18T10:00:00Z",
+};
+
+export const signedIn: Record<string, Route> = {
+  "GET /v1/sessions/current": () => ({ status: 200, body: session }),
+};
+
+export const signedOut: Record<string, Route> = {
+  "GET /v1/sessions/current": () => apiError(401, "unauthenticated", "Sign in, or send an API key."),
+};
+
+function Where() {
+  const loc = useLocation();
+  return <div data-testid="location">{loc.pathname + loc.search}</div>;
+}
+
+/** Renders the whole app at path against a fake API. */
+export function renderApp(path: string, fetch: (req: Request) => Promise<Response>) {
+  const api = createApiClient({ baseUrl: "http://mailgoose.test", fetch });
+  return render(
+    <ApiProvider client={api}>
+      <SessionProvider>
+        <MemoryRouter initialEntries={[path]}>
+          <AppRoutes />
+          <Where />
+        </MemoryRouter>
+      </SessionProvider>
+    </ApiProvider>,
+  );
+}

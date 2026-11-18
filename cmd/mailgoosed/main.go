@@ -27,6 +27,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/db"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
+	"github.com/gremlin-technologies/mailgoose/internal/web"
 	"github.com/gremlin-technologies/mailgoose/internal/worker"
 )
 
@@ -88,6 +89,14 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	srv := &api.Server{Log: log, RateLimitPerMinute: cfg.RateLimitPerMinute, TrustedOrigins: cfg.WebOrigins,
 		// The API serves the web app (MG-41), so its public URL is the web app's.
 		WebURL: cfg.PublicBaseURL}
+	if cfg.WebDir != "" {
+		app, err := web.New(os.DirFS(cfg.WebDir))
+		if err != nil {
+			return err
+		}
+		srv.Web = app
+		log.Info("serving the web app", "dir", cfg.WebDir)
+	}
 	if cfg.Database.Configured() {
 		pool, err := openDB(ctx, cfg)
 		if err != nil {

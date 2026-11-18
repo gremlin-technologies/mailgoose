@@ -20,13 +20,22 @@ ECR_REPO    ?= mailgoose
 
 TEST_DB_URL ?= postgres://mailgoose:mailgoose@localhost:5432/mailgoose_test?sslmode=disable
 
-.PHONY: help dev mail build test test-db vet lint lint-api generate fmt tidy run-api run-worker migrate up down image push-ecr clean
+.PHONY: help dev web web-dev web-check mail build test test-db vet lint lint-api generate fmt tidy run-api run-worker migrate up down image push-ecr clean
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
 
 dev: ## Run Postgres, migrations, the API and the worker locally; mail goes to .local/mail
 	./scripts/dev.sh
+
+web: web/node_modules ## Build the web app into web/dist (make dev serves it)
+	cd web && npm run -s build
+
+web-dev: web/node_modules ## Run the web app with live reload on :5173, against the API from make dev
+	cd web && npm run dev
+
+web-check: web/node_modules ## Lint, type check and test the web app
+	cd web && npm run -s lint && npm run -s typecheck && npm run -s test
 
 mail: ## List the newest mail the local fake sender captured
 	@if ls .local/mail/*.eml >/dev/null 2>&1; then ls -1t .local/mail/*.eml | head -10; else echo "No mail captured yet."; fi
@@ -104,4 +113,4 @@ push-ecr: ## Build and push $(PLATFORM) image to ECR as $(ECR_REPO):$(IMAGE_TAG)
 	echo "Pushed $$registry/$(ECR_REPO):$(IMAGE_TAG)"
 
 clean: ## Remove build output, npm packages and captured local mail
-	rm -rf bin web/node_modules .local
+	rm -rf bin web/node_modules web/dist .local
