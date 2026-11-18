@@ -11,7 +11,7 @@ terraform {
   # terraform init -backend-config="bucket=<state_bucket from bootstrap>"
   backend "s3" {
     key          = "envs/staging/terraform.tfstate"
-    region       = "us-east-1"
+    region       = "us-east-2"
     encrypt      = true
     use_lockfile = true
   }
