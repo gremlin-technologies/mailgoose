@@ -40,8 +40,10 @@ type bucket struct {
 
 // DefaultRateLimitKey counts a request against its credentials when it has
 // any (a hash of the Authorization header, so the secret never sits in
-// memory), and against the client's IP otherwise. Once API keys exist
-// (MG-09), authenticated requests should be keyed by key ID instead.
+// memory), and against the client's IP otherwise. One API key always sends
+// the same header, so this is a limit per key without a database lookup
+// before the limit applies. Wrong keys are limited per IP separately (see
+// authenticate).
 func DefaultRateLimitKey(r *http.Request) string {
 	if auth := r.Header.Get("Authorization"); auth != "" {
 		sum := sha256.Sum256([]byte(auth))
@@ -140,4 +142,22 @@ func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// blocked reports, without taking a token, whether key is out of tokens, and
+// how long until it has one.
+func (l *RateLimiter) blocked(key string) (time.Duration, bool) {
+	now := l.Now()
+	perSecond := float64(l.PerMinute) / 60
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	b, ok := l.buckets[key]
+	if !ok {
+		return 0, false
+	}
+	tokens := math.Min(float64(l.PerMinute), b.tokens+now.Sub(b.last).Seconds()*perSecond)
+	if tokens >= 1 {
+		return 0, false
+	}
+	return time.Duration((1 - tokens) / perSecond * float64(time.Second)), true
 }

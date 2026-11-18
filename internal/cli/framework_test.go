@@ -182,7 +182,8 @@ func TestRegistry(t *testing.T) {
 // terminal: each must finish within 5 seconds, so an agent never hangs.
 func TestNoCommandWaitsForInput(t *testing.T) {
 	srv := apiStub(t, map[string]func(http.ResponseWriter){
-		"/healthz": func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"status":"ok","version":"v1"}`)) },
+		"/healthz":     func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"status":"ok","version":"v1"}`)) },
+		"/v1/api-keys": func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },
 	})
 	for _, c := range NewApp().Commands() {
 		t.Run(c.Command, func(t *testing.T) {

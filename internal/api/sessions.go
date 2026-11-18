@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"math"
 	"net/http"
 	"strconv"
@@ -65,29 +64,19 @@ func (s *Server) DeleteAllSessions(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// currentSession finds the session behind the request's cookie, or writes a
-// 401 (or 503) and reports false.
+// currentSession returns the web session the request's cookie belongs to,
+// or writes a 401 (or 503) and reports false. API keys don't count here.
 func (s *Server) currentSession(w http.ResponseWriter, r *http.Request) (*auth.Current, bool) {
-	if s.authUnavailable(w) {
+	c := s.requireCaller(w, r)
+	if c == nil {
 		return nil, false
 	}
-	unauthenticated := Unauthorized("unauthenticated", "You're not signed in, or your session has ended.").
-		WithHint("Sign in again.")
-	c, err := r.Cookie(SessionCookie)
-	if err != nil || c.Value == "" {
-		WriteError(w, unauthenticated)
+	if c.Session == nil {
+		WriteError(w, Unauthorized("unauthenticated", "This needs a web session; API keys and CLI tokens can't use it.").
+			WithHint("Sign in to the web app."))
 		return nil, false
 	}
-	cur, err := s.Auth.SessionByToken(r.Context(), c.Value)
-	if errors.Is(err, auth.ErrNoSession) {
-		clearSessionCookie(w)
-		WriteError(w, unauthenticated)
-		return nil, false
-	}
-	if s.authError(w, r, err) {
-		return nil, false
-	}
-	return cur, true
+	return c.Session, true
 }
 
 func setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {

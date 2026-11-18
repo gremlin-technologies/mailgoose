@@ -2,7 +2,7 @@
 # purpose. Every other operation must have one (CLI-1); the parity check in
 # internal/cli/parity_test.go fails, naming the operation, when it doesn't.
 #
-# Each entry is `operationId: reason`. Expected later: session sign-in, the
+# Each entry is `operationId: reason`. Expected later: the
 # Stripe webhook, public form submit, unsubscribe, open and click tracking.
 # An entry for an operation that has a command, or that isn't in the spec,
 # fails the check too, so the list stays short and true.

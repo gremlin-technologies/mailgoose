@@ -45,6 +45,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/api-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List API keys
+         * @description The account's active API keys, oldest first. Secrets are never shown again.
+         */
+        get: operations["listApiKeys"];
+        put?: never;
+        /**
+         * Create an API key
+         * @description Makes a key and answers with its secret, which is shown only this
+         *     once; store it somewhere safe. Keys made in production start
+         *     `mg_live_`, and keys made anywhere else start `mg_test_`. A `draft` key
+         *     can do everything except launch campaigns, change billing and manage
+         *     keys. An account can have 50 active keys.
+         */
+        post: operations["createApiKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/api-keys/{key_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Revoke an API key
+         * @description The key stops working on its next request. This can't be undone.
+         */
+        delete: operations["revokeApiKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/signup": {
         parameters: {
             query?: never;
@@ -155,6 +203,47 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        CreateApiKeyRequest: {
+            /** @example Claude on my laptop */
+            name: string;
+            scope: components["schemas"]["ApiKeyScope"];
+        };
+        /**
+         * @description `full` can do everything. `draft` can do everything except launch
+         *     campaigns, change billing and manage keys.
+         * @enum {string}
+         */
+        ApiKeyScope: "full" | "draft";
+        ApiKey: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            scope: components["schemas"]["ApiKeyScope"];
+            /**
+             * @description The secret's prefix and last four characters, to tell keys apart.
+             * @example mg_live_…k3x9
+             */
+            hint: string;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When the key last made a request, to the minute; null if never.
+             */
+            last_used_at: string | null;
+        };
+        CreatedApiKey: {
+            key: components["schemas"]["ApiKey"];
+            /**
+             * @description The key itself. It's shown only in this response.
+             * @example mg_live_9w2k4m1qz7d8c3x5v6b0n1p2r3s4t5u6
+             */
+            secret: string;
+        };
+        ApiKeyList: {
+            data: components["schemas"]["ApiKey"][];
+            next_cursor: string | null;
+        };
         SignupRequest: {
             /**
              * Format: email
@@ -275,10 +364,34 @@ export interface components {
             };
         };
         /**
-         * @description `unauthenticated`: no session cookie, or the session has ended. Sign in
-         *     again.
+         * @description `unauthenticated`: no API key or session cookie, or the session has
+         *     ended. `invalid_api_key`: the key is wrong or revoked.
          */
         Unauthorized: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `insufficient_scope`: a draft-scope key can't do this; use a full-scope
+         *     key or the web app. `cross_origin_request`: a browser sent this from
+         *     another site.
+         */
+        Forbidden: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description `not_found`: there's no such thing in this account. */
+        NotFound: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -415,6 +528,96 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    listApiKeys: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of keys. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiKeyList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createApiKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateApiKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description The new key, with its secret. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedApiKey"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    revokeApiKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The key's `id`. */
+                key_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     createSignup: {

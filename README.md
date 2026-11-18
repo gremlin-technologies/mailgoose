@@ -158,6 +158,24 @@ limited to 5 an hour per address and 20 an hour per IP, and a browser request
 that changes something with the cookie must come from the API's own origin or
 one listed in `WEB_ORIGINS`.
 
+## API keys
+
+Scripts, agents and the CLI authenticate with `Authorization: Bearer <key>`.
+`POST /v1/api-keys` (or `mailgoose keys create --name … --scope full|draft`)
+makes a key and shows its secret once; only a SHA-256 of it is stored. Keys
+made in production start `mg_live_`, everywhere else `mg_test_`; CLI tokens
+from `mailgoose login` (MG-10) start `mg_cli_`. A `draft` key can do
+everything except launch campaigns, change billing and manage keys: operations
+that need more are marked `x-required-scope: full` in the spec, and the
+handler calls `requireFull`. `TestDraftScope` sends a draft key to every
+operation and checks the two agree.
+
+```sh
+curl -s localhost:8080/v1/api-keys -H "Authorization: Bearer $MAILGOOSE_API_KEY"
+mailgoose keys list
+mailgoose keys revoke <id> --yes
+```
+
 ## API conventions
 
 Every endpoint shares the plumbing in `internal/api` (MG-01):

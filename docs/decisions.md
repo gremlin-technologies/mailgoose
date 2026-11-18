@@ -4,6 +4,35 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: API key details (MG-09, reversible defaults)
+
+Picked while building MG-09; easy to change.
+
+- **`mg_live_` means production, `mg_test_` means staging and local.** The
+  ticket names both prefixes without saying what "test" means; with no test
+  mode in the MVP, the prefix shows which environment a key works in.
+  CLI tokens start `mg_cli_`.
+- **Secrets are 160 random bits, stored as SHA-256**, not Argon2id: a random
+  secret that long can't be brute-forced from its hash, and a fast hash keeps
+  every request's lookup cheap.
+- **50 active API keys per account.** CLI tokens don't count.
+- **`last_used_at` is updated at most once a minute per key**, so a busy key
+  isn't a write on every request. Keys list it "to the minute".
+- **Revoking a key from the CLI needs `--yes`**, since it can't be undone and
+  the CLI never prompts.
+- **Idempotency-Keys are scoped to the account and the credential** (API key,
+  CLI token or signed-in person), not the account alone, so a draft key can
+  never replay a response made for a full key, such as a new key's secret.
+- **Rate limits stay per credential** (a hash of the `Authorization` header,
+  which is per key without a database lookup); web sessions are limited per
+  session. Wrong bearer secrets are limited to 30 a minute per IP, after which
+  the API answers 429 without looking them up.
+- **A draft key gets 403 `insufficient_scope` on every operation marked
+  `x-required-scope: full`** in the spec. Today that's the three key
+  operations; launch and billing operations get the mark when they're built.
+- **Key management needs a full-scope key or a web session**, so the web app
+  can manage keys too.
+
 ## 2026-11-18: Web sign-in details (MG-08, reversible defaults)
 
 Picked while building MG-08; easy to change.

@@ -22,10 +22,10 @@ info:
     The web app signs in with emailed codes and a session cookie. Browser
     requests that change something and carry no `Authorization` header must
     come from the web app's own origin (a 403 `cross_origin_request`
-    otherwise). API authentication is a placeholder:
+    otherwise). Everything else authenticates with an API key or CLI token:
     API keys sent as bearer tokens, which the CLI reads from `MAILGOOSE_API_KEY`
-    or its config file. The real scheme (key format, scopes such as
-    draft-only) comes with the auth ticket.
+    or its config file. Operations marked `x-required-scope: full` refuse
+    draft-scope keys with a 403 `insufficient_scope`.
 servers:
   - url: https://api.staging.mailgoose.app
     description: Staging
@@ -79,6 +79,117 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /v1/api-keys:
+    get:
+      operationId: listApiKeys
+      summary: List API keys
+      description: The account's active API keys, oldest first. Secrets are never shown again.
+      tags: [api-keys]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of keys.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: createApiKey
+      summary: Create an API key
+      description: |
+        Makes a key and answers with its secret, which is shown only this
+        once; store it somewhere safe. Keys made in production start
+        `mg_live_`, and keys made anywhere else start `mg_test_`. A `draft` key
+        can do everything except launch campaigns, change billing and manage
+        keys. An account can have 50 active keys.
+      tags: [api-keys]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApiKeyRequest"
+      responses:
+        "201":
+          description: The new key, with its secret.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatedApiKey"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/api-keys/{key_id}:
+    delete:
+      operationId: revokeApiKey
+      summary: Revoke an API key
+      description: The key stops working on its next request. This can't be undone.
+      tags: [api-keys]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - name: key_id
+          in: path
+          required: true
+          description: The key's `id`.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Revoked.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/signup:
     post:
       operationId: createSignup
@@ -263,13 +374,73 @@ components:
     apiKey:
       type: http
       scheme: bearer
-      description: "Placeholder. An account API key, sent as `Authorization: Bearer <key>`."
+      description: "An account API key (`mg_live_…`, `mg_test_…`) or CLI token (`mg_cli_…`), sent as `Authorization: Bearer <key>`."
     sessionCookie:
       type: apiKey
       in: cookie
       name: mg_session
       description: The web session cookie that `createSession` sets.
   schemas:
+    CreateApiKeyRequest:
+      type: object
+      required: [name, scope]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          examples: [Claude on my laptop]
+        scope:
+          $ref: "#/components/schemas/ApiKeyScope"
+    ApiKeyScope:
+      type: string
+      enum: [full, draft]
+      description: |
+        `full` can do everything. `draft` can do everything except launch
+        campaigns, change billing and manage keys.
+    ApiKey:
+      type: object
+      required: [id, name, scope, hint, created_at, last_used_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        scope:
+          $ref: "#/components/schemas/ApiKeyScope"
+        hint:
+          type: string
+          description: The secret's prefix and last four characters, to tell keys apart.
+          examples: ["mg_live_…k3x9"]
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the key last made a request, to the minute; null if never.
+    CreatedApiKey:
+      type: object
+      required: [key, secret]
+      properties:
+        key:
+          $ref: "#/components/schemas/ApiKey"
+        secret:
+          type: string
+          description: The key itself. It's shown only in this response.
+          examples: ["mg_live_9w2k4m1qz7d8c3x5v6b0n1p2r3s4t5u6"]
+    ApiKeyList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApiKey"
+        next_cursor:
+          type: [string, "null"]
     SignupRequest:
       type: object
       required: [email, account_name, accepted_terms]
@@ -473,8 +644,29 @@ components:
             $ref: "#/components/schemas/Error"
     Unauthorized:
       description: |
-        `unauthenticated`: no session cookie, or the session has ended. Sign in
-        again.
+        `unauthenticated`: no API key or session cookie, or the session has
+        ended. `invalid_api_key`: the key is wrong or revoked.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: |
+        `insufficient_scope`: a draft-scope key can't do this; use a full-scope
+        key or the web app. `cross_origin_request`: a browser sent this from
+        another site.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: "`not_found`: there's no such thing in this account."
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

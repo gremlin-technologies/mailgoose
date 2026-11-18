@@ -59,6 +59,36 @@ var contractCases = map[string][]contractCase{
 			req: sessionRequest("wrong"), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: sessionRequest("wrong"), status: http.StatusServiceUnavailable},
 	},
+	"listApiKeys": {
+		{name: "full key", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/api-keys?limit=10")), status: http.StatusOK},
+		{name: "bad limit", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/api-keys?limit=0")), status: http.StatusBadRequest},
+		{name: "no credentials", server: authServer, req: request(http.MethodGet, "/v1/api-keys"), status: http.StatusUnauthorized},
+		{name: "unknown key", server: authServer, req: bearer(request(http.MethodGet, "/v1/api-keys")), status: http.StatusUnauthorized},
+		{name: "draft key", server: draftKey(authServer), req: bearer(request(http.MethodGet, "/v1/api-keys")), status: http.StatusForbidden},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/api-keys"))),
+			req: bearer(request(http.MethodGet, "/v1/api-keys")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodGet, "/v1/api-keys")), status: http.StatusServiceUnavailable},
+	},
+	"createApiKey": {
+		{name: "full key", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/api-keys", createKeyBody)), status: http.StatusCreated},
+		{name: "malformed", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/api-keys", `{"name":`)), status: http.StatusBadRequest},
+		{name: "no credentials", server: authServer, req: jsonRequest(http.MethodPost, "/v1/api-keys", createKeyBody), status: http.StatusUnauthorized},
+		{name: "draft key", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/api-keys", createKeyBody)), status: http.StatusForbidden},
+		{name: "bad scope", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/api-keys", `{"name":"x","scope":"admin"}`)), status: http.StatusUnprocessableEntity},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(jsonRequest(http.MethodPost, "/v1/api-keys", createKeyBody))),
+			req: bearer(jsonRequest(http.MethodPost, "/v1/api-keys", createKeyBody)), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(jsonRequest(http.MethodPost, "/v1/api-keys", createKeyBody)), status: http.StatusServiceUnavailable},
+	},
+	"revokeApiKey": {
+		{name: "own key", server: fullKey(authServer), req: bearer(ownKeyPath), status: http.StatusNoContent},
+		{name: "bad id", server: fullKey(authServer), req: bearer(request(http.MethodDelete, "/v1/api-keys/nope")), status: http.StatusBadRequest},
+		{name: "no credentials", server: authServer, req: request(http.MethodDelete, "/v1/api-keys/"+noSuchID), status: http.StatusUnauthorized},
+		{name: "draft key", server: draftKey(authServer), req: bearer(ownKeyPath), status: http.StatusForbidden},
+		{name: "no such key", server: fullKey(authServer), req: bearer(request(http.MethodDelete, "/v1/api-keys/"+noSuchID)), status: http.StatusNotFound},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodDelete, "/v1/api-keys/"+noSuchID))),
+			req: bearer(request(http.MethodDelete, "/v1/api-keys/"+noSuchID)), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodDelete, "/v1/api-keys/"+noSuchID)), status: http.StatusServiceUnavailable},
+	},
 	"createSignIn": {
 		{name: "known address", server: authServer, before: signedIn, req: jsonRequest(http.MethodPost, "/v1/sign-in", signInBody), status: http.StatusAccepted},
 		{name: "unknown address", server: authServer, req: jsonRequest(http.MethodPost, "/v1/sign-in", signInBody), status: http.StatusAccepted},
@@ -87,6 +117,8 @@ var contractCases = map[string][]contractCase{
 		{name: "no database", server: serverWith(nil), req: withSession(request(http.MethodDelete, "/v1/sessions")), status: http.StatusServiceUnavailable},
 	},
 }
+
+const noSuchID = "00000000-0000-4000-8000-000000000000"
 
 func serverWith(db Pinger) func(*testing.T) *Server {
 	return func(*testing.T) *Server { return newServer(db) }
