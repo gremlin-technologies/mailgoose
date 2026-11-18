@@ -2008,6 +2008,54 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/emails/{email_id}/preview:
+    get:
+      operationId: previewEmail
+      summary: Preview an email as it will look
+      description: |
+        Renders the email as it will be sent, filled in with sample data:
+        first name Alex, last name Rivera, email alex@example.com, and an
+        unsubscribe link that goes nowhere. `desktop` returns the email
+        itself; `mobile` returns a page that shows it in a 375 pixel frame,
+        so its narrow-screen rules apply. Until the account has a postal
+        address, the footer shows a placeholder where it goes. The page
+        runs no scripts.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+        - name: width
+          in: query
+          required: false
+          description: desktop (the default) or mobile.
+          schema:
+            type: string
+            enum: [desktop, mobile]
+            default: desktop
+      responses:
+        "200":
+          description: The rendered email, as HTML.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnrenderableEmail"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/emails/{email_id}/duplicate:
     post:
       operationId: duplicateEmail
@@ -4106,6 +4154,19 @@ components:
         `details.issues` lists each, with its `line`, `code` and `message`;
         `message` names the first. `kind_mismatch`: the email is a blocks
         email, which has no markup.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnrenderableEmail:
+      description: |
+        `invalid_merge_tags`: a merge tag can't be filled or a link is
+        unsafe; `details.problems` lists each with its `path` (such as
+        `blocks[2].text`, or `html`) and `message`. `empty_email`: an html
+        email with no markup yet.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

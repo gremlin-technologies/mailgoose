@@ -317,6 +317,16 @@ var contractCases = map[string][]contractCase{
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/emails"))), req: bearer(emailPath(http.MethodPut, "/html", `{"version":1,"html":`+goodHTML+`}`)), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(emailPath(http.MethodPut, "/html", `{"version":1,"html":`+goodHTML+`}`)), status: http.StatusServiceUnavailable},
 	},
+	"previewEmail": {
+		{name: "desktop", server: draftKey(authServer), before: addedEmail, req: bearer(emailPath(http.MethodGet, "/preview", "")), status: http.StatusOK},
+		{name: "mobile", server: fullKey(authServer), before: addedHTMLEmail, req: bearer(emailPath(http.MethodGet, "/preview?width=mobile", "")), status: http.StatusOK},
+		{name: "bad width", server: fullKey(authServer), before: addedEmail, req: bearer(emailPath(http.MethodGet, "/preview?width=tablet", "")), status: http.StatusBadRequest},
+		{name: "unknown", server: fullKey(authServer), req: bearer(emailPath(http.MethodGet, "/preview", "")), status: http.StatusNotFound},
+		{name: "unknown merge tag", server: fullKey(authServer), before: addedEmailFrom(`{"name":"Typo","document":{"blocks":[{"type":"heading","text":"Hi {{name}}"}]}}`), req: bearer(emailPath(http.MethodGet, "/preview", "")), status: http.StatusUnprocessableEntity},
+		{name: "no credentials", server: authServer, req: emailPath(http.MethodGet, "/preview", ""), status: http.StatusUnauthorized},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/emails"))), req: bearer(emailPath(http.MethodGet, "/preview", "")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(emailPath(http.MethodGet, "/preview", "")), status: http.StatusServiceUnavailable},
+	},
 	"duplicateEmail": {
 		{name: "copied", server: draftKey(authServer), before: addedEmail, req: bearer(emailPath(http.MethodPost, "/duplicate", "")), status: http.StatusCreated},
 		{name: "malformed", server: fullKey(authServer), before: addedEmail, req: bearer(emailPath(http.MethodPost, "/duplicate", `{"name":1}`)), status: http.StatusBadRequest},

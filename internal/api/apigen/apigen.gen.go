@@ -813,6 +813,24 @@ func (e WhoamiAuthMethod) Valid() bool {
 	}
 }
 
+// Defines values for PreviewEmailParamsWidth.
+const (
+	PreviewEmailParamsWidthDesktop PreviewEmailParamsWidth = "desktop"
+	PreviewEmailParamsWidthMobile  PreviewEmailParamsWidth = "mobile"
+)
+
+// Valid indicates whether the value is a known member of the PreviewEmailParamsWidth enum.
+func (e PreviewEmailParamsWidth) Valid() bool {
+	switch e {
+	case PreviewEmailParamsWidthDesktop:
+		return true
+	case PreviewEmailParamsWidthMobile:
+		return true
+	default:
+		return false
+	}
+}
+
 // Account defines model for Account.
 type Account struct {
 	CreatedAt time.Time     `json:"created_at"`
@@ -2107,6 +2125,9 @@ type TooManyRequests = Error
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
 
+// UnrenderableEmail defines model for UnrenderableEmail.
+type UnrenderableEmail = Error
+
 // ValidationFailed defines model for ValidationFailed.
 type ValidationFailed = Error
 
@@ -2202,6 +2223,15 @@ type RemoveEmailBlockParams struct {
 	// Version The email's version when you read it.
 	Version int `form:"version" json:"version"`
 }
+
+// PreviewEmailParams defines parameters for PreviewEmail.
+type PreviewEmailParams struct {
+	// Width desktop (the default) or mobile.
+	Width *PreviewEmailParamsWidth `form:"width,omitempty" json:"width,omitempty"`
+}
+
+// PreviewEmailParamsWidth defines parameters for PreviewEmail.
+type PreviewEmailParamsWidth string
 
 // ListImportsParams defines parameters for ListImports.
 type ListImportsParams struct {
@@ -3129,6 +3159,9 @@ type ServerInterface interface {
 	// ImportEmailHtml Replace an html email's markup
 	// (PUT /v1/emails/{email_id}/html)
 	ImportEmailHtml(w http.ResponseWriter, r *http.Request, emailId EmailId)
+	// PreviewEmail Preview an email as it will look
+	// (GET /v1/emails/{email_id}/preview)
+	PreviewEmail(w http.ResponseWriter, r *http.Request, emailId EmailId, params PreviewEmailParams)
 	// ListImports List CSV imports
 	// (GET /v1/imports)
 	ListImports(w http.ResponseWriter, r *http.Request, params ListImportsParams)
@@ -4404,6 +4437,48 @@ func (siw *ServerInterfaceWrapper) ImportEmailHtml(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// PreviewEmail operation middleware
+func (siw *ServerInterfaceWrapper) PreviewEmail(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PreviewEmailParams
+
+	// ------------- Optional query parameter "width" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "width", r.URL.Query(), &params.Width, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "width"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "width", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewEmail(w, r, emailId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListImports operation middleware
 func (siw *ServerInterfaceWrapper) ListImports(w http.ResponseWriter, r *http.Request) {
 
@@ -4993,6 +5068,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/emails/{email_id}", wrapper.UpdateEmail)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/emails/{email_id}/document", wrapper.ReplaceEmailDocument)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/emails/{email_id}/html", wrapper.ImportEmailHtml)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails/{email_id}/preview", wrapper.PreviewEmail)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/duplicate", wrapper.DuplicateEmail)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails/{email_id}/blocks", wrapper.ListEmailBlocks)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/blocks", wrapper.AddEmailBlock)

@@ -4,6 +4,26 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: Email preview (MG-25, reversible defaults)
+
+Picked while building MG-25; easy to change.
+
+- **Sample contact:** Alex Rivera, alex@example.com, with the unsubscribe
+  link pointing at `#unsubscribe`. Previewing as a real contact can come
+  with the email check or the designer.
+- **No postal address yet** shows a placeholder footer in the preview
+  instead of refusing it, so an email can be designed before Settings is
+  filled in. Sending still refuses (CMP-2).
+- **Mobile** is a wrapper page with the email in a 375 pixel iframe, so the
+  email's own media queries apply in any browser.
+- **Merge tag problems refuse the preview** (422 `invalid_merge_tags`)
+  rather than showing the raw tag, so the same mistake can't slip through
+  to a send.
+- **The preview page is sandboxed** by its Content-Security-Policy: no
+  scripts, forms or requests other than images, styles and fonts.
+- **`--open` only at a terminal**, so an agent running the CLI never
+  launches a browser on the person's machine by accident.
+
 ## 2026-11-18: HTML emails (MG-22, reversible defaults)
 
 Picked while building MG-22; easy to change.
