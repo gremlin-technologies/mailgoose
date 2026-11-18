@@ -974,6 +974,207 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/contacts:
+    get:
+      operationId: listContacts
+      summary: List contacts
+      description: The account's contacts, newest first. Filters combine; empty ones are ignored.
+      tags: [contacts]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: email
+          in: query
+          required: false
+          description: Only contacts whose address contains this, ignoring case.
+          schema:
+            type: string
+            maxLength: 254
+        - name: name
+          in: query
+          required: false
+          description: Only contacts whose first, last or full name contains this, ignoring case.
+          schema:
+            type: string
+            maxLength: 201
+        - name: status
+          in: query
+          required: false
+          description: Only contacts with this status.
+          schema:
+            $ref: "#/components/schemas/ContactStatus"
+      responses:
+        "200":
+          description: A page of contacts.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: createContact
+      summary: Add a contact
+      description: |
+        Adds one contact. The address is stored in lower case and must be new
+        to the account. An address that was deleted after it unsubscribed,
+        bounced or complained comes back with that status, whatever
+        `status` asks for, so it isn't mailed again by mistake.
+      tags: [contacts]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContactRequest"
+      responses:
+        "201":
+          description: The new contact.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/ContactConflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/contacts/{contact_id}:
+    get:
+      operationId: getContact
+      summary: Show a contact
+      tags: [contacts]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ContactId"
+      responses:
+        "200":
+          description: The contact.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    patch:
+      operationId: updateContact
+      summary: Change a contact
+      description: |
+        Changes only the fields sent; `null` removes a first or last name. A
+        contact that unsubscribed, bounced or complained can't be subscribed
+        again here (422 `contact_suppressed`): the person subscribes again
+        through a signup form. Bounced and complained come only from Amazon
+        SES.
+      tags: [contacts]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ContactId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateContactRequest"
+      responses:
+        "200":
+          description: The contact as changed.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Contact"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ContactConflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: deleteContact
+      summary: Delete a contact
+      description: |
+        Deletes the contact and everything about it. If it had unsubscribed,
+        bounced or complained, only a hash of its address stays, on the
+        account's suppression list, so adding the address again keeps that
+        status.
+      tags: [contacts]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ContactId"
+      responses:
+        "204":
+          description: Deleted.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
 components:
   securitySchemes:
     apiKey:
@@ -986,6 +1187,98 @@ components:
       name: mg_session
       description: The web session cookie that `createSession` sets.
   schemas:
+    ContactStatus:
+      type: string
+      enum: [unconfirmed, subscribed, unsubscribed, bounced, complained]
+      description: |
+        Only `subscribed` contacts receive campaigns. `unconfirmed` is waiting
+        for double opt-in or permission; `bounced` and `complained` come from
+        Amazon SES.
+    ContactSource:
+      type: string
+      enum: [form, import, api, manual]
+      description: How the contact was added. `manual` is the web app.
+    Contact:
+      type: object
+      required: [id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+          description: Stored in lower case.
+          examples: [pat@example.com]
+        first_name:
+          type: [string, "null"]
+        last_name:
+          type: [string, "null"]
+        status:
+          $ref: "#/components/schemas/ContactStatus"
+        source:
+          $ref: "#/components/schemas/ContactSource"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        status_changed_at:
+          type: string
+          format: date-time
+    ContactList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Contact"
+        next_cursor:
+          type: [string, "null"]
+    CreateContactRequest:
+      type: object
+      required: [email]
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          maxLength: 254
+          examples: [pat@example.com]
+        first_name:
+          type: [string, "null"]
+          maxLength: 100
+        last_name:
+          type: [string, "null"]
+          maxLength: 100
+        status:
+          type: string
+          enum: [subscribed, unconfirmed, unsubscribed]
+          default: subscribed
+          description: Use `unconfirmed` for someone who hasn't yet given permission to be mailed.
+        source:
+          type: string
+          enum: [api, manual]
+          default: api
+          description: '`manual` is for contacts a person typed in; agents and scripts leave it out.'
+    UpdateContactRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        email:
+          type: string
+          maxLength: 254
+        first_name:
+          type: [string, "null"]
+          maxLength: 100
+        last_name:
+          type: [string, "null"]
+          maxLength: 100
+        status:
+          type: string
+          enum: [subscribed, unconfirmed, unsubscribed]
     CreateDomainRequest:
       type: object
       required: [name]
@@ -1547,6 +1840,14 @@ components:
       schema:
         type: string
         format: uuid
+    ContactId:
+      name: contact_id
+      in: path
+      required: true
+      description: The contact's `id`.
+      schema:
+        type: string
+        format: uuid
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -1576,6 +1877,15 @@ components:
       schema:
         type: integer
   responses:
+    ContactConflict:
+      description: "`contact_exists`: the account already has a contact with that address."
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     DomainConflict:
       description: |
         `domain_exists`: this account already has the domain.

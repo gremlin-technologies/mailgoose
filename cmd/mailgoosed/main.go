@@ -26,6 +26,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/api"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/config"
+	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/db"
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
@@ -110,6 +111,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		srv.DB = pool
 		srv.Idempotency = api.PGIdempotencyStore{DB: pool}
 		srv.Credits = &credits.Ledger{DB: pool}
+		srv.Contacts = &contacts.Service{DB: pool}
 		if srv.Domains, err = newDomains(ctx, cfg, pool, log); err != nil {
 			return err
 		}

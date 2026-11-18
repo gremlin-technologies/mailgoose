@@ -261,6 +261,22 @@ mailgoose credits
 mailgoose credits history --limit 20
 ```
 
+## Contacts
+
+`internal/contacts` holds each account's one audience. Addresses are stored
+in lower case and are unique per account. Only subscribed contacts are
+campaign recipients (`contacts.Recipients`). Bounced and complained come only
+from Amazon SES, and an unsubscribed, bounced or complained contact can't be
+subscribed again through the API. Deleting such a contact leaves a hash of
+its address on the suppression list, so adding it again keeps the status.
+
+```sh
+mailgoose contacts add pat@example.com --first-name Pat
+mailgoose contacts list --status subscribed --name pat
+mailgoose contacts update pat@example.com --status unsubscribed
+mailgoose contacts delete pat@example.com --yes
+```
+
 ## Sending domains
 
 Campaigns go out from an address at a domain the customer owns.

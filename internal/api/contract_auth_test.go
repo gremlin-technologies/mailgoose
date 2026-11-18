@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
@@ -31,9 +32,10 @@ func authServer(t *testing.T) *Server {
 	outboxes.Store(t, fake)
 	t.Cleanup(func() { outboxes.Delete(t) })
 	return &Server{
-		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-		DB:      db,
-		Credits: &credits.Ledger{DB: db},
+		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:       db,
+		Credits:  &credits.Ledger{DB: db},
+		Contacts: &contacts.Service{DB: db},
 		// Fake SES, and DNS that answers with every record asked for, so
 		// domains verify on their first check.
 		Domains: &domains.Service{DB: db, SES: &domains.FakeSES{}, DNS: domains.LocalDNS{Region: "us-east-2"},
