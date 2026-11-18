@@ -2,7 +2,7 @@
 //
 // It is built for people and for AI agents alike: every command takes --json
 // for machine-readable output, nothing prompts, and an API key can come from
-// MAILGOOSE_TOKEN so a headless agent never needs a config file.
+// MAILGOOSE_API_KEY so a headless agent never needs a config file.
 package cli
 
 import (
@@ -22,13 +22,19 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 )
 
-// Exit codes, documented so agents can branch on them.
+// Exit codes, documented so agents can branch on them. These follow the MVP
+// CLI requirements; an unreachable or unhealthy API is a plain error (1).
 const (
 	ExitOK    = 0
 	ExitError = 1
 	ExitUsage = 2
-	// ExitUnavailable means the API could not be reached or is unhealthy.
-	ExitUnavailable = 3
+	// ExitAuth means the API key is missing, invalid or lacks permission.
+	ExitAuth = 3
+	// ExitNotFound means the named resource doesn't exist.
+	ExitNotFound = 4
+	// ExitNeedsConfirmation means the command needs an explicit confirmation,
+	// such as launching a campaign without --confirm.
+	ExitNeedsConfirmation = 5
 )
 
 // exitError carries an exit code with an error.
@@ -115,7 +121,7 @@ func (a *App) rootCmd() *cobra.Command {
 		Long: `mailgoose designs and sends emails and runs signup forms.
 
 Every command works for people and for AI agents: add --json for
-machine-readable output. Set MAILGOOSE_TOKEN to an API key to run headless.`,
+machine-readable output. Set MAILGOOSE_API_KEY to run headless.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -186,7 +192,7 @@ func (a *App) statusCmd() *cobra.Command {
 			req.Header.Set("User-Agent", "mailgoose-cli/"+version.Get().Version)
 			resp, err := a.HTTP.Do(req)
 			if err != nil {
-				return &exitError{code: ExitUnavailable, err: fmt.Errorf("cannot reach %s: %w", s.APIURL, err)}
+				return fmt.Errorf("cannot reach %s: %w", s.APIURL, err)
 			}
 			defer func() { _ = resp.Body.Close() }()
 
@@ -197,7 +203,7 @@ func (a *App) statusCmd() *cobra.Command {
 			}
 			_ = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body)
 			if resp.StatusCode != http.StatusOK {
-				return &exitError{code: ExitUnavailable, err: fmt.Errorf("%s answered %s", s.APIURL, resp.Status)}
+				return fmt.Errorf("%s answered %s", s.APIURL, resp.Status)
 			}
 			if a.jsonOut {
 				a.printJSON(map[string]any{
@@ -233,14 +239,14 @@ func (a *App) configCmd() *cobra.Command {
 				a.printJSON(map[string]any{
 					"api_url":        s.APIURL,
 					"api_url_source": s.APIURLSource,
-					"token":          MaskToken(s.Token),
-					"token_source":   s.TokenSource,
+					"api_key":        MaskKey(s.APIKey),
+					"api_key_source": s.APIKeySource,
 					"config_path":    s.ConfigPath,
 				})
 				return nil
 			}
 			fmt.Fprintf(a.Stdout, "api_url  %s (%s)\n", s.APIURL, s.APIURLSource)
-			fmt.Fprintf(a.Stdout, "token    %s (%s)\n", orNone(MaskToken(s.Token)), s.TokenSource)
+			fmt.Fprintf(a.Stdout, "api_key  %s (%s)\n", orNone(MaskKey(s.APIKey)), s.APIKeySource)
 			fmt.Fprintf(a.Stdout, "file     %s\n", s.ConfigPath)
 			return nil
 		},
@@ -248,9 +254,9 @@ func (a *App) configCmd() *cobra.Command {
 
 	set := &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Save a setting: api-url, or token (pass - to read the token from stdin)",
+		Short: "Save a setting: api-url, or api-key (pass - to read the key from stdin)",
 		Example: `  mailgoose config set api-url https://api.staging.mailgoose.app
-  printf '%s' "$KEY" | mailgoose config set token -`,
+  printf '%s' "$KEY" | mailgoose config set api-key -`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			key, value := args[0], args[1]
@@ -269,20 +275,20 @@ func (a *App) configCmd() *cobra.Command {
 					return &exitError{code: ExitUsage, err: err}
 				}
 				fc.APIURL = value
-			case "token":
+			case "api-key":
 				if value == "-" {
 					line, err := bufio.NewReader(a.Stdin).ReadString('\n')
 					if err != nil && !errors.Is(err, io.EOF) {
-						return fmt.Errorf("read token from stdin: %w", err)
+						return fmt.Errorf("read API key from stdin: %w", err)
 					}
 					value = strings.TrimSpace(line)
 				}
 				if value == "" {
-					return &exitError{code: ExitUsage, err: errors.New("token is empty")}
+					return &exitError{code: ExitUsage, err: errors.New("API key is empty")}
 				}
-				fc.Token = value
+				fc.APIKey = value
 			default:
-				return &exitError{code: ExitUsage, err: fmt.Errorf("unknown setting %q; use api-url or token", key)}
+				return &exitError{code: ExitUsage, err: fmt.Errorf("unknown setting %q; use api-url or api-key", key)}
 			}
 			if err := SaveFile(path, fc); err != nil {
 				return err
@@ -298,7 +304,7 @@ func (a *App) configCmd() *cobra.Command {
 
 	unset := &cobra.Command{
 		Use:   "unset <key>",
-		Short: "Remove a saved setting: api-url or token",
+		Short: "Remove a saved setting: api-url or api-key",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			path, err := ConfigPath(a.Getenv)
@@ -312,10 +318,10 @@ func (a *App) configCmd() *cobra.Command {
 			switch args[0] {
 			case "api-url":
 				fc.APIURL = ""
-			case "token":
-				fc.Token = ""
+			case "api-key":
+				fc.APIKey = ""
 			default:
-				return &exitError{code: ExitUsage, err: fmt.Errorf("unknown setting %q; use api-url or token", args[0])}
+				return &exitError{code: ExitUsage, err: fmt.Errorf("unknown setting %q; use api-url or api-key", args[0])}
 			}
 			if err := SaveFile(path, fc); err != nil {
 				return err

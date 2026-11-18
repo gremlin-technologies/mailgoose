@@ -60,8 +60,8 @@ func TestConfigSetShowUnset(t *testing.T) {
 	if code := h.run("config", "set", "api-url", "https://api.staging.mailgoose.app/"); code != ExitOK {
 		t.Fatalf("set api-url: exit %d: %s", code, h.errOut)
 	}
-	if code := h.run("config", "set", "token", "-"); code != ExitOK {
-		t.Fatalf("set token: exit %d: %s", code, h.errOut)
+	if code := h.run("config", "set", "api-key", "-"); code != ExitOK {
+		t.Fatalf("set api-key: exit %d: %s", code, h.errOut)
 	}
 
 	info, err := os.Stat(h.env[EnvConfig])
@@ -82,15 +82,15 @@ func TestConfigSetShowUnset(t *testing.T) {
 	if s["api_url"] != "https://api.staging.mailgoose.app" || s["api_url_source"] != "file" {
 		t.Errorf("api_url = %q (%s)", s["api_url"], s["api_url_source"])
 	}
-	if s["token"] != "****1234" || strings.Contains(h.out.String(), "secret-key") {
-		t.Errorf("token not masked: %s", h.out)
+	if s["api_key"] != "****1234" || strings.Contains(h.out.String(), "secret-key") {
+		t.Errorf("API key not masked: %s", h.out)
 	}
 
-	h.env[EnvToken] = "from-env-9999"
+	h.env[EnvAPIKey] = "from-env-9999"
 	h.run("config", "show", "--json")
 	_ = json.Unmarshal(h.out.Bytes(), &s)
-	if s["token_source"] != "env" {
-		t.Errorf("env token should win, got %s", s["token_source"])
+	if s["api_key_source"] != "env" {
+		t.Errorf("env API key should win, got %s", s["api_key_source"])
 	}
 
 	if code := h.run("config", "unset", "api-url"); code != ExitOK {
@@ -109,7 +109,8 @@ func TestConfigRejectsBadInput(t *testing.T) {
 		{"config", "set", "api-url", "http://api.example.com"},
 		{"config", "set", "api-url", "not a url"},
 		{"config", "set", "colour", "blue"},
-		{"config", "set", "token", "-"}, // empty stdin
+		{"config", "set", "api-key", "-"}, // empty stdin
+		{"config", "set", "token", "abc"}, // old name
 		{"config", "set"},
 		{"no-such-command"},
 	} {
@@ -146,11 +147,22 @@ func TestStatusUnavailable(t *testing.T) {
 	defer srv.Close()
 
 	h := newHarness(t, "")
-	if code := h.run("status", "--json", "--api-url", srv.URL); code != ExitUnavailable {
-		t.Fatalf("exit %d, want %d", code, ExitUnavailable)
+	if code := h.run("status", "--json", "--api-url", srv.URL); code != ExitError {
+		t.Fatalf("exit %d, want %d", code, ExitError)
 	}
 	var e map[string]map[string]any
-	if err := json.Unmarshal(h.out.Bytes(), &e); err != nil || e["error"]["exit_code"] != float64(ExitUnavailable) {
+	if err := json.Unmarshal(h.out.Bytes(), &e); err != nil || e["error"]["exit_code"] != float64(ExitError) {
 		t.Errorf("error output %q", h.out)
+	}
+}
+
+func TestStatusUnreachableIsPlainError(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	url := srv.URL
+	srv.Close() // nothing listens there now
+
+	h := newHarness(t, "")
+	if code := h.run("status", "--api-url", url); code != ExitError {
+		t.Fatalf("exit %d, want %d (3 is reserved for auth)", code, ExitError)
 	}
 }

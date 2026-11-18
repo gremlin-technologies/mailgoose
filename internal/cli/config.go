@@ -15,25 +15,25 @@ import (
 const DefaultAPIURL = "https://api.mailgoose.app"
 
 // Environment variables that override the config file. Agents running
-// headless should set MAILGOOSE_TOKEN rather than writing a file.
+// headless should set MAILGOOSE_API_KEY rather than writing a file.
 const (
 	EnvAPIURL = "MAILGOOSE_API_URL"
-	EnvToken  = "MAILGOOSE_TOKEN"
+	EnvAPIKey = "MAILGOOSE_API_KEY" //nolint:gosec // an environment variable name, not a credential
 	EnvConfig = "MAILGOOSE_CONFIG"
 )
 
 // FileConfig is what the config file holds.
 type FileConfig struct {
 	APIURL string `json:"api_url,omitempty"`
-	Token  string `json:"token,omitempty"`
+	APIKey string `json:"api_key,omitempty"`
 }
 
 // Settings are the resolved values and where each came from.
 type Settings struct {
 	APIURL       string `json:"api_url"`
 	APIURLSource string `json:"api_url_source"`
-	Token        string `json:"-"`
-	TokenSource  string `json:"token_source"`
+	APIKey       string `json:"-"`
+	APIKeySource string `json:"api_key_source"`
 	ConfigPath   string `json:"config_path"`
 }
 
@@ -72,7 +72,7 @@ func SaveFile(path string, fc FileConfig) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config directory: %w", err)
 	}
-	b, err := json.MarshalIndent(fc, "", "  ")
+	b, err := json.MarshalIndent(fc, "", "  ") //nolint:gosec // storing the key in this 0600 file is the point
 	if err != nil {
 		return err
 	}
@@ -99,18 +99,18 @@ func Resolve(flagURL string, getenv func(string) string, path string, fc FileCon
 	s.APIURL = strings.TrimRight(s.APIURL, "/")
 
 	switch {
-	case getenv(EnvToken) != "":
-		s.Token, s.TokenSource = getenv(EnvToken), "env"
-	case fc.Token != "":
-		s.Token, s.TokenSource = fc.Token, "file"
+	case getenv(EnvAPIKey) != "":
+		s.APIKey, s.APIKeySource = getenv(EnvAPIKey), "env"
+	case fc.APIKey != "":
+		s.APIKey, s.APIKeySource = fc.APIKey, "file"
 	default:
-		s.TokenSource = "none"
+		s.APIKeySource = "none"
 	}
 	return s
 }
 
 // ValidateAPIURL checks that u is an absolute http(s) URL. Plain http is
-// allowed only for localhost, so a token never crosses the internet in clear.
+// allowed only for localhost, so an API key never crosses the internet in clear.
 func ValidateAPIURL(u string) error {
 	p, err := url.Parse(u)
 	if err != nil || p.Host == "" {
@@ -130,8 +130,8 @@ func ValidateAPIURL(u string) error {
 	}
 }
 
-// MaskToken shows only the last four characters.
-func MaskToken(t string) string {
+// MaskKey shows only the last four characters.
+func MaskKey(t string) string {
 	if t == "" {
 		return ""
 	}
