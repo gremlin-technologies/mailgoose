@@ -23,14 +23,24 @@ type form struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
 	} `json:"tags"`
-	ButtonText     string    `json:"button_text"`
-	SuccessMessage string    `json:"success_message"`
-	RedirectURL    *string   `json:"redirect_url"`
-	DoubleOptIn    bool      `json:"double_opt_in"`
-	ConfirmSubject string    `json:"confirm_subject"`
-	ConfirmText    string    `json:"confirm_text"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ButtonText     string  `json:"button_text"`
+	SuccessMessage string  `json:"success_message"`
+	RedirectURL    *string `json:"redirect_url"`
+	DoubleOptIn    bool    `json:"double_opt_in"`
+	ConfirmSubject string  `json:"confirm_subject"`
+	ConfirmText    string  `json:"confirm_text"`
+	Signups        int     `json:"signups"`
+	Confirmations  int     `json:"confirmations"`
+	// Problems is only on getting one form; nil otherwise.
+	Problems  []formProblem `json:"problems,omitempty"`
+	CreatedAt time.Time     `json:"created_at"`
+	UpdatedAt time.Time     `json:"updated_at"`
+}
+
+type formProblem struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Hint    string `json:"hint"`
 }
 
 type formField struct {
@@ -119,7 +129,7 @@ func (a *App) formBody(ctx context.Context, cmd *cobra.Command, f *formFlags, fi
 				body["tag_ids"] = ids
 			}
 		}
-		for _, k := range []string{"id", "tags", "created_at", "updated_at"} {
+		for _, k := range []string{"id", "tags", "signups", "confirmations", "problems", "created_at", "updated_at"} {
 			delete(body, k)
 		}
 		if raw, ok := body["fields"]; ok && fields != nil {
@@ -250,7 +260,20 @@ func (a *App) printForm(f form, verb string) {
 	if f.DoubleOptIn {
 		fmt.Fprintf(tw, "Confirm subject:\t%q\n", f.ConfirmSubject)
 	}
+	fmt.Fprintf(tw, "Signups:\t%d\n", f.Signups)
+	if f.DoubleOptIn || f.Confirmations > 0 {
+		fmt.Fprintf(tw, "Confirmed:\t%d\n", f.Confirmations)
+	}
 	_ = tw.Flush()
+	if len(f.Problems) > 0 {
+		fmt.Fprintf(a.Stdout, "\nThis form isn't taking signups. %d %s to fix:\n", len(f.Problems), plural(len(f.Problems), "thing", "things"))
+		for _, p := range f.Problems {
+			fmt.Fprintf(a.Stdout, "  - %s\n", p.Message)
+			if p.Hint != "" {
+				fmt.Fprintf(a.Stdout, "    %s\n", p.Hint)
+			}
+		}
+	}
 }
 
 func (a *App) formCmd() *cobra.Command {

@@ -56,7 +56,8 @@ func validFormID(w http.ResponseWriter, id string) bool {
 func formJSON(f *forms.Form) apigen.Form {
 	out := apigen.Form{Id: f.ID, Name: f.Name, ButtonText: f.ButtonText, SuccessMessage: f.SuccessMessage,
 		RedirectUrl: f.RedirectURL, DoubleOptIn: f.DoubleOptIn, ConfirmSubject: f.ConfirmSubject,
-		ConfirmText: f.ConfirmText, CreatedAt: f.CreatedAt.UTC(), UpdatedAt: f.UpdatedAt.UTC(),
+		ConfirmText: f.ConfirmText, Signups: f.Signups, Confirmations: f.Confirmations,
+		CreatedAt: f.CreatedAt.UTC(), UpdatedAt: f.UpdatedAt.UTC(),
 		Fields: make([]apigen.FormField, len(f.Fields)), Tags: make([]apigen.TagRef, len(f.Tags))}
 	for i, fl := range f.Fields {
 		label, req := fl.Label, fl.Required
@@ -156,7 +157,21 @@ func (s *Server) GetForm(w http.ResponseWriter, r *http.Request, id string) {
 	if s.formError(w, r, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, formJSON(f))
+	out := formJSON(f)
+	problems := []apigen.FormProblem{}
+	if s.Signups != nil {
+		ps, err := s.Signups.Problems(r.Context(), f)
+		if err != nil {
+			s.Log.ErrorContext(r.Context(), "check a form's problems", "err", err)
+			WriteError(w, Internal())
+			return
+		}
+		for _, p := range ps {
+			problems = append(problems, apigen.FormProblem{Code: p.Code, Message: p.Message, Hint: p.Hint})
+		}
+	}
+	out.Problems = &problems
+	writeJSON(w, http.StatusOK, out)
 }
 
 // UpdateForm is PATCH /v1/forms/{form_id}.

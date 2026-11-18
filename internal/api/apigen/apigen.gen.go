@@ -201,6 +201,21 @@ func (e ColumnsBlockType) Valid() bool {
 	}
 }
 
+// Defines values for ContactDataConsentsSource.
+const (
+	ContactDataConsentsSourceForm ContactDataConsentsSource = "form"
+)
+
+// Valid indicates whether the value is a known member of the ContactDataConsentsSource enum.
+func (e ContactDataConsentsSource) Valid() bool {
+	switch e {
+	case ContactDataConsentsSourceForm:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ContactSource.
 const (
 	ContactSourceApi    ContactSource = "api"
@@ -1254,6 +1269,23 @@ type Contact struct {
 
 // ContactData defines model for ContactData.
 type ContactData struct {
+	// Consents The contact's signups through signup forms, oldest first.
+	Consents []struct {
+		// ConfirmedAt When the person used the confirm link; null until then.
+		ConfirmedAt *time.Time `json:"confirmed_at"`
+		CreatedAt   time.Time  `json:"created_at"`
+
+		// FormId Null once the form is deleted; `wording` still says what it showed.
+		FormId *string `json:"form_id"`
+		Id     string  `json:"id"`
+
+		// Ip The address the signup was posted from.
+		Ip     string                    `json:"ip"`
+		Source ContactDataConsentsSource `json:"source"`
+
+		// Wording What the form showed: `form_name`, `fields` (their labels), `button_text`, `double_opt_in`, and with double opt-in `confirm_subject` and `confirm_text`.
+		Wording map[string]interface{} `json:"wording"`
+	} `json:"consents"`
 	Contact Contact `json:"contact"`
 
 	// Import The import that added the contact; null when none did.
@@ -1289,6 +1321,9 @@ type ContactData struct {
 		Name    string    `json:"name"`
 	} `json:"tags"`
 }
+
+// ContactDataConsentsSource defines model for ContactData.Consents.Source.
+type ContactDataConsentsSource string
 
 // ContactFilter Matches contacts as `listContacts` does; fields left out don't filter.
 type ContactFilter struct {
@@ -1836,8 +1871,11 @@ type Form struct {
 	ConfirmSubject string `json:"confirm_subject"`
 
 	// ConfirmText The confirmation email's text, above its confirm link.
-	ConfirmText string    `json:"confirm_text"`
-	CreatedAt   time.Time `json:"created_at"`
+	ConfirmText string `json:"confirm_text"`
+
+	// Confirmations How many confirm links from the form's confirmation emails have been used.
+	Confirmations int       `json:"confirmations"`
+	CreatedAt     time.Time `json:"created_at"`
 
 	// DoubleOptIn When on, people get an email to confirm before they're subscribed.
 	DoubleOptIn bool `json:"double_opt_in"`
@@ -1847,8 +1885,14 @@ type Form struct {
 	Id     string      `json:"id"`
 	Name   string      `json:"name"`
 
+	// Problems Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from.
+	Problems *[]FormProblem `json:"problems,omitempty"`
+
 	// RedirectUrl Where people go after signing up, instead of seeing the success message.
 	RedirectUrl *string `json:"redirect_url"`
+
+	// Signups How many submissions the form has taken, bots' left out. A person who signs up twice counts twice.
+	Signups int `json:"signups"`
 
 	// SuccessMessage Shown after someone signs up, unless there's a redirect_url.
 	SuccessMessage string `json:"success_message"`
@@ -1887,6 +1931,13 @@ type FormFieldName string
 type FormList struct {
 	Data       []Form  `json:"data"`
 	NextCursor *string `json:"next_cursor"`
+}
+
+// FormProblem defines model for FormProblem.
+type FormProblem struct {
+	Code    string `json:"code"`
+	Hint    string `json:"hint"`
+	Message string `json:"message"`
 }
 
 // HeadingBlock defines model for HeadingBlock.

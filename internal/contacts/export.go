@@ -3,6 +3,7 @@ package contacts
 import (
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"io"
 	"strconv"
@@ -16,10 +17,12 @@ import (
 // reads email, first_name, last_name, status and tags back, so an export
 // imports as the same contacts and tags. permission_confirmed is true or
 // false for contacts an import added, saying whether the account confirmed
-// it had their permission, and empty for others; form consent records come
-// with signup forms (MG-36).
+// it had their permission, and empty for others. The signup_ columns are
+// from the contact's latest signup through a form (CMP-3): which form,
+// when, from which IP, and when they confirmed; empty when none.
 var ExportHeader = []string{
 	"email", "first_name", "last_name", "status", "tags", "source", "created_at", "status_changed_at", "permission_confirmed",
+	"signup_form_id", "signup_at", "signup_ip", "signup_confirmed_at",
 }
 
 // guardFormula puts a ' before a cell a spreadsheet would read as a formula,
@@ -40,8 +43,13 @@ func (s *Service) ExportCSV(ctx context.Context, accountID string, f Filter, w i
 			coalesce((SELECT string_agg(t.name, ', ' ORDER BY lower(t.name), t.id)
 				FROM contact_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.contact_id = contacts.id), ''),
 			source, created_at, status_changed_at,
-			(SELECT i.permission_confirmed FROM imports i WHERE i.id = contacts.import_id)
-		FROM contacts WHERE account_id = $1`, []any{accountID})
+			(SELECT i.permission_confirmed FROM imports i WHERE i.id = contacts.import_id),
+			coalesce(sc.signup_form::text, ''), sc.signup_at, coalesce(sc.signup_ip, ''), sc.signup_confirmed
+		FROM contacts
+		LEFT JOIN LATERAL (SELECT k.form_id AS signup_form, k.created_at AS signup_at, k.ip AS signup_ip,
+				k.confirmed_at AS signup_confirmed
+			FROM consents k WHERE k.contact_id = contacts.id ORDER BY k.created_at DESC, k.id DESC LIMIT 1) sc ON true
+		WHERE account_id = $1`, []any{accountID})
 	q += ` ORDER BY created_at, id`
 	rows, err := s.DB.Query(ctx, q, args...)
 	if err != nil {
@@ -54,10 +62,12 @@ func (s *Service) ExportCSV(ctx context.Context, accountID string, f Filter, w i
 	}
 	n := 0
 	for rows.Next() {
-		var email, first, last, status, tags, source string
+		var email, first, last, status, tags, source, signupForm, signupIP string
 		var created, changed time.Time
 		var permission *bool
-		if err := rows.Scan(&email, &first, &last, &status, &tags, &source, &created, &changed, &permission); err != nil {
+		var signupAt, signupConfirmed *time.Time
+		if err := rows.Scan(&email, &first, &last, &status, &tags, &source, &created, &changed, &permission,
+			&signupForm, &signupAt, &signupIP, &signupConfirmed); err != nil {
 			return n, err
 		}
 		perm := ""
@@ -71,6 +81,7 @@ func (s *Service) ExportCSV(ctx context.Context, accountID string, f Filter, w i
 		if err := cw.Write([]string{
 			guardFormula(email), guardFormula(first), guardFormula(last), status, strings.Join(guarded, ", "), source,
 			created.UTC().Format(time.RFC3339), changed.UTC().Format(time.RFC3339), perm,
+			signupForm, formatTime(signupAt), guardFormula(signupIP), formatTime(signupConfirmed),
 		}); err != nil {
 			return n, err
 		}
@@ -89,6 +100,14 @@ func (s *Service) ExportCSV(ctx context.Context, accountID string, f Filter, w i
 	return n, cw.Error()
 }
 
+// formatTime is t in UTC as RFC 3339, or empty for nil.
+func formatTime(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
 // ContactData is everything stored about one contact, for a data request
 // (CMP-9).
 type ContactData struct {
@@ -100,6 +119,22 @@ type ContactData struct {
 	// SkippedRows are rows of the account's imports that held the contact's
 	// address and weren't added, as the skip report keeps them.
 	SkippedRows []ContactSkippedRow
+	// Consents are the contact's signups through forms, oldest first.
+	Consents []Consent
+}
+
+// Consent is the record of one signup through a form (CMP-3).
+type Consent struct {
+	ID string
+	// FormID is nil once the form is deleted; Wording still says what it
+	// showed.
+	FormID *string
+	Source string
+	IP     string
+	// Wording is what the form showed, as JSON.
+	Wording     json.RawMessage
+	CreatedAt   time.Time
+	ConfirmedAt *time.Time
 }
 
 // TagAdded is one of a contact's tags and when it was put on.
@@ -137,7 +172,7 @@ func (s *Service) Data(ctx context.Context, accountID, id string) (*ContactData,
 	if err != nil {
 		return nil, err
 	}
-	d := &ContactData{Contact: c, Tags: []TagAdded{}, SkippedRows: []ContactSkippedRow{}}
+	d := &ContactData{Contact: c, Tags: []TagAdded{}, SkippedRows: []ContactSkippedRow{}, Consents: []Consent{}}
 	rows, err := s.DB.Query(ctx, `
 		SELECT t.id, t.name, ct.created_at FROM contact_tags ct JOIN tags t ON t.id = ct.tag_id
 		WHERE ct.contact_id = $1 ORDER BY lower(t.name), t.id`, c.ID)
@@ -175,19 +210,39 @@ func (s *Service) Data(ctx context.Context, accountID, id string) (*ContactData,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var r ContactSkippedRow
 		if err := rows.Scan(&r.ImportID, &r.FileName, &r.Row, &r.Reason); err != nil {
+			rows.Close()
 			return nil, err
 		}
 		d.SkippedRows = append(d.SkippedRows, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	rows, err = s.DB.Query(ctx, `
+		SELECT id, form_id, source, ip, wording, created_at, confirmed_at FROM consents
+		WHERE contact_id = $1 ORDER BY created_at, id`, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k Consent
+		if err := rows.Scan(&k.ID, &k.FormID, &k.Source, &k.IP, &k.Wording, &k.CreatedAt, &k.ConfirmedAt); err != nil {
+			return nil, err
+		}
+		d.Consents = append(d.Consents, k)
 	}
 	return d, rows.Err()
 }
 
 // Erase deletes a contact and every trace of its address, for a data request
-// (CMP-9): the contact, its tags and the address in import skip reports. Only
+// (CMP-9): the contact, its tags and signup records, and the address in
+// import skip reports. Only
 // a hash of the address stays, on the suppression list, so the address isn't
 // added back and mailed by mistake: with the contact's status if it
 // unsubscribed, bounced or complained, and as unsubscribed otherwise.
