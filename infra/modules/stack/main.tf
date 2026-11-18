@@ -346,6 +346,12 @@ module "deploy_role" {
   allowed_subjects    = var.github_deploy_subjects
   ecr_repository_arns = [data.aws_ecr_repository.app.arn]
   ecs_service_arns    = [module.api.service_arn, module.worker.service_arn]
+
+  # Migrations run as a one-off task of the API task definition.
+  run_task_cluster_arn = aws_ecs_cluster.this.arn
+  run_task_definition_arns = [
+    "arn:aws:ecs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:task-definition/${module.api.task_definition_family}:*",
+  ]
   pass_role_arns = [
     module.api.task_role_arn,
     module.api.execution_role_arn,

@@ -169,14 +169,37 @@ for an admin user or SSO role in the target account.
 ## How deploys work
 
 - Infra changes: a person runs `terraform plan` / `apply` locally.
-- App deploys: GitHub Actions assumes `<env>-github-deploy` through OIDC (no AWS
-  keys stored in GitHub), pushes the image to ECR, registers a new task
-  definition revision and updates the service. Staging accepts pushes to `main`;
-  prod accepts only jobs in the GitHub `production` environment, which can
-  require an approval.
+- App deploys, today: a person runs `make push-ecr` (images) and registers the
+  task definition by hand. GitHub OIDC is off because the AWS project's managed
+  service control policy denies creating the OIDC provider (`docs/decisions.md`,
+  2026-11-18).
+- App deploys, once OIDC is allowed: `.github/workflows/deploy-staging.yml`
+  assumes `mailgoose-staging-github-deploy` through OIDC (no AWS keys stored in
+  GitHub), pushes the image to ECR tagged with the commit, runs
+  `mailgoosed migrate up` as a one-off task (a failed migration stops the
+  deploy), then registers a new task definition revision and updates both
+  services (`scripts/ci/deploy-ecs.sh`). The role trusts only
+  `repo:gremlin-technologies/mailgoose:ref:refs/heads/main`. Prod is not wired
+  up yet: its role is off (`enable_github_deploy = false`) and would accept only
+  jobs in the GitHub `production` environment, which can require an approval.
 - The ECS services ignore `task_definition` drift so `terraform apply` never
   rolls back an image CI deployed. When Terraform changes env vars or sizes, it
   creates a new revision and CI's next deploy picks it up.
+
+### Turning on CI deploys (staging)
+
+Do these in order, only after the AWS project allows the OIDC provider:
+
+1. `infra/global/terraform.tfvars`: set `create_github_oidc_provider = true`,
+   then `terraform apply` in `infra/global`.
+2. `infra/envs/staging/main.tf`: set `enable_github_deploy = true`, then
+   `terraform plan` (it should add only the deploy role and its policy) and
+   `apply`.
+3. In GitHub, add the repository **variable** (not a secret)
+   `STAGING_DEPLOY_ROLE_ARN` with `terraform output github_deploy_role_arn`.
+   Until it is set, the deploy job is skipped.
+4. Raise `api_desired_count` and `worker_desired_count` in staging once the
+   first deployed image is healthy.
 
 ## Things the app code must handle
 
@@ -195,6 +218,6 @@ for an admin user or SSO role in the target account.
 
 ## Not here yet
 
-GitHub Actions workflows, autoscaling, CloudWatch alarms, WAF, a custom
+The prod deploy workflow, autoscaling, CloudWatch alarms, WAF, a custom
 open/click tracking domain, and hosting the web
 editor on S3 + CloudFront (the API service can serve it for now).

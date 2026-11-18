@@ -35,7 +35,12 @@ module "stack" {
   worker_desired_count = 1
   log_retention_days   = 30
 
-  # Only jobs running in the GitHub "production" environment (which can require
-  # a manual approval) may deploy prod.
+  # Off until the staging deploy has run cleanly and the AWS project allows the
+  # GitHub OIDC provider (docs/decisions.md). Must stay explicit: the module's
+  # default is on, which would look up a provider that does not exist yet.
+  enable_github_deploy = false
+
+  # When on, only jobs running in the GitHub "production" environment (which can
+  # require a manual approval) may deploy prod.
   github_deploy_subjects = ["environment:production"]
 }
