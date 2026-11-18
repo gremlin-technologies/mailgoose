@@ -208,8 +208,8 @@ The pricing is decided; this is how the MVP enforces it. (stated prices) [D1]
 - **BIL-1 Credit ledger:** every grant, purchase, reservation, refund, fee and expiry is a ledger entry; the balance is their sum. One credit is one email to one recipient. Test sends and confirmation emails are free. (inferred)
 - **BIL-2 Free tier:** 1,000 credits a month that don't roll over, and 500 contacts. (stated)
 - **BIL-3 Buying credits** through Stripe Checkout: $20 for 10,000, $75 for 50,000, $240 for 200,000, $900 for 1,000,000. Bought credits last 24 months and are used oldest first. (stated prices and expiry, inferred order)
-- **BIL-4 Account fee:** a paid account pays $5 a month, including 2,500 contacts, plus $5 per extra 10,000 contacts, taken from credits on the billing date at the credit price (2,500 credits per $5). If the balance can't cover it, sending pauses until it can; contacts and emails are kept. (stated fee and default, inferred mechanics)
-- **BIL-5 When an account becomes paid:** on its first purchase. It then stops getting the monthly free grant. (inferred)
+- **BIL-4 Account fee:** a paid account pays $5 a month, including 2,500 contacts, plus $5 per extra 10,000 contacts, taken from credits on the billing date at the credit price (2,500 credits per $5). If the balance can't cover it, sending pauses until it can; contacts and emails are kept. (stated fee and default, inferred mechanics) **Changed Nov 18 by the owner:** a card subscription, $5 a month or $50 a year for the same contacts; a failed payment pauses sending until it goes through. See `docs/decisions.md`.
+- **BIL-5 When an account becomes paid:** on its first purchase. It then stops getting the monthly free grant. (inferred) **Changed Nov 18:** when its subscription starts; credit packs are for paid accounts.
 - **BIL-6 Balance and history** in the UI and `mailgoose credits` in the CLI. Purchases happen in the browser; the CLI prints a link. (inferred)
 - **BIL-7 Receipts** from Stripe. Sales tax handled by Stripe Tax. (inferred)
 

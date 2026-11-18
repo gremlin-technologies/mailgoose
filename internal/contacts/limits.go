@@ -8,8 +8,8 @@ import (
 )
 
 // FreeContactLimit is the most counted contacts a free account may hold
-// (CON-9, BIL-2). Paid accounts have no hard cap; their count feeds the
-// monthly fee (MG-40).
+// (CON-9, BIL-2). Paid accounts have no hard cap; their count sets the
+// paid plan's units (MG-40).
 const FreeContactLimit = 500
 
 // LimitError means a change would take a free account over its contact

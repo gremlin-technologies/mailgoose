@@ -20,9 +20,66 @@ const testWebhookSecret = "whsec_api_test"
 
 // fakeStripe makes Checkout sessions without Stripe.
 type fakeStripe struct {
-	mu  sync.Mutex
-	got []billing.SessionRequest
-	err error
+	mu       sync.Mutex
+	got      []billing.SessionRequest
+	subs     []billing.SubscriptionRequest
+	portals  []string
+	canceled []string
+	err      error
+}
+
+func (f *fakeStripe) CreateSubscriptionCheckout(_ context.Context, r billing.SubscriptionRequest) (*billing.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.subs = append(f.subs, r)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &billing.Session{ID: "cs_test_sub", URL: "https://checkout.stripe.test/c/pay/cs_test_sub",
+		ExpiresAt: time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)}, nil
+}
+
+func (f *fakeStripe) CreatePortalSession(_ context.Context, customerID, _ string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.portals = append(f.portals, customerID)
+	if f.err != nil {
+		return "", f.err
+	}
+	return "https://billing.stripe.test/p/session/" + customerID, nil
+}
+
+func (f *fakeStripe) SetSubscriptionUnits(context.Context, string, string, int, string) error {
+	return f.err
+}
+
+func (f *fakeStripe) CancelSubscription(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.canceled = append(f.canceled, id)
+	return f.err
+}
+
+// makePaid puts the server's only account on a live monthly subscription.
+func makePaid(t *testing.T, s *Server) string {
+	t.Helper()
+	var acc string
+	if err := s.Billing.DB.QueryRow(t.Context(), `UPDATE accounts SET plan = 'paid', paid_since = now(),
+		stripe_customer_id = 'cus_1', stripe_subscription_id = 'sub_1', subscription_item_id = 'si_1',
+		subscription_status = 'active', billing_interval = 'month', plan_units = 1
+		WHERE id = (SELECT account_id FROM users LIMIT 1) RETURNING id`).Scan(&acc); err != nil {
+		t.Fatal(err)
+	}
+	return acc
+}
+
+// paidAccount is a server whose account is on the paid plan.
+func paidAccount(next func(*testing.T) *Server) func(*testing.T) *Server {
+	return func(t *testing.T) *Server {
+		s := next(t)
+		makePaid(t, s)
+		return s
+	}
 }
 
 func (f *fakeStripe) CreateCheckoutSession(_ context.Context, r billing.SessionRequest) (*billing.Session, error) {
@@ -64,9 +121,18 @@ func TestCreditCheckout(t *testing.T) {
 	s.Billing.Stripe = f
 	h := s.Handler()
 
+	// A free account is sent to the plan first.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(checkoutRequest(`{"pack":"50k"}`))(t))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"plan_required"`) ||
+		!strings.Contains(rec.Body.String(), "mailgoose plan upgrade") {
+		t.Fatalf("free account: %d %s", rec.Code, rec.Body)
+	}
+	makePaid(t, s)
+
 	req := bearer(checkoutRequest(`{"pack":"50k"}`))(t)
 	req.Header.Set("Idempotency-Key", "buy-1")
-	rec := httptest.NewRecorder()
+	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
@@ -151,8 +217,31 @@ func TestStripeWebhook(t *testing.T) {
 		WHERE account_id = a.id AND type = 'purchase') FROM accounts a WHERE id = $1`, acc).Scan(&plan, &bought); err != nil {
 		t.Fatal(err)
 	}
-	if plan != "paid" || bought != 10000 {
-		t.Errorf("plan %s, bought %d", plan, bought)
+	if plan != "free" || bought != 10000 {
+		t.Errorf("plan %s, bought %d (buying credits doesn't change the plan)", plan, bought)
+	}
+
+	// A subscription event puts the account on the paid plan.
+	sub, _ := json.Marshal(map[string]any{
+		"id": "evt_2", "type": "customer.subscription.created", "created": time.Now().Unix(),
+		"data": map[string]any{"object": map[string]any{
+			"id": "sub_9", "customer": "cus_9", "status": "active", "metadata": map[string]string{"account_id": acc},
+			"items": map[string]any{"data": []map[string]any{{"id": "si_9", "quantity": 1,
+				"current_period_end": time.Now().Add(30 * 24 * time.Hour).Unix(),
+				"price":              map[string]any{"currency": "usd", "recurring": map[string]any{"interval": "year"}}}}},
+		}},
+	})
+	body = sub
+	rec = post(billing.Sign(body, testWebhookSecret, time.Now()), http.MethodPost)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"subscription"`) {
+		t.Fatalf("subscription: %d %s", rec.Code, rec.Body)
+	}
+	var interval string
+	if err := pool.QueryRow(t.Context(), `SELECT plan, billing_interval FROM accounts WHERE id = $1`, acc).Scan(&plan, &interval); err != nil {
+		t.Fatal(err)
+	}
+	if plan != "paid" || interval != "year" {
+		t.Errorf("after subscribing: plan %s, interval %s", plan, interval)
 	}
 
 	// Without a database it asks Stripe to try again later.
@@ -160,5 +249,118 @@ func TestStripeWebhook(t *testing.T) {
 	newServer(nil).Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, StripeWebhookPath, bytes.NewReader(body)))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("no database: %d", rec.Code)
+	}
+}
+
+func planRequest(body string) func(*testing.T) *http.Request {
+	return jsonRequest(http.MethodPost, "/v1/plan/checkout", body)
+}
+
+func TestPlan(t *testing.T) {
+	s := fullKey(authServer)(t)
+	f := &fakeStripe{}
+	s.Billing.Stripe = f
+	h := s.Handler()
+	get := func() map[string]any {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, bearer(request(http.MethodGet, "/v1/plan"))(t))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("get plan: %d %s", rec.Code, rec.Body)
+		}
+		var out map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	p := get()
+	prices, _ := p["prices"].(map[string]any)
+	if p["plan"] != "free" || p["units_needed"] != float64(1) || prices["month_cents"] != float64(500) ||
+		prices["year_cents"] != float64(5000) || p["status"] != nil {
+		t.Errorf("free plan %v", p)
+	}
+
+	// Nothing to manage yet.
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(jsonRequest(http.MethodPost, "/v1/plan/portal", ""))(t))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"not_subscribed"`) {
+		t.Errorf("portal before subscribing: %d %s", rec.Code, rec.Body)
+	}
+
+	// A yearly checkout.
+	req := bearer(planRequest(`{"interval":"year"}`))(t)
+	req.Header.Set("Idempotency-Key", "plan-1")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("checkout: %d %s", rec.Code, rec.Body)
+	}
+	var out struct {
+		URL            string `json:"url"`
+		Interval       string `json:"interval"`
+		Units          int    `json:"units"`
+		UnitPriceCents int    `json:"unit_price_cents"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.URL == "" || out.Interval != "year" || out.Units != 1 || out.UnitPriceCents != 5000 {
+		t.Errorf("checkout %+v", out)
+	}
+	if len(f.subs) != 1 || f.subs[0].Interval != "year" || f.subs[0].UnitCents != 5000 ||
+		f.subs[0].SuccessURL != "https://app.mailgoose.test/billing?checkout=done" ||
+		!strings.HasPrefix(f.subs[0].IdempotencyKey, "mailgoose-plan:") {
+		t.Errorf("subscription request %+v", f.subs)
+	}
+
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(planRequest(`{"interval":"week"}`))(t))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown interval: %d %s", rec.Code, rec.Body)
+	}
+
+	// Once subscribed: no second checkout, and the portal opens.
+	makePaid(t, s)
+	if p := get(); p["plan"] != "paid" || p["status"] != "active" || p["interval"] != "month" || p["units"] != float64(1) {
+		t.Errorf("paid plan %v", p)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(planRequest(`{"interval":"month"}`))(t))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"already_subscribed"`) {
+		t.Errorf("second checkout: %d %s", rec.Code, rec.Body)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(jsonRequest(http.MethodPost, "/v1/plan/portal", ""))(t))
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), "cus_1") {
+		t.Errorf("portal: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestDeleteAccountCancelsSubscription(t *testing.T) {
+	s := fullKey(authServer)(t)
+	f := &fakeStripe{err: &billing.StripeError{Status: 500, Type: "api_error", Message: "down"}}
+	s.Billing.Stripe = f
+	acc := makePaid(t, s)
+	h := s.Handler()
+	del := func() *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, bearer(request(http.MethodDelete, "/v1/account?confirm=Test"))(t))
+		return rec
+	}
+	// Stripe down: nothing is deleted.
+	if rec := del(); rec.Code != http.StatusBadGateway {
+		t.Fatalf("stripe down: %d %s", rec.Code, rec.Body)
+	}
+	var status string
+	if err := s.Billing.DB.QueryRow(t.Context(), `SELECT status FROM accounts WHERE id = $1`, acc).Scan(&status); err != nil || status != "active" {
+		t.Fatalf("account after a failed delete: %q %v", status, err)
+	}
+	f.err = nil
+	if rec := del(); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
+	}
+	if len(f.canceled) != 2 || f.canceled[1] != "sub_1" {
+		t.Errorf("canceled %v", f.canceled)
 	}
 }

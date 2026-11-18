@@ -36,9 +36,10 @@ scope; they only show where an idea came from.
 - Signup forms: generated embed code, double opt-in on by default.
 - Sending: test send, then an explicit confirm to launch, in UI and CLI. An agent
   may launch only after a quick confirmation from the person in its chat window.
-- Pricing: free tier 500 contacts and 1,000 credits/month; paid accounts $5/month
-  plus $20 per 10,000 credits; credits last 24 months; the $5 fee comes out of
-  credits by default, yearly card billing as the alternative.
+- Pricing: free tier 500 contacts and 1,000 credits/month; paid plan a card
+  subscription, $5/month or $50/year (first 2,500 contacts, then the same again
+  per further 10,000), plus $20 per 10,000 credits; credits last 24 months
+  (changed Nov 18: the fee no longer comes out of credits).
 - Stack: Go for backend, workers and CLI; TypeScript and React for the web app
   and editor; AWS from day one.
 - AWS Region: us-east-2 for everything Regional (the project allows no other).
@@ -48,8 +49,8 @@ scope; they only show where an idea came from.
 - Confirmed Nov 18: RDS Postgres, ECS Fargate, SQS for the send queue, SES with
   SNS events, Terraform, one REST API with an OpenAPI spec shared by web app, CLI
   and agents, designs stored as JSON blocks rendered server-side.
-- MVP (Nov 18): billing ships (Stripe credit packs, $5 fee from credits; yearly
-  card billing later); web sign-in by emailed one-time codes (CLI sign-up uses
+- MVP (Nov 18): billing ships (Stripe credit packs, and the paid plan as a card
+  subscription); web sign-in by emailed one-time codes (CLI sign-up uses
   the same code, owner decision Nov 18); one person per account; HTML emails
   edited as code only; agent launch confirmed with a one-time code; one
   audience per account with tags; CLI only, no MCP server; open and click

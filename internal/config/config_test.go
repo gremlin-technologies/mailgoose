@@ -160,11 +160,12 @@ func TestStripeSettings(t *testing.T) {
 		"APP_ENV":          "staging",
 		"APP_SECRETS_JSON": `{"STRIPE_SECRET_KEY":"sk_test_abc","STRIPE_WEBHOOK_SECRET":"whsec_1"}`,
 		"CREDIT_PACKS":     "10k=10000:2000",
+		"PLAN_PRICES":      "month:600,year:6000",
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Stripe != (Stripe{SecretKey: "sk_test_abc", WebhookSecret: "whsec_1", Packs: "10k=10000:2000"}) || !cfg.Stripe.Enabled() {
+	if cfg.Stripe != (Stripe{SecretKey: "sk_test_abc", WebhookSecret: "whsec_1", Packs: "10k=10000:2000", PlanPrices: "month:600,year:6000"}) || !cfg.Stripe.Enabled() {
 		t.Errorf("stripe %+v", cfg.Stripe)
 	}
 	for name, e := range map[string]map[string]string{

@@ -282,6 +282,13 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	// Raw events are kept 12 months (REP-5); checked hourly.
 	pruner := &reports.Service{DB: pool}
 	run(func() { pruner.RunPruner(ctx, time.Hour, log.With("job", "prune")) })
+	// Plan units follow contact counts, and expired credits are written
+	// off (MG-40), hourly.
+	jobs, err := newBilling(cfg, pool, log.With("job", "billing"))
+	if err != nil {
+		return err
+	}
+	run(func() { jobs.RunJobs(ctx, time.Hour, log.With("job", "billing")) })
 	if cfg.SendQueueURL == "" {
 		// No SQS (local): the worker dispatches too, into a queue in memory.
 		log.Info("no send queue configured; sending through an in-process queue")
@@ -457,23 +464,27 @@ func migrateUp(ctx context.Context, log *slog.Logger, pool *pgxpool.Pool) error 
 	return nil
 }
 
-// newBilling sells credit packs (BIL-3). Without Stripe keys, or with keys
-// this environment mustn't use, buying credits answers 503 and the log says
-// why; the rest of the API runs as usual.
+// newBilling sells the paid plan and credit packs (BIL-3, BIL-4). Without
+// Stripe keys, or with keys this environment mustn't use, billing answers
+// 503 and the log says why; the rest of the API runs as usual.
 func newBilling(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*billing.Service, error) {
 	packs, err := billing.ParsePacks(cfg.Stripe.Packs)
 	if err != nil {
 		return nil, err
 	}
-	b := &billing.Service{DB: pool, Packs: packs, BaseURL: cfg.PublicBaseURL, Log: log}
+	prices, err := billing.ParsePrices(cfg.Stripe.PlanPrices)
+	if err != nil {
+		return nil, err
+	}
+	b := &billing.Service{DB: pool, Packs: packs, Prices: prices, BaseURL: cfg.PublicBaseURL, Log: log}
 	switch {
 	case cfg.Stripe.Enabled():
 		b.Stripe = &billing.Client{SecretKey: cfg.Stripe.SecretKey}
 		b.WebhookSecret = cfg.Stripe.WebhookSecret
 	case cfg.Stripe.Problem != "":
-		log.Warn("buying credits is off", "reason", cfg.Stripe.Problem)
+		log.Warn("billing is off", "reason", cfg.Stripe.Problem)
 	default:
-		log.Info("buying credits is off: no STRIPE_SECRET_KEY")
+		log.Info("billing is off: no STRIPE_SECRET_KEY")
 	}
 	return b, nil
 }

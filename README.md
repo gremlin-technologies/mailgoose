@@ -142,6 +142,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `MAIL_CAPTURE_DIR` | With the fake sender, write each message as an `.eml` file here. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Stripe's secret key and the webhook endpoint's signing secret, from the `<env>/app` secret (or the environment, locally). Only prod may use a live key, and prod only a live one; a wrong key, or a key without the webhook secret, turns buying credits off and says why in the log, rather than stopping the server. |
 | `CREDIT_PACKS` | The credit packs as `name=credits:cents,...`. Empty means the decided packs: `10k=10000:2000,50k=50000:7500,200k=200000:24000,1m=1000000:90000`. |
+| `PLAN_PRICES` | One paid-plan unit's price in cents, as `month:cents,year:cents`. Empty means the decided prices: `month:500,year:5000`. |
 
 ## Sign up and sessions
 
@@ -271,7 +272,7 @@ mailgoose account delete --confirm "Pat's Bakery"
 
 One credit sends one email to one recipient. `internal/credits` is the ledger:
 every change is a row in `credit_transactions` (grant, purchase, reserve,
-release, spend, fee, expiry) and the balance is their sum, never stored.
+release, spend, expiry) and the balance is their sum, never stored.
 Debits lock the account row, so parallel reservations can't overdraw it. Free
 accounts get 1,000 credits on activation and on each monthly anniversary, and
 unused free credits expire at the next grant; both happen lazily when the
@@ -283,25 +284,68 @@ mailgoose credits
 mailgoose credits history --limit 20
 ```
 
+### The paid plan
+
+The paid plan is a Stripe card subscription (`internal/billing`): $5 a month,
+or $50 a year, chosen at checkout, plus any sales tax, which Stripe Tax works
+out. That covers up to 2,500 counted contacts (subscribed or unconfirmed);
+each further 10,000, or part of them, is another unit at the same price, so
+2,501 to 12,500 contacts is $10 a month. `GET /v1/plan` shows the plan,
+`POST /v1/plan/checkout` (full scope) makes a Checkout page that starts the
+subscription, and `POST /v1/plan/portal` (full scope) links to Stripe's
+customer portal, where the card is changed, invoices downloaded and the plan
+cancelled.
+
+```sh
+mailgoose plan
+mailgoose plan upgrade --yearly
+mailgoose plan manage
+```
+
+Stripe then sends `customer.subscription.created`, `updated` and `deleted` to
+`POST /hooks/stripe`. A live subscription (active, or past due while Stripe
+retries the card) makes the account paid: no free monthly grant, no contact
+cap. Past due or unpaid pauses sending with code `subscription_past_due` (a
+launch is refused with that problem code) until the payment goes through,
+when the pause lifts by itself; a pause for any other reason stays. A
+cancelled plan runs to the end of its period, then the account is free again
+and keeps its bought credits. Events older than the last one applied change
+nothing. Deleting an account cancels its subscription at once, first.
+
+The worker moves each subscription to the units its contacts make, hourly,
+with no proration: growth is billed from the next renewal. The same job
+writes the expiry of credits past their 24 months for accounts nobody has
+looked at; the ledger also does it whenever an account is read.
+
 ### Buying credits
 
-Credits are sold in packs through Stripe Checkout (`internal/billing`): 10k
-for $20, 50k for $75, 200k for $240 and 1m for $900, plus any sales tax,
-which Stripe Tax works out at checkout. `POST /v1/credits/checkout` (full
-scope) makes a Checkout page for a pack and returns its link; the person pays
+Paid accounts buy credits in packs through Stripe Checkout: 10k for $20, 50k
+for $75, 200k for $240 and 1m for $900, plus any sales tax.
+`POST /v1/credits/checkout` (full scope) makes a Checkout page for a pack and
+returns its link; a free account gets 409 `plan_required`. The person pays
 in the browser, and Stripe emails the receipt to the account's address.
 
 ```sh
 mailgoose credits buy 10k
 ```
 
-Stripe then calls `POST /hooks/stripe`. The server checks the signature
-(5 minutes' tolerance), handles each event id once, and for a paid
-`checkout.session.completed` (or `async_payment_succeeded`) adds the pack's
-credits as a purchase lasting 24 months and makes the account paid. A paid
+For a paid `checkout.session.completed` (or `async_payment_succeeded`) the
+webhook adds the pack's credits as a purchase lasting 24 months. A paid
 session whose amount, currency or credits don't match its pack adds nothing
-and is logged as an error. Nothing else in Stripe needs setting up: each
-session carries its pack's price.
+and is logged as an error. The webhook checks the signature (5 minutes'
+tolerance) and handles each event id once.
+
+### Setting up Stripe
+
+Put `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in the `<env>/app`
+secret. In the Stripe dashboard: add a webhook endpoint at
+`<PUBLIC_BASE_URL>/hooks/stripe` for `checkout.session.completed`,
+`checkout.session.async_payment_succeeded` and
+`customer.subscription.created`, `.updated` and `.deleted`; turn on Stripe
+Tax; set up the customer portal to allow updating the payment method and
+cancelling (at the end of the period); and turn on email receipts. Prices
+come from the app (`PLAN_PRICES`, `CREDIT_PACKS`), so no products need
+making in Stripe.
 
 To try it locally with Stripe's test mode, put a test key and the CLI's
 webhook secret in the environment and forward events:
@@ -330,7 +374,7 @@ mailgoose contacts delete pat@example.com --yes
 A free account holds at most 500 counted contacts (subscribed or
 unconfirmed); one more gets 402 `contact_limit`, with `details.limit` and
 `details.count`. Paid accounts have no cap; `contacts.CountedContacts` gives
-the count the monthly fee (MG-40) is based on.
+the count the paid plan's units (MG-40) are based on.
 
 Tags are basic labels; a campaign can go to the contacts with any of the
 chosen tags. Put one on contacts by name, or on every contact matching a filter:

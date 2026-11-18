@@ -140,14 +140,14 @@ func TestWebhookBuysCredits(t *testing.T) {
 	if got := h.balance(t); got != free+10_000 {
 		t.Errorf("balance %d, want %d", got, free+10_000)
 	}
+	// Buying credits doesn't change the plan: the subscription does.
 	var plan string
-	var paidSince *time.Time
 	var expires time.Time
-	if err := h.db.QueryRow(ctx, `SELECT plan, paid_since FROM accounts WHERE id = $1`, h.acc).Scan(&plan, &paidSince); err != nil {
+	if err := h.db.QueryRow(ctx, `SELECT plan FROM accounts WHERE id = $1`, h.acc).Scan(&plan); err != nil {
 		t.Fatal(err)
 	}
-	if plan != "paid" || paidSince == nil || !paidSince.Equal(h.now) {
-		t.Errorf("plan %s since %v", plan, paidSince)
+	if plan != "free" {
+		t.Errorf("plan %s", plan)
 	}
 	if err := h.db.QueryRow(ctx, `SELECT expires_at FROM credit_transactions WHERE account_id = $1 AND ref = 'stripe:cs_1'`, h.acc).Scan(&expires); err != nil {
 		t.Fatal(err)
@@ -165,30 +165,6 @@ func TestWebhookBuysCredits(t *testing.T) {
 	}
 	if got := h.balance(t); got != free+10_000 {
 		t.Errorf("balance %d after duplicates", got)
-	}
-
-	// A month on, a paid account gets no free grant, and a second purchase
-	// keeps the first paid_since.
-	h.mu.Lock()
-	h.now = h.now.AddDate(0, 1, 1)
-	h.mu.Unlock()
-	if got := h.send(t, h.event("evt_3", "checkout.session.completed", "cs_2", "paid", "50k", 7500)); got != OutcomeCredited {
-		t.Fatalf("second purchase: %s", got)
-	}
-	var grants int
-	if err := h.db.QueryRow(ctx, `SELECT count(*) FROM credit_transactions WHERE account_id = $1 AND type = 'grant' AND created_at > $2`,
-		h.acc, *paidSince).Scan(&grants); err != nil {
-		t.Fatal(err)
-	}
-	if grants != 0 {
-		t.Errorf("%d free grants after paying", grants)
-	}
-	var since time.Time
-	if err := h.db.QueryRow(ctx, `SELECT paid_since FROM accounts WHERE id = $1`, h.acc).Scan(&since); err != nil {
-		t.Fatal(err)
-	}
-	if !since.Equal(*paidSince) {
-		t.Errorf("paid_since moved to %v", since)
 	}
 }
 
@@ -362,16 +338,56 @@ func TestConcurrentEventsCreditOnce(t *testing.T) {
 }
 
 type fakeStripe struct {
-	got []SessionRequest
-	err error
+	mu       sync.Mutex
+	got      []SessionRequest
+	subs     []SubscriptionRequest
+	units    []string
+	canceled []string
+	err      error
 }
 
 func (f *fakeStripe) CreateCheckoutSession(_ context.Context, r SessionRequest) (*Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.got = append(f.got, r)
 	if f.err != nil {
 		return nil, f.err
 	}
 	return &Session{ID: "cs_test", URL: "https://checkout.stripe.test/c/cs_test", ExpiresAt: time.Unix(1, 0)}, nil
+}
+
+func (f *fakeStripe) CreateSubscriptionCheckout(_ context.Context, r SubscriptionRequest) (*Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.subs = append(f.subs, r)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &Session{ID: "cs_sub", URL: "https://checkout.stripe.test/c/cs_sub", ExpiresAt: time.Unix(1, 0)}, nil
+}
+
+func (f *fakeStripe) CreatePortalSession(_ context.Context, customerID, returnURL string) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
+	return "https://billing.stripe.test/p/" + customerID + "?return=" + returnURL, nil
+}
+
+func (f *fakeStripe) SetSubscriptionUnits(_ context.Context, subID, itemID string, units int, key string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return f.err
+	}
+	f.units = append(f.units, fmt.Sprintf("%s/%s=%d %s", subID, itemID, units, key))
+	return nil
+}
+
+func (f *fakeStripe) CancelSubscription(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.canceled = append(f.canceled, id)
+	return f.err
 }
 
 func TestCheckout(t *testing.T) {
@@ -397,5 +413,82 @@ func TestCheckout(t *testing.T) {
 		CancelURL: "https://app.example/credits?checkout=cancelled", IdempotencyKey: "key"}
 	if len(f.got) != 1 || f.got[0] != want {
 		t.Errorf("Stripe got %+v", f.got)
+	}
+}
+
+func TestCheckoutNeedsThePaidPlan(t *testing.T) {
+	h := newHarness(t)
+	f := &fakeStripe{}
+	h.svc.Stripe = f
+	ctx := context.Background()
+	if _, _, err := h.svc.Checkout(ctx, h.acc, "10k", ""); !errors.Is(err, ErrPlanRequired) {
+		t.Fatalf("free account: %v", err)
+	}
+	h.subscribe(t, "active")
+	if _, _, err := h.svc.Checkout(ctx, h.acc, "10k", ""); err != nil {
+		t.Fatalf("paid account: %v", err)
+	}
+	if len(f.got) != 1 {
+		t.Errorf("%d sessions", len(f.got))
+	}
+}
+
+// TestExpireCredits checks the hourly job writes off bought credits once
+// they're 24 months old, for an account nobody reads in the meantime.
+func TestExpireCredits(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if got := h.send(t, h.event("evt_1", "checkout.session.completed", "cs_1", "paid", "10k", 2000)); got != OutcomeCredited {
+		t.Fatalf("outcome %s", got)
+	}
+	left := func() int64 {
+		t.Helper()
+		var n int64
+		if err := h.db.QueryRow(ctx, `
+			SELECT l.amount + COALESCE((SELECT sum(c.amount) FROM credit_allocations c WHERE c.lot_id = l.id), 0)
+			FROM credit_transactions l WHERE l.account_id = $1 AND l.ref = 'stripe:cs_1'`, h.acc).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	expiries := func() int {
+		t.Helper()
+		var n int
+		if err := h.db.QueryRow(ctx, `SELECT count(*) FROM credit_transactions WHERE account_id = $1 AND type = $2 AND amount = -10000`,
+			h.acc, credits.TypeExpiry).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	// A day short of 24 months, the pack is untouched.
+	h.mu.Lock()
+	h.now = h.now.AddDate(0, 24, -1)
+	h.mu.Unlock()
+	if _, err := h.svc.ExpireCredits(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := left(); got != 10_000 || expiries() != 0 {
+		t.Fatalf("before expiry: %d left, %d expiry entries", got, expiries())
+	}
+
+	// At 24 months, the job writes the expiry entry.
+	h.mu.Lock()
+	h.now = h.now.AddDate(0, 0, 1)
+	h.mu.Unlock()
+	n, err := h.svc.ExpireCredits(ctx)
+	if err != nil || n != 1 {
+		t.Fatalf("expire: %d accounts, %v", n, err)
+	}
+	if got := left(); got != 0 || expiries() != 1 {
+		t.Errorf("after expiry: %d left, %d expiry entries", got, expiries())
+	}
+
+	// Running again finds nothing to do.
+	if n, err := h.svc.ExpireCredits(ctx); err != nil || n != 0 {
+		t.Errorf("again: %d accounts, %v", n, err)
+	}
+	if expiries() != 1 {
+		t.Errorf("%d expiry entries after a second run", expiries())
 	}
 }

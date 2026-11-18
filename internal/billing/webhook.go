@@ -72,16 +72,18 @@ func Sign(payload []byte, secret string, at time.Time) string {
 }
 
 type event struct {
-	ID   string `json:"id"`
-	Type string `json:"type"`
-	Data struct {
-		Object checkoutSession `json:"object"`
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Created int64  `json:"created"`
+	Data    struct {
+		Object json.RawMessage `json:"object"`
 	} `json:"data"`
 }
 
 type checkoutSession struct {
 	ID                string            `json:"id"`
 	Object            string            `json:"object"`
+	Mode              string            `json:"mode"`
 	PaymentStatus     string            `json:"payment_status"`
 	ClientReferenceID string            `json:"client_reference_id"`
 	AmountSubtotal    int64             `json:"amount_subtotal"`
@@ -102,14 +104,20 @@ const (
 	// OutcomeNoAccount is a paid session for an account that doesn't exist
 	// or is closed: nothing is added, and it's logged for a refund.
 	OutcomeNoAccount Outcome = "no_account"
+	// OutcomeSubscription: a subscription event updated the account's plan.
+	OutcomeSubscription Outcome = "subscription"
+	// OutcomeStale: an older subscription event than one already applied.
+	OutcomeStale Outcome = "stale"
 )
 
-// HandleWebhook checks and handles one Stripe webhook. A paid Checkout
-// session (checkout.session.completed, or async_payment_succeeded for a
-// payment that cleared later) adds its pack's credits and makes the account
-// paid. Each event is handled once, by its id; other event types are
-// recorded and ignored. A session whose amount doesn't match its pack's
-// price adds nothing and is logged as an error, for someone to look at.
+// HandleWebhook checks and handles one Stripe webhook. A paid credit pack
+// Checkout session (checkout.session.completed, or async_payment_succeeded
+// for a payment that cleared later) adds its pack's credits. Subscription
+// events (customer.subscription.created, .updated and .deleted) set the
+// account's plan (applySubscription). Each event is handled once, by its
+// id; other event types are recorded and ignored. A session whose amount
+// doesn't match its pack's price adds nothing and is logged as an error,
+// for someone to look at.
 func (s *Service) HandleWebhook(ctx context.Context, payload []byte, signature string) (Outcome, error) {
 	if err := VerifySignature(payload, signature, s.WebhookSecret, s.now()); err != nil {
 		return "", err
@@ -139,10 +147,27 @@ func (s *Service) HandleWebhook(ctx context.Context, payload []byte, signature s
 }
 
 func (s *Service) handle(ctx context.Context, tx pgx.Tx, e *event) (Outcome, error) {
-	if e.Type != "checkout.session.completed" && e.Type != "checkout.session.async_payment_succeeded" {
+	switch e.Type {
+	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
+		var sub subscription
+		if err := json.Unmarshal(e.Data.Object, &sub); err != nil || sub.ID == "" {
+			s.log().ErrorContext(ctx, "a Stripe subscription event has no subscription", "event_id", e.ID)
+			return OutcomeMismatch, nil
+		}
+		return s.applySubscription(ctx, tx, e, &sub)
+	case "checkout.session.completed", "checkout.session.async_payment_succeeded":
+	default:
 		return OutcomeIgnored, nil
 	}
-	cs := e.Data.Object
+	var cs checkoutSession
+	if err := json.Unmarshal(e.Data.Object, &cs); err != nil {
+		s.log().ErrorContext(ctx, "a Stripe checkout event has no session", "event_id", e.ID)
+		return OutcomeMismatch, nil
+	}
+	if cs.Mode == "subscription" {
+		// The plan's checkout: its subscription events set the plan.
+		return OutcomeIgnored, nil
+	}
 	if cs.PaymentStatus != "paid" {
 		return OutcomeUnpaid, nil
 	}

@@ -187,6 +187,13 @@ func TestNoCommandWaitsForInput(t *testing.T) {
 		"/v1/credits": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte(`{"balance":0,"plan":"paid","next_grant_at":null}`))
 		},
+		"/v1/plan": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"plan":"free","status":null,"interval":null,"units":0,"current_period_end":null,"cancel_at_period_end":false,"contacts":0,"units_needed":1,"prices":{"month_cents":500,"year_cents":5000,"currency":"usd"}}`))
+		},
+		"/v1/plan/checkout": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"url":"https://checkout.stripe.test/c","interval":"month","units":1,"unit_price_cents":500,"currency":"usd","expires_at":"2026-11-19T12:00:00Z"}`))
+		},
+		"/v1/plan/portal": func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"url":"https://billing.stripe.test/p"}`)) },
 		"/v1/account": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte(`{"id":"x","name":"A","plan":"free","from_name":null,"from_email":null,"postal_address":null,"time_zone":"UTC","missing_for_send":[],"created_at":"2026-11-18T12:00:00Z"}`))
 		},

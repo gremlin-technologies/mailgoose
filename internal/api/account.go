@@ -136,6 +136,13 @@ func (s *Server) DeleteAccount(w http.ResponseWriter, r *http.Request, params ap
 		s.accountError(w, r, auth.ErrConfirmMismatch)
 		return
 	}
+	// A deleted account stops paying at once (BIL-4): cancel first, so a
+	// failure leaves the account whole and the person can try again.
+	if s.Billing != nil {
+		if err := s.Billing.CancelSubscription(r.Context(), c.AccountID); s.billingError(w, r, err) {
+			return
+		}
+	}
 	if s.Domains != nil {
 		for {
 			ds, err := s.Domains.List(r.Context(), c.AccountID, "", "", 100)

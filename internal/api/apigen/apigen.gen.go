@@ -837,6 +837,90 @@ func (e ImportStatus) Valid() bool {
 	}
 }
 
+// Defines values for PlanPlan.
+const (
+	PlanPlanFree PlanPlan = "free"
+	PlanPlanPaid PlanPlan = "paid"
+)
+
+// Valid indicates whether the value is a known member of the PlanPlan enum.
+func (e PlanPlan) Valid() bool {
+	switch e {
+	case PlanPlanFree:
+		return true
+	case PlanPlanPaid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanPricesCurrency.
+const (
+	PlanPricesCurrencyUsd PlanPricesCurrency = "usd"
+)
+
+// Valid indicates whether the value is a known member of the PlanPricesCurrency enum.
+func (e PlanPricesCurrency) Valid() bool {
+	switch e {
+	case PlanPricesCurrencyUsd:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanCheckoutCurrency.
+const (
+	PlanCheckoutCurrencyUsd PlanCheckoutCurrency = "usd"
+)
+
+// Valid indicates whether the value is a known member of the PlanCheckoutCurrency enum.
+func (e PlanCheckoutCurrency) Valid() bool {
+	switch e {
+	case PlanCheckoutCurrencyUsd:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanCheckoutInterval.
+const (
+	PlanCheckoutIntervalMonth PlanCheckoutInterval = "month"
+	PlanCheckoutIntervalYear  PlanCheckoutInterval = "year"
+)
+
+// Valid indicates whether the value is a known member of the PlanCheckoutInterval enum.
+func (e PlanCheckoutInterval) Valid() bool {
+	switch e {
+	case PlanCheckoutIntervalMonth:
+		return true
+	case PlanCheckoutIntervalYear:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlanCheckoutRequestInterval.
+const (
+	PlanCheckoutRequestIntervalMonth PlanCheckoutRequestInterval = "month"
+	PlanCheckoutRequestIntervalYear  PlanCheckoutRequestInterval = "year"
+)
+
+// Valid indicates whether the value is a known member of the PlanCheckoutRequestInterval enum.
+func (e PlanCheckoutRequestInterval) Valid() bool {
+	switch e {
+	case PlanCheckoutRequestIntervalMonth:
+		return true
+	case PlanCheckoutRequestIntervalYear:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SkipReason.
 const (
 	SkipReasonDuplicate    SkipReason = "duplicate"
@@ -1760,8 +1844,8 @@ type CreditTransaction struct {
 
 	// Type `grant` is a free monthly grant and `purchase` a bought credit pack.
 	// `reserve` holds credits for a send and `release` gives back what it
-	// didn't use. `spend` is credits used directly, `fee` the monthly
-	// account fee and `expiry` credits that ran out.
+	// didn't use. `spend` is credits used directly and `expiry` credits
+	// that ran out. `fee` isn't used: the paid plan is billed to a card.
 	Type CreditTransactionType `json:"type"`
 }
 
@@ -1773,8 +1857,8 @@ type CreditTransactionList struct {
 
 // CreditTransactionType `grant` is a free monthly grant and `purchase` a bought credit pack.
 // `reserve` holds credits for a send and `release` gives back what it
-// didn't use. `spend` is credits used directly, `fee` the monthly
-// account fee and `expiry` credits that ran out.
+// didn't use. `spend` is credits used directly and `expiry` credits
+// that ran out. `fee` isn't used: the paid plan is billed to a card.
 type CreditTransactionType string
 
 // DeviceLogin defines model for DeviceLogin.
@@ -2421,6 +2505,88 @@ type MoveEmailBlockRequest struct {
 	Version int `json:"version"`
 }
 
+// Plan defines model for Plan.
+type Plan struct {
+	// CancelAtPeriodEnd True when the plan was cancelled and ends at `current_period_end`.
+	CancelAtPeriodEnd bool `json:"cancel_at_period_end"`
+
+	// Contacts Counted contacts now (subscribed and unconfirmed).
+	Contacts int `json:"contacts"`
+
+	// CurrentPeriodEnd When the paid period ends and the subscription renews, or ends if it's cancelled.
+	CurrentPeriodEnd *time.Time `json:"current_period_end"`
+
+	// Interval `month` or `year`; null without a subscription.
+	Interval *string  `json:"interval"`
+	Plan     PlanPlan `json:"plan"`
+	Prices   struct {
+		Currency PlanPricesCurrency `json:"currency"`
+
+		// MonthCents One unit for a month, in cents.
+		MonthCents int `json:"month_cents"`
+
+		// YearCents One unit for a year, in cents.
+		YearCents int `json:"year_cents"`
+	} `json:"prices"`
+
+	// Status Stripe's subscription status: `active`, `past_due` or `unpaid`
+	// (a renewal failed; sending is paused while Stripe retries the
+	// card), `canceled`, and so on. Null for an account that never
+	// subscribed.
+	Status *string `json:"status"`
+
+	// Units Plan units the subscription is billed for; 0 without one.
+	Units int `json:"units"`
+
+	// UnitsNeeded The plan units those contacts make.
+	UnitsNeeded int `json:"units_needed"`
+}
+
+// PlanPlan defines model for Plan.Plan.
+type PlanPlan string
+
+// PlanPricesCurrency defines model for Plan.Prices.Currency.
+type PlanPricesCurrency string
+
+// PlanCheckout defines model for PlanCheckout.
+type PlanCheckout struct {
+	Currency PlanCheckoutCurrency `json:"currency"`
+
+	// ExpiresAt When the page stops working.
+	ExpiresAt time.Time            `json:"expires_at"`
+	Interval  PlanCheckoutInterval `json:"interval"`
+
+	// UnitPriceCents One unit's price each interval, before any sales tax, in cents.
+	UnitPriceCents int `json:"unit_price_cents"`
+
+	// Units Plan units the subscription starts with, from the account's contacts now.
+	Units int `json:"units"`
+
+	// Url Stripe's Checkout page; open it in a browser to pay.
+	Url string `json:"url"`
+}
+
+// PlanCheckoutCurrency defines model for PlanCheckout.Currency.
+type PlanCheckoutCurrency string
+
+// PlanCheckoutInterval defines model for PlanCheckout.Interval.
+type PlanCheckoutInterval string
+
+// PlanCheckoutRequest defines model for PlanCheckoutRequest.
+type PlanCheckoutRequest struct {
+	// Interval Bill each month ($5 a unit) or each year ($50 a unit).
+	Interval PlanCheckoutRequestInterval `json:"interval"`
+}
+
+// PlanCheckoutRequestInterval Bill each month ($5 a unit) or each year ($50 a unit).
+type PlanCheckoutRequestInterval string
+
+// PlanPortal defines model for PlanPortal.
+type PlanPortal struct {
+	// Url Stripe's customer portal page; open it in a browser.
+	Url string `json:"url"`
+}
+
 // PollDeviceLoginRequest defines model for PollDeviceLoginRequest.
 type PollDeviceLoginRequest struct {
 	DeviceCode string `json:"device_code"`
@@ -2878,6 +3044,9 @@ type NotFound = Error
 // PaymentProviderError defines model for PaymentProviderError.
 type PaymentProviderError = Error
 
+// PlanConflict defines model for PlanConflict.
+type PlanConflict = Error
+
 // RequestTooLarge defines model for RequestTooLarge.
 type RequestTooLarge = Error
 
@@ -3179,6 +3348,9 @@ type UpdateFormJSONRequestBody = UpdateFormRequest
 
 // CreateImportJSONRequestBody defines body for CreateImport for application/json ContentType.
 type CreateImportJSONRequestBody = CreateImportRequest
+
+// CreatePlanCheckoutJSONRequestBody defines body for CreatePlanCheckout for application/json ContentType.
+type CreatePlanCheckoutJSONRequestBody = PlanCheckoutRequest
 
 // CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
 type CreateSessionJSONRequestBody = SessionRequest
@@ -4121,6 +4293,15 @@ type ServerInterface interface {
 	// ListImportSkippedRows List an import's skipped rows
 	// (GET /v1/imports/{import_id}/skipped-rows)
 	ListImportSkippedRows(w http.ResponseWriter, r *http.Request, importId ImportId, params ListImportSkippedRowsParams)
+	// GetPlan Show the account's plan
+	// (GET /v1/plan)
+	GetPlan(w http.ResponseWriter, r *http.Request)
+	// CreatePlanCheckout Start the paid plan
+	// (POST /v1/plan/checkout)
+	CreatePlanCheckout(w http.ResponseWriter, r *http.Request)
+	// CreatePlanPortal Manage the paid plan
+	// (POST /v1/plan/portal)
+	CreatePlanPortal(w http.ResponseWriter, r *http.Request)
 	// DeleteAllSessions Sign out everywhere
 	// (DELETE /v1/sessions)
 	DeleteAllSessions(w http.ResponseWriter, r *http.Request)
@@ -6327,6 +6508,48 @@ func (siw *ServerInterfaceWrapper) ListImportSkippedRows(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// GetPlan operation middleware
+func (siw *ServerInterfaceWrapper) GetPlan(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetPlan(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePlanCheckout operation middleware
+func (siw *ServerInterfaceWrapper) CreatePlanCheckout(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePlanCheckout(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePlanPortal operation middleware
+func (siw *ServerInterfaceWrapper) CreatePlanPortal(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePlanPortal(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteAllSessions operation middleware
 func (siw *ServerInterfaceWrapper) DeleteAllSessions(w http.ResponseWriter, r *http.Request) {
 
@@ -6732,6 +6955,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/api-keys/{key_id}", wrapper.RevokeApiKey)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/credits", wrapper.GetCredits)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/credits/checkout", wrapper.CreateCreditCheckout)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/plan", wrapper.GetPlan)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/plan/checkout", wrapper.CreatePlanCheckout)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/plan/portal", wrapper.CreatePlanPortal)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/credits/transactions", wrapper.ListCreditTransactions)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/device-logins", wrapper.CreateDeviceLogin)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/device-logins/token", wrapper.PollDeviceLogin)
