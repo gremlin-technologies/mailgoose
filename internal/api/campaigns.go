@@ -42,7 +42,7 @@ func (s *Server) campaignError(w http.ResponseWriter, r *http.Request, err error
 		WriteError(w, Unprocessable("unknown_tag", "A tag id isn't one of this account's tags.").
 			WithHint("`mailgoose tags list` shows the account's tags."))
 	case errors.As(err, &st):
-		hint := "Only draft and scheduled campaigns can be changed."
+		hint := "Only drafts can be changed. A launched campaign was confirmed as it is."
 		if r.Method == http.MethodDelete {
 			hint = "Only drafts can be deleted; a scheduled campaign can be cancelled instead."
 		}
@@ -84,6 +84,16 @@ func campaignJSON(c *campaigns.Campaign) apigen.Campaign {
 	}
 	if t := c.LastTest; t != nil {
 		out.LastTest = &apigen.CampaignTest{At: t.At.UTC(), Version: t.Version, EmailVersion: t.EmailVersion}
+	}
+	if c.LaunchedAt != nil {
+		l := &apigen.CampaignLaunch{At: c.LaunchedAt.UTC()}
+		if c.RecipientTotal != nil {
+			l.RecipientCount = *c.RecipientTotal
+		}
+		if c.CreditsReserved != nil {
+			l.CreditsReserved = *c.CreditsReserved
+		}
+		out.Launch = l
 	}
 	return out
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -176,5 +177,92 @@ func TestCampaignTestAgainstAPI(t *testing.T) {
 	}
 	if code := h.run("campaign", "test", "spring"); code != ExitUsage {
 		t.Errorf("bad id: exit %d", code)
+	}
+}
+
+func TestCampaignLaunchAgainstAPI(t *testing.T) {
+	h := liveAPI(t)
+	h.app.Stdin = strings.NewReader(strings.Replace(springDoc, "news@bakery.example", "hello@patsbakery.com", 1))
+	if code := h.run("email", "create", "--name", "Spring", "--file", "-", "--json"); code != ExitOK {
+		t.Fatalf("email: exit %d %s", code, h.errOut)
+	}
+	emailID := h.jsonOut(t)["id"].(string)
+	if code := h.run("campaign", "create", "--name", "Spring", "--email", emailID, "--all", "--json"); code != ExitOK {
+		t.Fatalf("create: exit %d %s", code, h.errOut)
+	}
+	id := h.jsonOut(t)["id"].(string)
+	if code := h.run("account", "update", "--postal-address", "12 Main St"); code != ExitOK {
+		t.Fatalf("postal: exit %d %s", code, h.errOut)
+	}
+	v, _ := liveDBs.Load(t)
+	db := v.(*pgxpool.Pool)
+	if _, err := db.Exec(t.Context(), `
+		INSERT INTO domains (account_id, name, mail_from, created_at, check_until, status)
+		SELECT id, 'patsbakery.com', 'bounce', now(), now(), 'verified' FROM accounts`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Untested: the problem and its fix, and nothing launched.
+	if code := h.run("campaign", "launch", id); code != ExitError ||
+		!strings.Contains(h.errOut.String(), "nothing was launched") || !strings.Contains(h.errOut.String(), "mailgoose campaign test "+id) {
+		t.Fatalf("untested: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("campaign", "test", id); code != ExitOK {
+		t.Fatalf("test: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("contact", "add", "sam@patsbakery.com"); code != ExitOK {
+		t.Fatalf("contact: exit %d %s", code, h.errOut)
+	}
+	if _, err := db.Exec(t.Context(), `
+		INSERT INTO credit_transactions (account_id, type, amount, expires_at)
+		SELECT id, 'purchase', 100, now() + interval '1 year' FROM accounts`); err != nil {
+		t.Fatal(err)
+	}
+
+	// The summary, the code and exit 5.
+	if code := h.run("campaign", "launch", id); code != ExitNeedsConfirmation {
+		t.Fatalf("summary: exit %d %s", code, h.errOut)
+	}
+	out := h.out.String()
+	for _, want := range []string{"Subject:", "Spring menu", "From:", "hello@patsbakery.com", "To:", "1 contact\n", "as soon as it's launched", "Confirmation code: "} {
+		if !strings.Contains(out, want) {
+			t.Errorf("summary lacks %q:\n%s", want, out)
+		}
+	}
+	code := out[strings.Index(out, "Confirmation code: ")+len("Confirmation code: "):]
+	code = strings.TrimSpace(code)
+	if !strings.Contains(h.errOut.String(), "--confirm "+code) || !strings.Contains(h.errOut.String(), "Only if they say yes") {
+		t.Errorf("summary hint: %s", h.errOut)
+	}
+
+	// With --json the summary and code are in the error's details.
+	if c := h.run("campaign", "launch", id, "--json"); c != ExitNeedsConfirmation || !strings.Contains(h.errOut.String(), `"confirmation_required"`) {
+		t.Fatalf("summary json: exit %d %s", c, h.errOut)
+	}
+	var e struct {
+		Error struct {
+			Details struct {
+				Code    string `json:"code"`
+				Summary struct {
+					RecipientCount int `json:"recipient_count"`
+				} `json:"summary"`
+			} `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(h.errOut.Bytes(), &e); err != nil || e.Error.Details.Code == "" || e.Error.Details.Summary.RecipientCount != 1 {
+		t.Fatalf("summary json: %v %s", err, h.errOut)
+	}
+	// A new summary replaces the code: the first one no longer works.
+	if c := h.run("campaign", "launch", id, "--confirm", code); c != ExitError || !strings.Contains(h.errOut.String(), "Nothing was launched") {
+		t.Errorf("old code: exit %d %s", c, h.errOut)
+	}
+	if c := h.run("campaign", "launch", id, "--confirm", e.Error.Details.Code); c != ExitOK {
+		t.Fatalf("launch: exit %d %s", c, h.errOut)
+	}
+	if got := h.out.String(); got != "Launched \"Spring\" to 1 contact, with 1 credit reserved. It's sending now.\n" {
+		t.Errorf("launch: %q", got)
+	}
+	if c := h.run("campaign", "get", id); c != ExitOK || !strings.Contains(h.out.String(), "Launched:") || !strings.Contains(h.out.String(), "sending") {
+		t.Errorf("get: exit %d %s", c, h.out)
 	}
 }

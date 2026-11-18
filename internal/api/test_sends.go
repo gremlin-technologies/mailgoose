@@ -59,14 +59,7 @@ func (s *Server) testSendError(w http.ResponseWriter, r *http.Request, err error
 	case err == nil:
 		return false
 	case errors.As(err, &notReady):
-		problems := make([]map[string]string, len(notReady.Problems))
-		msgs := make([]string, len(notReady.Problems))
-		for i, p := range notReady.Problems {
-			problems[i] = map[string]string{"code": p.Code, "message": p.Message, "hint": p.Hint}
-			msgs[i] = p.Message
-		}
-		WriteError(w, Unprocessable("not_ready", "The campaign can't be sent yet. "+strings.Join(msgs, " ")).
-			WithHint(notReady.Problems[0].Hint).WithDetails(map[string]any{"problems": problems}))
+		WriteError(w, notReadyError("The campaign can't be sent yet.", notReady))
 	case errors.As(err, &invalid):
 		WriteError(w, Unprocessable("invalid_test", "The test can't be sent: "+invalid.Message+".").
 			WithDetails(map[string]any{"field": invalid.Field}))
@@ -109,4 +102,20 @@ func wait(secs int) string {
 	default:
 		return strconv.Itoa((secs+3599)/3600) + " hours"
 	}
+}
+
+// notReadyError is a 422 not_ready listing every problem, each with its
+// code, message, hint and any details.
+func notReadyError(lead string, e *sending.NotReadyError) *Error {
+	problems := make([]map[string]any, len(e.Problems))
+	msgs := make([]string, len(e.Problems))
+	for i, p := range e.Problems {
+		problems[i] = map[string]any{"code": p.Code, "message": p.Message, "hint": p.Hint}
+		for k, v := range p.Details {
+			problems[i][k] = v
+		}
+		msgs[i] = p.Message
+	}
+	return Unprocessable("not_ready", lead+" "+strings.Join(msgs, " ")).
+		WithHint(e.Problems[0].Hint).WithDetails(map[string]any{"problems": problems})
 }

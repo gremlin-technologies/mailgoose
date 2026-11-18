@@ -171,8 +171,7 @@ func TestUpdate(t *testing.T) {
 }
 
 // TestTransitions checks every pair of statuses against the table, through
-// SetStatus, and that only drafts and scheduled campaigns can be edited and
-// only drafts deleted.
+// SetStatus, and that only drafts can be edited or deleted.
 func TestTransitions(t *testing.T) {
 	allowed := map[[2]string]bool{
 		{StatusDraft, StatusScheduled}: true, {StatusDraft, StatusSending}: true,
@@ -224,7 +223,7 @@ func TestTransitions(t *testing.T) {
 			t.Errorf("delete %s: %v", from, err)
 		}
 	}
-	if !Editable(StatusDraft) || !Editable(StatusScheduled) || Editable(StatusSending) {
+	if !Editable(StatusDraft) || Editable(StatusScheduled) || Editable(StatusSending) {
 		t.Error("Editable")
 	}
 	if _, err := h.svc.SetStatus(ctx, h.acc, noSuchID, StatusSending); !errors.Is(err, ErrNotFound) {
@@ -234,7 +233,9 @@ func TestTransitions(t *testing.T) {
 
 const noSuchID = "00000000-0000-4000-8000-000000000000"
 
-func TestScheduledKeepsASendTime(t *testing.T) {
+// TestScheduledIsLocked checks a scheduled campaign, which was confirmed as
+// it is at launch, can't be changed; rescheduling comes with MG-32.
+func TestScheduledIsLocked(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	at := h.now.Add(time.Hour)
@@ -242,12 +243,12 @@ func TestScheduledKeepsASendTime(t *testing.T) {
 	if _, err := h.svc.SetStatus(ctx, h.acc, c.ID, StatusScheduled); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.svc.Update(ctx, h.acc, c.ID, Changes{SendNow: true}); field(err) != "send_at" {
-		t.Errorf("send now: %v", err)
-	}
 	later := at.Add(time.Hour)
-	if u, err := h.svc.Update(ctx, h.acc, c.ID, Changes{SendAt: &later}); err != nil || !u.SendAt.Equal(later) || u.Status != StatusScheduled {
-		t.Errorf("reschedule: %+v %v", u, err)
+	for _, ch := range []Changes{{SendNow: true}, {SendAt: &later}, {Name: ptr("B")}} {
+		var se *StatusError
+		if _, err := h.svc.Update(ctx, h.acc, c.ID, ch); !errors.As(err, &se) || se.Status != StatusScheduled {
+			t.Errorf("%+v: %v", ch, err)
+		}
 	}
 }
 

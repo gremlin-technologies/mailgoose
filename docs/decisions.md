@@ -23,6 +23,37 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Launch (MG-30, reversible defaults)
+
+Picked while building MG-30; easy to change.
+
+- **Only drafts can be changed, tested or launched.** A scheduled campaign
+  has been confirmed as it is, so it's locked like a sending one. This
+  replaces MG-27's "a scheduled campaign keeps a send time" (it can't be
+  edited at all now) and MG-29's "only draft and scheduled campaigns can be
+  tested". Changing a scheduled campaign's time, or taking it back to a
+  draft, waits for MG-32's reschedule and cancel.
+- **Recipients are fixed at launch**, scheduled campaigns included: the
+  credits reserved match the people it goes to. Contacts who unsubscribe or
+  bounce before their copy goes are skipped and their credit given back
+  (MG-31).
+- **The send queue starts as a Postgres outbox** (`send_queue`), written in
+  the launch transaction. MG-31 moves due rows onto SQS, so a launch can't
+  be lost between the database and the queue.
+- **One code per campaign**, 8 characters from an alphabet without look-alike
+  letters, shown as `XXXX-XXXX`. A new summary replaces the old code. Codes
+  allow 5 wrong tries, then a new summary is needed.
+- **Links are checked at the summary, not at the confirm**, so confirming
+  doesn't wait on other sites. Link problems are warnings anyway.
+- **The recipient count may change between summary and confirm** (a new
+  signup, say). The confirm reserves for the count at that moment and
+  answers with it; the code isn't made stale by contact changes, only by
+  edits to the campaign or its email.
+- **A campaign that reaches nobody, or whose send time has passed, is
+  refused** rather than launched to nothing or sent late.
+- **Accounts get `sending_paused_at` and `sending_paused_reason`** now, so
+  launch can refuse a paused account; MG-34 sets them.
+
 ## 2026-11-18: Test sends (MG-29, reversible defaults)
 
 Picked while building MG-29; easy to change.

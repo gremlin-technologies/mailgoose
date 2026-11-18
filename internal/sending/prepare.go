@@ -1,5 +1,6 @@
 // Package sending turns a campaign into the messages that go out: test
-// sends now (CAM-2), and launch and the send workers later (MG-30, MG-31).
+// sends (CAM-2), launch (CAM-3 to CAM-5), and the send workers later
+// (MG-31).
 // Prepare is the step they share: it loads the campaign's email and the
 // account's settings, works out the From, checks it may be used, and
 // compiles the email once, ready to fill in per recipient.
@@ -60,10 +61,13 @@ const (
 )
 
 // Problem is one thing to fix before the email can be sent, with how.
+// Details are extra facts some problems carry (credits_short: needed,
+// balance, short).
 type Problem struct {
 	Code    string
 	Message string
 	Hint    string
+	Details map[string]any
 }
 
 // NotReadyError lists everything that stops the email being sent.
@@ -86,7 +90,9 @@ type Prepared struct {
 	Email    *emails.Email
 	From     mail.Address
 	ReplyTo  []mail.Address
-	Template *render.Template
+	// PostalAddress is the account's, which the footer shows.
+	PostalAddress string
+	Template      *render.Template
 }
 
 // Prepare gets a campaign ready to send, or returns a *NotReadyError with
@@ -157,6 +163,7 @@ func (s *Service) Prepare(ctx context.Context, accountID, campaignID string) (*P
 		problems = append(problems, Problem{Code: EmptyEmail, Message: "This html email has no markup yet.",
 			Hint: "Add it with `mailgoose email import-html " + e.ID + " <file.html>`."})
 	}
+	p.PostalAddress = postal
 	if len(problems) == 0 {
 		acct := render.Account{PostalAddress: postal}
 		if doc.HTML != nil {

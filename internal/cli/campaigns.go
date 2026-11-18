@@ -35,6 +35,11 @@ type campaign struct {
 		Version      int       `json:"version"`
 		EmailVersion int       `json:"email_version"`
 	} `json:"last_test"`
+	Launch *struct {
+		At              time.Time `json:"at"`
+		RecipientCount  int       `json:"recipient_count"`
+		CreditsReserved int       `json:"credits_reserved"`
+	} `json:"launch"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
@@ -158,6 +163,11 @@ func (a *App) printCampaign(c campaign, verb string) {
 			test = fmt.Sprintf("%s, of campaign version %d", c.LastTest.At.Local().Format("2006-01-02 15:04 MST"), c.LastTest.Version)
 		}
 		fmt.Fprintf(tw, "Last test:\t%s\n", test)
+		if c.Launch != nil {
+			fmt.Fprintf(tw, "Launched:\t%s, to %d %s, %d %s reserved\n", c.Launch.At.Local().Format("2006-01-02 15:04 MST"),
+				c.Launch.RecipientCount, plural(c.Launch.RecipientCount, "contact", "contacts"),
+				c.Launch.CreditsReserved, plural(c.Launch.CreditsReserved, "credit", "credits"))
+		}
 	}
 	_ = tw.Flush()
 }
@@ -174,7 +184,8 @@ contacts never get it.
 
 A campaign starts as a draft. Its status then moves through scheduled,
 sending and sent; cancelled, paused and failed are the other ends. Only
-draft and scheduled campaigns can be changed, and only drafts deleted.`,
+drafts can be changed, tested or deleted: a launched campaign was confirmed
+as it is.`,
 	}
 
 	var limit int
@@ -295,7 +306,7 @@ Nothing is sent until it's launched.`,
 	var version int
 	update := calls("updateCampaign", &cobra.Command{
 		Use:   "update <campaign-id>",
-		Short: "Change a draft or scheduled campaign",
+		Short: "Change a draft campaign",
 		Long: `Changes the parts given and leaves the rest. --all or --tag replaces the
 recipients. --send-at now sends it when launched. With --version the change
 is refused if the campaign changed since you read it.`,
@@ -439,7 +450,7 @@ isn't, nothing is sent and each problem is listed with how to fix it.`,
 				DailyLimit int      `json:"daily_limit"`
 			}
 			if err := a.call(cmd.Context(), http.MethodPost, campaignPath(id)+"/test", body, &out, true); err != nil {
-				return listSendProblems(err)
+				return listSendProblems(err, "The campaign can't be sent yet, so nothing was sent.")
 			}
 			if a.jsonOut {
 				a.printJSON(out)
@@ -452,13 +463,129 @@ isn't, nothing is sent and each problem is listed with how to fix it.`,
 	})
 	test.Flags().StringArrayVar(&to, "to", nil, "send to this address instead of yours; repeat for up to 5")
 
-	cmd.AddCommand(list, create, get, update, del, count, test)
+	cmd.AddCommand(list, create, get, update, del, count, test, a.campaignLaunchCmd())
 	return cmd
+}
+
+func (a *App) campaignLaunchCmd() *cobra.Command {
+	var confirm string
+	launch := calls("launchCampaign", &cobra.Command{
+		Use:   "launch <campaign-id>",
+		Short: "Launch a campaign, after a summary and a confirmation code",
+		Long: `Launching takes two steps, so nothing goes out by accident.
+
+Without --confirm, it checks the campaign can go (tested as it is now, an
+email ready to send, credits for everyone it reaches) and prints a summary:
+the subject, the From, how many contacts it goes to, when, and the credits it
+uses. It also prints a confirmation code and exits with code 5. Nothing is
+sent.
+
+With --confirm and that code, it launches: the recipients are fixed, the
+credits reserved, and the campaign goes out now or at its send time. The
+code works for 15 minutes, for that campaign as it was summarized, and allows
+5 wrong tries. If the campaign or its email changes, ask for a new summary.
+
+An AI agent must show the summary to the person it works for and run the
+command with --confirm only after they say yes in the chat.`,
+		Example: `  mailgoose campaign launch 3f1c...
+  mailgoose campaign launch 3f1c... --confirm K7QM-2PXD`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := campaignIDArg(args[0])
+			if err != nil {
+				return err
+			}
+			var body any
+			if cmd.Flags().Changed("confirm") {
+				body = map[string]any{"confirm": confirm}
+			}
+			var out struct {
+				Campaign        campaign `json:"campaign"`
+				RecipientCount  int      `json:"recipient_count"`
+				CreditsReserved int      `json:"credits_reserved"`
+			}
+			if err := a.call(cmd.Context(), http.MethodPost, campaignPath(id)+"/launch", body, &out, true); err != nil {
+				return a.launchError(id, err)
+			}
+			if a.jsonOut {
+				a.printJSON(out)
+				return nil
+			}
+			when := "It's sending now."
+			if out.Campaign.Status == "scheduled" {
+				when = "It sends at " + out.Campaign.sendTime() + "."
+			}
+			fmt.Fprintf(a.Stdout, "Launched %q to %d %s, with %d %s reserved. %s\n", out.Campaign.Name,
+				out.RecipientCount, plural(out.RecipientCount, "contact", "contacts"),
+				out.CreditsReserved, plural(out.CreditsReserved, "credit", "credits"), when)
+			return nil
+		},
+	})
+	launch.Flags().StringVar(&confirm, "confirm", "", "the confirmation code from the summary, once the person said yes")
+	return launch
+}
+
+// launchError prints a launch summary, when that's the answer, and lists
+// the problems of a campaign that can't launch.
+func (a *App) launchError(id string, err error) error {
+	var e *Error
+	if !errors.As(err, &e) {
+		return err
+	}
+	if e.Code != "confirmation_required" {
+		return listSendProblems(err, "The campaign can't launch yet, so nothing was launched.")
+	}
+	code, _ := e.Details["code"].(string)
+	sum, _ := e.Details["summary"].(map[string]any)
+	if a.jsonOut || sum == nil || code == "" {
+		return e
+	}
+	str := func(m map[string]any, k string) string { v, _ := m[k].(string); return v }
+	num := func(k string) int { v, _ := sum[k].(float64); return int(v) }
+	addr := func(v any) string {
+		m, _ := v.(map[string]any)
+		if n := str(m, "name"); n != "" {
+			return fmt.Sprintf("%s <%s>", n, str(m, "email"))
+		}
+		return str(m, "email")
+	}
+	when := "as soon as it's launched"
+	if t, err := time.Parse(time.RFC3339, str(sum, "send_at")); err == nil {
+		when = t.Local().Format("2006-01-02 15:04 MST")
+	}
+	tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintf(tw, "Campaign:\t%s\n", str(sum, "name"))
+	fmt.Fprintf(tw, "Subject:\t%s\n", str(sum, "subject"))
+	fmt.Fprintf(tw, "From:\t%s\n", addr(sum["from"]))
+	if rt, _ := sum["reply_to"].([]any); len(rt) > 0 {
+		list := make([]string, len(rt))
+		for i, r := range rt {
+			list[i] = addr(r)
+		}
+		fmt.Fprintf(tw, "Reply-To:\t%s\n", strings.Join(list, ", "))
+	}
+	n := num("recipient_count")
+	fmt.Fprintf(tw, "To:\t%d %s\n", n, plural(n, "contact", "contacts"))
+	fmt.Fprintf(tw, "Sends:\t%s\n", when)
+	fmt.Fprintf(tw, "Credits:\t%d of %d\n", num("credits"), num("balance"))
+	_ = tw.Flush()
+	if ws, _ := sum["warnings"].([]any); len(ws) > 0 {
+		fmt.Fprintf(a.Stdout, "%d %s:\n", len(ws), plural(len(ws), "warning", "warnings"))
+		for _, w := range ws {
+			m, _ := w.(map[string]any)
+			fmt.Fprintf(a.Stdout, "  - %s\n", str(m, "message"))
+		}
+	}
+	fmt.Fprintf(a.Stdout, "Confirmation code: %s\n", code)
+	return &Error{Exit: ExitNeedsConfirmation, Code: e.Code, Details: e.Details,
+		Message: "Nothing was launched. The summary above needs confirming.",
+		Hint: "Show the summary to the person. Only if they say yes, run `mailgoose campaign launch " + id +
+			" --confirm " + code + "`. The code works for 15 minutes."}
 }
 
 // listSendProblems puts every problem in a not_ready error's message, one
 // per line with how to fix it, so the person sees them all at once.
-func listSendProblems(err error) error {
+func listSendProblems(err error, lead string) error {
 	var e *Error
 	if !errors.As(err, &e) || e.Code != "not_ready" {
 		return err
@@ -468,7 +595,7 @@ func listSendProblems(err error) error {
 		return err
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "The campaign can't be sent yet, so nothing was sent. %d %s to fix:", len(raw), plural(len(raw), "thing", "things"))
+	fmt.Fprintf(&b, "%s %d %s to fix:", lead, len(raw), plural(len(raw), "thing", "things"))
 	for _, r := range raw {
 		m, _ := r.(map[string]any)
 		msg, _ := m["message"].(string)

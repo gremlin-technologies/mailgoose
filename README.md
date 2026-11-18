@@ -509,9 +509,8 @@ They're picked and counted only through `contacts.Recipients` and
 
 Statuses are draft, scheduled, sending, sent, cancelled, paused and failed.
 `campaigns.CanMove` holds the allowed moves and `campaigns.SetStatus`
-enforces them; only draft and scheduled campaigns can be edited, and only
-drafts deleted. Every edit moves `version` on. Launching and sending come
-with MG-30 to MG-32.
+enforces them; only drafts can be edited, tested or deleted, since a
+launched campaign was confirmed as it is. Every edit moves `version` on.
 
 ### Test sends
 
@@ -528,13 +527,50 @@ with launch and the send workers: it works out the From (the email's own,
 else the account's), checks it's on a verified domain, checks the subject,
 postal address and merge tags, and compiles the email. When anything's
 wrong it lists every problem with its fix (`422 not_ready`,
-`details.problems`), and the CLI prints them all. Only draft and scheduled
-campaigns can be tested (409 otherwise).
+`details.problems`), and the CLI prints them all. Only drafts can be
+tested (409 otherwise).
 
 A test's unsubscribe link and `List-Unsubscribe` header point at `/u/test`,
 a page that says it was a test and changes nothing. After a test the
 campaign's `last_test` holds when it went out and the campaign and email
 versions it was made from, for MG-30's "tested since the last edit" check.
+
+### Launching
+
+`POST /v1/campaigns/{id}/launch` and `mailgoose campaign launch <campaign-id>`
+take two steps. Without `confirm` the API checks the campaign can go and
+answers `409 confirmation_required` with a summary (subject, From,
+Reply-To, recipient count, send time, credits and balance, check warnings)
+and a one-time code like `K7QM-2PXD`; nothing is sent. The CLI prints the
+summary and the code and exits 5. With `confirm` set to the code (`--confirm`
+in the CLI) it launches.
+
+A code lasts 15 minutes, allows 5 wrong tries, is stored hashed, and is for
+the campaign and email versions it was issued for: an edit to either makes
+it stale. There's one code per campaign, so a new summary replaces the old
+code. Case, dashes and spaces don't matter when typing it. An agent shows
+the summary to its person and confirms only after they say yes.
+
+A launch is refused (`422 not_ready`, every problem listed with its fix)
+when the campaign hasn't been tested since its last edit (`untested`), the
+email has check errors (`check_failed`), the From, subject, postal address
+or merge tags aren't ready (as for tests), the account's sending is paused
+(`account_paused`), it reaches nobody (`no_recipients`), the credits fall
+short (`credits_short`, with `needed`, `balance` and `short` in its
+details), or its send time has passed (`send_at_passed`). A wrong, expired
+or stale code is `422 invalid_confirmation` with `details.reason`.
+
+Confirming does everything in one transaction: it locks the campaign,
+checks the code and the campaign again, fixes the recipients
+(`campaign_recipients`, one row per contact), reserves one credit each
+(`reserve` under `campaign:<id>`), keeps a copy of the compiled email, From
+and Reply-To in `campaigns.launch`, moves the campaign to `sending` (or
+`scheduled` when it has a send time) and writes a `send_queue` row for the
+send pipeline (MG-31) to pick up at `run_at`. Launching a launched campaign
+again returns the same result, and so does a retry with the same
+`Idempotency-Key`. Draft keys get 403. After a launch the campaign can't be
+edited or tested; its `launch` field shows when, to how many and the credits
+held.
 
 ## Unsubscribing
 
