@@ -8,7 +8,7 @@ output "hosted_zone_name_servers" {
 }
 
 output "github_oidc_provider_arn" {
-  value = aws_iam_openid_connect_provider.github.arn
+  value = one(aws_iam_openid_connect_provider.github[*].arn)
 }
 
 output "ecr_repository_urls" {

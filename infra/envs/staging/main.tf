@@ -1,8 +1,9 @@
 module "stack" {
   source = "../../modules/stack"
 
-  environment    = "staging"
-  zone_name      = var.domain
+  environment = "staging"
+  # Only this subdomain is delegated to Route 53; the root stays at GoDaddy.
+  zone_name      = "staging.${var.domain}"
   hostnames      = ["api.staging.${var.domain}", "app.staging.${var.domain}"]
   sending_domain = "mail.staging.${var.domain}"
 
@@ -20,10 +21,13 @@ module "stack" {
   db_backup_retention_days = 1
   deletion_protection      = false
 
-  api_desired_count    = 1
-  worker_desired_count = 1
+  # 0 until the first app image is in ECR; raise to 1 after the first deploy.
+  api_desired_count    = 0
+  worker_desired_count = 0
   log_retention_days   = 14
 
-  # Any push to main deploys staging.
+  # Off until the AWS project allows the GitHub OIDC provider (see
+  # docs/decisions.md). When on, any push to main deploys staging.
+  enable_github_deploy   = false
   github_deploy_subjects = ["ref:refs/heads/main"]
 }

@@ -125,6 +125,12 @@ variable "github_repository" {
   default = "gremlin-technologies/mailgoose"
 }
 
+variable "enable_github_deploy" {
+  description = "Create the GitHub Actions deploy role. Needs the OIDC provider from infra/global."
+  type        = bool
+  default     = true
+}
+
 variable "github_deploy_subjects" {
   description = "OIDC subjects allowed to deploy this environment."
   type        = list(string)
