@@ -277,8 +277,13 @@ mailgoose contacts update pat@example.com --status unsubscribed
 mailgoose contacts delete pat@example.com --yes
 ```
 
-Tags are basic labels; a campaign can go to the contacts with any of chosen
-tags. Put one on contacts by name, or on every contact matching a filter:
+A free account holds at most 500 counted contacts (subscribed or
+unconfirmed); one more gets 402 `contact_limit`, with `details.limit` and
+`details.count`. Paid accounts have no cap; `contacts.CountedContacts` gives
+the count the monthly fee (MG-40) is based on.
+
+Tags are basic labels; a campaign can go to the contacts with any of the
+chosen tags. Put one on contacts by name, or on every contact matching a filter:
 
 ```sh
 mailgoose tags create vip

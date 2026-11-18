@@ -1038,7 +1038,9 @@ paths:
         Adds one contact. The address is stored in lower case and must be new
         to the account. An address that was deleted after it unsubscribed,
         bounced or complained comes back with that status, whatever
-        `status` asks for, so it isn't mailed again by mistake.
+        `status` asks for, so it isn't mailed again by mistake. A free
+        account holds at most 500 counted contacts (unconfirmed and
+        subscribed); one more gets 402 `contact_limit`.
       tags: [contacts]
       security:
         - apiKey: []
@@ -1065,6 +1067,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/CrossOrigin"
+        "402":
+          $ref: "#/components/responses/ContactLimit"
         "409":
           $ref: "#/components/responses/ContactConflict"
         "422":
@@ -2168,6 +2172,12 @@ components:
               type: string
               description: What to do about it. Empty when there's nothing to add.
               examples: ["Wait 20 seconds (see Retry-After) and try again."]
+            details:
+              type: object
+              description: |
+                Extra facts some errors carry; absent otherwise. A
+                `contact_limit` has `limit` and `count`.
+              additionalProperties: true
   parameters:
     Limit:
       name: limit
@@ -2239,6 +2249,18 @@ components:
   responses:
     TagConflict:
       description: "`tag_exists`: the account already has a tag with that name, ignoring case."
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ContactLimit:
+      description: |
+        `contact_limit`: a free account holds at most 500 counted contacts
+        (unconfirmed and subscribed). `details.limit` is the limit and
+        `details.count` the counted contacts now. Paid accounts have no cap.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

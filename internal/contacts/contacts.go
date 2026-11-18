@@ -228,6 +228,11 @@ func (s *Service) Create(ctx context.Context, accountID string, in CreateInput) 
 	if reason != "" {
 		status = reason
 	}
+	if Counted(status) {
+		if err := ensureRoom(ctx, tx, accountID, 1); err != nil {
+			return nil, err
+		}
+	}
 	now := s.now()
 	c, err := scan(tx.QueryRow(ctx, `
 		INSERT INTO contacts (account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at)
@@ -326,6 +331,11 @@ func (s *Service) Update(ctx context.Context, accountID, id string, u UpdateInpu
 		}
 	}
 
+	if !Counted(c.Status) && Counted(status) {
+		if err := ensureRoom(ctx, tx, accountID, 1); err != nil {
+			return nil, err
+		}
+	}
 	now := s.now()
 	changed := c.StatusChangedAt
 	if status != c.Status {

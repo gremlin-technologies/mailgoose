@@ -80,7 +80,11 @@ func (a *App) Run(ctx context.Context, args []string) int {
 	if a.jsonOut || wantsJSON(args) {
 		enc := json.NewEncoder(a.Stderr)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(map[string]any{"error": map[string]string{"code": e.Code, "message": e.Message, "hint": e.Hint}})
+		body := map[string]any{"code": e.Code, "message": e.Message, "hint": e.Hint}
+		if len(e.Details) > 0 {
+			body["details"] = e.Details
+		}
+		_ = enc.Encode(map[string]any{"error": body})
 	} else {
 		fmt.Fprintln(a.Stderr, "Error:", e.Message)
 		if e.Hint != "" {

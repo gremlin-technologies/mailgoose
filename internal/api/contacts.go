@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -27,9 +28,15 @@ func (s *Server) contactsCaller(w http.ResponseWriter, r *http.Request) *Caller 
 // whether there was one.
 func (s *Server) contactError(w http.ResponseWriter, r *http.Request, err error) bool {
 	var ve *auth.ValidationError
+	var le *contacts.LimitError
 	switch {
 	case err == nil:
 		return false
+	case errors.As(err, &le):
+		WriteError(w, (&Error{Status: http.StatusPaymentRequired, Code: "contact_limit",
+			Message: fmt.Sprintf("A free account holds at most %d contacts that are subscribed or unconfirmed, and this one has %d.", le.Limit, le.Count),
+			Hint:    "Delete or unsubscribe contacts you no longer mail, or buy credits: an account becomes paid on its first purchase, and paid accounts have no cap.",
+		}).WithDetails(map[string]any{"limit": le.Limit, "count": le.Count}))
 	case errors.As(err, &ve):
 		WriteError(w, Unprocessable(ve.Code, ve.Message))
 	case errors.Is(err, contacts.ErrExists):

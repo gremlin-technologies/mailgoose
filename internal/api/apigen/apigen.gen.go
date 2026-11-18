@@ -817,6 +817,10 @@ type Error struct {
 		// Examples: database_unavailable
 		Code string `json:"code"`
 
+		// Details Extra facts some errors carry; absent otherwise. A
+		// `contact_limit` has `limit` and `count`.
+		Details *map[string]interface{} `json:"details,omitempty"`
+
 		// Hint What to do about it. Empty when there's nothing to add.
 		//
 		// Examples: Wait 20 seconds (see Retry-After) and try again.
@@ -1007,6 +1011,9 @@ type BadRequest = Error
 
 // ContactConflict defines model for ContactConflict.
 type ContactConflict = Error
+
+// ContactLimit defines model for ContactLimit.
+type ContactLimit = Error
 
 // CrossOrigin defines model for CrossOrigin.
 type CrossOrigin = Error

@@ -14,9 +14,10 @@ import (
 // apiErrorBody is the API's error shape.
 type apiErrorBody struct {
 	Error struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Hint    string `json:"hint"`
+		Code    string         `json:"code"`
+		Message string         `json:"message"`
+		Hint    string         `json:"hint"`
+		Details map[string]any `json:"details"`
 	} `json:"error"`
 }
 
@@ -93,7 +94,7 @@ func (a *App) send(ctx context.Context, apiURL, method, path string, body, out a
 func responseError(resp *http.Response, raw []byte) *Error {
 	var body apiErrorBody
 	_ = json.Unmarshal(raw, &body)
-	e := &Error{Code: body.Error.Code, Message: body.Error.Message, Hint: body.Error.Hint}
+	e := &Error{Code: body.Error.Code, Message: body.Error.Message, Hint: body.Error.Hint, Details: body.Error.Details}
 	if e.Code == "" {
 		e.Code = "http_" + fmt.Sprint(resp.StatusCode)
 	}
