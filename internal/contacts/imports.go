@@ -28,6 +28,9 @@ const (
 	MaxImportRows = 100_000
 	// MaxImportTags is the most tags one import puts on its contacts.
 	MaxImportTags = 20
+	// MaxImportFileTags is the most different tags a file's tags column may
+	// name; tags it names that the account lacks are created.
+	MaxImportFileTags = 200
 	// LargeFirstImport is the most rows an account's first import may have
 	// without being held for review.
 	LargeFirstImport = 2_000
@@ -93,6 +96,8 @@ type Import struct {
 	EmailColumn     string
 	FirstNameColumn *string
 	LastNameColumn  *string
+	StatusColumn    *string
+	TagsColumn      *string
 	// Tags are put on every contact the import adds, sorted by name. A tag
 	// deleted since is left out.
 	Tags          []TagRef
@@ -133,16 +138,27 @@ type SkippedRow struct {
 type ImportInput struct {
 	CSV      []byte
 	FileName string
-	// EmailColumn, FirstNameColumn and LastNameColumn name the header of each
-	// field's column. Empty ones are found from common headers.
+	// EmailColumn, FirstNameColumn, LastNameColumn, StatusColumn and
+	// TagsColumn name the header of each field's column. Empty ones are found
+	// from common headers. A status cell can only hold a contact back: an
+	// unsubscribed, bounced or complained row is added with that status, and
+	// an unconfirmed one stays unconfirmed. A tags cell lists tags separated
+	// by commas; tags the account doesn't have yet are created.
 	EmailColumn     string
 	FirstNameColumn string
 	LastNameColumn  string
+	StatusColumn    string
+	TagsColumn      string
 	// Tags are tag names or ids, put on every contact the import adds.
 	Tags []string
 	// PermissionConfirmed says the account has the people's permission to
 	// mail them: contacts are added subscribed, not unconfirmed.
 	PermissionConfirmed bool
+}
+
+func (in ImportInput) named() map[string]string {
+	return map[string]string{fieldEmail: in.EmailColumn, fieldFirstName: in.FirstNameColumn, fieldLastName: in.LastNameColumn,
+		fieldStatus: in.StatusColumn, fieldTags: in.TagsColumn}
 }
 
 func invalidImport(code, field, msg string) error {
@@ -153,14 +169,37 @@ func invalidImport(code, field, msg string) error {
 
 var utf8BOM = []byte("\xef\xbb\xbf")
 
+// Import fields, the keys of a file's column mapping.
+const (
+	fieldEmail     = "email"
+	fieldFirstName = "first_name"
+	fieldLastName  = "last_name"
+	fieldStatus    = "status"
+	fieldTags      = "tags"
+)
+
+// importFields are the fields an import reads, in the order their columns
+// are found.
+var importFields = []string{fieldEmail, fieldFirstName, fieldLastName, fieldStatus, fieldTags}
+
 // csvLayout is how to read a file: its delimiter and each field's column
 // (-1 when absent).
 type csvLayout struct {
-	comma               rune
-	header              []string
-	email, first, last  int
-	emailName           string
-	firstName, lastName *string
+	comma  rune
+	header []string
+	// col is each field's column index.
+	col map[string]int
+}
+
+// column is the header of field's column as stored on the import, nil when
+// the file has none.
+func (l *csvLayout) column(field string) *string {
+	i := l.col[field]
+	if i < 0 {
+		return nil
+	}
+	n := strings.TrimSpace(l.header[i])
+	return &n
 }
 
 // sniffComma picks the delimiter that appears most in the header line:
@@ -200,11 +239,15 @@ func headerKey(s string) string {
 }
 
 // commonHeaders are the headers each field is found under when no column is
-// named for it, compared with headerKey.
+// named for it, compared with headerKey. Status and tags are found only under
+// their own names, the way an export writes them, so an unrelated column
+// isn't read as either.
 var commonHeaders = map[string][]string{
-	"email":      {"email", "emailaddress", "mail", "mailaddress", "subscriberemail", "contactemail"},
-	"first_name": {"firstname", "first", "givenname", "fname", "forename"},
-	"last_name":  {"lastname", "last", "surname", "familyname", "lname"},
+	fieldEmail:     {"email", "emailaddress", "mail", "mailaddress", "subscriberemail", "contactemail"},
+	fieldFirstName: {"firstname", "first", "givenname", "fname", "forename"},
+	fieldLastName:  {"lastname", "last", "surname", "familyname", "lname"},
+	fieldStatus:    {"status"},
+	fieldTags:      {"tags"},
 }
 
 // findColumn returns the column headed name: an exact match first, then a
@@ -223,64 +266,59 @@ func findColumn(header []string, name string) int {
 	return -1
 }
 
-// readLayout reads the header row and finds each field's column. Named
-// columns must exist; email must be found.
-func readLayout(data []byte, emailCol, firstCol, lastCol string) (*csvLayout, error) {
+// readLayout reads the header row and finds each field's column. named maps
+// a field to the header of its column; a named column must exist, and email
+// must be found.
+func readLayout(data []byte, named map[string]string) (*csvLayout, error) {
 	if len(bytes.TrimSpace(bytes.TrimPrefix(data, utf8BOM))) == 0 {
 		return nil, invalidImport("no_rows", "csv", "The file is empty.")
 	}
 	if !utf8.Valid(data) {
 		return nil, invalidImport("invalid_encoding", "csv", "The file isn't UTF-8 text. Save it from your spreadsheet as \"CSV UTF-8\" and try again.")
 	}
-	l := &csvLayout{comma: sniffComma(bytes.TrimPrefix(data, utf8BOM))}
+	l := &csvLayout{comma: sniffComma(bytes.TrimPrefix(data, utf8BOM)), col: map[string]int{}}
 	header, err := newCSVReader(data, l.comma).Read()
 	if err != nil {
 		return nil, invalidImport("invalid_csv", "csv", "The header row can't be read as CSV: "+err.Error())
 	}
 	l.header = slices.Clone(header)
 
-	find := func(field, named string) (int, error) {
-		if named != "" {
-			i := findColumn(l.header, named)
-			if i < 0 {
-				return -1, invalidImport("invalid_mapping", "columns."+field,
-					fmt.Sprintf("No column is headed %q. The headers are: %s.", named, strings.Join(l.header, ", ")))
-			}
-			return i, nil
+	// Named columns first, so a column someone named is never taken by
+	// another field's guess; then common headers for the rest.
+	used := map[int]bool{}
+	for _, field := range importFields {
+		l.col[field] = -1
+		name := named[field]
+		if name == "" {
+			continue
 		}
+		i := findColumn(l.header, name)
+		if i < 0 {
+			return nil, invalidImport("invalid_mapping", "columns."+field,
+				fmt.Sprintf("No column is headed %q. The headers are: %s.", name, strings.Join(l.header, ", ")))
+		}
+		if used[i] {
+			return nil, invalidImport("invalid_mapping", "columns", "Each field needs its own column.")
+		}
+		used[i], l.col[field] = true, i
+	}
+	for _, field := range importFields {
+		if named[field] != "" {
+			continue
+		}
+	find:
 		for _, want := range commonHeaders[field] {
 			for i, h := range l.header {
-				if headerKey(h) == want {
-					return i, nil
+				if headerKey(h) == want && !used[i] {
+					used[i], l.col[field] = true, i
+					break find
 				}
 			}
 		}
-		return -1, nil
 	}
-	if l.email, err = find("email", emailCol); err != nil {
-		return nil, err
-	}
-	if l.email < 0 {
+	if l.col[fieldEmail] < 0 {
 		return nil, invalidImport("no_email_column", "columns.email",
 			fmt.Sprintf("No column looks like email addresses. The headers are: %s. Name the email column, or add a header row if the file has none.", strings.Join(l.header, ", ")))
-	}
-	if l.first, err = find("first_name", firstCol); err != nil {
-		return nil, err
-	}
-	if l.last, err = find("last_name", lastCol); err != nil {
-		return nil, err
-	}
-	if (l.first >= 0 && (l.first == l.email || l.first == l.last)) || (l.last >= 0 && l.last == l.email) {
-		return nil, invalidImport("invalid_mapping", "columns", "Each field needs its own column.")
-	}
-	l.emailName = strings.TrimSpace(l.header[l.email])
-	if l.first >= 0 {
-		n := strings.TrimSpace(l.header[l.first])
-		l.firstName = &n
-	}
-	if l.last >= 0 {
-		n := strings.TrimSpace(l.header[l.last])
-		l.lastName = &n
 	}
 	return l, nil
 }
@@ -290,9 +328,9 @@ type csvRow struct {
 	// index counts contact rows from 0, the way processed_rows does.
 	index int
 	// line is where the row starts in the file; the header is line 1.
-	line               int
-	email, first, last string
-	unreadable         bool
+	line                             int
+	email, first, last, status, tags string
+	unreadable                       bool
 }
 
 func cell(rec []string, i int) string {
@@ -340,7 +378,9 @@ func (l *csvLayout) eachRow(data []byte, fn func(csvRow) error) error {
 			continue
 		default:
 			line, _ := r.FieldPos(0)
-			row = csvRow{line: line, email: cell(rec, l.email), first: cell(rec, l.first), last: cell(rec, l.last)}
+			get := func(field string) string { return unescapeCell(cell(rec, l.col[field])) }
+			row = csvRow{line: line, email: get(fieldEmail), first: get(fieldFirstName), last: get(fieldLastName),
+				status: get(fieldStatus), tags: cell(rec, l.col[fieldTags])}
 		}
 		row.index = i
 		i++
@@ -374,9 +414,56 @@ func importName(v string) *string {
 	return &v
 }
 
+// formulaStart are the characters a spreadsheet reads as the start of a
+// formula. An export puts a ' before a cell starting with one (see
+// ExportCSV), and an import takes it off again.
+const formulaStart = "=+-@\t\r"
+
+// unescapeCell undoes an export's guard against spreadsheet formulas.
+func unescapeCell(v string) string {
+	if len(v) >= 2 && v[0] == '\'' && strings.ContainsRune(formulaStart, rune(v[1])) {
+		return v[1:]
+	}
+	return v
+}
+
+// rowStatus is the status a row's contact is added with: the import's,
+// unless the row's status cell holds it back. A status cell can't subscribe
+// anyone the import itself doesn't.
+func rowStatus(cellValue, importStatus string) string {
+	switch v := strings.ToLower(strings.TrimSpace(cellValue)); v {
+	case StatusUnsubscribed, StatusBounced, StatusComplained, StatusUnconfirmed:
+		return v
+	}
+	return importStatus
+}
+
+// rowTags splits a tags cell into tag names, without repeats ignoring case.
+// It returns false when a name isn't a valid tag name.
+func rowTags(cellValue string) ([]string, bool) {
+	var out []string
+	seen := map[string]bool{}
+	for _, part := range strings.FieldsFunc(cellValue, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' }) {
+		part = strings.TrimSpace(unescapeCell(strings.TrimSpace(part)))
+		if part == "" {
+			continue
+		}
+		name, err := normalizeTagName(part)
+		if err != nil {
+			return nil, false
+		}
+		if k := strings.ToLower(name); !seen[k] {
+			seen[k] = true
+			out = append(out, name)
+		}
+	}
+	return out, true
+}
+
 // --- Creating and reading imports ---
 
 const importColumns = `i.id, i.account_id, i.file_name, i.status, i.permission_confirmed, i.email_column, i.first_name_column, i.last_name_column,
+	i.status_column, i.tags_column,
 	i.total_rows, i.processed_rows, i.imported, i.skipped, i.review, i.hold_reason, i.error, i.created_at, i.started_at, i.finished_at,
 	ARRAY(SELECT t.id::text FROM tags t WHERE t.id = ANY(i.tag_ids) ORDER BY lower(t.name), t.id),
 	ARRAY(SELECT t.name FROM tags t WHERE t.id = ANY(i.tag_ids) ORDER BY lower(t.name), t.id),
@@ -386,7 +473,7 @@ func scanImport(row pgx.Row) (*Import, error) {
 	var im Import
 	var tagIDs, tagNames, byReason []string
 	err := row.Scan(&im.ID, &im.AccountID, &im.FileName, &im.Status, &im.PermissionConfirmed, &im.EmailColumn, &im.FirstNameColumn, &im.LastNameColumn,
-		&im.TotalRows, &im.ProcessedRows, &im.Imported, &im.Skipped, &im.Review, &im.HoldReason, &im.Error, &im.CreatedAt, &im.StartedAt, &im.FinishedAt,
+		&im.StatusColumn, &im.TagsColumn, &im.TotalRows, &im.ProcessedRows, &im.Imported, &im.Skipped, &im.Review, &im.HoldReason, &im.Error, &im.CreatedAt, &im.StartedAt, &im.FinishedAt,
 		&tagIDs, &tagNames, &byReason)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrImportNotFound
@@ -444,15 +531,28 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 	if len(in.CSV) > MaxImportBytes {
 		return nil, invalidImport("file_too_large", "csv", fmt.Sprintf("The file is over %d MB. Split it into smaller files.", MaxImportBytes>>20))
 	}
-	l, err := readLayout(in.CSV, in.EmailColumn, in.FirstNameColumn, in.LastNameColumn)
+	l, err := readLayout(in.CSV, in.named())
 	if err != nil {
 		return nil, err
 	}
 	total := 0
-	err = l.eachRow(in.CSV, func(csvRow) error {
+	fileTags := map[string]bool{}
+	err = l.eachRow(in.CSV, func(r csvRow) error {
 		total++
 		if total > MaxImportRows {
 			return invalidImport("too_many_rows", "csv", fmt.Sprintf("The file has more than %d contacts. Split it into smaller files.", MaxImportRows))
+		}
+		names, ok := rowTags(r.tags)
+		if !ok {
+			return invalidImport("invalid_tag_name", "csv",
+				fmt.Sprintf("Row %d has a tag that isn't 1 to %d characters. Fix that row's tags and try again.", r.line, MaxTagNameLen))
+		}
+		for _, n := range names {
+			fileTags[strings.ToLower(n)] = true
+		}
+		if len(fileTags) > MaxImportFileTags {
+			return invalidImport("too_many_tags", "csv",
+				fmt.Sprintf("The tags column names more than %d different tags. Import the file in parts, or tag the contacts afterwards.", MaxImportFileTags))
 		}
 		return nil
 	})
@@ -491,9 +591,10 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 	var id string
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO imports (account_id, file_name, permission_confirmed, email_column, first_name_column, last_name_column,
-			tag_ids, csv, total_rows, review, hold_reason, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
-		accountID, fileName, in.PermissionConfirmed, l.emailName, l.firstName, l.lastName,
+			status_column, tags_column, tag_ids, csv, total_rows, review, hold_reason, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+		accountID, fileName, in.PermissionConfirmed, *l.column(fieldEmail), l.column(fieldFirstName), l.column(fieldLastName),
+		l.column(fieldStatus), l.column(fieldTags),
 		tagIDs, in.CSV, total, review, holdReason, s.now()).Scan(&id); err != nil {
 		return nil, err
 	}
@@ -593,8 +694,7 @@ func (s *Service) RunImports(ctx context.Context, log *slog.Logger, poll time.Du
 type importJob struct {
 	id, accountID, token string
 	data                 []byte
-	emailCol             string
-	firstCol, lastCol    *string
+	named                map[string]string
 	tagIDs               []string
 	status               string
 	processed            int
@@ -614,6 +714,8 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 	}
 	var j importJob
 	var permission bool
+	var emailCol string
+	var firstCol, lastCol, statusCol, tagsCol *string
 	err := s.DB.QueryRow(ctx, `
 		UPDATE imports SET status = 'running', lease_token = gen_random_uuid(), lease_until = $2,
 			attempts = attempts + 1, started_at = coalesce(started_at, $1)
@@ -621,9 +723,10 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 			SELECT id FROM imports
 			WHERE status = 'queued' OR (status = 'running' AND lease_until < $1)
 			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED)
-		RETURNING id, account_id, lease_token, csv, email_column, first_name_column, last_name_column, tag_ids::text[],
+		RETURNING id, account_id, lease_token, csv, email_column, first_name_column, last_name_column, status_column, tags_column,
+			tag_ids::text[],
 			permission_confirmed, processed_rows, review`,
-		now, now.Add(ImportLease)).Scan(&j.id, &j.accountID, &j.token, &j.data, &j.emailCol, &j.firstCol, &j.lastCol, &j.tagIDs,
+		now, now.Add(ImportLease)).Scan(&j.id, &j.accountID, &j.token, &j.data, &emailCol, &firstCol, &lastCol, &statusCol, &tagsCol, &j.tagIDs,
 		&permission, &j.processed, &j.review)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
@@ -631,6 +734,8 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("claim import: %w", err)
 	}
+	j.named = map[string]string{fieldEmail: emailCol, fieldFirstName: deref(firstCol), fieldLastName: deref(lastCol),
+		fieldStatus: deref(statusCol), fieldTags: deref(tagsCol)}
 	j.status = StatusUnconfirmed
 	if permission {
 		j.status = StatusSubscribed
@@ -642,7 +747,7 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 }
 
 func (s *Service) runImport(ctx context.Context, j *importJob) error {
-	l, err := readLayout(j.data, j.emailCol, deref(j.firstCol), deref(j.lastCol))
+	l, err := readLayout(j.data, j.named)
 	if err != nil {
 		return err
 	}
@@ -727,6 +832,9 @@ func (s *Service) wouldPassLimit(ctx context.Context, j *importJob, l *csvLayout
 	seen := map[string]struct{}{}
 	var emails, hashes []string
 	if err := l.eachRow(j.data, func(r csvRow) error {
+		if !Counted(rowStatus(r.status, j.status)) {
+			return nil
+		}
 		if e, err := NormalizeEmail(r.email); err == nil && !r.unreadable {
 			if _, dup := seen[e]; !dup {
 				seen[e] = struct{}{}
@@ -755,6 +863,8 @@ type candidate struct {
 	line        int
 	raw, email  string
 	first, last *string
+	status      string
+	tags        []string
 }
 
 // importBatch adds one batch of rows in one transaction and records how far
@@ -780,7 +890,9 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 			continue
 		}
 		seen[e] = struct{}{}
-		cands = append(cands, candidate{line: r.line, raw: r.email, email: e, first: importName(r.first), last: importName(r.last)})
+		tags, _ := rowTags(r.tags) // checked when the import was created
+		cands = append(cands, candidate{line: r.line, raw: r.email, email: e, first: importName(r.first), last: importName(r.last),
+			status: rowStatus(r.status, j.status), tags: tags})
 	}
 
 	tx, err := s.DB.Begin(ctx)
@@ -812,9 +924,12 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 			skip(c.line, c.raw, SkipExists)
 		case suppressed[hashes[i]]:
 			skip(c.line, c.raw, SkipSuppressed)
-		case capped && count+len(add) >= FreeContactLimit:
+		case capped && Counted(c.status) && count >= FreeContactLimit:
 			skip(c.line, c.raw, SkipOverLimit)
 		default:
+			if Counted(c.status) {
+				count++
+			}
 			add = append(add, c)
 		}
 	}
@@ -826,22 +941,29 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 	addEmails := make([]string, len(add))
 	firsts := make([]*string, len(add))
 	lasts := make([]*string, len(add))
+	statuses := make([]string, len(add))
 	for i, c := range add {
-		addEmails[i], firsts[i], lasts[i] = c.email, c.first, c.last
+		addEmails[i], firsts[i], lasts[i], statuses[i] = c.email, c.first, c.last, c.status
 	}
+	// A microsecond apart, so contacts keep the file's order in lists and
+	// exports.
 	now := s.now()
 	rows2, err := tx.Query(ctx, `
-		INSERT INTO contacts (account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at, held_import_id)
-		SELECT $1, x.email, x.first_name, x.last_name, $5, 'import', $6, $6, $6, $7
-		FROM unnest($2::text[], $3::text[], $4::text[]) WITH ORDINALITY AS x(email, first_name, last_name, n)
+		INSERT INTO contacts (account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at,
+			held_import_id, import_id)
+		SELECT $1, x.email, x.first_name, x.last_name, x.status, 'import', x.at, x.at, x.at, $7, $8
+		FROM (
+			SELECT *, $6::timestamptz + (n - 1) * interval '1 microsecond' AS at
+			FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS u(email, first_name, last_name, status, n)
+		) AS x
 		ORDER BY x.n
 		ON CONFLICT (account_id, email) DO NOTHING
-		RETURNING id::text, email`, j.accountID, addEmails, firsts, lasts, j.status, now, held)
+		RETURNING id::text, email`, j.accountID, addEmails, firsts, lasts, statuses, now, held, j.id)
 	if err != nil {
 		return err
 	}
 	var ids []string
-	added := map[string]bool{}
+	added := map[string]string{} // email -> contact id
 	for rows2.Next() {
 		var id, email string
 		if err := rows2.Scan(&id, &email); err != nil {
@@ -849,14 +971,14 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 			return err
 		}
 		ids = append(ids, id)
-		added[email] = true
+		added[email] = id
 	}
 	rows2.Close()
 	if err := rows2.Err(); err != nil {
 		return err
 	}
 	for _, c := range add {
-		if !added[c.email] {
+		if added[c.email] == "" {
 			// Added by someone else since the check above.
 			skip(c.line, c.raw, SkipExists)
 		}
@@ -870,6 +992,9 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 			ON CONFLICT DO NOTHING`, ids, j.accountID, j.tagIDs, now); err != nil {
 			return err
 		}
+	}
+	if err := s.tagFromCells(ctx, tx, j.accountID, add, added, now); err != nil {
+		return err
 	}
 	if len(skips) > 0 {
 		lines := make([]int, len(skips))
@@ -899,6 +1024,74 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 		return afterImportBatch(processed)
 	}
 	return nil
+}
+
+// tagFromCells puts each added contact's tags-column tags on it, creating the
+// tags the account doesn't have yet.
+func (s *Service) tagFromCells(ctx context.Context, tx pgx.Tx, accountID string, add []candidate, added map[string]string, now time.Time) error {
+	var names []string
+	seen := map[string]bool{}
+	for _, c := range add {
+		if added[c.email] == "" {
+			continue
+		}
+		for _, n := range c.tags {
+			if k := strings.ToLower(n); !seen[k] {
+				seen[k] = true
+				names = append(names, n)
+			}
+		}
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO tags (account_id, name, created_at) SELECT $1, n, $3 FROM unnest($2::text[]) AS n
+		ON CONFLICT (account_id, lower(name)) DO NOTHING`, accountID, names, now); err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT lower(name), id::text FROM tags WHERE account_id = $1 AND lower(name) = ANY($2::text[])`,
+		accountID, lowerAll(names))
+	if err != nil {
+		return err
+	}
+	tagID := map[string]string{}
+	for rows.Next() {
+		var k, id string
+		if err := rows.Scan(&k, &id); err != nil {
+			rows.Close()
+			return err
+		}
+		tagID[k] = id
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	var contactIDs, tagIDs []string
+	for _, c := range add {
+		id := added[c.email]
+		if id == "" {
+			continue
+		}
+		for _, n := range c.tags {
+			if t := tagID[strings.ToLower(n)]; t != "" {
+				contactIDs, tagIDs = append(contactIDs, id), append(tagIDs, t)
+			}
+		}
+	}
+	_, err = tx.Exec(ctx, `
+		INSERT INTO contact_tags (contact_id, tag_id, created_at) SELECT x.c, x.t, $3 FROM unnest($1::uuid[], $2::uuid[]) AS x(c, t)
+		ON CONFLICT DO NOTHING`, contactIDs, tagIDs, now)
+	return err
+}
+
+func lowerAll(ss []string) []string {
+	out := make([]string, len(ss))
+	for i, v := range ss {
+		out[i] = strings.ToLower(v)
+	}
+	return out
 }
 
 // afterImportBatch, when set by a test, runs after each batch commits; an

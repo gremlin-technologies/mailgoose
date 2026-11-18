@@ -563,6 +563,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/contacts/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export contacts as CSV
+         * @description The account's contacts as a CSV file, oldest first, with the same
+         *     filters as listing them; with none, every contact. Columns: `email`,
+         *     `first_name`, `last_name`, `status`, `tags` (names separated by
+         *     commas), `source`, `created_at`, `status_changed_at` and
+         *     `permission_confirmed` (true or false for contacts an import added,
+         *     whether the account confirmed it had their permission; empty for
+         *     others). Importing the file back gives the same contacts and tags. A
+         *     cell that starts with `=`, `+`, `-` or `@` gets a `'` in front so a
+         *     spreadsheet doesn't run it as a formula; imports take it off again.
+         */
+        get: operations["exportContacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/contacts/{contact_id}": {
         parameters: {
             query?: never;
@@ -580,6 +608,11 @@ export interface paths {
          *     bounced or complained, only a hash of its address stays, on the
          *     account's suppression list, so adding the address again keeps that
          *     status.
+         *
+         *     With `erase=true`, for a person's request to erase their data, the
+         *     address also goes from import skip reports, and a hash of it always
+         *     stays on the suppression list (as unsubscribed, unless it bounced or
+         *     complained), so it isn't added back and mailed from an old list.
          */
         delete: operations["deleteContact"];
         options?: never;
@@ -593,6 +626,29 @@ export interface paths {
          *     SES.
          */
         patch: operations["updateContact"];
+        trace?: never;
+    };
+    "/v1/contacts/{contact_id}/data": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Everything stored about a contact
+         * @description For a person's data request: the contact, when each tag was put on
+         *     it, the import that added it and whether the account confirmed
+         *     permission for it, and import rows with its address that weren't
+         *     added. Delete with `erase=true` removes all of it.
+         */
+        get: operations["getContactData"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/v1/tags": {
@@ -832,6 +888,36 @@ export interface components {
             /** @enum {string} */
             status?: "subscribed" | "unconfirmed" | "unsubscribed";
         };
+        ContactData: {
+            contact: components["schemas"]["Contact"];
+            tags: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                /** Format: date-time */
+                added_at: string;
+            }[];
+            /** @description The import that added the contact; null when none did. */
+            import: null | {
+                /** Format: uuid */
+                id: string;
+                file_name: string | null;
+                /** Format: date-time */
+                created_at: string;
+                /** @description Whether the account confirmed it had permission to mail the people in the file. */
+                permission_confirmed: boolean;
+                /** @description The contact waits for the import's review before it can be mailed. */
+                held: boolean;
+            };
+            /** @description Rows of the account's imports with this address that weren't added. */
+            skipped_rows: {
+                /** Format: uuid */
+                import_id: string;
+                file_name: string | null;
+                row: number;
+                reason: components["schemas"]["SkipReason"];
+            }[];
+        };
         TagRef: {
             /** Format: uuid */
             id: string;
@@ -889,6 +975,19 @@ export interface components {
             email?: string;
             first_name?: string;
             last_name?: string;
+            /**
+             * @description A status column can only hold contacts back: `unsubscribed`,
+             *     `bounced` and `complained` rows are added with that status, and
+             *     `unconfirmed` rows stay unconfirmed. Other values are ignored.
+             *     Found under the header `status`.
+             */
+            status?: string;
+            /**
+             * @description A column of tag names separated by commas, put on each row's
+             *     contact. Tags the account doesn't have are created; a file may
+             *     name at most 200 different tags. Found under the header `tags`.
+             */
+            tags?: string;
         };
         CreateImportRequest: {
             /**
@@ -937,6 +1036,8 @@ export interface components {
                 email: string;
                 first_name: string | null;
                 last_name: string | null;
+                status: string | null;
+                tags: string | null;
             };
             /** @description Tags put on the added contacts. A tag deleted since is left out. */
             tags: components["schemas"]["TagRef"][];
@@ -2489,6 +2590,42 @@ export interface operations {
             503: components["responses"]["ServiceUnavailable"];
         };
     };
+    exportContacts: {
+        parameters: {
+            query?: {
+                /** @description Only contacts whose address contains this, ignoring case. */
+                email?: string;
+                /** @description Only contacts whose first, last or full name contains this, ignoring case. */
+                name?: string;
+                /** @description Only contacts with this status. */
+                status?: components["schemas"]["ContactStatus"];
+                /** @description Only contacts with this tag. */
+                tag_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The contacts, as CSV with a header row. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    /** @description Names the file `contacts.csv`. */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
     getContact: {
         parameters: {
             query?: never;
@@ -2520,7 +2657,10 @@ export interface operations {
     };
     deleteContact: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Erase every trace of the address, keeping only a hash on the suppression list. */
+                erase?: boolean;
+            };
             header?: never;
             path: {
                 /** @description The contact's `id`. */
@@ -2578,6 +2718,35 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["ContactConflict"];
             422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getContactData: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The contact's `id`. */
+                contact_id: components["parameters"]["ContactId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The contact's data. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactData"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

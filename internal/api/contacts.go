@@ -106,26 +106,9 @@ func (s *Server) ListContacts(w http.ResponseWriter, r *http.Request, params api
 			return
 		}
 	}
-	var f contacts.Filter
-	if params.Email != nil {
-		f.Email = *params.Email
-	}
-	if params.Name != nil {
-		f.Name = *params.Name
-	}
-	if params.Status != nil {
-		if !params.Status.Valid() {
-			WriteError(w, BadRequest("invalid_parameter", "status must be unconfirmed, subscribed, unsubscribed, bounced or complained."))
-			return
-		}
-		f.Status = string(*params.Status)
-	}
-	if params.TagId != nil {
-		if !uuidPattern.MatchString(*params.TagId) {
-			WriteError(w, BadRequest("invalid_parameter", "tag_id must be a tag's id."))
-			return
-		}
-		f.TagID = *params.TagId
+	f, ok := contactFilter(w, params.Email, params.Name, params.Status, params.TagId)
+	if !ok {
+		return
 	}
 	cs, err := s.Contacts.List(r.Context(), c.AccountID, f, after, pr.Limit+1)
 	if s.contactError(w, r, err) {
@@ -137,6 +120,33 @@ func (s *Server) ListContacts(w http.ResponseWriter, r *http.Request, params api
 		out.Data[i] = contactJSON(ct)
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// contactFilter checks list and export filters and turns them into a
+// contacts.Filter, writing the error when one is bad.
+func contactFilter(w http.ResponseWriter, email, name *string, status *apigen.ContactStatus, tagID *string) (contacts.Filter, bool) {
+	var f contacts.Filter
+	if email != nil {
+		f.Email = *email
+	}
+	if name != nil {
+		f.Name = *name
+	}
+	if status != nil {
+		if !status.Valid() {
+			WriteError(w, BadRequest("invalid_parameter", "status must be unconfirmed, subscribed, unsubscribed, bounced or complained."))
+			return f, false
+		}
+		f.Status = string(*status)
+	}
+	if tagID != nil {
+		if !uuidPattern.MatchString(*tagID) {
+			WriteError(w, BadRequest("invalid_parameter", "tag_id must be a tag's id."))
+			return f, false
+		}
+		f.TagID = *tagID
+	}
+	return f, true
 }
 
 // CreateContact is POST /v1/contacts.
@@ -224,12 +234,16 @@ func (s *Server) UpdateContact(w http.ResponseWriter, r *http.Request, id string
 }
 
 // DeleteContact is DELETE /v1/contacts/{contact_id}.
-func (s *Server) DeleteContact(w http.ResponseWriter, r *http.Request, id string) {
+func (s *Server) DeleteContact(w http.ResponseWriter, r *http.Request, id string, params apigen.DeleteContactParams) {
 	c := s.contactsCaller(w, r)
 	if c == nil || !validContactID(w, id) {
 		return
 	}
-	if s.contactError(w, r, s.Contacts.Delete(r.Context(), c.AccountID, id)) {
+	del := s.Contacts.Delete
+	if params.Erase != nil && *params.Erase {
+		del = s.Contacts.Erase
+	}
+	if s.contactError(w, r, del(r.Context(), c.AccountID, id)) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

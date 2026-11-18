@@ -178,7 +178,7 @@ func TestImportRefusesFilesItCantRead(t *testing.T) {
 		"header only":      {ImportInput{CSV: []byte("email\n,\n")}, "no_rows"},
 		"no email column":  {ImportInput{CSV: []byte("name,phone\nPat,1\n")}, "no_email_column"},
 		"named column":     {ImportInput{CSV: []byte("email\na@example.com\n"), FirstNameColumn: "First"}, "invalid_mapping"},
-		"same column":      {ImportInput{CSV: []byte("email\na@example.com\n"), FirstNameColumn: "email"}, "invalid_mapping"},
+		"same column":      {ImportInput{CSV: []byte("email\na@example.com\n"), EmailColumn: "email", FirstNameColumn: "email"}, "invalid_mapping"},
 		"not UTF-8":        {ImportInput{CSV: []byte("email\n\xff@example.com\n")}, "invalid_encoding"},
 		"unclosed quote":   {ImportInput{CSV: []byte("email\n\"a@example.com\nb@example.com\n")}, "invalid_csv"},
 		"unknown tag":      {ImportInput{CSV: []byte("email\na@example.com\n"), Tags: []string{"nope"}}, "tag_not_found"},

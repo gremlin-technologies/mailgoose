@@ -1077,6 +1077,75 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/contacts/export:
+    get:
+      operationId: exportContacts
+      summary: Export contacts as CSV
+      description: |
+        The account's contacts as a CSV file, oldest first, with the same
+        filters as listing them; with none, every contact. Columns: `email`,
+        `first_name`, `last_name`, `status`, `tags` (names separated by
+        commas), `source`, `created_at`, `status_changed_at` and
+        `permission_confirmed` (true or false for contacts an import added,
+        whether the account confirmed it had their permission; empty for
+        others). Importing the file back gives the same contacts and tags. A
+        cell that starts with `=`, `+`, `-` or `@` gets a `'` in front so a
+        spreadsheet doesn't run it as a formula; imports take it off again.
+      tags: [contacts]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - name: email
+          in: query
+          required: false
+          description: Only contacts whose address contains this, ignoring case.
+          schema:
+            type: string
+            maxLength: 254
+        - name: name
+          in: query
+          required: false
+          description: Only contacts whose first, last or full name contains this, ignoring case.
+          schema:
+            type: string
+            maxLength: 201
+        - name: status
+          in: query
+          required: false
+          description: Only contacts with this status.
+          schema:
+            $ref: "#/components/schemas/ContactStatus"
+        - name: tag_id
+          in: query
+          required: false
+          description: Only contacts with this tag.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The contacts, as CSV with a header row.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+            Content-Disposition:
+              description: Names the file `contacts.csv`.
+              schema:
+                type: string
+          content:
+            text/csv:
+              schema:
+                type: string
+                examples: ["email,first_name,last_name,status,tags,source,created_at,status_changed_at,permission_confirmed\npat@example.com,Pat,,subscribed,vip,api,2026-11-18T12:00:00Z,2026-11-18T12:00:00Z,\n"]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/contacts/{contact_id}:
     get:
       operationId: getContact
@@ -1162,12 +1231,24 @@ paths:
         bounced or complained, only a hash of its address stays, on the
         account's suppression list, so adding the address again keeps that
         status.
+
+        With `erase=true`, for a person's request to erase their data, the
+        address also goes from import skip reports, and a hash of it always
+        stays on the suppression list (as unsubscribed, unless it bounced or
+        complained), so it isn't added back and mailed from an old list.
       tags: [contacts]
       security:
         - apiKey: []
         - sessionCookie: []
       parameters:
         - $ref: "#/components/parameters/ContactId"
+        - name: erase
+          in: query
+          required: false
+          description: Erase every trace of the address, keeping only a hash on the suppression list.
+          schema:
+            type: boolean
+            default: false
       responses:
         "204":
           description: Deleted.
@@ -1180,6 +1261,41 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/contacts/{contact_id}/data:
+    get:
+      operationId: getContactData
+      summary: Everything stored about a contact
+      description: |
+        For a person's data request: the contact, when each tag was put on
+        it, the import that added it and whether the account confirmed
+        permission for it, and import rows with its address that weren't
+        added. Delete with `erase=true` removes all of it.
+      tags: [contacts]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ContactId"
+      responses:
+        "200":
+          description: The contact's data.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactData"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
         "429":
@@ -1682,6 +1798,63 @@ components:
         status:
           type: string
           enum: [subscribed, unconfirmed, unsubscribed]
+    ContactData:
+      type: object
+      required: [contact, tags, import, skipped_rows]
+      properties:
+        contact:
+          $ref: "#/components/schemas/Contact"
+        tags:
+          type: array
+          items:
+            type: object
+            required: [id, name, added_at]
+            properties:
+              id:
+                type: string
+                format: uuid
+              name:
+                type: string
+              added_at:
+                type: string
+                format: date-time
+        import:
+          description: The import that added the contact; null when none did.
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [id, file_name, created_at, permission_confirmed, held]
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                file_name:
+                  type: [string, "null"]
+                created_at:
+                  type: string
+                  format: date-time
+                permission_confirmed:
+                  type: boolean
+                  description: Whether the account confirmed it had permission to mail the people in the file.
+                held:
+                  type: boolean
+                  description: The contact waits for the import's review before it can be mailed.
+        skipped_rows:
+          type: array
+          description: Rows of the account's imports with this address that weren't added.
+          items:
+            type: object
+            required: [import_id, file_name, row, reason]
+            properties:
+              import_id:
+                type: string
+                format: uuid
+              file_name:
+                type: [string, "null"]
+              row:
+                type: integer
+              reason:
+                $ref: "#/components/schemas/SkipReason"
     TagRef:
       type: object
       required: [id, name]
@@ -1801,6 +1974,21 @@ components:
         last_name:
           type: string
           maxLength: 200
+        status:
+          type: string
+          maxLength: 200
+          description: |
+            A status column can only hold contacts back: `unsubscribed`,
+            `bounced` and `complained` rows are added with that status, and
+            `unconfirmed` rows stay unconfirmed. Other values are ignored.
+            Found under the header `status`.
+        tags:
+          type: string
+          maxLength: 200
+          description: |
+            A column of tag names separated by commas, put on each row's
+            contact. Tags the account doesn't have are created; a file may
+            name at most 200 different tags. Found under the header `tags`.
     CreateImportRequest:
       type: object
       required: [csv]
@@ -1860,7 +2048,7 @@ components:
           description: The status added contacts get; `subscribed` only when permission was confirmed.
         columns:
           type: object
-          required: [email, first_name, last_name]
+          required: [email, first_name, last_name, status, tags]
           description: The header of the column each field came from; null when the file has none.
           properties:
             email:
@@ -1868,6 +2056,10 @@ components:
             first_name:
               type: [string, "null"]
             last_name:
+              type: [string, "null"]
+            status:
+              type: [string, "null"]
+            tags:
               type: [string, "null"]
         tags:
           type: array

@@ -306,6 +306,18 @@ mailgoose import status <id>      # progress, then skipped rows
 mailgoose import list
 ```
 
+Export to CSV with `mailgoose export` (all contacts, or `--tag`, `--status`
+...). The file imports back as the same contacts and tags. For a person's
+data request, `mailgoose contacts export-data <email>` prints everything
+stored about them as JSON, and `mailgoose contacts delete <email> --erase
+--yes` removes it all, keeping only a hash on the suppression list.
+
+```sh
+mailgoose export --output contacts.csv
+mailgoose contacts export-data pat@example.com
+mailgoose contacts delete pat@example.com --erase --yes
+```
+
 ## Sending domains
 
 Campaigns go out from an address at a domain the customer owns.

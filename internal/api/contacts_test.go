@@ -32,15 +32,20 @@ func addedContact(t *testing.T, h http.Handler) {
 // contactPath is a request to /v1/contacts/{the test's contact}, or to a
 // contact that doesn't exist when the test added none.
 func contactPath(method, body string) func(*testing.T) *http.Request {
+	return contactPathSuffix(method, "", body)
+}
+
+// contactPathSuffix is contactPath with suffix after the contact's id.
+func contactPathSuffix(method, suffix, body string) func(*testing.T) *http.Request {
 	return func(t *testing.T) *http.Request {
 		id := "00000000-0000-4000-8000-000000000000"
 		if v, ok := addedContacts.Load(t); ok {
 			id = v.(string)
 		}
 		if body != "" {
-			return jsonRequest(method, "/v1/contacts/"+id, body)(t)
+			return jsonRequest(method, "/v1/contacts/"+id+suffix, body)(t)
 		}
-		return httptest.NewRequest(method, "/v1/contacts/"+id, nil)
+		return httptest.NewRequest(method, "/v1/contacts/"+id+suffix, nil)
 	}
 }
 
