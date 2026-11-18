@@ -233,6 +233,7 @@ func (h *HTTPLinks) fetch(total context.Context, client *http.Client, method, u 
 	resp, err := client.Do(req)
 	if err != nil {
 		var dnsErr *net.DNSError
+		var netErr net.Error
 		switch {
 		case errors.Is(err, errPrivate):
 			return LinkStatus{Result: ResultNotChecked, Detail: "it points to a private address, which isn't checked"}
@@ -242,7 +243,9 @@ func (h *HTTPLinks) fetch(total context.Context, client *http.Client, method, u 
 			return LinkStatus{Result: ResultMissing, final: true, Detail: "the site " + req.URL.Hostname() + " doesn't exist"}
 		case total.Err() != nil:
 			return LinkStatus{Result: ResultNotChecked, Detail: "the check ran out of time"}
-		case ctx.Err() != nil:
+		// The link's own deadline, or the client's or transport's timeouts,
+		// which are the same length and can fire first.
+		case ctx.Err() != nil || errors.As(err, &netErr) && netErr.Timeout():
 			return LinkStatus{Result: ResultUnreachable, Detail: "it timed out"}
 		}
 		return LinkStatus{Result: ResultUnreachable, Detail: "it couldn't be reached"}
