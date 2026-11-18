@@ -23,6 +23,25 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Contacts and tags pages (MG-42, reversible defaults)
+
+Picked while building MG-42; easy to change.
+
+- **Search looks in one field at a time**, email or name, picked next to the
+  search box (email by default). The API's filters combine with AND, so one
+  box can't search both.
+- **A contact added by hand is unconfirmed unless "I have their permission"
+  is ticked**, the same choice the import asks for, so nobody is mailed
+  without it.
+- **Bulk tagging works on the contacts ticked on the page** (up to 50 at a
+  time), not on everything a filter matches. The API takes a filter too, so
+  "tag all matching" can come later.
+- **Import column menus start from a guess** at the usual headers (Email,
+  E-mail Address, First name, Surname, Tags and the like). A field left
+  unmatched is left out of the request, so the API looks for it under its
+  usual headers, as it does for the CLI.
+- **Menus list up to 1,000 tags.**
+
 ## 2026-11-18: The paid plan is a card subscription (owner decision, confirmed)
 
 The owner: "Deducting credits feels confusing. Maybe we just stick to a

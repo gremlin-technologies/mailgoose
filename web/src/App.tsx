@@ -4,16 +4,21 @@ import { Route, Routes } from "react-router";
 import { RequireSession, SignedOutOnly } from "./guards";
 import { ApiKeys } from "./pages/ApiKeys";
 import { AppLayout } from "./pages/AppLayout";
+import { ContactDetail, Contacts } from "./pages/Contacts";
 import { Device } from "./pages/Device";
 import { DomainDetail, Domains } from "./pages/Domains";
+import { ImportContacts, ImportDetail } from "./pages/Imports";
 import { navPages } from "./pages/nav";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { Settings } from "./pages/Settings";
 import { SignIn } from "./pages/SignIn";
 import { SignUp } from "./pages/SignUp";
+import { Tags } from "./pages/Tags";
 
 /** Pages that are built; the rest of the menu shows a placeholder. */
 const built: Record<string, ReactNode> = {
+  "/contacts": <Contacts />,
+  "/tags": <Tags />,
   "/domains": <Domains />,
   "/api-keys": <ApiKeys />,
   "/settings": <Settings />,
@@ -61,6 +66,9 @@ export function AppRoutes() {
             <Route key={p.path} path={built[p.path] ? p.path : `${p.path}/*`} element={built[p.path] ?? <Placeholder page={p} />} />
           ),
         )}
+        <Route path="/contacts/import" element={<ImportContacts />} />
+        <Route path="/contacts/imports/:id" element={<ImportDetail />} />
+        <Route path="/contacts/:id" element={<ContactDetail />} />
         <Route path="/domains/:id" element={<DomainDetail />} />
         <Route path="*" element={<NotFound />} />
       </Route>
