@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 )
 
 var launchCodes sync.Map // *testing.T -> confirmation code
@@ -164,5 +166,31 @@ func TestLaunchCampaignNotReady(t *testing.T) {
 	body := rec.Body.String()
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(body, `"code":"not_ready"`) || !strings.Contains(body, `"untested"`) {
 		t.Errorf("not ready: %d %s", rec.Code, body)
+	}
+}
+
+// A code refused because the audience grew says by how much, so an agent
+// can tell the person before it asks for a new summary.
+func TestLaunchAudienceGrewError(t *testing.T) {
+	rec := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/v1/campaigns/x/launch", nil)
+	if !(&Server{}).launchError(rec, r, &sending.CodeError{Reason: sending.CodeGrew, Summarized: 100, Recipients: 140}) {
+		t.Fatal("not handled")
+	}
+	var e struct {
+		Error struct {
+			Code    string         `json:"code"`
+			Message string         `json:"message"`
+			Details map[string]any `json:"details"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &e); err != nil {
+		t.Fatal(err)
+	}
+	d := e.Error.Details
+	if rec.Code != http.StatusUnprocessableEntity || e.Error.Code != "invalid_confirmation" || d["reason"] != "audience_grew" ||
+		d["summarized_count"] != 100.0 || d["recipient_count"] != 140.0 ||
+		e.Error.Message != "Nothing was launched: the campaign now reaches 140 contacts, more than the 100 in the summary." {
+		t.Errorf("%d %s", rec.Code, rec.Body.String())
 	}
 }

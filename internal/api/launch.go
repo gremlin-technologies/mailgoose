@@ -78,11 +78,22 @@ func (s *Server) launchError(w http.ResponseWriter, r *http.Request, err error) 
 	case errors.As(err, &codeErr):
 		WriteError(w, Unprocessable("invalid_confirmation", "Nothing was launched: "+codeErr.Error()+".").
 			WithHint("Launch again without `confirm` for a new summary and code, and show it to the person.").
-			WithDetails(map[string]any{"reason": codeErr.Reason}))
+			WithDetails(codeDetails(codeErr)))
 	default:
 		s.campaignError(w, r, err)
 	}
 	return true
+}
+
+// codeDetails are an invalid_confirmation error's details: the reason, and
+// for audience_grew the summary's count and the count now.
+func codeDetails(e *sending.CodeError) map[string]any {
+	d := map[string]any{"reason": e.Reason}
+	if e.Reason == sending.CodeGrew {
+		d["summarized_count"] = e.Summarized
+		d["recipient_count"] = e.Recipients
+	}
+	return d
 }
 
 func summaryJSON(s *sending.Summary) map[string]any {

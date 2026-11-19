@@ -1436,6 +1436,28 @@ export interface components {
                 row: number;
                 reason: components["schemas"]["SkipReason"];
             }[];
+            /** @description The contact's signups through signup forms, oldest first. */
+            consents: {
+                /** Format: uuid */
+                id: string;
+                /** @description Null once the form is deleted; `wording` still says what it showed. */
+                form_id: string | null;
+                /** @enum {string} */
+                source: "form";
+                /** @description The address the signup was posted from. */
+                ip: string;
+                /** @description What the form showed: `form_name`, `fields` (their labels), `button_text`, `double_opt_in`, and with double opt-in `confirm_subject` and `confirm_text`. */
+                wording: {
+                    [key: string]: unknown;
+                };
+                /** Format: date-time */
+                created_at: string;
+                /**
+                 * Format: date-time
+                 * @description When the person used the confirm link; null until then.
+                 */
+                confirmed_at: string | null;
+            }[];
         };
         TagRef: {
             /** Format: uuid */
@@ -2263,10 +2285,21 @@ export interface components {
             confirm_subject: string;
             /** @description The confirmation email's text, above its confirm link. */
             confirm_text: string;
+            /** @description How many submissions the form has taken, bots' left out. A person who signs up twice counts twice. */
+            signups: number;
+            /** @description How many confirm links from the form's confirmation emails have been used. */
+            confirmations: number;
+            /** @description Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. */
+            problems?: components["schemas"]["FormProblem"][];
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        FormProblem: {
+            code: string;
+            message: string;
+            hint: string;
         };
         FormList: {
             data: components["schemas"]["Form"][];
@@ -2785,7 +2818,10 @@ export interface components {
          *     `no_recipients`, and `credits_short` with `details.needed`,
          *     `details.balance` and `details.short`. `invalid_confirmation`: the
          *     code can't be used; `details.reason` is `no_code`, `expired`,
-         *     `wrong`, `too_many_attempts` or `changed`. Ask for a new summary.
+         *     `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the
+         *     campaign now reaches more than a tenth more contacts than the
+         *     summary counted, with `details.summarized_count` and
+         *     `details.recipient_count`). Ask for a new summary.
          */
         LaunchRefused: {
             headers: {

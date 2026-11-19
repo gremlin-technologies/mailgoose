@@ -1,5 +1,5 @@
 // Package forms keeps an account's signup forms (FRM-1) and makes their
-// embed code (FRM-2). Taking submissions is MG-36's.
+// embed code (FRM-2). Taking submissions is package signups'.
 package forms
 
 import (
@@ -97,8 +97,12 @@ type Form struct {
 	ConfirmSubject string
 	ConfirmText    string
 	SigningKey     []byte
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// Signups counts the submissions the form has taken, and
+	// Confirmations the confirm links used (FRM-6).
+	Signups       int
+	Confirmations int
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // Asks reports whether the form has the field.
@@ -137,13 +141,13 @@ type Service struct {
 }
 
 const columns = `id, account_id, name, fields, button_text, success_message, redirect_url, double_opt_in,
-	confirm_subject, confirm_text, signing_key, created_at, updated_at`
+	confirm_subject, confirm_text, signing_key, signup_count, confirm_count, created_at, updated_at`
 
 func scan(row pgx.Row) (*Form, error) {
 	var f Form
 	var fields []byte
 	err := row.Scan(&f.ID, &f.AccountID, &f.Name, &fields, &f.ButtonText, &f.SuccessMessage, &f.RedirectURL,
-		&f.DoubleOptIn, &f.ConfirmSubject, &f.ConfirmText, &f.SigningKey, &f.CreatedAt, &f.UpdatedAt)
+		&f.DoubleOptIn, &f.ConfirmSubject, &f.ConfirmText, &f.SigningKey, &f.Signups, &f.Confirmations, &f.CreatedAt, &f.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -365,6 +369,20 @@ func setTags(ctx context.Context, tx pgx.Tx, accountID, formID string, ids []str
 // Get returns one form with its tags.
 func (s *Service) Get(ctx context.Context, accountID, id string) (*Form, error) {
 	f, err := scan(s.DB.QueryRow(ctx, `SELECT `+columns+` FROM forms WHERE account_id = $1 AND id = $2`, accountID, id))
+	if err != nil {
+		return nil, err
+	}
+	if err := s.loadTags(ctx, []*Form{f}); err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+// Public returns a form by id alone, for its public signup endpoint, with
+// its tags. A form of an account that isn't active is ErrNotFound.
+func (s *Service) Public(ctx context.Context, id string) (*Form, error) {
+	f, err := scan(s.DB.QueryRow(ctx, `SELECT `+columns+` FROM forms
+		WHERE id = $1 AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = forms.account_id AND a.status = 'active')`, id))
 	if err != nil {
 		return nil, err
 	}

@@ -613,9 +613,38 @@ mailgoose form embed <form-id> > signup.html
 to `/f/{id}` on the app's URL and works without JavaScript, and an optional
 script that posts in the page and shows the result there. The form carries
 a hidden honeypot field (`website`) and `_mg_ts`, a timestamp signed with
-the form's own key (`forms.Stamp`), for MG-36 to check submissions against.
+the form's own key (`forms.Stamp`), which submissions are checked against.
 `form get --json` output can be edited and passed back with `form update
 --file`.
+
+### Submissions and double opt-in
+
+`internal/signups` takes posts to `/f/{form_id}` (a public page outside the
+spec, like unsubscribing; `internal/api/signups.go`). It answers any origin
+(CORS `*`), takes a form post or JSON, and answers JSON when asked
+(`Accept: application/json`, which the embed script sends) or else
+redirects to the form's redirect URL or shows a success page.
+
+- **Bots:** a filled honeypot, or a post under 2 seconds after the page
+  opened (when the script says), gets the normal success answer and is
+  dropped. A missing or forged `_mg_ts` is a 400.
+- **Limits:** 10 posts a minute per IP and 600 a minute per form (429 with
+  Retry-After), plus the free plan's contact limit (409 `list_full`).
+- **Double opt-in:** a new address is added unconfirmed and gets a
+  confirmation email from the account's From on its verified domain, free of
+  credits. The link (`/confirm/{token}`, 7 days) shows a page whose button
+  confirms, so mail scanners opening it change nothing. A double opt-in form
+  with no verified From refuses signups (503 `form_not_ready`) and `form
+  get` says what to fix.
+- **Existing contacts:** a subscriber just gets the form's tags. An
+  unsubscribed address comes back only by confirming, even through a form
+  without double opt-in. Bounced and complained addresses get no email.
+  The answer is the same whatever happened, so a form doesn't show who's on
+  a list.
+- **Consent records:** each signup stores the time, IP, form and the form's
+  wording, and the confirmation time. `contacts export-data` lists them;
+  the CSV export carries the latest in its `signup_` columns. `form get`
+  shows the form's signup and confirmation counts.
 
 ## Sending domains
 

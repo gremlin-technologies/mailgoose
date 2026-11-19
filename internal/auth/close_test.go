@@ -28,6 +28,7 @@ func TestDeleteAccount(t *testing.T) {
 			`INSERT INTO unsubscribe_keys (account_id, key) VALUES ($1, decode(repeat('ab', 32), 'hex'))`,
 			`INSERT INTO unsubscribes (account_id, source) VALUES ($1, 'link')`,
 			`INSERT INTO test_sends (account_id) VALUES ($1)`,
+			`INSERT INTO consents (account_id, contact_id, form_id, ip, wording) SELECT $1, k.id, f.id, '192.0.2.1', '{}' FROM contacts k, forms f WHERE k.account_id = $1 AND f.account_id = $1`,
 			`INSERT INTO send_queue (account_id, campaign_id, run_at) SELECT $1, id, now() FROM campaigns WHERE account_id = $1`,
 			`INSERT INTO campaign_recipients (account_id, campaign_id, contact_id) SELECT $1, c.id, k.id FROM campaigns c, contacts k WHERE c.account_id = $1 AND k.account_id = $1`,
 			`INSERT INTO campaign_launch_codes (campaign_id, account_id, code_hash, campaign_version, email_version, expires_at) SELECT id, $1, '\x00', 1, 1, now() FROM campaigns WHERE account_id = $1`,

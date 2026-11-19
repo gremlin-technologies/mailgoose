@@ -27,6 +27,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
+	"github.com/gremlin-technologies/mailgoose/internal/signups"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 )
@@ -71,6 +72,9 @@ type Server struct {
 	// Unsubscribe checks recipients' unsubscribe links; nil without a
 	// database, which makes the unsubscribe pages answer 503.
 	Unsubscribe *unsubscribe.Service
+	// Signups takes posts to signup forms and confirm links; nil without a
+	// database, which makes them answer 503.
+	Signups *signups.Service
 	// TrustedOrigins are other origins (such as the web app's, when it isn't
 	// served from the API's own origin) allowed to send cookie-authenticated
 	// requests that change something. The API's own origin always is.
@@ -120,10 +124,10 @@ func (s *Server) Handler() http.Handler {
 	h = s.logRequests(h)
 	h = s.recoverer(h)
 	api := requestIDs(h)
-	// Recipient pages (unsubscribing) have their own, higher limit and none
+	// Recipient pages (unsubscribing, signup forms, confirm links) have their own, higher limit and none
 	// of the API's sign-in layers.
 	pages := requestIDs(s.recoverer(s.logRequests(
-		(&RateLimiter{PerMinute: recipientPagesPerMinute, Now: now, Key: ClientIPKey, Limited: s.recipientPageLimited}).Middleware(s.recipientPages()))))
+		(&RateLimiter{PerMinute: recipientPagesPerMinute, Now: now, Key: ClientIPKey, Limited: s.recipientPageLimited}).Middleware(s.recipientPages(now)))))
 	// The web app skips the API's middleware: its files need no rate limit,
 	// session lookup or idempotency.
 	var web http.Handler

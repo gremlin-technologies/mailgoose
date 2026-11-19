@@ -5,7 +5,9 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/gremlin-technologies/mailgoose/internal/signups"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
 
@@ -18,13 +20,15 @@ const recipientPagesPerMinute = 1200
 // maxRecipientFormBytes caps the body of a post to a recipient page.
 const maxRecipientFormBytes = 4 << 10
 
-// recipientPages serves the pages a campaign's recipients reach from an
-// email, with no sign-in: the unsubscribe page and the RFC 8058 one-click
-// endpoint, both at /u/{token}. They're HTML for people, not API
-// operations, so they're outside the spec and skip the API's sign-in,
-// cross-origin and idempotency layers; the token is the only authority.
-func (s *Server) recipientPages() http.Handler {
+// recipientPages serves the pages people reach from an email or a website,
+// with no sign-in: the unsubscribe page and the RFC 8058 one-click endpoint
+// at /u/{token}, signup forms' endpoint at /f/{form_id} and confirm links
+// at /confirm/{token}. They're for people and websites, not API operations,
+// so they're outside the spec and skip the API's sign-in, cross-origin and
+// idempotency layers; the token or form is the only authority.
+func (s *Server) recipientPages(now func() time.Time) http.Handler {
 	mux := http.NewServeMux()
+	s.signupRoutes(mux, now)
 	mux.HandleFunc("GET "+unsubscribe.PathPrefix+"{token}", s.unsubscribePage)
 	mux.HandleFunc("POST "+unsubscribe.PathPrefix+"{token}", s.unsubscribePost)
 	mux.HandleFunc(unsubscribe.PathPrefix, func(w http.ResponseWriter, r *http.Request) {
@@ -40,14 +44,18 @@ func (s *Server) recipientPages() http.Handler {
 
 // isRecipientPage reports whether a path is one of recipientPages'.
 func isRecipientPage(path string) bool {
-	return strings.HasPrefix(path, unsubscribe.PathPrefix)
+	return strings.HasPrefix(path, unsubscribe.PathPrefix) || strings.HasPrefix(path, signupPathPrefix) ||
+		strings.HasPrefix(path, signups.ConfirmPrefix)
 }
 
-// logPath is a request's path for the logs, with any unsubscribe token
-// left out: a token is enough to unsubscribe someone.
+// logPath is a request's path for the logs, with any unsubscribe or
+// confirm token left out: a token is enough to unsubscribe or subscribe
+// someone.
 func logPath(path string) string {
-	if isRecipientPage(path) && len(path) > len(unsubscribe.PathPrefix) {
-		return unsubscribe.PathPrefix + "[token]"
+	for _, prefix := range []string{unsubscribe.PathPrefix, signups.ConfirmPrefix} {
+		if strings.HasPrefix(path, prefix) && len(path) > len(prefix) {
+			return prefix + "[token]"
+		}
 	}
 	return path
 }
@@ -157,6 +165,12 @@ var badLinkPage = page{
 // not the API's JSON. A limited one-click POST is logged, because a mail
 // provider's unsubscribe that never lands is a compliance problem.
 func (s *Server) recipientPageLimited(w http.ResponseWriter, r *http.Request, retryAfter int) {
+	if !strings.HasPrefix(r.URL.Path, unsubscribe.PathPrefix) {
+		// Signup forms and confirm links keep the API's JSON error, as
+		// they had before this limiter answered with a page.
+		writeTooManyRequests(w, r, retryAfter)
+		return
+	}
 	if r.Method == http.MethodPost {
 		r.Body = http.MaxBytesReader(w, r.Body, maxRecipientFormBytes)
 		s.Log.WarnContext(r.Context(), "unsubscribe post rate limited",
@@ -176,12 +190,14 @@ var unavailablePage = page{
 }
 
 // page is what a recipient page shows. Button, when set, posts back to
-// the page's own address.
+// the page's own address; Back, when set, links to the page the person came
+// from.
 type page struct {
 	Title  string
 	Body   []string
 	Button string
 	Small  string
+	Back   string
 }
 
 // writePage writes a recipient page. The headers keep it out of caches,
@@ -220,6 +236,8 @@ p{margin:0 0 12px;overflow-wrap:anywhere}
 button{font:inherit;font-weight:600;width:100%;margin-top:12px;padding:12px 16px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-text);cursor:pointer}
 button:hover{background:var(--accent-hover)}
 button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+a{color:var(--accent)}
+a:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 footer{margin-top:20px;color:var(--muted);font-size:13px;text-align:center}
 </style>
 </head>
@@ -230,6 +248,7 @@ footer{margin-top:20px;color:var(--muted);font-size:13px;text-align:center}
 {{range .Body}}<p>{{.}}</p>
 {{end}}{{if .Button}}<form method="post"><button type="submit">{{.Button}}</button></form>
 {{end}}{{if .Small}}<p class="small">{{.Small}}</p>
+{{end}}{{if .Back}}<p class="small"><a href="{{.Back}}">Back to the page you came from</a></p>
 {{end}}</main>
 <footer>Sent with mailgoose</footer>
 </div>

@@ -18,8 +18,8 @@ const (
 	ElapsedField = "_mg_ms"
 )
 
-// ActionPath is the public endpoint a form posts to, under the app's URL.
-// MG-36 takes the posts.
+// ActionPath is the public endpoint a form posts to, under the app's URL;
+// internal/signups takes the posts.
 func ActionPath(formID string) string { return "/f/" + formID }
 
 // Embed is a form's embed code.

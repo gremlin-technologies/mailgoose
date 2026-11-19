@@ -29,7 +29,9 @@ func TestFormsAgainstAPI(t *testing.T) {
 		t.Fatalf("get: exit %d %s", code, h.errOut)
 	}
 	for _, want := range []string{"Name:", "Footer", `email "Email" (required), first_name "First name" (optional)`, "Tags:", "Newsletter",
-		`Button:           "Subscribe"`, "Double opt-in:    on: people confirm by email first"} {
+		`Button:           "Subscribe"`, "Double opt-in:    on: people confirm by email first", "Signups:          0",
+		"Confirmed:        0", "This form isn't taking signups. 1 thing to fix:", "no From address on a verified sending domain",
+		"mailgoose domain add"} {
 		if !strings.Contains(h.out.String(), want) {
 			t.Errorf("get lacks %q:\n%s", want, h.out)
 		}

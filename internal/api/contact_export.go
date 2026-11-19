@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -34,6 +35,17 @@ type contactDataJSON struct {
 	Tags        []contactTagJSON     `json:"tags"`
 	Import      *contactImportJSON   `json:"import"`
 	SkippedRows []contactSkippedJSON `json:"skipped_rows"`
+	Consents    []contactConsentJSON `json:"consents"`
+}
+
+type contactConsentJSON struct {
+	ID          string          `json:"id"`
+	FormID      *string         `json:"form_id"`
+	Source      string          `json:"source"`
+	IP          string          `json:"ip"`
+	Wording     json.RawMessage `json:"wording"`
+	CreatedAt   time.Time       `json:"created_at"`
+	ConfirmedAt *time.Time      `json:"confirmed_at"`
 }
 
 type contactTagJSON struct {
@@ -62,6 +74,15 @@ func contactDataBody(d *contacts.ContactData) contactDataJSON {
 		Contact:     contactJSON(d.Contact),
 		Tags:        make([]contactTagJSON, len(d.Tags)),
 		SkippedRows: make([]contactSkippedJSON, len(d.SkippedRows)),
+		Consents:    make([]contactConsentJSON, len(d.Consents)),
+	}
+	for i, k := range d.Consents {
+		var confirmed *time.Time
+		if k.ConfirmedAt != nil {
+			t := k.ConfirmedAt.UTC()
+			confirmed = &t
+		}
+		out.Consents[i] = contactConsentJSON{k.ID, k.FormID, k.Source, k.IP, k.Wording, k.CreatedAt.UTC(), confirmed}
 	}
 	for i, t := range d.Tags {
 		out.Tags[i] = contactTagJSON{t.ID, t.Name, t.AddedAt.UTC()}

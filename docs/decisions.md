@@ -23,6 +23,58 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Form submissions and double opt-in (MG-36, reversible defaults)
+
+Picked while building MG-36; easy to change.
+
+- **Bots learn nothing.** A filled honeypot or a post under 2 seconds after
+  the page opened gets the same success answer as a person and is dropped.
+  The 2-second check needs the embed script; a plain HTML post has only the
+  honeypot and the signed stamp. A missing or forged stamp is a visible 400,
+  since it means the site's code is broken, not a bot.
+- **Limits:** 10 posts a minute per IP and 600 a minute per form, in memory
+  per API task like the API's own limits. Over them is a 429.
+- **The answer doesn't depend on the address.** New, already subscribed,
+  unsubscribed, bounced: the person sees the form's success message or
+  redirect, so a form can't be used to learn who's on a list.
+- **A double opt-in form needs a verified From.** Without one it refuses
+  signups (503 `form_not_ready`) rather than adding people it can't confirm,
+  and `form get` lists the problem.
+- **Unsubscribed addresses come back only by confirming,** through any form,
+  with or without double opt-in. A contact deleted after unsubscribing is the
+  same (its suppression hash). Bounced and complained addresses get no
+  email and stay as they are.
+- **Existing contacts:** the form's tags are added and names only fill in
+  blanks; a signup never overwrites a name.
+- **At most one confirmation email per contact an hour**; a resubmission in
+  that hour gets the normal answer and no email. Confirm links last 7 days.
+- **Opening a confirm link changes nothing;** the page's button confirms,
+  because mail scanners open links.
+- **Over the free contact limit** a signup or a confirmation is refused
+  (409); the person is asked to try later. Nothing tells the account owner
+  yet; MG-51's dashboard can.
+- **Counts are columns on the form** (`signups`: posts taken, a repeat
+  counts again; `confirmations`: links used), not computed from consent
+  records, so deleting contacts doesn't change them.
+- **Consent records** keep the time, IP, form, the form's wording (name,
+  field labels, button, and with double opt-in the confirmation subject and
+  text) and the confirmation time. Deleting the form keeps them; deleting or
+  erasing the contact deletes them. The data request lists them all and the
+  CSV export adds four `signup_` columns from the latest.
+
+## 2026-11-18: Three open questions settled (owner decision, confirmed)
+
+The owner accepted the defaults:
+
+- **Sending domains stay as they are for now.** An unverified domain isn't
+  taken over by another account after 72 hours; an account keeps a domain
+  it added until it removes it. (MG-13)
+- **An account can't move an unsubscribed contact back by hand.** People
+  who unsubscribed come back only by signing up again through a form and
+  confirming (MG-14, MG-36).
+- **A partial block of 10,000 contacts rounds up** in the monthly fee:
+  2,501 to 12,500 counted contacts is one extra block (MG-40).
+
 ## 2026-11-18: Launch (MG-30, reversible defaults)
 
 Picked while building MG-30; easy to change.
@@ -47,8 +99,16 @@ Picked while building MG-30; easy to change.
   doesn't wait on other sites. Link problems are warnings anyway.
 - **The recipient count may change between summary and confirm** (a new
   signup, say). The confirm reserves for the count at that moment and
-  answers with it; the code isn't made stale by contact changes, only by
-  edits to the campaign or its email.
+  answers with it. Contact changes don't make the code stale, unless the
+  audience grew by more than a tenth (next bullet).
+- **A code is refused when the audience grew by more than a tenth** of the
+  summary's count, rounded up (MG-30 review follow-up, added 2026-11-19).
+  The code remembers the summary's count; past the allowance the confirm
+  answers `invalid_confirmation` with reason `audience_grew`, the count
+  summarized and the count now, and nothing is launched. Fewer recipients
+  than summarized always launch. The allowance lets a few signups during
+  the 15 minutes through without a new summary. Open for the owner (see
+  Open questions).
 - **A campaign that reaches nobody, or whose send time has passed, is
   refused** rather than launched to nothing or sent late.
 - **Accounts get `sending_paused_at` and `sending_paused_reason`** now, so
@@ -391,7 +451,8 @@ Picked while building MG-18; easy to change.
   permission_confirmed. The consent fields today are status, source,
   status_changed_at and, for imported contacts, whether the import confirmed
   permission (contacts now remember their import). Form consent records come
-  with MG-36 and should add their columns here.
+  with MG-36 and should add their columns here (done: the `signup_`
+  columns).
 - **Export is one streamed CSV** (`GET /v1/contacts/export`, `mailgoose
   export`), oldest first, with the same filters as listing contacts. Held
   contacts are included. Cells starting with `=`, `+`, `-` or `@` get a `'`
@@ -499,7 +560,8 @@ Picked while building MG-14; easy to change.
   unconfirmed by the API, CLI or web app (422 `contact_suppressed`); the
   person subscribes again through a signup form with double opt-in. Anyone
   may unsubscribe a contact. Open for the owner: should an account be able to
-  resubscribe someone who unsubscribed, with a consent note?
+  resubscribe someone who unsubscribed, with a consent note? (Settled
+  2026-11-18: no.)
 - **The suppression list keeps a SHA-256 of the account id and the address**,
   not the address. Re-adding a suppressed address, or changing a contact's
   address to one, gives it the suppressed status and removes the entry,
@@ -1010,16 +1072,12 @@ Decided by the owner in the PRD scoping call and follow-ups.
   the OIDC role? Activate advanced features, or run a self-hosted runner or
   CodeBuild in the account; default is manual `make push-ecr`. (See
   2026-11-17 and 2026-11-18. Blocks MG-52.)
-- Monthly fee: does a partial block of 10,000 contacts round up? (Default: yes,
-  2,501 to 12,500 counted contacts is one extra block. MG-40.)
+- Launch confirm: how far may the audience grow between the summary and
+  the confirm before the code is refused? (Default: a tenth of the
+  summary's count, rounded up. Other options: refuse any growth, or allow
+  any growth the credits cover. MG-30 review follow-up.)
 - Anything in the earlier mailgoose repo worth reusing? (Default: no, fresh
   start.)
-- Sending domains: can an account hold a domain it never verifies? Today an
-  account that adds someone else's domain keeps it by running `domain verify`
-  each time it fails, which restarts the 72 hours, and the real owner only
-  gets `domain_taken`. (Default: unchanged for now. One option: once a
-  domain's first 72 hours have passed unverified, any account may take it
-  over, so whoever sets up the DNS wins. MG-13.)
 - Deleting an account that still has bought credits: are they refunded or
   forfeited? (Default: forfeited; the ledger keeps them as billing records.
   MG-43, for MG-39 and MG-40 to settle.)
