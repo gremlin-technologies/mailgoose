@@ -203,8 +203,14 @@ func TestWebhookAddsNothing(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			h := newHarness(t)
 			before := h.balance(t)
+			alerts := 0
+			h.svc.Alert = func(context.Context, string, string) { alerts++ }
 			if got := h.send(t, c.body(h)); got != c.want {
 				t.Errorf("outcome %s, want %s", got, c.want)
+			}
+			// A paid session that adds nothing is someone's job to sort out.
+			if want := map[bool]int{true: 1, false: 0}[c.want == OutcomeMismatch]; alerts != want {
+				t.Errorf("%d alerts, want %d", alerts, want)
 			}
 			if got := h.balance(t); got != before {
 				t.Errorf("balance %d, was %d", got, before)
@@ -265,9 +271,14 @@ func TestWebhookNoAccount(t *testing.T) {
 			acc := account(h)
 			body := []byte(strings.ReplaceAll(string(h.event("evt_1", "checkout.session.completed", "cs_1", "paid", "10k", 2000)),
 				`"`+h.acc+`"`, `"`+acc+`"`))
+			var alerts []string
+			h.svc.Alert = func(_ context.Context, subject, text string) { alerts = append(alerts, subject+": "+text) }
 			out, err := h.svc.HandleWebhook(context.Background(), body, Sign(body, secret, h.now))
 			if err != nil || out != OutcomeNoAccount {
 				t.Fatalf("outcome %s, %v", out, err)
+			}
+			if len(alerts) != 1 || !strings.Contains(alerts[0], "cs_1") || !strings.Contains(alerts[0], "Refund") {
+				t.Errorf("alerts %q", alerts)
 			}
 			var n int
 			if err := h.db.QueryRow(context.Background(), `SELECT count(*) FROM credit_transactions WHERE type = 'purchase'`).Scan(&n); err != nil || n != 0 {
@@ -344,6 +355,24 @@ type fakeStripe struct {
 	units    []string
 	canceled []string
 	err      error
+	// current is each subscription as Stripe has it now; one not here is a
+	// 404, so the event's own copy is applied. getErr fails every read.
+	current map[string][]byte
+	reads   int
+	getErr  error
+}
+
+func (f *fakeStripe) GetSubscription(_ context.Context, id string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads++
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
+	if b, ok := f.current[id]; ok {
+		return b, nil
+	}
+	return nil, &StripeError{Status: 404, Type: "invalid_request_error", Message: "No such subscription"}
 }
 
 func (f *fakeStripe) CreateCheckoutSession(_ context.Context, r SessionRequest) (*Session, error) {

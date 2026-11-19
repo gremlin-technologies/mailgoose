@@ -71,10 +71,26 @@ Picked while building the subscription; easy to change.
 - **Deleting an account cancels its subscription at once**, with no refund
   for the rest of the period, before anything is deleted; if Stripe can't be
   reached the delete fails (502) and can be retried.
-- **Event order:** an event older than the last one applied changes
-  nothing, and an old subscription ending doesn't touch the current one. A
-  second live subscription for one account isn't applied and is logged as an
-  error to cancel by hand.
+- **Event order doesn't matter:** on each subscription event the webhook
+  reads the subscription from Stripe as it is now and applies that, so two
+  events in one second arriving the wrong way round can't leave a paying
+  account free. If Stripe doesn't answer, the webhook answers 503 and
+  Stripe sends the event again. Without a Stripe client (or if Stripe
+  doesn't know the subscription), the event's own copy is applied: an older
+  event changes nothing, and a new subscription's `incomplete` state doesn't
+  replace a live one from the same second. An old subscription ending
+  doesn't touch the current one. A second live subscription for one account
+  isn't applied.
+- **Past due under another pause:** when staff lift another pause while
+  the plan's payment is past due, the past-due pause takes over. Staff
+  lifting the past-due pause itself stands.
+- **Unit changes** use a Stripe idempotency key naming the units before and
+  after and the run, so a change back to an earlier quantity later the same
+  day isn't answered from the earlier request.
+- **Payments to sort out by hand** (a payment that adds no credits, one for
+  a closed account, a second live subscription, a closed account with a
+  live subscription) are logged as errors and emailed to `OPS_ALERT_EMAIL`
+  when it's set.
 - **The worker checks hourly** for unit changes and for credits past their
   expiry.
 

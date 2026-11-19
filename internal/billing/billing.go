@@ -109,6 +109,9 @@ type Stripe interface {
 	CreatePortalSession(ctx context.Context, customerID, returnURL string) (string, error)
 	SetSubscriptionUnits(ctx context.Context, subscriptionID, itemID string, units int, idempotencyKey string) error
 	CancelSubscription(ctx context.Context, subscriptionID string) error
+	// GetSubscription returns a subscription as Stripe has it now, as the
+	// JSON of its subscription object.
+	GetSubscription(ctx context.Context, subscriptionID string) ([]byte, error)
 }
 
 // ErrNotConfigured means there are no Stripe keys.
@@ -149,8 +152,18 @@ type Service struct {
 	// BaseURL is the app's public URL, where Checkout sends people back.
 	BaseURL string
 	Log     *slog.Logger
+	// Alert, when set, tells mailgoose's operators about a payment someone
+	// has to sort out by hand in Stripe (a refund or a cancellation). Each
+	// case is logged as an error as well.
+	Alert func(ctx context.Context, subject, text string)
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+}
+
+func (s *Service) alert(ctx context.Context, subject, text string) {
+	if s.Alert != nil {
+		s.Alert(ctx, subject, text)
+	}
 }
 
 func (s *Service) now() time.Time {

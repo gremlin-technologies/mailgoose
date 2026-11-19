@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/gremlin-technologies/mailgoose/internal/billing"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
@@ -197,6 +198,41 @@ func TestPauseAndUnpause(t *testing.T) {
 	}
 	if _, err := h.svc.Pause(ctx, h.staff, "00000000-0000-0000-0000-000000000000", "x"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown account: %v", err)
+	}
+}
+
+// A plan payment that went past due during another pause takes over when
+// that pause lifts; lifting the past-due pause itself stands.
+func TestUnpauseKeepsPastDue(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if _, err := h.svc.Pause(ctx, h.staff, h.acc, "Checking a complaint"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.Exec(ctx, `UPDATE accounts SET plan = 'paid', subscription_status = 'past_due' WHERE id = $1`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	a, err := h.svc.Unpause(ctx, h.staff, h.acc, "Complaint checked")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.PausedAt == nil {
+		t.Fatalf("sending resumed with the payment past due: %+v", a.AccountSummary)
+	}
+	var code string
+	if err := h.db.QueryRow(ctx, `SELECT sending_paused_code FROM accounts WHERE id = $1`, h.acc).Scan(&code); err != nil || code != billing.SubscriptionPastDue {
+		t.Errorf("code %q, %v", code, err)
+	}
+	if l := h.last(t); l.action != "auto_pause" || l.actor != "automatic" {
+		t.Errorf("log = %+v", l)
+	}
+	// Staff lifting the past-due pause itself is final.
+	a, err = h.svc.Unpause(ctx, h.staff, h.acc, "Customer is paying by invoice this month")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.PausedAt != nil {
+		t.Errorf("still paused: %+v", a.AccountSummary)
 	}
 }
 

@@ -3,6 +3,8 @@ package billing
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -216,14 +218,90 @@ func TestSubscriptionEventsOutOfOrder(t *testing.T) {
 	}
 }
 
+// subObject is the subscription object inside an event, as Stripe would
+// return it from GET /v1/subscriptions/{id}.
+func (h *harness) subObject(t *testing.T, e subEvent) []byte {
+	t.Helper()
+	var ev struct {
+		Data struct {
+			Object json.RawMessage `json:"object"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(h.subBody(e), &ev); err != nil {
+		t.Fatal(err)
+	}
+	return ev.Data.Object
+}
+
+// With Stripe connected, each subscription event applies the subscription
+// as Stripe has it now, so delivery order doesn't matter.
+func TestSubscriptionAppliesStripesCurrentState(t *testing.T) {
+	h := newHarness(t)
+	f := &fakeStripe{current: map[string][]byte{}}
+	h.svc.Stripe = f
+	f.current["sub_1"] = h.subObject(t, subEvent{status: "active"})
+
+	// Checkout's two events in one second, the later one delivered first.
+	h.send(t, h.subBody(subEvent{id: "evt_active", status: "active"}))
+	h.send(t, h.subBody(subEvent{id: "evt_created", typ: "customer.subscription.created", status: "incomplete"}))
+	if st := h.state(t); st.plan != "paid" || st.status != "active" {
+		t.Errorf("after both events: %+v", st)
+	}
+	if f.reads != 2 {
+		t.Errorf("read Stripe %d times", f.reads)
+	}
+
+	// An old event after the subscription ended still applies the end.
+	f.current["sub_1"] = h.subObject(t, subEvent{status: "canceled"})
+	h.send(t, h.subBody(subEvent{id: "evt_late", status: "active", created: h.now.Add(-time.Hour)}))
+	if st := h.state(t); st.plan != "free" || st.status != "canceled" {
+		t.Errorf("after the end: %+v", st)
+	}
+
+	// Stripe not answering fails the webhook (503, retried) and records
+	// nothing, so the redelivery is handled.
+	f.getErr = fmt.Errorf("%w: timeout", ErrStripeUnreachable)
+	body := h.subBody(subEvent{id: "evt_retry", status: "active"})
+	if _, err := h.svc.HandleWebhook(context.Background(), body, Sign(body, secret, h.clock())); !errors.Is(err, ErrStripeUnreachable) {
+		t.Fatalf("Stripe down: %v", err)
+	}
+	f.getErr = nil
+	f.current["sub_1"] = h.subObject(t, subEvent{status: "active"})
+	if got := h.send(t, body); got != OutcomeSubscription {
+		t.Errorf("redelivered: %s", got)
+	}
+	if st := h.state(t); st.plan != "paid" {
+		t.Errorf("after the redelivery: %+v", st)
+	}
+}
+
+// Without Stripe's current state, a new subscription's incomplete first
+// event in the same second doesn't undo the live state that followed it.
+func TestSubscriptionSameSecondWithoutStripe(t *testing.T) {
+	h := newHarness(t)
+	h.send(t, h.subBody(subEvent{id: "evt_active", status: "active"}))
+	if got := h.send(t, h.subBody(subEvent{id: "evt_created", typ: "customer.subscription.created", status: "incomplete"})); got != OutcomeStale {
+		t.Errorf("incomplete in the same second: %s", got)
+	}
+	if st := h.state(t); st.plan != "paid" || st.status != "active" {
+		t.Errorf("state %+v", st)
+	}
+}
+
 func TestSubscriptionMismatches(t *testing.T) {
 	h := newHarness(t)
 	h.subscribe(t, "active")
 
-	// A second live subscription for the same account isn't applied.
+	// A second live subscription for the same account isn't applied, and
+	// ops are told to cancel it.
+	var alerts []string
+	h.svc.Alert = func(_ context.Context, subject, _ string) { alerts = append(alerts, subject) }
 	h.set(h.now.Add(time.Hour))
 	if got := h.send(t, h.subBody(subEvent{id: "evt_two", sub: "sub_2", status: "active", interval: Yearly})); got != OutcomeMismatch {
 		t.Errorf("second live subscription: %s", got)
+	}
+	if len(alerts) != 1 || alerts[0] != "an account has two paid plan subscriptions" {
+		t.Errorf("alerts %q", alerts)
 	}
 	// An old subscription ending changes nothing about the current one.
 	if got := h.send(t, h.subBody(subEvent{id: "evt_gone", typ: "customer.subscription.deleted", sub: "sub_0", status: "canceled"})); got != OutcomeStale {
@@ -254,9 +332,14 @@ func TestSubscriptionOnAClosedAccount(t *testing.T) {
 	if _, err := h.db.Exec(context.Background(), `UPDATE accounts SET status = 'closed' WHERE id = $1`, h.acc); err != nil {
 		t.Fatal(err)
 	}
+	alerts := 0
+	h.svc.Alert = func(context.Context, string, string) { alerts++ }
 	h.subscribe(t, "active")
 	if st := h.state(t); st.plan != "free" || st.status != "active" {
 		t.Errorf("closed account: %+v", st)
+	}
+	if alerts != 1 {
+		t.Errorf("%d alerts, want one to cancel it", alerts)
 	}
 }
 

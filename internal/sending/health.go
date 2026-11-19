@@ -242,3 +242,26 @@ Lift the pause with:
 		log.ErrorContext(ctx, "send the pause alert", "err", err, "account_id", ap.AccountID)
 	}
 }
+
+// Notify emails the operators a note about something to sort out by hand.
+// The caller logs it; Notify only sends, and logs a failure to send.
+func (a *OpsAlert) Notify(ctx context.Context, subject, text string) {
+	if a.To == "" || a.Mail == nil {
+		return
+	}
+	_, err := a.Mail.Send(context.WithoutCancel(ctx), mail.Message{
+		From:    a.From,
+		To:      mail.Address{Email: a.To},
+		Subject: "mailgoose: " + subject,
+		Text:    text,
+		HTML:    "<!doctype html><html><body><pre>" + html.EscapeString(text) + "</pre></body></html>",
+		Kind:    mail.KindSystem,
+	})
+	if err != nil {
+		log := a.Log
+		if log == nil {
+			log = slog.Default()
+		}
+		log.ErrorContext(ctx, "send an ops alert", "err", err, "subject", subject)
+	}
+}

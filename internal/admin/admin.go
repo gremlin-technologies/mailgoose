@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/gremlin-technologies/mailgoose/internal/billing"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
@@ -373,19 +374,27 @@ func (s *Service) Unpause(ctx context.Context, actor Actor, accountID, reason st
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
 		now := s.now()
-		var was *string
+		var was, code, subStatus *string
 		err := tx.QueryRow(ctx, `
 			UPDATE accounts a SET sending_paused_at = NULL, sending_paused_reason = NULL, sending_paused_code = NULL, updated_at = $2
 			FROM accounts old WHERE a.id = $1 AND old.id = a.id
-			RETURNING old.sending_paused_reason`, accountID, now).Scan(&was)
+			RETURNING old.sending_paused_reason, old.sending_paused_code, a.subscription_status`, accountID, now).Scan(&was, &code, &subStatus)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
 		if err != nil {
 			return err
 		}
-		_, err = s.record(ctx, tx, actor, ActionUnpause, &accountID, nil, reason, map[string]any{"paused_reason": was}, now)
-		return err
+		if _, err := s.record(ctx, tx, actor, ActionUnpause, &accountID, nil, reason, map[string]any{"paused_reason": was}, now); err != nil {
+			return err
+		}
+		// A plan payment that went past due while sending was paused for
+		// something else is still owed: its own pause takes over. Lifting
+		// the past-due pause itself is staff's call and stands.
+		if billing.Overdue(deref(subStatus)) && deref(code) != billing.SubscriptionPastDue {
+			return billing.PauseOverdue(ctx, tx, accountID, deref(subStatus), now)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err

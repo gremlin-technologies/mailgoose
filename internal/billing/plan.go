@@ -288,7 +288,11 @@ func (s *Service) SyncUnits(ctx context.Context) (UnitRun, error) {
 	if err != nil {
 		return run, err
 	}
-	day := s.now().UTC().Format("2006-01-02")
+	// The key names the change and this run, so a retry within the run is
+	// deduplicated but a later change back to the same units isn't mistaken
+	// for an earlier one (Stripe would answer from the earlier request and
+	// change nothing).
+	stamp := s.now().UTC().Format("20060102T150405Z")
 	for _, x := range subs {
 		run.Accounts++
 		n, err := countedContacts(ctx, s.DB, x.account)
@@ -299,7 +303,7 @@ func (s *Service) SyncUnits(ctx context.Context) (UnitRun, error) {
 		if units == x.units {
 			continue
 		}
-		key := fmt.Sprintf("mailgoose-units:%s:%d:%s", x.id, units, day)
+		key := fmt.Sprintf("mailgoose-units:%s:%d-%d:%s", x.id, x.units, units, stamp)
 		if err := s.Stripe.SetSubscriptionUnits(ctx, x.id, x.item, units, key); err != nil {
 			run.Failed++
 			s.log().ErrorContext(ctx, "couldn't change a subscription's plan units", "account_id", x.account, "err", err)
