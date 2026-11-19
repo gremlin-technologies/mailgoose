@@ -24,6 +24,19 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: Dashboard (MG-51, reversible defaults)
+
+Picked while building MG-51; easy to change.
+
+- **Each checklist step is read from the account itself**: a verified
+  domain, at least one contact, at least one email, a campaign with a test
+  sent (or launched), and a launched campaign. The last two look at the 50
+  newest campaigns. Nothing is stored about the checklist, so it can't
+  drift from what's true.
+- **The checklist hides once all five steps are done.**
+- **The latest five campaigns are listed**, linking to the report once one
+  has been launched, and to the campaign otherwise.
+
 ## 2026-11-19: Credits and billing page (MG-50, reversible defaults)
 
 Picked while building MG-50; easy to change.
@@ -35,7 +48,9 @@ Picked while building MG-50; easy to change.
 - **The "paused for an unpaid fee" banner shows while the subscription is
   `past_due` or `unpaid`**, on every signed-in page, and links to this page.
   It reads the plan again on each page change, so it goes away once the
-  payment goes through.
+  payment goes through. A plan in any status other than `active` or
+  `trialing` (such as `incomplete`, a first payment waiting on the bank) is
+  marked "Payment pending" rather than "Active".
 - **Payments open Stripe's own pages.** The page only goes to an https
   address on stripe.com, and says so if the API answers with anything else.
 - **The pack buttons list the four decided packs** (BIL-3). A server set up

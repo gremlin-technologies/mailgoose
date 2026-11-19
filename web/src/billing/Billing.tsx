@@ -18,6 +18,8 @@ type TransactionPage = components["schemas"]["CreditTransactionList"];
 
 /** Stripe statuses that pause sending until a payment goes through. */
 export const pausedStatuses = ["past_due", "unpaid"];
+/** A plan in any other status, such as a first payment still waiting on the bank, isn't paid up yet. */
+const liveStatuses = ["active", "trialing"];
 
 export const typeLabels: Record<TransactionType, string> = {
   grant: "Free monthly credits",
@@ -138,7 +140,15 @@ function PlanPanel({ plan: p }: { plan: Plan }) {
     <section className="panel stack" aria-label="Plan">
       <div className="row">
         <h2>Paid plan, billed {p.interval === "year" ? "yearly" : "monthly"}</h2>
-        {paused ? <Badge tone="bad">Payment failed</Badge> : p.cancel_at_period_end ? <Badge tone="warn">Ending</Badge> : <Badge tone="good">Active</Badge>}
+        {paused ? (
+          <Badge tone="bad">Payment failed</Badge>
+        ) : !liveStatuses.includes(p.status) ? (
+          <Badge tone="neutral">Payment pending</Badge>
+        ) : p.cancel_at_period_end ? (
+          <Badge tone="warn">Ending</Badge>
+        ) : (
+          <Badge tone="good">Active</Badge>
+        )}
       </div>
       {paused && (
         <p className="notice notice-error" role="alert">
