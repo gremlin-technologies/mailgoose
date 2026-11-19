@@ -77,6 +77,12 @@ export function locate(doc: BlockDocument, id: string): Location | undefined {
   return undefined;
 }
 
+/** The block with an id, wherever it is. */
+export function findBlock(doc: BlockDocument, id: string): Block | undefined {
+  const at = locate(doc, id);
+  return at ? at.list[at.index] : undefined;
+}
+
 /** What is being dragged: a new block from the palette, or a block on the canvas. */
 export type Drag = { kind: "new"; type: PaletteType } | { kind: "move"; id: string; type: BlockType };
 

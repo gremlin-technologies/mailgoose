@@ -1,4 +1,4 @@
-import { useCallback, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 
 import { useApi } from "../api/context";
@@ -9,6 +9,7 @@ import {
   blockLabels,
   canDrop,
   copyOf,
+  findBlock,
   locate,
   needsDetails,
   paletteTypes,
@@ -24,6 +25,8 @@ import {
   type Zone,
 } from "./blocks";
 import { Markdown } from "./markdown";
+import { Preview, type Width } from "./Preview";
+import { base64, BlockProperties, EmailProperties, TextEditor, type Fields, type Settings } from "./properties";
 
 type Email = components["schemas"]["Email"];
 
@@ -34,51 +37,118 @@ const conflict: Failure = {
   status: 409,
 };
 
-/** The email designer: a block palette and a canvas you drag blocks onto. */
+/** The key autosave files the email's own name and settings under; blocks go by id. */
+const EMAIL = "email";
+/** How long autosave waits after the last edit. */
+export const saveDelay = 800;
+
+type Mode = "design" | Width;
+type SaveState = "saved" | "pending" | "saving" | "failed";
+const saveText: Record<SaveState, string> = {
+  saved: "All changes saved",
+  pending: "Unsaved changes",
+  saving: "Saving…",
+  failed: "Not saved",
+};
+
+/**
+ * The email designer: a block palette, a canvas you drag blocks onto, and a
+ * properties panel for the selected block or the email's settings. Edits
+ * save themselves a moment after the last one.
+ */
 export function Designer() {
   const { id = "" } = useParams();
   const api = useApi();
   const load = useCallback(() => attempt(() => api.GET("/v1/emails/{email_id}", { params: { path: { email_id: id } } })), [api, id]);
   const { state, reload, replace } = useLoad<Email>(load);
-  const [failure, setFailure] = useState<Failure>();
-  const [busy, setBusy] = useState(false);
-  const [drag, setDrag] = useState<Drag>();
-  const [pending, setPending] = useState<{ type: "image" | "button" | "social"; zone?: Zone }>();
 
   if (state.status === "loading") return <Loading />;
   if (state.status === "failed") return <LoadFailed failure={state.failure} retry={reload} />;
-  const email = state.data;
-  const path = { email_id: email.id };
-
-  if (email.kind !== "blocks") {
+  if (state.data.kind !== "blocks") {
     return (
       <section className="page">
-        <PageHeader title={email.name} about="This email is hand-written HTML, so it's edited as code, not with blocks." />
+        <PageHeader title={state.data.name} about="This email is hand-written HTML, so it's edited as code, not with blocks." />
         <p className="crumb">
           <Link to="/emails">All emails</Link>
         </p>
       </section>
     );
   }
+  return <BlockDesigner email={state.data} replace={replace} reload={reload} />;
+}
+
+function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: Email) => void; reload: () => void }) {
+  const api = useApi();
+  const [failure, setFailure] = useState<Failure>();
+  const [busy, setBusy] = useState(false);
+  const [drag, setDrag] = useState<Drag>();
+  const [pending, setPending] = useState<{ type: "image" | "button" | "social"; zone?: Zone }>();
+  const [selected, setSelected] = useState<string>();
+  const [mode, setMode] = useState<Mode>("design");
+  // Edits not saved yet, by block id (or EMAIL); the page shows them over the saved email.
+  const [drafts, setDrafts] = useState<Record<string, Fields>>({});
+  const [save, setSave] = useState<SaveState>("saved");
+
+  // Requests run one at a time, each with the version the last one returned.
+  const version = useRef(email.version);
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
+  const unsent = useRef<Record<string, Fields>>({});
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const flushRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    version.current = email.version;
+  }, [email]);
+  // Leaving the page saves what's left.
+  useEffect(() => () => flushRef.current(), []);
+  useEffect(() => {
+    if (save !== "pending" && save !== "saving") return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [save]);
+
+  const path = { email_id: email.id };
   const doc = email.document as BlockDocument;
 
-  /** Runs one block operation; the answer's email replaces the one shown. */
-  async function change(call: () => Promise<Result<Email | undefined>>) {
-    setBusy(true);
-    setFailure(undefined);
-    const res = await call();
-    setBusy(false);
+  function enqueue<T>(f: () => Promise<T>): Promise<T> {
+    const p = queue.current.then(f, f);
+    queue.current = p.catch(() => undefined);
+    return p;
+  }
+
+  /** Someone else saved the email: drop what's unsaved here and show theirs. */
+  function conflicted() {
+    clearTimeout(timer.current);
+    unsent.current = {};
+    setDrafts({});
+    setSave("saved");
+    setFailure(conflict);
+    reload();
+  }
+
+  /** Takes one answer: its email replaces the one shown. */
+  function settle(res: Result<Email | undefined>): boolean {
     if (res.ok) {
-      if (res.data) replace(res.data);
+      if (res.data) {
+        version.current = res.data.version;
+        replace(res.data);
+      }
       return true;
     }
-    if (res.failure.code === "version_conflict") {
-      setFailure(conflict);
-      reload();
-    } else {
-      setFailure(res.failure);
-    }
+    if (res.failure.code === "version_conflict") conflicted();
+    else setFailure(res.failure);
     return false;
+  }
+
+  /** Runs one block operation after any unsaved edits. */
+  async function change(call: (v: number) => Promise<Result<Email | undefined>>) {
+    setBusy(true);
+    setFailure(undefined);
+    void flush();
+    const ok = await enqueue(async () => settle(await call(version.current)));
+    setBusy(false);
+    return ok;
   }
 
   const emailOf = async <T extends { email: Email }>(p: Promise<Result<T | undefined>>): Promise<Result<Email | undefined>> => {
@@ -87,37 +157,124 @@ export function Designer() {
   };
 
   const add = (block: NewBlock, zone?: Zone) =>
-    change(() =>
+    change((v) =>
       emailOf(
         attempt(() =>
           api.POST("/v1/emails/{email_id}/blocks", {
             params: { path },
-            body: { version: email.version, block, ...(zone ? placeOf(zone) : {}) },
+            body: { version: v, block, ...(zone ? placeOf(zone) : {}) },
           }),
         ),
       ),
     );
 
   const move = (blockId: string, zone: Zone) =>
-    change(() =>
+    change((v) =>
       emailOf(
         attempt(() =>
           api.POST("/v1/emails/{email_id}/blocks/{block_id}/move", {
             params: { path: { ...path, block_id: blockId } },
-            body: { version: email.version, ...placeOf(zone) },
+            body: { version: v, ...placeOf(zone) },
           }),
         ),
       ),
     );
 
-  const remove = (blockId: string) =>
-    change(() =>
+  const remove = async (blockId: string) => {
+    const ok = await change((v) =>
       attempt(() =>
         api.DELETE("/v1/emails/{email_id}/blocks/{block_id}", {
-          params: { path: { ...path, block_id: blockId }, query: { version: email.version } },
+          params: { path: { ...path, block_id: blockId }, query: { version: v } },
         }),
       ),
     );
+    if (ok && selected === blockId) setSelected(undefined);
+    return ok;
+  };
+
+  /** Saves one target's edits: the email's name and settings, or a block's fields. */
+  function saveFields(key: string, fields: Fields, v: number): Promise<Result<Email | undefined>> {
+    if (key === EMAIL) {
+      const { name, ...settings } = fields;
+      return attempt(() =>
+        api.PATCH("/v1/emails/{email_id}", {
+          params: { path },
+          body: {
+            version: v,
+            ...(name !== undefined ? { name: name as string } : {}),
+            ...(Object.keys(settings).length ? { settings } : {}),
+          },
+        }),
+      );
+    }
+    return emailOf(
+      attempt(() =>
+        api.PATCH("/v1/emails/{email_id}/blocks/{block_id}", {
+          params: { path: { ...path, block_id: key } },
+          // The spec types fields as any object; each block type takes its own.
+          body: { version: v, fields: fields as Record<string, never> },
+        }),
+      ),
+    );
+  }
+
+  /** Sends every unsaved edit now. */
+  function flush(): Promise<unknown> {
+    clearTimeout(timer.current);
+    const batch = unsent.current;
+    unsent.current = {};
+    const keys = Object.keys(batch);
+    if (keys.length === 0) return queue.current;
+    setSave("saving");
+    return enqueue(async () => {
+      let ok = true;
+      for (const key of keys) {
+        const fields = batch[key];
+        const res = await saveFields(key, fields, version.current);
+        if (!res.ok && res.failure.code === "version_conflict") return conflicted();
+        if (!settle(res)) {
+          ok = false;
+          continue;
+        }
+        // What was saved is in the email now; keep only edits made since.
+        setDrafts((d) => {
+          const left = { ...d[key] };
+          for (const f of Object.keys(fields)) if (left[f] === fields[f]) delete left[f];
+          const out = { ...d };
+          if (Object.keys(left).length) out[key] = left;
+          else delete out[key];
+          return out;
+        });
+      }
+      if (Object.keys(unsent.current).length) setSave("pending");
+      else setSave(ok ? "saved" : "failed");
+    });
+  }
+  useEffect(() => {
+    flushRef.current = () => void flush();
+  });
+
+  /** Records an edit and saves it once editing pauses. */
+  function edit(key: string, fields: Fields) {
+    setFailure(undefined);
+    setDrafts((d) => ({ ...d, [key]: { ...d[key], ...fields } }));
+    unsent.current = { ...unsent.current, [key]: { ...unsent.current[key], ...fields } };
+    setSave("pending");
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => void flush(), saveDelay);
+  }
+
+  function select(blockId?: string) {
+    if (blockId === selected) return;
+    void flush();
+    setSelected(blockId);
+  }
+
+  /** A block with its unsaved edits. */
+  const view = <B extends Block>(b: B): B => (drafts[b.id] ? ({ ...b, ...drafts[b.id] } as B) : b);
+  const settings = { ...doc.settings, ...drafts[EMAIL] } as Settings;
+  const name = (drafts[EMAIL]?.name as string | undefined) ?? email.name;
+  const current = selected ? findBlock(doc, selected) : undefined;
 
   /** A new block from the palette, at zone or (with none) last before the footer. */
   function addNew(type: PaletteType, zone?: Zone) {
@@ -138,103 +295,147 @@ export function Designer() {
 
   const zoneProps = { drag, doc, onDrop: drop };
   const top = doc.blocks;
+  const frame = (b: Block) => ({
+    block: view(b),
+    doc,
+    busy,
+    selected: selected === b.id,
+    select: () => select(b.id),
+    setDrag,
+    move,
+    duplicate: (zone: Zone) => add(copyOf(view(b)), zone),
+    remove,
+  });
+  const content = (b: Block) =>
+    b.type === "text" && selected === b.id ? (
+      <TextEditor text={view(b).text} onChange={(text) => edit(b.id, { text })} />
+    ) : (
+      <BlockView block={view(b)} />
+    );
 
   return (
     <section className="page designer">
-      <PageHeader title={email.name} about="Drag blocks onto the email, or click one to add it at the end.">
+      <PageHeader title={name || email.name} about="Drag blocks onto the email, or click one to add it at the end. Changes save as you go.">
+        <span className={`save-state save-${save}`} role="status">
+          {saveText[save]}
+        </span>
+        <div className="row segmented" role="group" aria-label="View">
+          {(
+            [
+              ["design", "Design"],
+              ["desktop", "Desktop preview"],
+              ["mobile", "Mobile preview"],
+            ] as const
+          ).map(([m, label]) => (
+            <button
+              key={m}
+              type="button"
+              className="button small"
+              aria-pressed={mode === m}
+              onClick={() => {
+                void flush();
+                setMode(m);
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <Link to="/emails" className="button small">
           All emails
         </Link>
       </PageHeader>
       <FailureNotice failure={failure} />
-      <div className="designer-body">
-        <aside className="palette" aria-label="Blocks">
-          <h2 className="small muted">Blocks</h2>
-          <ul>
-            {paletteTypes.map((type) => (
-              <li key={type}>
-                <button
-                  type="button"
-                  className="palette-item"
-                  draggable={!busy}
-                  disabled={busy}
-                  aria-label={`Add ${blockLabels[type].toLowerCase()}`}
-                  onDragStart={(e) => startDrag(e, { kind: "new", type }, setDrag)}
-                  onDragEnd={() => setDrag(undefined)}
-                  onClick={() => addNew(type)}
-                >
-                  {blockLabels[type]}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </aside>
-        <div className="canvas-wrap" style={{ background: doc.settings.background_color }}>
-          {pending && (
-            <Details
-              type={pending.type}
-              busy={busy}
-              cancel={() => setPending(undefined)}
-              add={async (block) => {
-                if (await add(block, pending.zone)) setPending(undefined);
-              }}
-              setFailure={setFailure}
-            />
-          )}
-          <div
-            className={`canvas${drag ? " dragging" : ""}`}
-            style={{ maxWidth: doc.settings.content_width }}
-            aria-busy={busy}
-            aria-label="Email content"
-            role="list"
-          >
-            <DropZone zone={{ parent: null, column: null, after: null }} {...zoneProps} />
-            {top.map((b) => (
-              <div key={b.id} role="listitem">
-                <BlockFrame
-                  block={b}
-                  doc={doc}
+      {mode !== "design" ? (
+        <Preview emailId={email.id} width={mode} version={email.version} />
+      ) : (
+        <div className="designer-body">
+          <aside className="palette" aria-label="Blocks">
+            <h2 className="small muted">Blocks</h2>
+            <ul>
+              {paletteTypes.map((type) => (
+                <li key={type}>
+                  <button
+                    type="button"
+                    className="palette-item"
+                    draggable={!busy}
+                    disabled={busy}
+                    aria-label={`Add ${blockLabels[type].toLowerCase()}`}
+                    onDragStart={(e) => startDrag(e, { kind: "new", type }, setDrag)}
+                    onDragEnd={() => setDrag(undefined)}
+                    onClick={() => addNew(type)}
+                  >
+                    {blockLabels[type]}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </aside>
+          <div className="canvas-wrap" style={{ background: settings.background_color }} onClick={() => select(undefined)}>
+            {pending && (
+              <div onClick={(e) => e.stopPropagation()}>
+                <Details
+                  type={pending.type}
                   busy={busy}
-                  setDrag={setDrag}
-                  move={move}
-                  duplicate={(zone) => add(copyOf(b), zone)}
-                  remove={remove}
-                >
-                  {b.type === "columns" ? (
-                    <div className="canvas-columns">
-                      {b.columns.map((col, c) => (
-                        <div key={c} className="canvas-column" role="list" aria-label={c === 0 ? "Left column" : "Right column"}>
-                          <DropZone zone={{ parent: b.id, column: c, after: null }} {...zoneProps} />
-                          {col.blocks.length === 0 && <p className="canvas-empty">Drop blocks here</p>}
-                          {(col.blocks as Block[]).map((inner) => (
-                            <div key={inner.id} role="listitem">
-                              <BlockFrame
-                                block={inner}
-                                doc={doc}
-                                busy={busy}
-                                setDrag={setDrag}
-                                move={move}
-                                duplicate={(zone) => add(copyOf(inner), zone)}
-                                remove={remove}
-                              >
-                                <BlockView block={inner} />
-                              </BlockFrame>
-                              <DropZone zone={{ parent: b.id, column: c, after: inner.id }} {...zoneProps} />
-                            </div>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <BlockView block={b} />
-                  )}
-                </BlockFrame>
-                {b.type !== "footer" && <DropZone zone={{ parent: null, column: null, after: b.id }} {...zoneProps} />}
+                  cancel={() => setPending(undefined)}
+                  add={async (block) => {
+                    if (await add(block, pending.zone)) setPending(undefined);
+                  }}
+                  setFailure={setFailure}
+                />
               </div>
-            ))}
+            )}
+            <div
+              className={`canvas${drag ? " dragging" : ""}`}
+              style={{ maxWidth: settings.content_width }}
+              aria-busy={busy}
+              aria-label="Email content"
+              role="list"
+            >
+              <DropZone zone={{ parent: null, column: null, after: null }} {...zoneProps} />
+              {top.map((b) => (
+                <div key={b.id} role="listitem">
+                  <BlockFrame {...frame(b)}>
+                    {b.type === "columns" ? (
+                      <div className="canvas-columns">
+                        {b.columns.map((col, c) => (
+                          <div key={c} className="canvas-column" role="list" aria-label={c === 0 ? "Left column" : "Right column"}>
+                            <DropZone zone={{ parent: b.id, column: c, after: null }} {...zoneProps} />
+                            {col.blocks.length === 0 && <p className="canvas-empty">Drop blocks here</p>}
+                            {(col.blocks as Block[]).map((inner) => (
+                              <div key={inner.id} role="listitem">
+                                <BlockFrame {...frame(inner)}>{content(inner)}</BlockFrame>
+                                <DropZone zone={{ parent: b.id, column: c, after: inner.id }} {...zoneProps} />
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      content(b)
+                    )}
+                  </BlockFrame>
+                  {b.type !== "footer" && <DropZone zone={{ parent: null, column: null, after: b.id }} {...zoneProps} />}
+                </div>
+              ))}
+            </div>
           </div>
+          <aside className="properties panel" aria-label="Properties">
+            {current ? (
+              <>
+                <BlockProperties block={view(current)} set={(f) => edit(current.id, f)} />
+                <div>
+                  <button type="button" className="button small" onClick={() => select(undefined)}>
+                    Email settings
+                  </button>
+                </div>
+              </>
+            ) : (
+              <EmailProperties name={name} settings={settings} set={(f) => edit(EMAIL, f)} />
+            )}
+          </aside>
         </div>
-      </div>
+      )}
     </section>
   );
 }
@@ -279,6 +480,8 @@ function BlockFrame({
   block,
   doc,
   busy,
+  selected,
+  select,
   setDrag,
   move,
   duplicate,
@@ -288,6 +491,8 @@ function BlockFrame({
   block: Block;
   doc: BlockDocument;
   busy: boolean;
+  selected: boolean;
+  select: () => void;
   setDrag: (d?: Drag) => void;
   move: (id: string, zone: Zone) => Promise<boolean>;
   duplicate: (zone: Zone) => Promise<boolean>;
@@ -296,11 +501,21 @@ function BlockFrame({
 }) {
   const [confirming, setConfirming] = useState(false);
   const label = blockLabels[block.type];
+  const pick = (e: MouseEvent) => {
+    e.stopPropagation();
+    select();
+  };
+  const edit = (
+    <button type="button" className="button small" aria-pressed={selected} onClick={pick}>
+      Edit
+    </button>
+  );
   if (block.type === "footer") {
     return (
-      <div className="canvas-block locked" role="group" aria-label="Footer block">
+      <div className={`canvas-block locked${selected ? " selected" : ""}`} role="group" aria-label="Footer block" onClick={pick}>
         <div className="block-tools">
           <Badge tone="neutral">Footer, locked</Badge>
+          {edit}
         </div>
         {children}
       </div>
@@ -313,10 +528,12 @@ function BlockFrame({
   const here: Zone = { parent: at?.parent ?? null, column: at?.column ?? null, after: block.id };
   return (
     <div
-      className="canvas-block"
+      className={`canvas-block${selected ? " selected" : ""}`}
       role="group"
       aria-label={`${label} block`}
-      draggable={!busy}
+      onClick={pick}
+      // A text block being edited can't be dragged, so selecting words works.
+      draggable={!busy && !(selected && block.type === "text")}
       onDragStart={(e) => {
         e.stopPropagation();
         startDrag(e, { kind: "move", id: block.id, type: block.type }, setDrag);
@@ -325,6 +542,7 @@ function BlockFrame({
     >
       <div className="block-tools">
         <span className="block-label">{label}</span>
+        {edit}
         <button type="button" className="button small" disabled={busy || !up} onClick={() => up && move(block.id, up)}>
           Move up
         </button>
@@ -529,11 +747,3 @@ function Details({
 }
 
 const maxImageBytes = 5 * 1024 * 1024;
-
-/** A file's bytes in standard base64, as the upload API takes them. */
-async function base64(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-}
