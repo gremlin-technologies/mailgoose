@@ -384,6 +384,16 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	// Sign-up IPs are kept 90 days, for the sign-up review (MG-66); checked
 	// hourly.
 	run(func() { auth.RunSignupIPPruner(ctx, pool, time.Hour, log.With("job", "signup-ips")) })
+	// The daily abuse digest to the ops address (MG-67), at
+	// ABUSE_DIGEST_HOUR UTC; checked every few minutes, sent once a day
+	// across tasks.
+	if cfg.OpsAlertEmail != "" {
+		digest := &sending.DigestJob{DB: pool, Alert: alert, Hour: cfg.AbuseDigestHour, Warning: warning(cfg),
+			Log: log.With("job", "abuse-digest")}
+		run(func() { digest.Run(ctx, sending.DigestEvery) })
+	} else {
+		log.Info("no OPS_ALERT_EMAIL; the daily abuse digest is off")
+	}
 	if cfg.SendQueueURL == "" {
 		// No SQS (local): the worker dispatches too, into a queue in memory.
 		log.Info("no send queue configured; sending through an in-process queue")

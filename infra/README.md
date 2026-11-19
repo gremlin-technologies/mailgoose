@@ -320,6 +320,17 @@ AWS emails that address a link to confirm the subscription; nothing is
 delivered until it is clicked. With no address, the alarms still show in the
 CloudWatch console. Thresholds are variables of `modules/monitoring`.
 
+The same `alert_email` is also set as `OPS_ALERT_EMAIL` on the API and worker
+task definitions (`common_env` in `modules/stack`), so the app's own alerts
+go there: automatic pauses, throttles and suspensions, sign-ups waiting for
+review, and the worker's daily abuse digest (at `ABUSE_DIGEST_HOUR`, 13:00
+UTC by default; see the root README). Empty, `OPS_ALERT_EMAIL` isn't set and
+the app only logs those alerts. Applying a change registers new task
+definition revisions; the services ignore task definition drift, so the
+tasks pick the address up at their next deploy. Today that's the deploy by
+hand above (`make push-ecr`, then update the services to the latest
+revision); once OIDC is allowed, `deploy-staging` does it.
+
 ## Not here yet
 
 The prod deploy workflow, autoscaling, WAF, a custom

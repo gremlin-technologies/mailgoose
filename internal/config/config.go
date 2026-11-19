@@ -65,6 +65,9 @@ type Config struct {
 	// OpsAlertEmail gets an email when an account is paused automatically
 	// (CMP-6). Empty: the pause is only logged, as an error.
 	OpsAlertEmail string
+	// AbuseDigestHour is the hour, UTC (0 to 23), the daily abuse digest
+	// goes to OpsAlertEmail (MG-67): ABUSE_DIGEST_HOUR, default 13.
+	AbuseDigestHour int
 	// AbuseEmail is where a suspended account's owner appeals (MG-65): the
 	// suspension email's Reply-To. Default: abuse@ the system sending
 	// domain.
@@ -253,6 +256,11 @@ func load(getenv func(string) string) (Config, error) {
 	if sliceWait < time.Minute {
 		errs = append(errs, errors.New("SLICE_WAIT must be a minute or more"))
 	}
+	digestHour, err := intEnv(getenv, "ABUSE_DIGEST_HOUR", 13)
+	errs = append(errs, err)
+	if digestHour < 0 || digestHour > 23 {
+		errs = append(errs, errors.New("ABUSE_DIGEST_HOUR must be an hour from 0 to 23, UTC"))
+	}
 	var hold ImportHold
 	for _, v := range []struct {
 		name string
@@ -295,6 +303,7 @@ func load(getenv func(string) string) (Config, error) {
 		AccountDailySendLimit:    dailyLimit,
 		NewAccountDailySendLimit: newDailyLimit,
 		OpsAlertEmail:            strings.TrimSpace(getenv("OPS_ALERT_EMAIL")),
+		AbuseDigestHour:          digestHour,
 
 		EarlyWarningComplaintsPer10k:  warnComplaints,
 		EarlyWarningHardBouncesPer10k: warnBounces,

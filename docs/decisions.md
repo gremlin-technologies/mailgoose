@@ -4,6 +4,36 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-19: Ops alert address and daily abuse digest (MG-67, reversible defaults)
+
+Picked while building MG-67; easy to change.
+
+- **One address for alarms and app alerts.** Terraform sets `OPS_ALERT_EMAIL`
+  on the API and worker tasks from the existing `alert_email` variable (set
+  in each environment's git-ignored `alerts.auto.tfvars`), so CloudWatch
+  alarms, the app's alerts and the digest all reach the same place. Empty
+  leaves `OPS_ALERT_EMAIL` unset.
+- **The digest goes at 13:00 UTC** (`ABUSE_DIGEST_HOUR`, 0 to 23): 8 AM US
+  Eastern in winter, 9 AM in summer. A worker started after the hour sends
+  that day's digest late rather than skipping the day.
+- **What it lists.** Throttles, pauses and suspensions logged in
+  `admin_actions` in the 24 hours before it's built, automatic and by an
+  admin alike, each with whether it still holds; every import held for
+  review and every sign-up waiting for review, however old, since they wait
+  on a person; and the platform's campaign complaint and hard-bounce rates
+  over 24 hours and 30 days, counted as for one account.
+- **Rates alone send it only when over the early warning** (0.1% complaints
+  or 2% hard bounces by default, the `EARLY_WARNING_*` settings), and only on
+  500 or more copies, the same floor as one account's check. Otherwise a
+  quiet day (no items) sends nothing.
+- **At most once a day.** The first worker task to look after the hour claims
+  the day in `ops_digests` and commits that before sending, so a crash or a
+  failed send loses that day's digest (the failure is logged as an error)
+  rather than sending it twice. A quiet day is claimed too: anything later
+  that day is in the next day's digest.
+- **No digest without an address.** With `OPS_ALERT_EMAIL` unset the job
+  doesn't run and claims nothing.
+
 ## 2026-11-19: Sign-up review (MG-66, reversible defaults)
 
 Picked while building MG-66; easy to change.

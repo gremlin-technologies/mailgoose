@@ -157,7 +157,7 @@ variable "github_deploy_subjects" {
 # --- monitoring ---
 
 variable "alert_email" {
-  description = "Address that gets this environment's alarms. Empty: alarms show only in the CloudWatch console."
+  description = "Address that gets this environment's alarms, and the app's ops alerts and daily abuse digest (OPS_ALERT_EMAIL on the API and worker tasks). Empty: alarms show only in the CloudWatch console, OPS_ALERT_EMAIL is not set and the app only logs its alerts."
   type        = string
   default     = ""
 }
