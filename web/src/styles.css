@@ -723,3 +723,210 @@ progress {
   height: 0.75rem;
   accent-color: var(--accent);
 }
+
+/* Email designer. The canvas shows the email as it will look, so its
+ * colors are the email's own (white content, the email's background
+ * color), not the app's theme. */
+.designer-body {
+  display: grid;
+  grid-template-columns: 11rem 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 760px) {
+  .designer-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.palette {
+  position: sticky;
+  top: 1rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem;
+}
+
+.palette h2 {
+  margin: 0 0 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.palette ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.375rem;
+}
+
+.palette-item {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: grab;
+}
+
+.palette-item:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+
+.canvas-wrap {
+  border-radius: 12px;
+  padding: 1.5rem 1rem;
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+}
+
+.canvas-wrap .details {
+  width: 100%;
+  max-width: 32rem;
+}
+
+.canvas {
+  width: 100%;
+  background: #ffffff;
+  color: #18181b;
+  padding: 1rem;
+  border-radius: 4px;
+}
+
+.canvas[aria-busy="true"] {
+  opacity: 0.7;
+}
+
+.canvas-block {
+  position: relative;
+  padding: 0.5rem;
+  border: 1px dashed transparent;
+  border-radius: 6px;
+}
+
+.canvas-block:hover,
+.canvas-block:focus-within {
+  border-color: #8c7a72;
+}
+
+.canvas-block[draggable="true"] {
+  cursor: grab;
+}
+
+/* Faded out, not hidden, so the buttons stay in the tab order. */
+.block-tools {
+  display: flex;
+  opacity: 0;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  align-items: center;
+  margin-bottom: 0.375rem;
+}
+
+.canvas-block:hover > .block-tools,
+.canvas-block:focus-within > .block-tools,
+.canvas-block.locked > .block-tools {
+  opacity: 1;
+}
+
+.block-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #52525b;
+  margin-right: auto;
+}
+
+.drop-zone {
+  height: 0.375rem;
+  border-radius: 4px;
+}
+
+.canvas.dragging .drop-zone.open {
+  height: 1.25rem;
+  border: 2px dashed #8c9bd6;
+}
+
+.canvas.dragging .drop-zone.over {
+  background: #e3e7f7;
+  border-color: #5562a3;
+}
+
+.canvas-heading {
+  margin: 0;
+  line-height: 1.25;
+}
+
+.canvas-text p,
+.canvas-text ul,
+.canvas-text ol {
+  margin: 0 0 0.75rem;
+}
+
+.canvas-text > :last-child {
+  margin-bottom: 0;
+}
+
+.canvas-link {
+  color: #2f3d8a;
+  text-decoration: underline;
+}
+
+.canvas-image {
+  max-width: 100%;
+  height: auto;
+}
+
+.canvas-button {
+  display: inline-block;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.canvas-divider {
+  border: 0;
+  margin: 0.5rem 0;
+}
+
+.canvas-social {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  text-transform: capitalize;
+}
+
+.canvas-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.canvas-column {
+  min-height: 3rem;
+  border: 1px dotted #d4d4d8;
+  border-radius: 4px;
+  padding: 0.25rem;
+}
+
+.canvas-empty {
+  color: #71717a;
+  font-size: 0.875rem;
+  text-align: center;
+  padding: 0.75rem 0;
+}
+
+.canvas-footer {
+  color: #52525b;
+  font-size: 0.8125rem;
+  text-align: center;
+  display: grid;
+  gap: 0.25rem;
+}

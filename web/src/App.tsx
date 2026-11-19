@@ -6,7 +6,9 @@ import { ApiKeys } from "./pages/ApiKeys";
 import { AppLayout } from "./pages/AppLayout";
 import { ContactDetail, Contacts } from "./pages/Contacts";
 import { Device } from "./pages/Device";
+import { Designer } from "./designer/Designer";
 import { DomainDetail, Domains } from "./pages/Domains";
+import { Emails } from "./pages/Emails";
 import { ImportContacts, ImportDetail } from "./pages/Imports";
 import { navPages } from "./pages/nav";
 import { NotFound, Placeholder } from "./pages/Placeholder";
@@ -17,6 +19,7 @@ import { Tags } from "./pages/Tags";
 
 /** Pages that are built; the rest of the menu shows a placeholder. */
 const built: Record<string, ReactNode> = {
+  "/emails": <Emails />,
   "/contacts": <Contacts />,
   "/tags": <Tags />,
   "/domains": <Domains />,
@@ -70,6 +73,7 @@ export function AppRoutes() {
         <Route path="/contacts/imports/:id" element={<ImportDetail />} />
         <Route path="/contacts/:id" element={<ContactDetail />} />
         <Route path="/domains/:id" element={<DomainDetail />} />
+        <Route path="/emails/:id" element={<Designer />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

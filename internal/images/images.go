@@ -132,28 +132,52 @@ func (s *Service) Upload(ctx context.Context, accountID, fileName string, data [
 	if err != nil {
 		return nil, err
 	}
-	var n int
-	if err := s.DB.QueryRow(ctx, `SELECT count(*) FROM images WHERE account_id = $1`, accountID).Scan(&n); err != nil {
-		return nil, err
-	}
-	if n >= MaxPerAccount {
-		return nil, ErrTooMany
-	}
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return nil, err
 	}
 	key := accountID + "/" + hex.EncodeToString(b[:]) + "." + ext
-	if err := s.Store.Put(ctx, key, ct, data); err != nil {
-		return nil, fmt.Errorf("store image: %w", err)
-	}
 	img := &Image{URL: s.url(key), FileName: cleanName(fileName), ContentType: ct, Bytes: len(data), CreatedAt: s.now().UTC()}
-	err = s.DB.QueryRow(ctx, `INSERT INTO images (account_id, key, file_name, content_type, bytes, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`, accountID, key, img.FileName, ct, len(data), img.CreatedAt).Scan(&img.ID)
-	if err != nil {
+	// The row is written first, under the account's lock, so uploads at
+	// once can't pass the cap; the file is stored after the lock is let go,
+	// and the row removed again if that fails, so nothing is left behind.
+	if err := s.reserve(ctx, accountID, key, img); err != nil {
+		return nil, err
+	}
+	if err := s.Store.Put(ctx, key, ct, data); err != nil {
+		err = fmt.Errorf("store image: %w", err)
+		// Not ctx: a cancelled request still removes its row.
+		if _, derr := s.DB.Exec(context.WithoutCancel(ctx), `DELETE FROM images WHERE id = $1`, img.ID); derr != nil {
+			err = errors.Join(err, fmt.Errorf("remove the image's row: %w", derr))
+		}
 		return nil, err
 	}
 	return img, nil
+}
+
+// reserve counts the account's images and adds this one's row, in one
+// transaction with the account row locked.
+func (s *Service) reserve(ctx context.Context, accountID, key string, img *Image) error {
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM accounts WHERE id = $1 FOR UPDATE`, accountID); err != nil {
+		return err
+	}
+	var n int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM images WHERE account_id = $1`, accountID).Scan(&n); err != nil {
+		return err
+	}
+	if n >= MaxPerAccount {
+		return ErrTooMany
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO images (account_id, key, file_name, content_type, bytes, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`, accountID, key, img.FileName, img.ContentType, img.Bytes, img.CreatedAt).Scan(&img.ID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // Cursor is where a list page starts: after this image.

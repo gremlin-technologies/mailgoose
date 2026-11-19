@@ -301,3 +301,56 @@ func TestS3HandlerRedirects(t *testing.T) {
 		t.Errorf("POST: %d %v", resp.StatusCode, resp.Header)
 	}
 }
+
+// Uploads at once can't pass the cap between them.
+func TestTooManyAtOnce(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	at := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	h.svc.Now = func() time.Time { return at }
+	if _, err := h.db.Exec(ctx, `INSERT INTO images (account_id, key, content_type, bytes)
+		SELECT $1::uuid, $1::text || '/' || g || '.png', 'image/png', 1 FROM generate_series(1, $2) g`, h.acc, MaxPerAccount-1); err != nil {
+		t.Fatal(err)
+	}
+	const n = 8
+	errs := make(chan error, n)
+	for range n {
+		go func() {
+			_, err := h.svc.Upload(ctx, h.acc, "", pngData)
+			errs <- err
+		}()
+	}
+	ok := 0
+	for range n {
+		switch err := <-errs; {
+		case err == nil:
+			ok++
+		case !errors.Is(err, ErrTooMany):
+			t.Errorf("upload: %v", err)
+		}
+	}
+	var rows int
+	if err := h.db.QueryRow(ctx, `SELECT count(*) FROM images WHERE account_id = $1`, h.acc).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if ok != 1 || rows != MaxPerAccount || len(h.store.Keys()) != 1 {
+		t.Errorf("%d uploads went through, %d rows, %d files; want 1, %d, 1", ok, rows, len(h.store.Keys()), MaxPerAccount)
+	}
+}
+
+// An image the store refuses leaves no row behind.
+func TestUploadStoreFails(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.store.Err = errors.New("bucket unavailable")
+	if _, err := h.svc.Upload(ctx, h.acc, "", pngData); err == nil || !strings.Contains(err.Error(), "bucket unavailable") {
+		t.Fatalf("upload: %v", err)
+	}
+	var rows int
+	if err := h.db.QueryRow(ctx, `SELECT count(*) FROM images WHERE account_id = $1`, h.acc).Scan(&rows); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 0 {
+		t.Errorf("%d rows left behind", rows)
+	}
+}
