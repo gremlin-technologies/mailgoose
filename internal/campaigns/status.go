@@ -5,7 +5,7 @@ const (
 	// StatusDraft is a campaign being set up. It can be edited and deleted.
 	StatusDraft = "draft"
 	// StatusScheduled is a launched campaign waiting for its send time. It
-	// can still be edited, unscheduled or cancelled.
+	// can be unscheduled back to a draft, or cancelled.
 	StatusScheduled = "scheduled"
 	// StatusSending is a campaign going out.
 	StatusSending = "sending"
@@ -47,8 +47,9 @@ func CanMove(from, to string) bool {
 	return false
 }
 
-// Editable reports whether a campaign in this status can be changed: only
-// drafts and scheduled campaigns can.
+// Editable reports whether a campaign in this status can be changed or
+// tested: only drafts can. A launched campaign was confirmed as it is; a
+// scheduled one goes back to a draft to change it (MG-32).
 func Editable(status string) bool {
-	return status == StatusDraft || status == StatusScheduled
+	return status == StatusDraft
 }

@@ -533,3 +533,18 @@ func (s *Service) CountRecipients(ctx context.Context, accountID string, aud Aud
 	err := s.DB.QueryRow(ctx, `SELECT count(*) FROM contacts WHERE `+where, args...).Scan(&n)
 	return n, err
 }
+
+// SnapshotRecipients fixes a launched campaign's recipients: one
+// campaign_recipients row per contact the audience reaches now, written in
+// tx. It returns how many.
+func SnapshotRecipients(ctx context.Context, tx pgx.Tx, accountID, campaignID string, aud Audience) (int, error) {
+	where, args := recipientsWhere(accountID, aud)
+	args = append(args, campaignID)
+	tag, err := tx.Exec(ctx, fmt.Sprintf(`
+		INSERT INTO campaign_recipients (account_id, campaign_id, contact_id)
+		SELECT account_id, $%d, id FROM contacts WHERE `, len(args))+where, args...)
+	if err != nil {
+		return 0, err
+	}
+	return int(tag.RowsAffected()), nil
+}

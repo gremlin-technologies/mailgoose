@@ -1114,7 +1114,10 @@ type Campaign struct {
 
 	// LastTest The campaign's last test send; null before the first.
 	LastTest *CampaignTest `json:"last_test"`
-	Name     string        `json:"name"`
+
+	// Launch When the campaign was launched, to how many and for how many credits; null for a draft.
+	Launch *CampaignLaunch `json:"launch"`
+	Name   string          `json:"name"`
 
 	// RecipientCount How many contacts the recipients reach now. Single-campaign responses only.
 	RecipientCount *int               `json:"recipient_count,omitempty"`
@@ -1131,6 +1134,18 @@ type Campaign struct {
 
 	// Version Goes up with every change.
 	Version int `json:"version"`
+}
+
+// CampaignLaunch defines model for CampaignLaunch.
+type CampaignLaunch struct {
+	// At When it was launched.
+	At time.Time `json:"at"`
+
+	// CreditsReserved Credits held for them; any not used are given back.
+	CreditsReserved int `json:"credits_reserved"`
+
+	// RecipientCount Who it goes to, fixed at launch.
+	RecipientCount int `json:"recipient_count"`
 }
 
 // CampaignList defines model for CampaignList.
@@ -2063,6 +2078,24 @@ type ImportList struct {
 // ImportStatus defines model for ImportStatus.
 type ImportStatus string
 
+// LaunchCampaignRequest defines model for LaunchCampaignRequest.
+type LaunchCampaignRequest struct {
+	// Confirm The code from the launch summary, given only after the person
+	// said yes to it. Any case; the dash is optional.
+	Confirm *string `json:"confirm,omitempty"`
+}
+
+// LaunchResult defines model for LaunchResult.
+type LaunchResult struct {
+	Campaign Campaign `json:"campaign"`
+
+	// CreditsReserved Credits held for them now.
+	CreditsReserved int `json:"credits_reserved"`
+
+	// RecipientCount Who the campaign goes to, fixed at launch.
+	RecipientCount int `json:"recipient_count"`
+}
+
 // MoveEmailBlockRequest The new place, as in BlockPlace.
 type MoveEmailBlockRequest struct {
 	// After Stable for the block's life: edits and moves keep it. Leave it out
@@ -2477,6 +2510,12 @@ type InvalidForm = Error
 // InvalidHtml defines model for InvalidHtml.
 type InvalidHtml = Error
 
+// LaunchConfirmation defines model for LaunchConfirmation.
+type LaunchConfirmation = Error
+
+// LaunchRefused defines model for LaunchRefused.
+type LaunchRefused = Error
+
 // NotFound defines model for NotFound.
 type NotFound = Error
 
@@ -2677,6 +2716,9 @@ type CountCampaignRecipientsJSONRequestBody = RecipientCountRequest
 
 // UpdateCampaignJSONRequestBody defines body for UpdateCampaign for application/json ContentType.
 type UpdateCampaignJSONRequestBody = UpdateCampaignRequest
+
+// LaunchCampaignJSONRequestBody defines body for LaunchCampaign for application/json ContentType.
+type LaunchCampaignJSONRequestBody = LaunchCampaignRequest
 
 // TestCampaignJSONRequestBody defines body for TestCampaign for application/json ContentType.
 type TestCampaignJSONRequestBody = TestCampaignRequest
@@ -3493,6 +3535,9 @@ type ServerInterface interface {
 	// UpdateCampaign Change a campaign
 	// (PATCH /v1/campaigns/{campaign_id})
 	UpdateCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
+	// LaunchCampaign Launch a campaign, after confirmation
+	// (POST /v1/campaigns/{campaign_id}/launch)
+	LaunchCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
 	// TestCampaign Send a test of a campaign
 	// (POST /v1/campaigns/{campaign_id}/test)
 	TestCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
@@ -4015,6 +4060,32 @@ func (siw *ServerInterfaceWrapper) UpdateCampaign(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateCampaign(w, r, campaignId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// LaunchCampaign operation middleware
+func (siw *ServerInterfaceWrapper) LaunchCampaign(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "campaign_id" -------------
+	var campaignId CampaignId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "campaign_id", r.PathValue("campaign_id"), &campaignId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "campaign_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LaunchCampaign(w, r, campaignId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5915,6 +5986,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/campaigns/{campaign_id}", wrapper.GetCampaign)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/campaigns/{campaign_id}", wrapper.UpdateCampaign)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/test", wrapper.TestCampaign)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/launch", wrapper.LaunchCampaign)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails", wrapper.ListEmails)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails", wrapper.CreateEmail)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/emails/{email_id}", wrapper.DeleteEmail)

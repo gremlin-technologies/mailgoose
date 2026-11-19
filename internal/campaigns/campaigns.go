@@ -93,6 +93,12 @@ type Campaign struct {
 	UpdatedAt       time.Time
 	// LastTest is the campaign's last test send; nil before the first.
 	LastTest *Test
+	// LaunchedAt is when it was launched; nil for a draft. RecipientTotal
+	// and CreditsReserved are set with it: who it was launched to, and the
+	// credits held for them.
+	LaunchedAt      *time.Time
+	RecipientTotal  *int
+	CreditsReserved *int
 }
 
 // Test is when a campaign's last test send went out, and the versions of
@@ -158,14 +164,15 @@ func (s *Service) now() time.Time {
 }
 
 const columns = `id, account_id, name, email_id, all_contacts, send_at, status, version, status_changed_at, created_at, updated_at,
-	last_test_at, last_test_version, last_test_email_version`
+	last_test_at, last_test_version, last_test_email_version, launched_at, recipient_total, credits_reserved`
 
 func scan(row pgx.Row) (*Campaign, error) {
 	var c Campaign
 	var testAt *time.Time
 	var testVersion, testEmailVersion *int
 	err := row.Scan(&c.ID, &c.AccountID, &c.Name, &c.EmailID, &c.AllContacts, &c.SendAt, &c.Status, &c.Version,
-		&c.StatusChangedAt, &c.CreatedAt, &c.UpdatedAt, &testAt, &testVersion, &testEmailVersion)
+		&c.StatusChangedAt, &c.CreatedAt, &c.UpdatedAt, &testAt, &testVersion, &testEmailVersion,
+		&c.LaunchedAt, &c.RecipientTotal, &c.CreditsReserved)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -299,7 +306,9 @@ func (s *Service) Create(ctx context.Context, accountID string, ch Changes) (*Ca
 	return s.Get(ctx, accountID, id)
 }
 
-// Update changes a draft or scheduled campaign, and moves its version on.
+// Update changes a draft campaign, and moves its version on. A launched
+// campaign was confirmed as it is, so it can't be changed; a scheduled one
+// is unscheduled back to a draft first (MG-32).
 func (s *Service) Update(ctx context.Context, accountID, id string, ch Changes) (*Campaign, error) {
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		c, err := scan(tx.QueryRow(ctx, `SELECT `+columns+` FROM campaigns WHERE account_id = $1 AND id = $2 FOR UPDATE`, accountID, id))
@@ -314,9 +323,6 @@ func (s *Service) Update(ctx context.Context, accountID, id string, ch Changes) 
 		}
 		if err := s.apply(c, ch); err != nil {
 			return err
-		}
-		if c.Status == StatusScheduled && c.SendAt == nil {
-			return invalid("send_at", "a scheduled campaign keeps a send time; unschedule it to send it when launched")
 		}
 		if ch.EmailID != nil {
 			if *ch.EmailID == "" {

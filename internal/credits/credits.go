@@ -367,6 +367,14 @@ func insert(ctx context.Context, tx pgx.Tx, accountID, typ string, amount int64,
 	return t, nil
 }
 
+// Balance is the account's credits inside tx, after catching it up.
+func Balance(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) (int64, error) {
+	if err := CatchUp(ctx, tx, accountID, now); err != nil {
+		return 0, err
+	}
+	return balance(ctx, tx, accountID)
+}
+
 // balance is the account's credits: the sum of its transactions.
 func balance(ctx context.Context, tx pgx.Tx, accountID string) (int64, error) {
 	var b int64

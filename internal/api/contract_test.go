@@ -326,6 +326,17 @@ var contractCases = map[string][]contractCase{
 		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(campaignTest(""))), status: http.StatusForbidden},
 		{name: "no database", server: serverWith(nil), req: bearer(campaignTest("")), status: http.StatusServiceUnavailable},
 	},
+	"launchCampaign": {
+		{name: "launched", server: fullKey(authServer), before: summarized, req: bearer(confirmedLaunch), status: http.StatusOK},
+		{name: "malformed", server: fullKey(authServer), before: launchable, req: bearer(campaignLaunch(`{"confirm":1}`)), status: http.StatusBadRequest},
+		{name: "unknown", server: fullKey(authServer), req: bearer(campaignLaunch("")), status: http.StatusNotFound},
+		{name: "needs confirming", server: fullKey(authServer), before: launchable, req: bearer(campaignLaunch("")), status: http.StatusConflict},
+		{name: "not ready", server: fullKey(authServer), before: addedCampaign, req: bearer(campaignLaunch("")), status: http.StatusUnprocessableEntity},
+		{name: "no credentials", server: authServer, req: campaignLaunch(""), status: http.StatusUnauthorized},
+		{name: "draft key", server: draftKey(authServer), req: bearer(campaignLaunch("")), status: http.StatusForbidden},
+		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(campaignLaunch(""))), status: http.StatusForbidden},
+		{name: "no database", server: serverWith(nil), req: bearer(campaignLaunch("")), status: http.StatusServiceUnavailable},
+	},
 	"listForms": {
 		{name: "listed", server: draftKey(authServer), before: addedForm, req: bearer(request(http.MethodGet, "/v1/forms")), status: http.StatusOK},
 		{name: "bad cursor", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/forms?cursor=nope")), status: http.StatusBadRequest},

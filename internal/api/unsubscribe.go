@@ -158,6 +158,7 @@ var badLinkPage = page{
 // provider's unsubscribe that never lands is a compliance problem.
 func (s *Server) recipientPageLimited(w http.ResponseWriter, r *http.Request, retryAfter int) {
 	if r.Method == http.MethodPost {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRecipientFormBytes)
 		s.Log.WarnContext(r.Context(), "unsubscribe post rate limited",
 			"ip", ClientIP(r), "retry_after", retryAfter, "one_click", r.PostFormValue("List-Unsubscribe") == "One-Click")
 	}

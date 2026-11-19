@@ -987,9 +987,9 @@ export interface paths {
         head?: never;
         /**
          * Change a campaign
-         * @description Changes the parts given; the rest stay. Only draft and scheduled
-         *     campaigns can be changed. `send_at: null` sends when launched; a
-         *     scheduled campaign keeps a send time. With `version`, the change is
+         * @description Changes the parts given; the rest stay. Only drafts can be changed:
+         *     a launched campaign was confirmed as it is. `send_at: null` sends
+         *     when launched. With `version`, the change is
          *     refused if the campaign changed since that version was read.
          */
         patch: operations["updateCampaign"];
@@ -1012,10 +1012,47 @@ export interface paths {
          *     subject starts `[Test] `, and the unsubscribe link and header point
          *     at a page that only says it's a test. Tests use no credits; an
          *     account can send 50 test emails in any 24 hours. The campaign
-         *     records the test in `last_test`, which launch checks. Draft and
-         *     scheduled campaigns only.
+         *     records the test in `last_test`, which launch checks. Drafts only.
          */
         post: operations["testCampaign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{campaign_id}/launch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Launch a campaign, after confirmation
+         * @description Launching takes two calls (CAM-3, CAM-4).
+         *
+         *     1. Without `confirm`, nothing is launched. If the campaign can go
+         *        out, the answer is a 409 `confirmation_required` whose
+         *        `details.summary` has the subject, From, recipient count, send
+         *        time and credit cost, and `details.code` a one-time code. If it
+         *        can't, a 422 `not_ready` lists every reason.
+         *     2. Show the summary to the person. Only after they say yes, call
+         *        again with `confirm` set to the code. That launches it: in one
+         *        transaction the compiled email is copied into the campaign, its
+         *        recipients are fixed, one credit each is reserved, and the send
+         *        is queued. A campaign with a send time becomes `scheduled`;
+         *        otherwise `sending`.
+         *
+         *     A code lasts 15 minutes, works once, allows 5 wrong tries, and
+         *     stops working if the campaign or its email changes; ask for a new
+         *     summary then. Launching a campaign that's already launched, or a
+         *     retry with the same `Idempotency-Key`, changes nothing and returns
+         *     the same result. A draft-scope key gets a 403.
+         */
+        post: operations["launchCampaign"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2304,10 +2341,37 @@ export interface components {
             version: number;
             /** @description The campaign's last test send; null before the first. */
             last_test: components["schemas"]["CampaignTest"] | null;
+            /** @description When the campaign was launched, to how many and for how many credits; null for a draft. */
+            launch: components["schemas"]["CampaignLaunch"] | null;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+        };
+        CampaignLaunch: {
+            /**
+             * Format: date-time
+             * @description When it was launched.
+             */
+            at: string;
+            /** @description Who it goes to, fixed at launch. */
+            recipient_count: number;
+            /** @description Credits held for them; any not used are given back. */
+            credits_reserved: number;
+        };
+        LaunchCampaignRequest: {
+            /**
+             * @description The code from the launch summary, given only after the person
+             *     said yes to it. Any case; the dash is optional.
+             */
+            confirm?: string;
+        };
+        LaunchResult: {
+            campaign: components["schemas"]["Campaign"];
+            /** @description Who the campaign goes to, fixed at launch. */
+            recipient_count: number;
+            /** @description Credits held for them now. */
+            credits_reserved: number;
         };
         CampaignTest: {
             /**
@@ -2657,8 +2721,8 @@ export interface components {
             };
         };
         /**
-         * @description `campaign_locked`: only draft and scheduled campaigns can be changed,
-         *     and only drafts deleted; `details.status` is the campaign's status.
+         * @description `campaign_locked`: only drafts can be changed, tested, launched or
+         *     deleted; `details.status` is the campaign's status.
          *     `version_conflict`: the campaign changed since the version given;
          *     `details.current_version` is its version now.
          */
@@ -2680,8 +2744,50 @@ export interface components {
          *     `invalid_test`: `to` has an address that isn't one, or more than 5.
          *     `test_recipient_not_allowed`: an address in `to` isn't the owner's
          *     or on a verified sending domain; `details.address` names it.
+         *     `test_recipient_suppressed`: an address in `to` unsubscribed,
+         *     bounced or complained (the owner's own address is never refused);
+         *     `details.address` names it.
          */
         TestNotSendable: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `confirmation_required`: nothing was launched. `details.summary`
+         *     (`campaign_id`, `name`, `subject`, `from`, `reply_to`,
+         *     `recipient_count`, `send_at`, `credits`, `balance`, `warnings`) is
+         *     what the person confirms, `details.code` the code that launches it
+         *     once they say yes, and `details.expires_at` when the code stops
+         *     working. `campaign_locked`: the campaign isn't a draft and wasn't
+         *     launched; `details.status` is its status.
+         */
+        LaunchConfirmation: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `not_ready`: the campaign can't launch; `details.problems` lists
+         *     each reason with its `code`, `message` and `hint`: Prepare's
+         *     (`no_email`, `missing_from`, `unverified_from`,
+         *     `missing_postal_address`, `missing_subject`, `empty_email`,
+         *     `merge_tag`), `check_failed` (an email check error), `untested` (no
+         *     test since the last change), `send_at_passed`, `account_paused`,
+         *     `no_recipients`, and `credits_short` with `details.needed`,
+         *     `details.balance` and `details.short`. `invalid_confirmation`: the
+         *     code can't be used; `details.reason` is `no_code`, `expired`,
+         *     `wrong`, `too_many_attempts` or `changed`. Ask for a new summary.
+         */
+        LaunchRefused: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -4722,6 +4828,41 @@ export interface operations {
             422: components["responses"]["TestNotSendable"];
             429: components["responses"]["TestLimited"];
             502: components["responses"]["TestSendFailed"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    launchCampaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The campaign's `id`. */
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["LaunchCampaignRequest"];
+            };
+        };
+        responses: {
+            /** @description Launched, now or by an earlier call. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LaunchResult"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["LaunchConfirmation"];
+            422: components["responses"]["LaunchRefused"];
             503: components["responses"]["ServiceUnavailable"];
         };
     };

@@ -144,8 +144,20 @@ func TestCampaignTestSend(t *testing.T) {
 		}
 	}
 
-	// An unverified From says how to fix it.
 	db, _ := testDBs.Load(t)
+	// A contact who bounced gets no tests.
+	if _, err := db.(*pgxpool.Pool).Exec(t.Context(), `
+		INSERT INTO contacts (account_id, email, status, source) SELECT account_id, 'bounced@patsbakery.com', 'bounced', 'api' FROM users LIMIT 1`); err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(campaignTest(`{"to":["bounced@patsbakery.com"]}`))(t))
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), `"code":"test_recipient_suppressed"`) ||
+		!strings.Contains(rec.Body.String(), "bounced@patsbakery.com has bounced") {
+		t.Errorf("suppressed: %d %s", rec.Code, rec.Body)
+	}
+
+	// An unverified From says how to fix it.
 	if _, err := db.(*pgxpool.Pool).Exec(t.Context(), `UPDATE accounts SET from_email = 'hi@elsewhere.com'`); err != nil {
 		t.Fatal(err)
 	}
