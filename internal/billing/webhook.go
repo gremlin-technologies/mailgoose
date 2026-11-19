@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -177,6 +178,9 @@ func (s *Service) handle(ctx context.Context, tx pgx.Tx, e *event) (Outcome, err
 		cs.AmountSubtotal != pack.PriceCents || !strings.EqualFold(cs.Currency, "usd") {
 		s.log().ErrorContext(ctx, "a paid Stripe session doesn't match a credit pack; no credits added",
 			"session_id", cs.ID, "event_id", e.ID, "pack", cs.Metadata["pack"], "amount_subtotal", cs.AmountSubtotal)
+		s.alert(ctx, "a credit payment added no credits",
+			fmt.Sprintf("Checkout session %s was paid (%d cents %s, pack %q, account %s) but doesn't match a credit pack, so no credits were added.\n\nCredit the account by hand or refund the payment in Stripe.",
+				cs.ID, cs.AmountSubtotal, cs.Currency, cs.Metadata["pack"], accountID))
 		return OutcomeMismatch, nil
 	}
 	// The account must still be there and open. Answering 200 stops Stripe
@@ -195,6 +199,9 @@ func (s *Service) handle(ctx context.Context, tx pgx.Tx, e *event) (Outcome, err
 	if !open {
 		s.log().ErrorContext(ctx, "a paid Stripe session is for an account that doesn't exist or is closed; no credits added, refund it",
 			"session_id", cs.ID, "event_id", e.ID, "account_id", accountID, "amount_subtotal", cs.AmountSubtotal)
+		s.alert(ctx, "a credit payment for a closed account",
+			fmt.Sprintf("Checkout session %s was paid (%d cents) for account %s, which doesn't exist or is closed, so no credits were added.\n\nRefund the payment in Stripe.",
+				cs.ID, cs.AmountSubtotal, accountID))
 		return OutcomeNoAccount, nil
 	}
 	added, err := purchase(ctx, tx, accountID, cs.ID, pack.Credits, s.now())

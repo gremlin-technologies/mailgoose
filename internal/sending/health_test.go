@@ -208,6 +208,19 @@ func TestOpsAlert(t *testing.T) {
 		!strings.Contains(s.Message.Text, "4 complaints (0.4%)") || !strings.Contains(s.Message.Text, "mailgoose admin unpause acc-1") {
 		t.Errorf("alert = %+v", s.Message)
 	}
+
+	// A note to sort out by hand goes the same way.
+	a.Notify(context.Background(), "a credit payment for a closed account", "Refund the payment in Stripe.")
+	s, ok = fake.Last()
+	if !ok || s.Message.To.Email != "ops@example.com" || s.Message.Subject != "mailgoose: a credit payment for a closed account" ||
+		s.Message.Text != "Refund the payment in Stripe." {
+		t.Errorf("note = %+v", s.Message)
+	}
+	before := len(fake.Sent())
+	(&OpsAlert{Mail: fake, Log: quiet}).Notify(context.Background(), "x", "y")
+	if len(fake.Sent()) != before {
+		t.Error("noted with no ops address")
+	}
 }
 
 func TestDailyLimitGrowsWhileClean(t *testing.T) {

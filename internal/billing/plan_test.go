@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPlanUnits(t *testing.T) {
@@ -152,7 +153,7 @@ func TestSyncUnits(t *testing.T) {
 	if err != nil || run != (UnitRun{Accounts: 1, Changed: 1}) {
 		t.Fatalf("grown: %+v %v", run, err)
 	}
-	if want := "sub_1/si_sub_1=3 mailgoose-units:sub_1:3:2026-11-18"; len(f.units) != 1 || f.units[0] != want {
+	if want := "sub_1/si_sub_1=3 mailgoose-units:sub_1:1-3:20261118T120000Z"; len(f.units) != 1 || f.units[0] != want {
 		t.Errorf("Stripe got %v", f.units)
 	}
 	if st := h.state(t); st.units != 3 {
@@ -171,6 +172,16 @@ func TestSyncUnits(t *testing.T) {
 	}
 	if st := h.state(t); st.units != 1 {
 		t.Errorf("units changed after a refusal: %d", st.units)
+	}
+	// The same change in a later run gets its own key, so Stripe doesn't
+	// answer it from the first request and change nothing.
+	f.err = nil
+	h.set(h.now.Add(time.Hour))
+	if run, err := h.svc.SyncUnits(ctx); err != nil || run.Changed != 1 {
+		t.Fatalf("changed again: %+v %v", run, err)
+	}
+	if want := "sub_1/si_sub_1=3 mailgoose-units:sub_1:1-3:20261118T130000Z"; len(f.units) != 2 || f.units[1] != want {
+		t.Errorf("Stripe got %v", f.units)
 	}
 }
 

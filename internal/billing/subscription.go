@@ -2,7 +2,10 @@ package billing
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -76,6 +79,17 @@ func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, e *event, su
 	if err != nil {
 		return "", err
 	}
+	// Stripe doesn't promise to deliver events in order, and an event's
+	// time is in whole seconds, so two changes in one second can arrive
+	// either way round. Applying the subscription as Stripe has it now,
+	// read while the account row is locked, makes the order irrelevant.
+	fresh, err := s.currentSubscription(ctx, sub.ID)
+	if err != nil {
+		return "", err
+	}
+	if fresh != nil {
+		sub, at = fresh, now
+	}
 	live := liveStatuses[sub.Status]
 	if deref(current) != "" && deref(current) != sub.ID {
 		if !live {
@@ -85,9 +99,16 @@ func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, e *event, su
 		if liveStatuses[deref(currentStatus)] {
 			s.log().ErrorContext(ctx, "an account has two live subscriptions; cancel one in Stripe",
 				"account_id", accountID, "subscription_id", sub.ID, "current_subscription_id", deref(current))
+			s.alert(ctx, "an account has two paid plan subscriptions",
+				fmt.Sprintf("Account %s has two live subscriptions: %s (the one mailgoose uses) and %s.\n\nCancel and refund %s in Stripe.",
+					accountID, deref(current), sub.ID, sub.ID))
 			return OutcomeMismatch, nil
 		}
-	} else if synced != nil && at.Before(*synced) {
+	} else if fresh == nil && synced != nil &&
+		(at.Before(*synced) || at.Equal(*synced) && sub.Status == "incomplete" && liveStatuses[deref(currentStatus)]) {
+		// Without Stripe's current state: an older event changes nothing, and
+		// in the same second a new subscription's first, incomplete state
+		// doesn't replace the live one its payment led to.
 		return OutcomeStale, nil
 	}
 	if status != "active" {
@@ -96,6 +117,9 @@ func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, e *event, su
 		if live {
 			s.log().ErrorContext(ctx, "a closed account has a live subscription; cancel it in Stripe",
 				"account_id", accountID, "subscription_id", sub.ID)
+			s.alert(ctx, "a closed account has a paid plan subscription",
+				fmt.Sprintf("Account %s is closed, but its subscription %s is %s in Stripe.\n\nCancel it in Stripe.",
+					accountID, sub.ID, sub.Status))
 		}
 		_, err := tx.Exec(ctx, `UPDATE accounts SET subscription_status = $2, subscription_synced_at = $3 WHERE id = $1`,
 			accountID, sub.Status, at)
@@ -141,7 +165,7 @@ func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, e *event, su
 	feePaused := pausedAt != nil && deref(pausedCode) == SubscriptionPastDue
 	switch {
 	case overdueStatuses[sub.Status] && pausedAt == nil:
-		if err := pauseOverdue(ctx, tx, accountID, sub.Status, now); err != nil {
+		if err := PauseOverdue(ctx, tx, accountID, sub.Status, now); err != nil {
 			return "", err
 		}
 		s.log().WarnContext(ctx, "subscription payment past due; sending paused", "account_id", accountID)
@@ -162,8 +186,14 @@ func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, e *event, su
 	return OutcomeSubscription, nil
 }
 
-// pauseOverdue pauses sending while the subscription's payment is past due.
-func pauseOverdue(ctx context.Context, tx pgx.Tx, accountID, status string, now time.Time) error {
+// Overdue says whether a subscription status means its payment is past
+// due, which pauses sending.
+func Overdue(status string) bool { return overdueStatuses[status] }
+
+// PauseOverdue pauses sending while the subscription's payment is past due,
+// in tx, and logs it as automatic. Admin unpause calls it too, when the pause
+// it lifts was hiding a payment that's still past due.
+func PauseOverdue(ctx context.Context, tx pgx.Tx, accountID, status string, now time.Time) error {
 	reason := "The paid plan's payment didn't go through. Update the card and sending resumes once it does."
 	if _, err := tx.Exec(ctx, `UPDATE accounts SET sending_paused_at = $2, sending_paused_reason = $3, sending_paused_code = $4,
 		updated_at = $2 WHERE id = $1`, accountID, now, reason, SubscriptionPastDue); err != nil {
@@ -173,4 +203,27 @@ func pauseOverdue(ctx context.Context, tx pgx.Tx, accountID, status string, now 
 		VALUES ('automatic', 'auto_pause', $1, $2, $3, $4)`,
 		accountID, reason, map[string]any{"code": SubscriptionPastDue, "subscription_status": status}, now)
 	return err
+}
+
+// currentSubscription reads a subscription from Stripe as it is now. It
+// returns nil, and the event's copy is used, when there's no Stripe client
+// or Stripe doesn't know the subscription. Any other failure is returned,
+// so the webhook answers 503 and Stripe sends the event again.
+func (s *Service) currentSubscription(ctx context.Context, id string) (*subscription, error) {
+	if s.Stripe == nil {
+		return nil, nil
+	}
+	body, err := s.Stripe.GetSubscription(ctx, id)
+	var se *StripeError
+	if errors.As(err, &se) && se.Status == http.StatusNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read subscription %s from Stripe: %w", id, err)
+	}
+	var sub subscription
+	if err := json.Unmarshal(body, &sub); err != nil || sub.ID != id {
+		return nil, fmt.Errorf("%w: subscription %s", ErrStripeUnreachable, id)
+	}
+	return &sub, nil
 }

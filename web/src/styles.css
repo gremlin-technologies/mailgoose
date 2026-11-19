@@ -172,6 +172,7 @@ code {
 }
 
 .field input,
+.field select,
 .field textarea {
   font: inherit;
   font-weight: 400;
@@ -497,6 +498,12 @@ h2 {
   border-color: transparent;
 }
 
+.notice-good {
+  background: var(--good-bg);
+  color: var(--good-text);
+  border-color: transparent;
+}
+
 .records {
   list-style: none;
   margin: 0;
@@ -634,4 +641,85 @@ h2 {
   .record-fields {
     grid-template-columns: 1fr;
   }
+}
+
+/* Contacts, tags and imports */
+.row.end {
+  justify-content: flex-end;
+}
+
+.table .pick {
+  width: 2.5rem;
+  padding-right: 0;
+}
+
+.pager {
+  justify-content: flex-end;
+}
+
+fieldset.panel {
+  margin: 0;
+  min-width: 0;
+}
+
+fieldset.panel legend {
+  font-weight: 600;
+  padding: 0 0.25rem;
+}
+
+.tag-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tag-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.25rem 0.25rem 0.75rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin: 0;
+}
+
+.stats div {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem 1.25rem;
+  min-width: 8rem;
+}
+
+.stats dt {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.stats dd {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.plain {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+progress {
+  width: 100%;
+  height: 0.75rem;
+  accent-color: var(--accent);
 }

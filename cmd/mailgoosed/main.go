@@ -150,6 +150,9 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		srv.Signups = &signups.Service{DB: pool, Forms: srv.Forms, Settings: &auth.Service{DB: pool},
 			Domains: srv.Domains, Mail: sender}
 		srv.Admin = &admin.Service{DB: pool, Sending: srv.Sending, Log: log.With("component", "admin")}
+		// Payments someone has to refund or cancel by hand go to OPS_ALERT_EMAIL.
+		srv.Billing.Alert = (&sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
+			To: cfg.OpsAlertEmail, Log: log.With("component", "billing")}).Notify
 		// With a send queue, the API puts batches on it, since only the
 		// API's role may send to it. Without one, the worker does it all.
 		if cfg.SendQueueURL != "" {

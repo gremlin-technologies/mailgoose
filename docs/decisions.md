@@ -23,6 +23,25 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Contacts and tags pages (MG-42, reversible defaults)
+
+Picked while building MG-42; easy to change.
+
+- **Search looks in one field at a time**, email or name, picked next to the
+  search box (email by default). The API's filters combine with AND, so one
+  box can't search both.
+- **A contact added by hand is unconfirmed unless "I have their permission"
+  is ticked**, the same choice the import asks for, so nobody is mailed
+  without it.
+- **Bulk tagging works on the contacts ticked on the page** (up to 50 at a
+  time), not on everything a filter matches. The API takes a filter too, so
+  "tag all matching" can come later.
+- **Import column menus start from a guess** at the usual headers (Email,
+  E-mail Address, First name, Surname, Tags and the like). A field left
+  unmatched is left out of the request, so the API looks for it under its
+  usual headers, as it does for the CLI.
+- **Menus list up to 1,000 tags.**
+
 ## 2026-11-18: The paid plan is a card subscription (owner decision, confirmed)
 
 The owner: "Deducting credits feels confusing. Maybe we just stick to a
@@ -71,10 +90,26 @@ Picked while building the subscription; easy to change.
 - **Deleting an account cancels its subscription at once**, with no refund
   for the rest of the period, before anything is deleted; if Stripe can't be
   reached the delete fails (502) and can be retried.
-- **Event order:** an event older than the last one applied changes
-  nothing, and an old subscription ending doesn't touch the current one. A
-  second live subscription for one account isn't applied and is logged as an
-  error to cancel by hand.
+- **Event order doesn't matter:** on each subscription event the webhook
+  reads the subscription from Stripe as it is now and applies that, so two
+  events in one second arriving the wrong way round can't leave a paying
+  account free. If Stripe doesn't answer, the webhook answers 503 and
+  Stripe sends the event again. Without a Stripe client (or if Stripe
+  doesn't know the subscription), the event's own copy is applied: an older
+  event changes nothing, and a new subscription's `incomplete` state doesn't
+  replace a live one from the same second. An old subscription ending
+  doesn't touch the current one. A second live subscription for one account
+  isn't applied.
+- **Past due under another pause:** when staff lift another pause while
+  the plan's payment is past due, the past-due pause takes over. Staff
+  lifting the past-due pause itself stands.
+- **Unit changes** use a Stripe idempotency key naming the units before and
+  after and the run, so a change back to an earlier quantity later the same
+  day isn't answered from the earlier request.
+- **Payments to sort out by hand** (a payment that adds no credits, one for
+  a closed account, a second live subscription, a closed account with a
+  live subscription) are logged as errors and emailed to `OPS_ALERT_EMAIL`
+  when it's set.
 - **The worker checks hourly** for unit changes and for credits past their
   expiry.
 

@@ -53,6 +53,10 @@ func (f *fakeStripe) SetSubscriptionUnits(context.Context, string, string, int, 
 	return f.err
 }
 
+func (f *fakeStripe) GetSubscription(context.Context, string) ([]byte, error) {
+	return nil, &billing.StripeError{Status: 404}
+}
+
 func (f *fakeStripe) CancelSubscription(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

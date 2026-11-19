@@ -178,6 +178,11 @@ func (c *Client) CancelSubscription(ctx context.Context, subscriptionID string) 
 	return err
 }
 
+// GetSubscription reads a subscription as it is now.
+func (c *Client) GetSubscription(ctx context.Context, subscriptionID string) ([]byte, error) {
+	return c.call(ctx, http.MethodGet, "/v1/subscriptions/"+url.PathEscape(subscriptionID), nil, "")
+}
+
 // call sends one request to Stripe and returns the body of a 200 answer.
 func (c *Client) call(ctx context.Context, method, path string, form url.Values, idempotencyKey string) ([]byte, error) {
 	base := c.BaseURL
