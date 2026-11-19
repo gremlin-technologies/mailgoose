@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -264,6 +265,27 @@ func TestUnsubscribePagesLimit(t *testing.T) {
 	if !strings.Contains(f.logs.String(), "unsubscribe post rate limited") || !strings.Contains(f.logs.String(), "one_click=true") {
 		t.Errorf("logs:\n%s", f.logs)
 	}
+
+	// A limited POST reads no more than a recipient form's cap.
+	body := &countingReader{r: strings.NewReader("List-Unsubscribe=One-Click&x=" + strings.Repeat("a", 1<<20))}
+	r := httptest.NewRequest(http.MethodPost, unsubscribe.Path(f.joTok), body)
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	f.h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusTooManyRequests || body.n > maxRecipientFormBytes+512 {
+		t.Errorf("status %d after reading %d bytes", rec.Code, body.n)
+	}
+}
+
+type countingReader struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += n
+	return n, err
 }
 
 func TestTestSendUnsubscribeLink(t *testing.T) {

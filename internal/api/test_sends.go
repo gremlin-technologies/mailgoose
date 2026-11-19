@@ -52,6 +52,7 @@ func (s *Server) testSendError(w http.ResponseWriter, r *http.Request, err error
 	var notReady *sending.NotReadyError
 	var invalid *sending.InvalidError
 	var recipient *sending.RecipientError
+	var suppressed *sending.SuppressedError
 	var limit *sending.LimitError
 	var failed *sending.SendError
 	switch {
@@ -69,6 +70,14 @@ func (s *Server) testSendError(w http.ResponseWriter, r *http.Request, err error
 	case errors.As(err, &invalid):
 		WriteError(w, Unprocessable("invalid_test", "The test can't be sent: "+invalid.Message+".").
 			WithDetails(map[string]any{"field": invalid.Field}))
+	case errors.As(err, &suppressed):
+		why := "is on the account's suppression list"
+		if suppressed.Status != "" {
+			why = "has " + suppressed.Status
+		}
+		WriteError(w, Unprocessable("test_recipient_suppressed", suppressed.Address+" "+why+", so tests don't go to it.").
+			WithHint("Send the test to another address, or leave `to` out to send it to yourself.").
+			WithDetails(map[string]any{"address": suppressed.Address}))
 	case errors.As(err, &recipient):
 		WriteError(w, Unprocessable("test_recipient_not_allowed", "Tests go to the account owner or to addresses on a verified sending domain, and "+recipient.Address+" is neither.").
 			WithHint("Leave `to` out to send to yourself, or verify the address's domain with `mailgoose domain add`.").

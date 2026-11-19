@@ -31,6 +31,12 @@ Picked while building MG-29; easy to change.
   a verified sending domain of the account, subdomains included, up to 5
   per test. Anything else is refused, so a test can't be used to mail
   strangers.
+- **Tests skip no one silently; a suppressed address is refused.** An
+  address whose contact unsubscribed, bounced or complained, or that a
+  deleted contact left on the suppression list, gets
+  `test_recipient_suppressed` rather than a test, since a send there costs
+  reputation like any other. The owner's own address is never refused.
+  (Added after the MG-29 review.)
 - **50 a day is a rolling 24 hours**, counted per message, not per request.
   A test that's counted and then fails at the mail provider still counts,
   so retries can't get round the limit.

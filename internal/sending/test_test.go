@@ -12,6 +12,7 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
+	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
@@ -176,6 +177,45 @@ func TestTestRecipients(t *testing.T) {
 	}
 	if len(h.fake.Sent()) != 5 || h.testsCounted(t) != 5 {
 		t.Errorf("refused tests sent or counted: %d %d", len(h.fake.Sent()), h.testsCounted(t))
+	}
+}
+
+// Tests don't go to an address that unsubscribed, bounced or complained,
+// or that a deleted contact left suppressed. The owner's address always
+// gets them.
+func TestTestSkipsSuppressed(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	for _, q := range []string{
+		`INSERT INTO contacts (account_id, email, status, source) VALUES ($1, 'bounced@patsbakery.com', 'bounced', 'api')`,
+		`INSERT INTO contacts (account_id, email, status, source) VALUES ($1, 'left@patsbakery.com', 'unsubscribed', 'api')`,
+		`INSERT INTO contacts (account_id, email, status, source) VALUES ($1, 'pat@home.example', 'complained', 'api')`,
+		`INSERT INTO contacts (account_id, email, status, source) VALUES ($1, 'gone@patsbakery.com', 'complained', 'api')`,
+	} {
+		if _, err := h.db.Exec(ctx, q, h.acc); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var gone string
+	_ = h.db.QueryRow(ctx, `SELECT id FROM contacts WHERE email = 'gone@patsbakery.com'`).Scan(&gone)
+	if err := (&contacts.Service{DB: h.db}).Delete(ctx, h.acc, gone); err != nil {
+		t.Fatal(err)
+	}
+	for addr, status := range map[string]string{"bounced@patsbakery.com": "bounced", "left@patsbakery.com": "unsubscribed", "gone@patsbakery.com": ""} {
+		var se *SuppressedError
+		if _, err := h.test("sam@patsbakery.com", addr); !errors.As(err, &se) || se.Address != addr || se.Status != status {
+			t.Errorf("%s: %v %+v", addr, err, se)
+		}
+	}
+	if len(h.fake.Sent()) != 0 || h.testsCounted(t) != 0 {
+		t.Error("a refused test was sent or counted")
+	}
+	// The owner's own address, even complained as a contact.
+	if res, err := h.test(); err != nil || strings.Join(res.To, ",") != "pat@home.example" {
+		t.Errorf("owner: %v %v", res, err)
+	}
+	if res, err := h.test("pat@home.example", "sam@patsbakery.com"); err != nil || len(res.To) != 2 {
+		t.Errorf("owner named: %v %v", res, err)
 	}
 }
 

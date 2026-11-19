@@ -2680,6 +2680,9 @@ export interface components {
          *     `invalid_test`: `to` has an address that isn't one, or more than 5.
          *     `test_recipient_not_allowed`: an address in `to` isn't the owner's
          *     or on a verified sending domain; `details.address` names it.
+         *     `test_recipient_suppressed`: an address in `to` unsubscribed,
+         *     bounced or complained (the owner's own address is never refused);
+         *     `details.address` names it.
          */
         TestNotSendable: {
             headers: {

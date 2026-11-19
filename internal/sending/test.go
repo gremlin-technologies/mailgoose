@@ -46,6 +46,19 @@ type RecipientError struct {
 	Address string
 }
 
+// SuppressedError names a test address that unsubscribed, bounced or
+// complained, or was deleted after one of those. Tests don't go to it.
+type SuppressedError struct {
+	Address string
+	// Status is the contact's status, or "" for an address only on the
+	// suppression list.
+	Status string
+}
+
+func (e *SuppressedError) Error() string {
+	return e.Address + " is suppressed, so tests don't go to it"
+}
+
 func (e *RecipientError) Error() string {
 	return e.Address + " isn't the account owner's address or on a verified sending domain of the account"
 }
@@ -188,8 +201,37 @@ func (s *Service) testRecipients(ctx context.Context, accountID, owner string, t
 		if err != nil {
 			return nil, err
 		}
+		if err := s.notSuppressed(ctx, accountID, addr); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
+}
+
+// notSuppressed refuses an address that unsubscribed, bounced or
+// complained, as a contact or on the suppression list a deleted contact
+// leaves. A test there would cost reputation like any other send. The
+// owner's own address is never checked: it's where tests go by default.
+func (s *Service) notSuppressed(ctx context.Context, accountID, addr string) error {
+	var status string
+	err := s.DB.QueryRow(ctx, `SELECT status FROM contacts WHERE account_id = $1 AND email = $2`, accountID, addr).Scan(&status)
+	switch {
+	case err == nil:
+		if contacts.Suppressing(status) {
+			return &SuppressedError{Address: addr, Status: status}
+		}
+		return nil
+	case !errors.Is(err, pgx.ErrNoRows):
+		return err
+	}
+	suppressed, err := (&contacts.Service{DB: s.DB}).IsSuppressed(ctx, accountID, addr)
+	if err != nil {
+		return err
+	}
+	if suppressed {
+		return &SuppressedError{Address: addr}
+	}
+	return nil
 }
 
 // testRecipient fills a test's merge tags: from the contact with that
