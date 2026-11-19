@@ -370,6 +370,24 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: Accessibility and browser pass (MG-59, reversible defaults)
+
+Picked while building MG-59; easy to change.
+
+- **Every web unit test also runs axe.** `renderApp` checks the rendered
+  page against WCAG 2.2 AA and axe's best practices after each test, so a
+  new screen can't merge with a violation. jsdom does no layout, so color
+  contrast is left to the browser check below; preview frames (the
+  customer's own email or form) are skipped.
+- **A real-browser axe pass in CI.** After the end-to-end flow, Chromium
+  runs axe, contrast included, on every main page, signed in and out.
+- **The manual browser pass is automated.** The end-to-end flow runs in
+  Chromium, Firefox, WebKit (standing in for Safari) and Edge on every pull
+  request. A check on a real Mac and iPhone is left for the launch
+  checklist.
+- **Two fixes it found:** an empty designer column was an empty list, and a
+  heading block with no text was an empty heading.
+
 ## 2026-11-19: End-to-end tests (MG-58, reversible defaults)
 
 Picked while building MG-58; easy to change.
@@ -387,6 +405,7 @@ Picked while building MG-58; easy to change.
   makes a full API key and uses only that from then on.
 - **The browser test is Playwright, Chromium only**
   (`web/e2e/`, `make e2e-web`). The other browsers are MG-59's manual pass.
+  (Changed in MG-59: it runs in four browsers.)
 - **Both run in a new `End-to-end` CI job** against `scripts/dev.sh`, with
   Postgres as a service and mail written to `.local/mail`. The runner's own
   Node is used, as in the Go job.

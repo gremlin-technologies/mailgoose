@@ -254,7 +254,13 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
                     {b.type === "columns" ? (
                       <div className="canvas-columns">
                         {b.columns.map((col, c) => (
-                          <div key={c} className="canvas-column" role="list" aria-label={c === 0 ? "Left column" : "Right column"}>
+                          <div
+                            key={c}
+                            className="canvas-column"
+                            // A list needs items; an empty column is a group until it has some.
+                            role={col.blocks.length === 0 ? "group" : "list"}
+                            aria-label={c === 0 ? "Left column" : "Right column"}
+                          >
                             <DropZone zone={{ parent: b.id, column: c, after: null }} {...zoneProps} />
                             {col.blocks.length === 0 && <p className="canvas-empty">Drop blocks here</p>}
                             {(col.blocks as Block[]).map((inner) => (
@@ -441,6 +447,14 @@ function BlockView({ block }: { block: Block }) {
   switch (block.type) {
     case "heading": {
       const H = (`h${block.level}` as "h1" | "h2" | "h3");
+      // An emptied heading still shows, so it can be found and filled in.
+      if (!block.text.trim()) {
+        return (
+          <H className="canvas-heading canvas-empty" style={align(block.align)}>
+            Empty heading
+          </H>
+        );
+      }
       return <H className="canvas-heading" style={align(block.align)}>{block.text}</H>;
     }
     case "text":

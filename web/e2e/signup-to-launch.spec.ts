@@ -1,19 +1,29 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
-// MG-58: a new customer signs up in the web app and launches a campaign,
-// with nothing done outside the browser. The local stack's fake sender
+// MG-58 and MG-59: a new customer signs up in the web app and launches a
+// campaign, with nothing done outside the browser, in each browser the
+// config names. The local stack's fake sender
 // writes mail to MAIL_CAPTURE_DIR, where the test reads the sign-in code and
 // checks the campaign went out. Contacts are on SES's mailbox simulator, so
 // the run sends nothing to anyone.
 
 const mailDir = process.env.MAIL_CAPTURE_DIR ?? resolve(import.meta.dirname, "../../.local/mail");
-const run = `${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
-const owner = `e2e-web-${run}@example.com`;
-const domain = `e2e-web-${run}.example.com`;
-const contacts = [`success+web-${run}@simulator.amazonses.com`, `bounce+web-${run}@simulator.amazonses.com`];
+
+/** Names for one run in one browser, so the browsers don't share an account. */
+function names(browser: string) {
+  const run = `${browser}-${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
+  return {
+    run,
+    owner: `e2e-web-${run}@example.com`,
+    domain: `e2e-web-${run}.example.com`,
+    contacts: [`success+web-${run}@simulator.amazonses.com`, `bounce+web-${run}@simulator.amazonses.com`],
+  };
+}
+type Names = ReturnType<typeof names>;
 
 /** The newest captured message to `to` whose text has `has`, or undefined. */
 function mailTo(to: string, has: string): string | undefined {
@@ -36,7 +46,7 @@ async function waitForMail(to: string, has: string): Promise<string> {
   return found!;
 }
 
-async function signUp(page: Page) {
+async function signUp(page: Page, { run, owner }: Names) {
   await page.goto("/signup");
   await page.getByLabel("Email", { exact: true }).fill(owner);
   await page.getByLabel("Account name", { exact: true }).fill(`E2E Web ${run}`);
@@ -51,9 +61,13 @@ async function signUp(page: Page) {
   await expect(page.getByRole("navigation", { name: "Main" })).toBeVisible();
 }
 
-test("sign up, set up, design, test and launch a campaign", async ({ page }) => {
+test("sign up, set up, design, test and launch a campaign", async ({ page }, testInfo) => {
+  const n = names(testInfo.project.name);
+  const { run, owner, domain, contacts } = n;
   const started = Date.now();
-  await test.step("sign up with the emailed code", () => signUp(page));
+  let emailPath = "";
+  let campaignPath = "";
+  await test.step("sign up with the emailed code", () => signUp(page, n));
 
   await test.step("add and verify a sending domain", async () => {
     await page.goto("/domains");
@@ -92,6 +106,7 @@ test("sign up, set up, design, test and launch a campaign", async ({ page }) => 
     await page.getByLabel("New email").fill(`Spring menu ${run}`);
     await page.getByRole("button", { name: "Create and design" }).click();
     await expect(page.getByRole("group", { name: "Footer block" })).toBeVisible();
+    emailPath = new URL(page.url()).pathname;
     await page.getByRole("button", { name: "Add heading" }).click();
     await page.getByRole("button", { name: "Add text" }).click();
     await expect(page.getByRole("group", { name: "Text block" })).toBeVisible();
@@ -110,6 +125,7 @@ test("sign up, set up, design, test and launch a campaign", async ({ page }) => 
     await form.getByLabel("All subscribed contacts").check();
     await form.getByRole("button", { name: "Save draft" }).click();
     await expect(page.getByRole("button", { name: "Send test" })).toBeVisible();
+    campaignPath = new URL(page.url()).pathname;
     await page.getByRole("button", { name: "Send test" }).click();
     await expect(page.getByText(`Sent to ${owner}`)).toBeVisible();
     await waitForMail(owner, `Spring is here ${run}`);
@@ -123,5 +139,46 @@ test("sign up, set up, design, test and launch a campaign", async ({ page }) => 
     for (const email of contacts) await waitForMail(email, `Spring is here ${run}`);
   });
 
-  console.log(`Web signup to launched campaign: ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  console.log(`${testInfo.project.name}: signup to launched campaign in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+
+  // MG-59: axe on every main page, filled in by the flow above, in one
+  // browser (the rules don't depend on the engine). Unlike the unit tests'
+  // axe check, this one sees real layout, so it checks color contrast too.
+  if (testInfo.project.name !== "chromium") return;
+  await test.step("axe finds nothing on the main pages", async () => {
+    const signedIn = [
+      "/",
+      "/emails",
+      emailPath,
+      "/campaigns",
+      campaignPath,
+      `${campaignPath}/report`,
+      "/campaigns/new",
+      "/contacts",
+      "/contacts/import",
+      "/tags",
+      "/forms",
+      "/domains",
+      "/api-keys",
+      "/credits",
+      "/settings",
+    ];
+    const signedOut = ["/sign-in", "/signup", "/terms", "/privacy", "/anti-spam", "/dpa"];
+    const found: string[] = [];
+    const check = async (path: string) => {
+      await page.goto(path);
+      await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+      const result = await new AxeBuilder({ page }).withTags(axeTags).exclude("iframe").analyze();
+      for (const v of result.violations) {
+        found.push(`${path}: ${v.id} (${v.impact}) ${v.help}: ${v.nodes.map((node) => node.target.join(" ")).join(", ")}`);
+      }
+    };
+    for (const path of signedIn) await check(path);
+    await page.context().clearCookies();
+    for (const path of signedOut) await check(path);
+    expect(found, "accessibility violations").toEqual([]);
+  });
 });
+
+// WCAG 2.2 AA, as far as axe checks it, plus axe's best practices.
+const axeTags = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"];

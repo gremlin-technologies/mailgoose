@@ -88,11 +88,13 @@ handled end to end with no AWS. CI runs both on every pull request.
 ```sh
 make web dev    # in one terminal: build the app, then run the stack
 make e2e-cli    # the CLI, from an API key to a delivered campaign, an unsubscribe and a bounce
-make e2e-web    # the web app in Chromium (Playwright), from sign-up to a launched campaign
+make e2e-web    # the web app in Chromium, Firefox, WebKit and Edge (Playwright), from sign-up to a launched campaign, then axe on every main page
 ```
 
-`make e2e-web` needs Playwright's Chromium once: `cd web && npx playwright
-install chromium`.
+`make e2e-web` needs Playwright's browsers once: `cd web && npx playwright
+install chromium firefox webkit msedge`. `E2E_BROWSERS=chromium make e2e-web`
+runs one. The web unit tests also run axe on every rendered page, so an
+accessibility violation fails `npm test`.
 
 ### Changing the API
 
