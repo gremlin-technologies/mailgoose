@@ -51,6 +51,9 @@ var (
 	// ErrNotReady means a double opt-in form whose account has no From on a
 	// verified sending domain, so no confirmation email can go.
 	ErrNotReady = errors.New("the form can't send confirmation emails yet")
+	// ErrFormClosed means a form whose account can't take signups now: it's
+	// suspended (MG-65).
+	ErrFormClosed = errors.New("the form isn't taking signups")
 	// ErrBadToken means a confirm link that isn't one, or was cut short.
 	ErrBadToken = errors.New("confirm link not valid")
 	// ErrNotFound means a confirm link whose signup is gone: the contact
@@ -133,6 +136,9 @@ func (s *Service) Submit(ctx context.Context, formID string, sub Submission, bas
 		return nil, ErrFormNotFound
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := s.accepting(ctx, f.AccountID); err != nil {
 		return nil, err
 	}
 	res := &Result{Form: f}
@@ -479,4 +485,17 @@ func (s *Service) inTx(ctx context.Context, f func(pgx.Tx) error) error {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// accepting returns ErrFormClosed when the account can't take signups now.
+func (s *Service) accepting(ctx context.Context, accountID string) error {
+	var suspended bool
+	if err := s.DB.QueryRow(ctx, `SELECT suspended_at IS NOT NULL FROM accounts WHERE id = $1`,
+		accountID).Scan(&suspended); err != nil {
+		return err
+	}
+	if suspended {
+		return ErrFormClosed
+	}
+	return nil
 }

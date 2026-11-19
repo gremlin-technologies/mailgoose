@@ -2,11 +2,12 @@ import type { ReactNode } from "react";
 import { Navigate, useLocation, useSearchParams } from "react-router";
 
 import { AuthCard, FailureNotice, Loading } from "./components";
+import { Suspended } from "./pages/Suspended";
 import { safeNext, useSession } from "./session";
 
 /**
  * Sends people who aren't signed in to sign in, then back here (but not after
- * they sign out themselves).
+ * they sign out themselves). A suspended account gets its suspension page.
  */
 export function RequireSession({ children }: { children: ReactNode }) {
   const { state, refresh } = useSession();
@@ -22,6 +23,8 @@ export function RequireSession({ children }: { children: ReactNode }) {
     case "error":
       return <SessionError failure={state.failure} retry={refresh} />;
     case "signed-in":
+      // A suspended account sees only why, and its data to download (MG-65).
+      if (state.session.account.suspension) return <Suspended session={state.session} />;
       return children;
   }
 }

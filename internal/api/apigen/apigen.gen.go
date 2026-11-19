@@ -73,13 +73,16 @@ func (e AccountSettingsPlan) Valid() bool {
 const (
 	AdminActionActionApproveImport AdminActionAction = "approve_import"
 	AdminActionActionAutoPause     AdminActionAction = "auto_pause"
+	AdminActionActionAutoSuspend   AdminActionAction = "auto_suspend"
 	AdminActionActionGrantAdmin    AdminActionAction = "grant_admin"
 	AdminActionActionGrantCredits  AdminActionAction = "grant_credits"
 	AdminActionActionPause         AdminActionAction = "pause"
 	AdminActionActionRevokeAdmin   AdminActionAction = "revoke_admin"
 	AdminActionActionStopCampaign  AdminActionAction = "stop_campaign"
+	AdminActionActionSuspend       AdminActionAction = "suspend"
 	AdminActionActionThrottle      AdminActionAction = "throttle"
 	AdminActionActionUnpause       AdminActionAction = "unpause"
+	AdminActionActionUnsuspend     AdminActionAction = "unsuspend"
 )
 
 // Valid indicates whether the value is a known member of the AdminActionAction enum.
@@ -88,6 +91,8 @@ func (e AdminActionAction) Valid() bool {
 	case AdminActionActionApproveImport:
 		return true
 	case AdminActionActionAutoPause:
+		return true
+	case AdminActionActionAutoSuspend:
 		return true
 	case AdminActionActionGrantAdmin:
 		return true
@@ -99,9 +104,13 @@ func (e AdminActionAction) Valid() bool {
 		return true
 	case AdminActionActionStopCampaign:
 		return true
+	case AdminActionActionSuspend:
+		return true
 	case AdminActionActionThrottle:
 		return true
 	case AdminActionActionUnpause:
+		return true
+	case AdminActionActionUnsuspend:
 		return true
 	default:
 		return false
@@ -1129,6 +1138,9 @@ type Account struct {
 	Name      string        `json:"name"`
 	Plan      AccountPlan   `json:"plan"`
 	Status    AccountStatus `json:"status"`
+
+	// Suspension Set while the account is suspended; null otherwise.
+	Suspension *AccountSuspension `json:"suspension"`
 }
 
 // AccountPlan defines model for Account.Plan.
@@ -1179,6 +1191,16 @@ type AccountSettings struct {
 
 // AccountSettingsPlan defines model for AccountSettings.Plan.
 type AccountSettingsPlan string
+
+// AccountSuspension Why and since when the account is suspended. Nothing is sent from it
+// and its forms take no signups. Its owner appeals by replying to the
+// email about it.
+type AccountSuspension struct {
+	// ExportUntil Until when the owner can still sign in to export contacts and campaigns.
+	ExportUntil time.Time `json:"export_until"`
+	Reason      string    `json:"reason"`
+	SuspendedAt time.Time `json:"suspended_at"`
+}
 
 // AddEmailBlockRequest defines model for AddEmailBlockRequest.
 type AddEmailBlockRequest struct {
@@ -1233,6 +1255,13 @@ type AdminAccount struct {
 	SendingPausedReason *string    `json:"sending_paused_reason"`
 	Status              string     `json:"status"`
 
+	// SuspendedAt When the account was suspended (MG-65); null when it isn't.
+	SuspendedAt *time.Time `json:"suspended_at"`
+
+	// SuspendedBy The admin's address, `mailgoosed`, or `automatic`.
+	SuspendedBy     *string `json:"suspended_by"`
+	SuspendedReason *string `json:"suspended_reason"`
+
 	// Throttles Its early-warning throttles in the last 30 days, newest first.
 	Throttles []AdminThrottle `json:"throttles"`
 }
@@ -1253,6 +1282,13 @@ type AdminAccountSummary struct {
 	SendingPausedAt     *time.Time `json:"sending_paused_at"`
 	SendingPausedReason *string    `json:"sending_paused_reason"`
 	Status              string     `json:"status"`
+
+	// SuspendedAt When the account was suspended (MG-65); null when it isn't.
+	SuspendedAt *time.Time `json:"suspended_at"`
+
+	// SuspendedBy The admin's address, `mailgoosed`, or `automatic`.
+	SuspendedBy     *string `json:"suspended_by"`
+	SuspendedReason *string `json:"suspended_reason"`
 }
 
 // AdminAction defines model for AdminAction.
@@ -3164,6 +3200,9 @@ type RequestTooLarge = Error
 // ServiceUnavailable defines model for ServiceUnavailable.
 type ServiceUnavailable = Error
 
+// SuspensionConflict defines model for SuspensionConflict.
+type SuspensionConflict = Error
+
 // TagConflict defines model for TagConflict.
 type TagConflict = Error
 
@@ -3385,8 +3424,14 @@ type GrantCreditsJSONRequestBody = GrantCreditsRequest
 // PauseAccountJSONRequestBody defines body for PauseAccount for application/json ContentType.
 type PauseAccountJSONRequestBody = AdminReasonRequest
 
+// SuspendAccountJSONRequestBody defines body for SuspendAccount for application/json ContentType.
+type SuspendAccountJSONRequestBody = AdminReasonRequest
+
 // UnpauseAccountJSONRequestBody defines body for UnpauseAccount for application/json ContentType.
 type UnpauseAccountJSONRequestBody = AdminReasonRequest
+
+// UnsuspendAccountJSONRequestBody defines body for UnsuspendAccount for application/json ContentType.
+type UnsuspendAccountJSONRequestBody = AdminReasonRequest
 
 // StopCampaignJSONRequestBody defines body for StopCampaign for application/json ContentType.
 type StopCampaignJSONRequestBody = AdminReasonRequest
@@ -4221,9 +4266,15 @@ type ServerInterface interface {
 	// PauseAccount Pause an account's sending (admin)
 	// (POST /v1/admin/accounts/{account_id}/pause)
 	PauseAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// SuspendAccount Suspend an account (admin)
+	// (POST /v1/admin/accounts/{account_id}/suspend)
+	SuspendAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
 	// UnpauseAccount Let an account send again (admin)
 	// (POST /v1/admin/accounts/{account_id}/unpause)
 	UnpauseAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// UnsuspendAccount Lift a suspension (admin)
+	// (POST /v1/admin/accounts/{account_id}/unsuspend)
+	UnsuspendAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
 	// ListAdminActions The admin log (admin)
 	// (GET /v1/admin/actions)
 	ListAdminActions(w http.ResponseWriter, r *http.Request, params ListAdminActionsParams)
@@ -4694,6 +4745,32 @@ func (siw *ServerInterfaceWrapper) PauseAccount(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// SuspendAccount operation middleware
+func (siw *ServerInterfaceWrapper) SuspendAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SuspendAccount(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // UnpauseAccount operation middleware
 func (siw *ServerInterfaceWrapper) UnpauseAccount(w http.ResponseWriter, r *http.Request) {
 
@@ -4711,6 +4788,32 @@ func (siw *ServerInterfaceWrapper) UnpauseAccount(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UnpauseAccount(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnsuspendAccount operation middleware
+func (siw *ServerInterfaceWrapper) UnsuspendAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnsuspendAccount(w, r, accountId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7222,6 +7325,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/accounts/{account_id}", wrapper.GetAdminAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/pause", wrapper.PauseAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/unpause", wrapper.UnpauseAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/suspend", wrapper.SuspendAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/unsuspend", wrapper.UnsuspendAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/credits", wrapper.GrantCredits)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/campaigns/{campaign_id}/stop", wrapper.StopCampaign)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/imports/{import_id}/approve", wrapper.ApproveImport)

@@ -39,6 +39,9 @@ const (
 	ActionApproveImport = "approve_import"
 	ActionGrantCredits  = "grant_credits"
 	ActionThrottle      = "throttle"
+	ActionSuspend       = sending.ActionSuspend
+	ActionUnsuspend     = sending.ActionUnsuspend
+	ActionAutoSuspend   = sending.ActionAutoSuspend
 )
 
 // Limits on what an admin sends.
@@ -56,6 +59,10 @@ var (
 	ErrNotHeld = errors.New("the import isn't held")
 	// ErrNoUser is an address with no mailgoose user.
 	ErrNoUser = errors.New("no user with that address")
+	// ErrSuspended is an account that's suspended already.
+	ErrSuspended = errors.New("the account is suspended already")
+	// ErrNotSuspended is unsuspending an account that isn't suspended.
+	ErrNotSuspended = errors.New("the account isn't suspended")
 )
 
 // InputError is a reason or amount that can't be used.
@@ -79,7 +86,10 @@ type Service struct {
 	Sending *sending.Service
 	// Limits are the send limits, for showing an account's.
 	Limits sending.Limits
-	Log    *slog.Logger
+	// Alert tells a suspended account's owner and the operators (MG-65);
+	// nil tells no one.
+	Alert *sending.OpsAlert
+	Log   *slog.Logger
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }
@@ -202,13 +212,19 @@ type AccountSummary struct {
 	OwnerEmail  *string    `json:"owner_email"`
 	PausedAt    *time.Time `json:"sending_paused_at"`
 	PauseReason *string    `json:"sending_paused_reason"`
-	CreatedAt   time.Time  `json:"created_at"`
+	// Suspension (MG-65): when, why and by whom; all nil when it isn't.
+	SuspendedAt     *time.Time `json:"suspended_at"`
+	SuspendedReason *string    `json:"suspended_reason"`
+	SuspendedBy     *string    `json:"suspended_by"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
-const summaryColumns = `a.id, a.name, a.status, a.plan, u.email, a.sending_paused_at, a.sending_paused_reason, a.created_at`
+const summaryColumns = `a.id, a.name, a.status, a.plan, u.email, a.sending_paused_at, a.sending_paused_reason,
+	a.suspended_at, a.suspended_reason, a.suspended_by, a.created_at`
 
 func scanSummary(row pgx.Row, a *AccountSummary) error {
-	return row.Scan(&a.ID, &a.Name, &a.Status, &a.Plan, &a.OwnerEmail, &a.PausedAt, &a.PauseReason, &a.CreatedAt)
+	return row.Scan(&a.ID, &a.Name, &a.Status, &a.Plan, &a.OwnerEmail, &a.PausedAt, &a.PauseReason,
+		&a.SuspendedAt, &a.SuspendedReason, &a.SuspendedBy, &a.CreatedAt)
 }
 
 // FindAccounts finds accounts by id, the owner's address, the account's
@@ -427,6 +443,71 @@ func (s *Service) Unpause(ctx context.Context, actor Actor, accountID, reason st
 			return billing.PauseOverdue(ctx, tx, accountID, deref(subStatus), now)
 		}
 		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.GetAccount(ctx, accountID)
+}
+
+// Suspend suspends an account (MG-65): see sending.Suspend. Its keys and
+// CLI logins are revoked, its web sessions end, its live campaigns stop,
+// and its owner and the operators get an email. Its credits stay as they
+// are. reason is logged and shown to the account as why.
+func (s *Service) Suspend(ctx context.Context, actor Actor, accountID, reason string) (*Account, error) {
+	reason, err := cleanReason(reason)
+	if err != nil {
+		return nil, err
+	}
+	var sus *sending.Suspension
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		sus, err = sending.Suspend(ctx, tx, accountID, sending.Suspender{UserID: actor.UserID, Email: actor.Email}, reason, nil, s.now())
+		switch {
+		case errors.Is(err, sending.ErrNoAccount):
+			return ErrNotFound
+		case errors.Is(err, sending.ErrAlreadySuspended):
+			return ErrSuspended
+		}
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	s.log().InfoContext(ctx, "admin action", "action", ActionSuspend, "actor", actor.Email, "account_id", accountID,
+		"reason", reason, "admin_action_id", sus.ActionID)
+	if s.Alert != nil {
+		s.Alert.Suspended(ctx, *sus)
+	}
+	return s.GetAccount(ctx, accountID)
+}
+
+// Unsuspend lets a suspended account sign in and send again. Its API keys
+// and CLI logins stay revoked: the owner makes new ones. A pause stays
+// until it's lifted on its own (Unpause).
+func (s *Service) Unsuspend(ctx context.Context, actor Actor, accountID, reason string) (*Account, error) {
+	reason, err := cleanReason(reason)
+	if err != nil {
+		return nil, err
+	}
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		now := s.now()
+		var was, by *string
+		err := tx.QueryRow(ctx, `
+			UPDATE accounts a SET suspended_at = NULL, suspended_reason = NULL, suspended_by = NULL, updated_at = $2
+			FROM accounts old WHERE a.id = $1 AND old.id = a.id
+			RETURNING old.suspended_reason, old.suspended_by`, accountID, now).Scan(&was, &by)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if was == nil {
+			return ErrNotSuspended
+		}
+		_, err = s.record(ctx, tx, actor, ActionUnsuspend, &accountID, nil, reason,
+			map[string]any{"suspended_reason": was, "suspended_by": by}, now)
+		return err
 	})
 	if err != nil {
 		return nil, err

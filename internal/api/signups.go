@@ -213,6 +213,8 @@ func (s *Server) writeSubmitError(w http.ResponseWriter, r *http.Request, err er
 	switch {
 	case errors.Is(err, signups.ErrFormNotFound):
 		writeSignupError(w, r, formNotFound)
+	case errors.Is(err, signups.ErrFormClosed):
+		writeSignupError(w, r, Forbidden("form_closed", "This form isn't taking signups right now."))
 	case errors.Is(err, signups.ErrBadStamp):
 		writeSignupError(w, r, BadRequest("form_code_incomplete", "This form's code is incomplete, so it can't take signups.").
 			WithHint("The site's owner should paste the form's embed code again, from `mailgoose form embed <form-id>`."))

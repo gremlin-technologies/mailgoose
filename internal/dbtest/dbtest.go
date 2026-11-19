@@ -66,7 +66,8 @@ func New(t testing.TB) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 
-	m, err := db.NewMigrator(pool)
+	// The schema is this test's alone, so it needs no migration lock.
+	m, err := db.NewUnlockedMigrator(pool)
 	if err != nil {
 		t.Fatal(err)
 	}

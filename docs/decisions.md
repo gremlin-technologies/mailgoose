@@ -4,6 +4,31 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-19: Account suspension (MG-65, reversible defaults)
+
+Picked while building MG-65; easy to change. Suspension leaves credits alone,
+as the ticket says.
+
+- **What a suspended account can still do.** Its owner can sign in to the web
+  app (new sign-ins work; existing sessions end), which shows only a page with
+  why, how to appeal and two downloads: contacts as CSV and campaigns as JSON.
+  For 30 days the API answers its session's GET requests, so the export works;
+  after that only who's signed in, the account and signing out. Everything
+  else is 403 `account_suspended`. API keys and CLI logins are revoked, and a
+  CLI login (code or device) is refused while it's suspended.
+- **Campaigns.** Scheduled and sending campaigns are cancelled, the same as an
+  admin stopping them: the unsent reservations come back. A batch on its way
+  stops before its next email. Forms answer 403 `form_closed`.
+- **Unsuspend** restores sign-in and sending only. Keys stay revoked, stopped
+  campaigns stay stopped, and a pause stays until `mailgoose admin unpause`.
+- **Automatic suspension** happens in the same transaction as the second
+  automatic pause in 30 days, counted from the `auto_pause` log. Its actor is
+  `automatic`, logged as `auto_suspend`. Other triggers call the same
+  `sending.Suspend`.
+- **Appeals** go by replying to the suspension email, whose Reply-To is
+  `ABUSE_EMAIL` (default `abuse@` the system sending domain). The operators
+  get a copy at `OPS_ALERT_EMAIL`.
+
 ## 2026-11-19: Early-warning throttle (MG-61, reversible defaults)
 
 Picked while building MG-61; each is easy to change.
@@ -1696,3 +1721,6 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - Should pack prices include sales tax, or have it added at checkout?
   (Default: added on top, which is usual for US software. See 2026-11-18,
   MG-39.)
+- Which address takes suspension appeals? (Default: `ABUSE_EMAIL`, else
+  `abuse@` the system sending domain, which has to be a real mailbox or
+  alias. MG-65.)

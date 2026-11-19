@@ -103,13 +103,20 @@ func throttle(ctx context.Context, tx pgx.Tx, campaignID string, r Rates, now ti
 		return Health{}, err
 	}
 	// The account row is locked so two campaigns' events counting its
-	// throttles at once can't both miss the pause.
+	// throttles at once can't both miss the pause. The count is a statement
+	// of its own, after the lock: under READ COMMITTED a statement's snapshot
+	// is taken before it waits for a lock, so a count in the locking
+	// statement wouldn't see a throttle committed while it waited.
+	if err := tx.QueryRow(ctx, `
+		SELECT a.name, coalesce((SELECT u.email FROM users u WHERE u.account_id = a.id ORDER BY u.created_at LIMIT 1), '')
+		FROM accounts a WHERE a.id = $1 FOR UPDATE OF a`, t.AccountID).
+		Scan(&t.AccountName, &t.OwnerEmail); err != nil {
+		return Health{}, err
+	}
 	var earlier int
 	if err := tx.QueryRow(ctx, `
-		SELECT a.name, coalesce((SELECT u.email FROM users u WHERE u.account_id = a.id ORDER BY u.created_at LIMIT 1), ''),
-			(SELECT count(*) FROM account_throttles t WHERE t.account_id = a.id AND t.created_at > $2)
-		FROM accounts a WHERE a.id = $1 FOR UPDATE OF a`, t.AccountID, now.Add(-ThrottleWindow)).
-		Scan(&t.AccountName, &t.OwnerEmail, &earlier); err != nil {
+		SELECT count(*) FROM account_throttles WHERE account_id = $1 AND created_at > $2`,
+		t.AccountID, now.Add(-ThrottleWindow)).Scan(&earlier); err != nil {
 		return Health{}, err
 	}
 	if earlier >= ThrottlesBeforePause {

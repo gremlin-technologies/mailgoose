@@ -149,3 +149,27 @@ func TestDeviceLoginDeniedExpiredUnknown(t *testing.T) {
 		t.Errorf("%d device logins left, want 1", n)
 	}
 }
+
+// A login approved before the account was suspended gives no token (MG-65),
+// and a suspended account's sessions and keys say so.
+func TestDeviceLoginSuspendedAccount(t *testing.T) {
+	h, sess := deviceSetup(t)
+	ctx := context.Background()
+	start, err := h.svc.StartDeviceLogin(ctx, "laptop")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.svc.DecideDeviceLogin(ctx, start.UserCode, sess.Account.ID, sess.User.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.Exec(ctx, `UPDATE accounts SET suspended_at = now(), suspended_reason = 'Spam.', suspended_by = 'test'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.PollDeviceLogin(ctx, start.DeviceCode); !errors.Is(err, ErrDeviceLoginDenied) {
+		t.Errorf("poll: %v", err)
+	}
+	cur, err := h.svc.SessionByToken(ctx, sess.Token)
+	if err != nil || cur.Account.Suspension == nil || cur.Account.Suspension.Reason != "Spam." {
+		t.Errorf("session: %+v, %v", cur, err)
+	}
+}

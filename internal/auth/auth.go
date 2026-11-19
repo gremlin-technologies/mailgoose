@@ -94,12 +94,36 @@ type SignUpInput struct {
 
 // Account is an account as the API shows it.
 type Account struct {
-	ID        string
-	Name      string
-	Status    string
-	Plan      string
-	CreatedAt time.Time
+	ID     string
+	Name   string
+	Status string
+	Plan   string
+	// Suspension is set while the account is suspended (MG-65).
+	Suspension *Suspension
+	CreatedAt  time.Time
 }
+
+// Suspension is why and since when an account is suspended.
+type Suspension struct {
+	At     time.Time
+	Reason string
+}
+
+// suspension reads an account's suspended_at and suspended_reason.
+func suspension(at *time.Time, reason *string) *Suspension {
+	if at == nil {
+		return nil
+	}
+	s := &Suspension{At: at.UTC()}
+	if reason != nil {
+		s.Reason = *reason
+	}
+	return s
+}
+
+// ErrSuspended is a suspended account asking for a CLI login (MG-65): its
+// owner may only sign in to the web app.
+var ErrSuspended = errors.New("the account is suspended")
 
 // User is a person who signs in.
 type User struct {
@@ -316,6 +340,9 @@ func (s *Service) VerifyForCLI(ctx context.Context, rawEmail, code, clientName s
 	name = truncate(name, maxClientName)
 	var out *DeviceLoginToken
 	_, err := s.verify(ctx, rawEmail, code, func(tx pgx.Tx, sess *Session, _ time.Time) error {
+		if sess.Account.Suspension != nil {
+			return ErrSuspended
+		}
 		k, err := s.insertSecret(ctx, tx, sess.Account.ID, sess.User.ID, KindCLIToken, name, ScopeFull, prefixCLI)
 		if err != nil {
 			return err
@@ -367,15 +394,17 @@ func (s *Service) verify(ctx context.Context, rawEmail, code string, finish func
 	}
 
 	var (
-		codeID     string
-		salt, hash []byte
-		attempts   int
-		sess       Session
+		codeID          string
+		salt, hash      []byte
+		attempts        int
+		sess            Session
+		suspendedAt     *time.Time
+		suspendedReason *string
 	)
 	err = tx.QueryRow(ctx, `
 		SELECT c.id, c.code_salt, c.code_hash, c.attempts,
 		       u.id, u.email, u.created_at,
-		       a.id, a.name, a.status, a.plan, a.created_at
+		       a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason
 		FROM auth_codes c
 		JOIN users u ON u.id = c.user_id
 		JOIN accounts a ON a.id = u.account_id
@@ -384,7 +413,9 @@ func (s *Service) verify(ctx context.Context, rawEmail, code string, finish func
 		LIMIT 1
 		FOR UPDATE OF c`, email, now).Scan(&codeID, &salt, &hash, &attempts,
 		&sess.User.ID, &sess.User.Email, &sess.User.CreatedAt,
-		&sess.Account.ID, &sess.Account.Name, &sess.Account.Status, &sess.Account.Plan, &sess.Account.CreatedAt)
+		&sess.Account.ID, &sess.Account.Name, &sess.Account.Status, &sess.Account.Plan, &sess.Account.CreatedAt,
+		&suspendedAt, &suspendedReason)
+	sess.Account.Suspension = suspension(suspendedAt, suspendedReason)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Spend the same time as a real check so the answer's timing doesn't
 		// say whether the address has a code.

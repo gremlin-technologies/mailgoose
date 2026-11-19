@@ -87,12 +87,13 @@ func approvedImport(t *testing.T, h http.Handler) {
 	}
 }
 
-// adminPath is a request to path with ACCOUNT, CAMPAIGN and IMPORT
-// replaced by the test's admin account, campaign and held import, or ids
-// that match nothing.
+// adminPath is a request to path with ACCOUNT, CAMPAIGN, IMPORT and TARGET
+// replaced by the test's admin account, campaign, held import and customer
+// account (targetAccount), or ids that match nothing.
 func adminPath(method, path, body string) func(*testing.T) *http.Request {
 	return func(t *testing.T) *http.Request {
-		for word, m := range map[string]*sync.Map{"ACCOUNT": &adminAccounts, "CAMPAIGN": &addedCampaigns, "IMPORT": &heldImports} {
+		for word, m := range map[string]*sync.Map{"ACCOUNT": &adminAccounts, "CAMPAIGN": &addedCampaigns, "IMPORT": &heldImports,
+			"TARGET": &targetAccounts} {
 			id := noSuchID
 			if v, ok := m.Load(t); ok {
 				id = v.(string)

@@ -126,6 +126,20 @@ func TestSystemSendingDomainDefault(t *testing.T) {
 	}
 }
 
+func TestAbuseEmail(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || cfg.AbuseEmail != "abuse@mail.localhost" {
+		t.Fatalf("default = %q, %v", cfg.AbuseEmail, err)
+	}
+	cfg, err = load(env(map[string]string{"ABUSE_EMAIL": " appeals@example.com "}))
+	if err != nil || cfg.AbuseEmail != "appeals@example.com" {
+		t.Fatalf("set = %q, %v", cfg.AbuseEmail, err)
+	}
+	if _, err := load(env(map[string]string{"ABUSE_EMAIL": "appeals"})); err == nil {
+		t.Fatal("ABUSE_EMAIL without @ loaded")
+	}
+}
+
 func TestWebDirSetting(t *testing.T) {
 	cfg, err := load(env(nil))
 	if err != nil || cfg.WebDir != "" {

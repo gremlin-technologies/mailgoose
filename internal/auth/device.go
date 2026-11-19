@@ -199,13 +199,23 @@ func (s *Service) PollDeviceLogin(ctx context.Context, deviceCode string) (*Devi
 
 		// Approved: give out the token, once.
 		t := &DeviceLoginToken{}
+		var suspendedAt *time.Time
+		var suspendedReason *string
 		if err := tx.QueryRow(ctx, `
-			SELECT a.id, a.name, a.status, a.plan, a.created_at, u.id, u.email, u.created_at
+			SELECT a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason, u.id, u.email, u.created_at
 			FROM accounts a JOIN users u ON u.account_id = a.id
 			WHERE a.id = $1 AND u.id = $2`, *accountID, *userID).Scan(
 			&t.Account.ID, &t.Account.Name, &t.Account.Status, &t.Account.Plan, &t.Account.CreatedAt,
-			&t.User.ID, &t.User.Email, &t.User.CreatedAt); err != nil {
+			&suspendedAt, &suspendedReason, &t.User.ID, &t.User.Email, &t.User.CreatedAt); err != nil {
 			return fmt.Errorf("read approver: %w", err)
+		}
+		// A suspended account gets no CLI login (MG-65).
+		if suspendedAt != nil {
+			if _, err := tx.Exec(ctx, `UPDATE device_logins SET status = 'denied' WHERE id = $1`, id); err != nil {
+				return err
+			}
+			outcome = ErrDeviceLoginDenied
+			return nil
 		}
 		name := clientName
 		if name == "" {
@@ -295,13 +305,16 @@ func (s *Service) Identity(ctx context.Context, accountID, userID string) (*Acco
 	var a Account
 	var u *User
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := tx.QueryRow(ctx, `SELECT id, name, status, plan, created_at FROM accounts WHERE id = $1`, accountID).
-			Scan(&a.ID, &a.Name, &a.Status, &a.Plan, &a.CreatedAt); err != nil {
+		var suspendedAt *time.Time
+		var suspendedReason *string
+		if err := tx.QueryRow(ctx, `SELECT id, name, status, plan, created_at, suspended_at, suspended_reason FROM accounts WHERE id = $1`, accountID).
+			Scan(&a.ID, &a.Name, &a.Status, &a.Plan, &a.CreatedAt, &suspendedAt, &suspendedReason); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrNoAccount
 			}
 			return err
 		}
+		a.Suspension = suspension(suspendedAt, suspendedReason)
 		if userID == "" {
 			return nil
 		}

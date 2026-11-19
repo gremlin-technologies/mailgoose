@@ -116,7 +116,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 
 	srv := &api.Server{Log: log, RateLimitPerMinute: cfg.RateLimitPerMinute, TrustedOrigins: cfg.WebOrigins,
 		// The API serves the web app (MG-41), so its public URL is the web app's.
-		WebURL: cfg.PublicBaseURL,
+		WebURL: cfg.PublicBaseURL, AbuseEmail: cfg.AbuseEmail,
 		// The email check fetches links, never private addresses.
 		Links: &emailcheck.HTTPLinks{}}
 	if cfg.WebDir != "" {
@@ -162,7 +162,11 @@ func serve(ctx context.Context, log *slog.Logger) error {
 			Limits: sendLimits(cfg)}
 		srv.Signups = &signups.Service{DB: pool, Forms: srv.Forms, Settings: &auth.Service{DB: pool},
 			Domains: srv.Domains, Mail: sender}
-		srv.Admin = &admin.Service{DB: pool, Sending: srv.Sending, Limits: sendLimits(cfg), Log: log.With("component", "admin")}
+		// A suspension emails the owner, with ABUSE_EMAIL for appeals, and
+		// OPS_ALERT_EMAIL.
+		srv.Admin = &admin.Service{DB: pool, Sending: srv.Sending, Limits: sendLimits(cfg), Log: log.With("component", "admin"),
+			Alert: &sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
+				To: cfg.OpsAlertEmail, Abuse: cfg.AbuseEmail, AppURL: cfg.PublicBaseURL, Log: log.With("component", "admin")}}
 		// Payments someone has to refund or cancel by hand go to OPS_ALERT_EMAIL.
 		srv.Billing.Alert = (&sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
 			To: cfg.OpsAlertEmail, Log: log.With("component", "billing")}).Notify
@@ -314,7 +318,7 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	}
 	// Deliveries, bounces and complaints from SES.
 	alert := &sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
-		To: cfg.OpsAlertEmail, Log: log.With("job", "health")}
+		To: cfg.OpsAlertEmail, Abuse: cfg.AbuseEmail, AppURL: cfg.PublicBaseURL, Log: log.With("job", "health")}
 	// Owners hear about throttles from notices@ (MG-61).
 	notices := &sending.Notices{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "notices@" + cfg.SystemSendingDomain},
 		NewDaily: cfg.NewAccountDailySendLimit, Ops: alert, Log: log.With("job", "health")}

@@ -201,6 +201,79 @@ func TestThirdThrottlePauses(t *testing.T) {
 	}
 }
 
+// TestThirdThrottleSeesConcurrentThrottle checks the count of earlier
+// throttles sees one another transaction commits while this one waits for
+// the account's lock.
+func TestThirdThrottleSeesConcurrentThrottle(t *testing.T) {
+	h := launchedHarness(t, 999)
+	ctx := context.Background()
+	h.markSent(t, h.now)
+	at := h.now.AddDate(0, 0, -20)
+	if _, err := h.db.Exec(ctx, `
+		INSERT INTO account_throttles (account_id, reason, created_at, until) VALUES ($1, 'earlier', $2, $3)`,
+		h.acc, at, at.Add(ThrottleFor)); err != nil {
+		t.Fatal(err)
+	}
+	h.eventsFor(t, "complaint", "abuse", 2, h.now)
+
+	// The first transaction locks the account and adds a second throttle,
+	// committing only once the health check is waiting on that lock.
+	first, err := h.db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = first.Rollback(ctx) }()
+	if _, err := first.Exec(ctx, `SELECT id FROM accounts WHERE id = $1 FOR UPDATE`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	at = h.now.AddDate(0, 0, -1)
+	if _, err := first.Exec(ctx, `
+		INSERT INTO account_throttles (account_id, reason, created_at, until) VALUES ($1, 'concurrent', $2, $3)`,
+		h.acc, at, at.Add(ThrottleFor)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan Health, 1)
+	go func() {
+		var out Health
+		err := pgx.BeginFunc(ctx, h.db, func(tx pgx.Tx) error {
+			var err error
+			out, err = CheckCampaign(ctx, tx, h.campaign.ID, h.now, Warning{})
+			return err
+		})
+		if err != nil {
+			t.Error(err)
+		}
+		done <- out
+	}()
+	// Wait until the check is blocked on the account's lock.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var waiting bool
+		if err := h.db.QueryRow(ctx, `
+			SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+				WHERE wait_event_type = 'Lock' AND query LIKE '%FROM accounts a WHERE a.id = $1 FOR UPDATE OF a%')`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the health check never waited for the account's lock")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := first.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got := <-done
+	if got.Throttle != nil || got.Pause == nil {
+		t.Fatalf("third throttle after a concurrent one: %+v", got)
+	}
+	if paused, _ := h.paused(t); !paused {
+		t.Error("account not paused")
+	}
+}
+
 func TestThrottledLimit(t *testing.T) {
 	h := launchedHarness(t, 999)
 	ctx := context.Background()

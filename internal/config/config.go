@@ -57,6 +57,10 @@ type Config struct {
 	// OpsAlertEmail gets an email when an account is paused automatically
 	// (CMP-6). Empty: the pause is only logged, as an error.
 	OpsAlertEmail string
+	// AbuseEmail is where a suspended account's owner appeals (MG-65): the
+	// suspension email's Reply-To. Default: abuse@ the system sending
+	// domain.
+	AbuseEmail string
 	// SESConfigurationSet must be passed on every send so events are recorded.
 	SESConfigurationSet string
 	// SystemSendingDomain is mailgoose's own sending domain (sign-in codes, double opt-in).
@@ -288,6 +292,14 @@ func load(getenv func(string) string) (Config, error) {
 	if cfg.SystemSendingDomain == "" && cfg.MailSender == "fake" {
 		cfg.SystemSendingDomain = "mail.localhost"
 	}
+	cfg.AbuseEmail = strings.TrimSpace(getenv("ABUSE_EMAIL"))
+	switch {
+	case cfg.AbuseEmail != "" && !strings.Contains(cfg.AbuseEmail, "@"):
+		errs = append(errs, errors.New("ABUSE_EMAIL must be an email address"))
+	case cfg.AbuseEmail == "" && cfg.SystemSendingDomain != "":
+		cfg.AbuseEmail = "abuse@" + cfg.SystemSendingDomain
+	}
+
 	cfg.MailCaptureDir = getenv("MAIL_CAPTURE_DIR")
 	switch {
 	case cfg.MailSender != "ses" && cfg.MailSender != "fake":

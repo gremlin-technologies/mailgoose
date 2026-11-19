@@ -363,6 +363,18 @@ func TestRefusals(t *testing.T) {
 		t.Errorf("problems %+v %v", ps, err)
 	}
 
+	// A suspended account's form takes nothing (MG-65), before checking
+	// anything else.
+	if _, err := h.db.Exec(ctx, `UPDATE accounts SET suspended_at = now(), suspended_reason = 'Spam.', suspended_by = 'test'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.submit(h.post("ann@example.com")); !errors.Is(err, ErrFormClosed) {
+		t.Errorf("suspended: %v", err)
+	}
+	if _, err := h.db.Exec(ctx, `UPDATE accounts SET suspended_at = NULL, suspended_reason = NULL, suspended_by = NULL`); err != nil {
+		t.Fatal(err)
+	}
+
 	// A closed account's form is gone.
 	if _, err := h.db.Exec(ctx, `UPDATE accounts SET status = 'closed'`); err != nil {
 		t.Fatal(err)

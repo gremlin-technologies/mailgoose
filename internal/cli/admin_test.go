@@ -15,7 +15,8 @@ const testAccountID = "3f1c2b4a-5d6e-4f70-8a9b-0c1d2e3f4a5b"
 func adminStub(t *testing.T, bodies map[string]map[string]any) *harness {
 	t.Helper()
 	account := `{"id":"` + testAccountID + `","name":"Pat's Bakery","status":"active","plan":"paid","owner_email":"pat@example.com",` +
-		`"sending_paused_at":"2026-11-18T10:00:00Z","sending_paused_reason":"Phishing reports","created_at":"2026-11-01T09:00:00Z",` +
+		`"sending_paused_at":"2026-11-18T10:00:00Z","sending_paused_reason":"Phishing reports",` +
+		`"suspended_at":"2026-11-19T08:00:00Z","suspended_reason":"Bought list","suspended_by":"staff@example.com","created_at":"2026-11-01T09:00:00Z",` +
 		`"daily_send_limit":2000,"send_limit":{"daily":1000,"usual":10000,"reason":"Lowered automatically.","lowered_until":"2026-11-25T10:00:00Z"},` +
 		`"throttles":[{"id":3,"campaign_id":"camp-1","reason":"Lowered automatically: 0.2% marked it as spam.","created_at":"2026-11-18T10:00:00Z","until":"2026-11-25T10:00:00Z"}],` +
 		`"contacts":1200,"credit_balance":9000,"last_30_days":{"sent":1000,"hard_bounces":12,"complaints":4},` +
@@ -61,10 +62,13 @@ func TestAdminCommands(t *testing.T) {
 		args []string
 		want []string
 	}{
-		{[]string{"admin", "find", "pat"}, []string{testAccountID, "Pat's Bakery", "pat@example.com", "paused"}},
-		{[]string{"admin", "account", testAccountID}, []string{"PAUSED", "Phishing reports", "Daily limit:  1000 (THROTTLED until 2026-11-25", "Throttled:    2026-11-18", "0.2% marked it as spam", "1000 sent, 12 hard bounces (1.20%), 4 complaints (0.40%)", "imp-1", "Bread week"}},
+		{[]string{"admin", "find", "pat"}, []string{testAccountID, "Pat's Bakery", "pat@example.com", "suspended"}},
+		{[]string{"admin", "account", testAccountID}, []string{"Suspended:", "by staff@example.com: Bought list", "PAUSED", "Phishing reports", "Daily limit:  1000 (THROTTLED until 2026-11-25", "Throttled:    2026-11-18", "0.2% marked it as spam", "1000 sent, 12 hard bounces (1.20%), 4 complaints (0.40%)", "imp-1", "Bread week"}},
 		{[]string{"admin", "pause", testAccountID, "--reason", "Phishing reports"}, []string{"Paused sending for Pat's Bakery"}},
 		{[]string{"admin", "unpause", testAccountID, "--reason", "Owner fixed the list"}, []string{"can send again"}},
+		{[]string{"admin", "suspend", testAccountID, "--reason", "Bought list"}, []string{"Suspended Pat's Bakery", "owner has been emailed"}},
+		{[]string{"admin", "unsuspend", testAccountID, "--reason", "Appeal accepted"}, []string{"no longer suspended", "still paused"}},
+		{[]string{"admin", "suspend", testAccountID, "--reason", "Bought list", "--json"}, []string{`"suspended_reason": "Bought list"`}},
 		{[]string{"admin", "stop-campaign", testAccountID, "--reason", "Phishing", "--yes"}, []string{"Stopped campaign \"Bread week\""}},
 		{[]string{"admin", "approve-import", testAccountID, "--reason", "Signup sheet"}, []string{"3000 contacts can be mailed"}},
 		{[]string{"admin", "grant-credits", testAccountID, "--amount", "5000", "--reason", "Outage"}, []string{"Granted 5000 credits", "now 14000"}},
@@ -86,6 +90,9 @@ func TestAdminCommands(t *testing.T) {
 	if b := bodies["/v1/admin/accounts/"+testAccountID+"/pause"]; b["reason"] != "Phishing reports" {
 		t.Errorf("pause body = %v", b)
 	}
+	if b := bodies["/v1/admin/accounts/"+testAccountID+"/unsuspend"]; b["reason"] != "Appeal accepted" {
+		t.Errorf("unsuspend body = %v", b)
+	}
 }
 
 func TestAdminNeedsReason(t *testing.T) {
@@ -93,6 +100,8 @@ func TestAdminNeedsReason(t *testing.T) {
 	for _, args := range [][]string{
 		{"admin", "pause", testAccountID},
 		{"admin", "unpause", testAccountID, "--reason", "  "},
+		{"admin", "suspend", testAccountID},
+		{"admin", "unsuspend", "pats-bakery", "--reason", "x"},
 		{"admin", "stop-campaign", testAccountID, "--yes"},
 		{"admin", "stop-campaign", testAccountID, "--reason", "x"},
 		{"admin", "approve-import", testAccountID},

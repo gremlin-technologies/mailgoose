@@ -43,6 +43,9 @@ type adminAccountSummary struct {
 	OwnerEmail          string     `json:"owner_email"`
 	SendingPausedAt     *time.Time `json:"sending_paused_at"`
 	SendingPausedReason *string    `json:"sending_paused_reason"`
+	SuspendedAt         *time.Time `json:"suspended_at"`
+	SuspendedReason     *string    `json:"suspended_reason"`
+	SuspendedBy         *string    `json:"suspended_by"`
 	CreatedAt           time.Time  `json:"created_at"`
 }
 
@@ -109,13 +112,14 @@ func (a *App) adminCmd() *cobra.Command {
 		Use:   "admin",
 		Short: "mailgoose staff tools (admins only)",
 		Long: `Tools for mailgoose staff: find an account, pause or unpause its
-sending, stop a campaign in flight, approve a held import and grant credits.
+sending, suspend or unsuspend it, stop a campaign in flight, approve a held
+import and grant credits.
 They need you signed in with ` + "`mailgoose login`" + ` as an admin; API keys
 are refused. Every action takes --reason and is logged with who did it
 (` + "`mailgoose admin log`" + `).`,
 	}
 	cmd.AddCommand(a.adminFindCmd(), a.adminAccountCmd(), a.adminPauseCmd(true), a.adminPauseCmd(false),
-		a.adminStopCmd(), a.adminApproveImportCmd(), a.adminGrantCmd(), a.adminLogCmd())
+		a.adminSuspendCmd(true), a.adminSuspendCmd(false), a.adminStopCmd(), a.adminApproveImportCmd(), a.adminGrantCmd(), a.adminLogCmd())
 	return cmd
 }
 
@@ -150,7 +154,10 @@ func (a *App) adminFindCmd() *cobra.Command {
 			fmt.Fprintln(tw, "ID\tNAME\tOWNER\tSTATUS\tPLAN\tSENDING")
 			for _, s := range page.Data {
 				sending := "on"
-				if s.SendingPausedAt != nil {
+				switch {
+				case s.SuspendedAt != nil:
+					sending = "suspended"
+				case s.SendingPausedAt != nil:
 					sending = "paused"
 				}
 				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.ID, s.Name, s.OwnerEmail, s.Status, s.Plan, sending)
@@ -171,6 +178,10 @@ func (a *App) printAdminAccount(acc adminAccount) {
 	fmt.Fprintf(w, "%s (%s)\n", acc.Name, acc.ID)
 	fmt.Fprintf(w, "Owner:        %s\n", acc.OwnerEmail)
 	fmt.Fprintf(w, "Status:       %s, %s plan, since %s\n", acc.Status, acc.Plan, acc.CreatedAt.Local().Format("2006-01-02"))
+	if acc.SuspendedAt != nil {
+		fmt.Fprintf(w, "Suspended:    since %s by %s: %s\n", acc.SuspendedAt.Local().Format("2006-01-02 15:04"),
+			ptrString(acc.SuspendedBy), ptrString(acc.SuspendedReason))
+	}
 	if acc.SendingPausedAt != nil {
 		reason := ""
 		if acc.SendingPausedReason != nil {
@@ -266,6 +277,61 @@ mid-send carry on where they stopped. --reason is logged.`
 		},
 	})
 	c.Flags().StringVar(&reason, "reason", "", "why (logged; a pause reason is shown to the account)")
+	return c
+}
+
+// adminSuspendCmd is `mailgoose admin suspend` and `unsuspend` (MG-65).
+func (a *App) adminSuspendCmd(suspend bool) *cobra.Command {
+	var reason string
+	op, use, short, long := "suspendAccount", "suspend", "Suspend an account for abuse",
+		`Suspends an account: every API key and CLI login is revoked, web
+sessions end, scheduled campaigns are cancelled and sending ones stop before
+their next batch, and its signup forms stop taking signups. The owner can
+still sign in to a read-only page that says why and exports their contacts
+and campaigns for 30 days, and gets an email saying why and how to appeal.
+Credits stay as they are. --reason is logged and shown to the account as
+why.`
+	if !suspend {
+		op, use, short, long = "unsuspendAccount", "unsuspend", "Lift an account's suspension",
+			`Lets a suspended account sign in and send again. Its API keys and CLI
+logins stay revoked, so the owner makes new ones; stopped campaigns stay
+stopped, and a pause stays until `+"`mailgoose admin unpause`"+`. --reason is
+logged.`
+	}
+	c := calls(op, &cobra.Command{
+		Use:     use + " <account-id> --reason <why>",
+		Short:   short,
+		Long:    long,
+		Example: `  mailgoose admin ` + use + ` 3f1c... --reason "Sent to a bought list after a warning"`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := adminIDArg(args[0], "an account")
+			if err != nil {
+				return err
+			}
+			if err := needReason(reason); err != nil {
+				return err
+			}
+			var acc adminAccount
+			if err := a.call(cmd.Context(), http.MethodPost, adminAccountPath(id)+"/"+use, map[string]any{"reason": reason}, &acc, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(acc)
+				return nil
+			}
+			if suspend {
+				fmt.Fprintf(a.Stdout, "Suspended %s (%s). The owner has been emailed.\n", acc.Name, acc.ID)
+			} else {
+				fmt.Fprintf(a.Stdout, "%s (%s) is no longer suspended. Its old API keys stay revoked.\n", acc.Name, acc.ID)
+				if acc.SendingPausedAt != nil {
+					fmt.Fprintln(a.Stdout, "Its sending is still paused: `mailgoose admin unpause` lifts that.")
+				}
+			}
+			return nil
+		},
+	})
+	c.Flags().StringVar(&reason, "reason", "", "why (logged; a suspension reason is shown to the account)")
 	return c
 }
 
