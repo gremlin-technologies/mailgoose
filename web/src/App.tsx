@@ -9,6 +9,7 @@ import { CampaignDetail } from "./campaigns/CampaignDetail";
 import { CampaignReport } from "./campaigns/Report";
 import { Campaigns, NewCampaign } from "./pages/Campaigns";
 import { ContactDetail, Contacts } from "./pages/Contacts";
+import { Dashboard } from "./pages/Dashboard";
 import { Device } from "./pages/Device";
 import { Designer } from "./designer/Designer";
 import { DomainDetail, Domains } from "./pages/Domains";
@@ -25,6 +26,7 @@ import { Tags } from "./pages/Tags";
 
 /** Pages that are built; the rest of the menu shows a placeholder. */
 const built: Record<string, ReactNode> = {
+  "/": <Dashboard />,
   "/emails": <Emails />,
   "/campaigns": <Campaigns />,
   "/forms": <Forms />,
@@ -73,7 +75,7 @@ export function AppRoutes() {
       >
         {navPages.map((p) =>
           p.path === "/" ? (
-            <Route key={p.path} index element={<Placeholder page={p} />} />
+            <Route key={p.path} index element={built[p.path] ?? <Placeholder page={p} />} />
           ) : (
             <Route key={p.path} path={built[p.path] ? p.path : `${p.path}/*`} element={built[p.path] ?? <Placeholder page={p} />} />
           ),

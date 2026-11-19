@@ -1461,3 +1461,55 @@ progress {
 .paused-banner {
   margin-bottom: 1rem;
 }
+
+/* Dashboard (MG-51) */
+.checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.checklist li {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.checklist li.next {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.checklist li.done .checklist-text a {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.checklist .tick {
+  flex: 0 0 1.5rem;
+  height: 1.5rem;
+  border: 2px solid var(--input-border);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.checklist li.done .tick {
+  border-color: var(--good-text);
+  background: var(--good-bg);
+  color: var(--good-text);
+}
+
+.checklist-text {
+  display: flex;
+  flex-direction: column;
+}
