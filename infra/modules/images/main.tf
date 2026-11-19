@@ -2,6 +2,11 @@
 # CloudFront can read, through origin access control. The API writes to it;
 # email clients load the images from the CloudFront address.
 #
+# With cdn = false there is no CloudFront at all: the bucket stays private
+# and the API serves each image itself, by redirecting to a short-lived
+# presigned URL (see base_url in outputs.tf). Staging runs that way while the
+# AWS account waits for CloudFront to be allowed.
+#
 # The CloudFront address is the distribution's own *.cloudfront.net name. A
 # custom name such as img.mailgoose.app would need an ACM certificate in
 # us-east-1, and the AWS project allows no Regional resources outside
@@ -58,6 +63,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
 }
 
 resource "aws_cloudfront_origin_access_control" "this" {
+  count = var.cdn ? 1 : 0
+
   name                              = "${var.name}-images"
   description                       = "CloudFront reads the ${var.name} image bucket"
   origin_access_control_origin_type = "s3"
@@ -68,14 +75,20 @@ resource "aws_cloudfront_origin_access_control" "this" {
 # AWS managed policies: cache by path only, for as long as the object's
 # Cache-Control says (the API sets a year), and standard security headers.
 data "aws_cloudfront_cache_policy" "optimized" {
+  count = var.cdn ? 1 : 0
+
   name = "Managed-CachingOptimized"
 }
 
 data "aws_cloudfront_response_headers_policy" "security" {
+  count = var.cdn ? 1 : 0
+
   name = "Managed-SecurityHeadersPolicy"
 }
 
 resource "aws_cloudfront_distribution" "this" {
+  count = var.cdn ? 1 : 0
+
   enabled         = true
   comment         = "${var.name} uploaded images"
   is_ipv6_enabled = true
@@ -85,7 +98,7 @@ resource "aws_cloudfront_distribution" "this" {
   origin {
     origin_id                = "images"
     domain_name              = aws_s3_bucket.this.bucket_regional_domain_name
-    origin_access_control_id = aws_cloudfront_origin_access_control.this.id
+    origin_access_control_id = aws_cloudfront_origin_access_control.this[0].id
   }
 
   default_cache_behavior {
@@ -94,8 +107,8 @@ resource "aws_cloudfront_distribution" "this" {
     allowed_methods            = ["GET", "HEAD"]
     cached_methods             = ["GET", "HEAD"]
     compress                   = false # images are already compressed
-    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized.id
-    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security.id
+    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized[0].id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security[0].id
   }
 
   restrictions {
@@ -109,22 +122,27 @@ resource "aws_cloudfront_distribution" "this" {
   }
 }
 
-# Only this distribution may read the bucket.
+# Only this distribution may read the bucket. Without it, nothing outside
+# the account may: the API's role reads through its own IAM policy.
 data "aws_iam_policy_document" "bucket" {
-  statement {
-    sid       = "CloudFrontReadsImages"
-    actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.this.arn}/*"]
+  dynamic "statement" {
+    for_each = var.cdn ? [aws_cloudfront_distribution.this[0].arn] : []
 
-    principals {
-      type        = "Service"
-      identifiers = ["cloudfront.amazonaws.com"]
-    }
+    content {
+      sid       = "CloudFrontReadsImages"
+      actions   = ["s3:GetObject"]
+      resources = ["${aws_s3_bucket.this.arn}/*"]
 
-    condition {
-      test     = "StringEquals"
-      variable = "AWS:SourceArn"
-      values   = [aws_cloudfront_distribution.this.arn]
+      principals {
+        type        = "Service"
+        identifiers = ["cloudfront.amazonaws.com"]
+      }
+
+      condition {
+        test     = "StringEquals"
+        variable = "AWS:SourceArn"
+        values   = [statement.value]
+      }
     }
   }
 
@@ -154,4 +172,16 @@ resource "aws_s3_bucket_policy" "this" {
   # The public access block must exist first, or S3 may refuse the policy
   # while the bucket is still being set up.
   depends_on = [aws_s3_bucket_public_access_block.this]
+}
+
+# The access control and distribution were single resources before cdn was
+# added; keep prod's addresses when it is first applied with the CDN on.
+moved {
+  from = aws_cloudfront_origin_access_control.this
+  to   = aws_cloudfront_origin_access_control.this[0]
+}
+
+moved {
+  from = aws_cloudfront_distribution.this
+  to   = aws_cloudfront_distribution.this[0]
 }

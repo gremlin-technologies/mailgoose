@@ -21,6 +21,11 @@ module "stack" {
   db_backup_retention_days = 1
   deletion_protection      = false
 
+  # No CloudFront until AWS Support allows it on the account (it refused
+  # with "Your account must be verified"); the API serves images itself
+  # meanwhile. Set to true, or remove, to turn the CDN on.
+  images_cdn = false
+
   # 0 until the first app image is in ECR; raise to 1 after the first deploy.
   api_desired_count    = 1
   worker_desired_count = 1

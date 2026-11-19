@@ -14,3 +14,9 @@ variable "force_destroy" {
   type        = bool
   default     = false
 }
+
+variable "cdn" {
+  description = "Serve the images through CloudFront. With false there is no distribution, and the API serves each image by redirecting to a presigned URL."
+  type        = bool
+  default     = true
+}

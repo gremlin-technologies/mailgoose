@@ -4,6 +4,25 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-19: The image CDN can be turned off; off on staging for now (owner decision)
+
+AWS refused staging's CloudFront distribution ("Your account must be verified
+before you can add new CloudFront resources"); only AWS Support can lift that.
+The owner is opening a case and chose, in his words, "Make the CDN optional".
+
+- **`images_cdn`** (stack variable, default true) turns CloudFront on or off
+  per environment. Staging sets it to false until AWS allows CloudFront;
+  prod keeps the default.
+- **Without the CDN the bucket stays private.** No public access, no public
+  bucket policy. The API serves each image at `PUBLIC_BASE_URL/images/<key>` by
+  redirecting to a presigned GET URL that lasts a few minutes, so the URLs in
+  sent emails never expire. The API role gains `s3:GetObject` on the bucket.
+  (Reversible default: a redirect rather than streaming the file through the
+  API, so the API sends no image bytes.)
+- **Turning it back on is the one variable.** With the CDN, `IMAGES_BASE_URL`
+  is the CloudFront address and new uploads use it; images uploaded without it
+  keep their API URLs.
+
 ## 2026-11-19: Image storage bucket and CDN (MG-23, reversible defaults)
 
 The owner asked for this as a PR to merge (Nov 19). Picked while writing it;
