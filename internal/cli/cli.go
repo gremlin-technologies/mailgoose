@@ -41,6 +41,9 @@ type App struct {
 	Sleep func(ctx context.Context, d time.Duration) error
 	// Hostname names this computer to the approval page.
 	Hostname func() (string, error)
+	// OpenFile opens a file in the default browser, for `email preview
+	// --open`.
+	OpenFile func(ctx context.Context, path string) error
 
 	jsonOut bool
 	apiURL  string
@@ -60,6 +63,7 @@ func NewApp() *App {
 		Keyring:    osKeyring{},
 		Sleep:      sleepCtx,
 		Hostname:   os.Hostname,
+		OpenFile:   openInBrowser,
 	}
 }
 

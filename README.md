@@ -450,6 +450,21 @@ mailgoose email create --name "Spring menu" --kind html
 mailgoose email import-html 3f1c... ./spring.html
 ```
 
+### Preview
+
+`GET /v1/emails/{id}/preview?width=desktop|mobile` returns the email as it
+will be sent, for both kinds, filled in with a sample contact (Alex Rivera,
+alex@example.com). `mobile` wraps it in a page with a 375 pixel frame so its
+phone layout applies. Until the account has a postal address, the footer
+shows a placeholder where it goes. Merge tag problems come back as 422
+`invalid_merge_tags` with each one's path; an html email with no markup yet
+is 422 `empty_email`. The page carries a Content-Security-Policy that blocks
+scripts, forms and requests other than images, styles and fonts.
+
+`mailgoose email preview <id>` writes the HTML to standard output, or to
+`--out file.html`. `--open` opens it in the browser, only at a terminal;
+without `--out` it writes a file in the temporary directory first.
+
 ## Sending domains
 
 Campaigns go out from an address at a domain the customer owns.

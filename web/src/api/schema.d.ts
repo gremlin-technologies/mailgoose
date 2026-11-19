@@ -939,6 +939,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/emails/{email_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview an email as it will look
+         * @description Renders the email as it will be sent, filled in with sample data:
+         *     first name Alex, last name Rivera, email alex@example.com, and an
+         *     unsubscribe link that goes nowhere. `desktop` returns the email
+         *     itself; `mobile` returns a page that shows it in a 375 pixel frame,
+         *     so its narrow-screen rules apply. Until the account has a postal
+         *     address, the footer shows a placeholder where it goes. The page
+         *     runs no scripts.
+         */
+        get: operations["previewEmail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/emails/{email_id}/duplicate": {
         parameters: {
             query?: never;
@@ -2172,6 +2198,21 @@ export interface components {
          *     email, which has no markup.
          */
         InvalidHtml: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `invalid_merge_tags`: a merge tag can't be filled or a link is
+         *     unsafe; `details.problems` lists each with its `path` (such as
+         *     `blocks[2].text`, or `html`) and `message`. `empty_email`: an html
+         *     email with no markup yet.
+         */
+        UnrenderableEmail: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -3983,6 +4024,39 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["EmailVersionConflict"];
             422: components["responses"]["InvalidHtml"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    previewEmail: {
+        parameters: {
+            query?: {
+                /** @description desktop (the default) or mobile. */
+                width?: "desktop" | "mobile";
+            };
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The rendered email, as HTML. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["UnrenderableEmail"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };
