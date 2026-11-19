@@ -671,3 +671,6 @@ Decided by the owner in the PRD scoping call and follow-ups.
   gets `domain_taken`. (Default: unchanged for now. One option: once a
   domain's first 72 hours have passed unverified, any account may take it
   over, so whoever sets up the DNS wins. MG-13.)
+- Deleting an account that still has bought credits: are they refunded or
+  forfeited? (Default: forfeited; the ledger keeps them as billing records.
+  MG-43, for MG-39 and MG-40 to settle.)
