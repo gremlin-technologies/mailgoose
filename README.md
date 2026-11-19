@@ -402,12 +402,53 @@ as in `{{first_name|there}}`. Values are HTML-escaped in the HTML part.
 `render.Lint` reports unknown or malformed tags and unsafe links with the
 block path, and `Compile` refuses a document with any. Every footer carries
 the account's postal address and an unsubscribe link the customer can't
-remove; `Compile` refuses an account without a postal address. HTML emails
-(kind `html`) aren't rendered here; MG-22 handles them.
+remove; `Compile` refuses an account without a postal address.
+`CompileHTML` does the same job for an html email (below).
 
 Golden files in `internal/render/testdata` show every block type at 600 and
 480 pixels. After an intended change to the output, rewrite them with
 `go test ./internal/render -update` and review the diff.
+
+### HTML emails
+
+An html email (`email create --kind html`) holds the customer's own markup,
+replaced whole with `mailgoose email import-html <id> <file.html>` (`-` reads
+standard input) or `PUT /v1/emails/{id}/html`. `emails.CheckHTML` reads it
+first and any error stops the import, each with its line:
+
+- markup that doesn't parse, an element that never closes, or an end tag
+  that closes nothing
+- `<script>`, `<form>`, frames, and embedded objects (`object`, `embed`,
+  `applet`)
+- external stylesheets: `<link rel="stylesheet">` and `@import`
+- inline event handlers such as `onclick`, and `javascript:` or
+  `vbscript:` addresses, in attributes or a `<style>` element
+- links to `data:` addresses
+- `<base>` and `<meta http-equiv="refresh">`, which send the reader elsewhere
+- no link whose address is `{{unsubscribe_url}}` (`<a href="{{unsubscribe_url}}">`);
+  one inside a comment, or the tag as plain text, doesn't count
+- more than 102 KB, where Gmail starts clipping
+
+Creating an html email or replacing its document runs the same check; empty
+markup is allowed until something is imported.
+
+CSS that major clients drop is a warning, and the import goes ahead. The
+list is `emails.UnsupportedCSS`: `position`, flexbox and grid, transforms
+and animation, CSS variables, filters and masks, `object-fit`, `@font-face`
+and `@supports`.
+
+`render.CompileHTML` prepares one for sending. It refuses markup with any
+of these errors, so an email that was never imported can't be sent; then it adds the preview text as
+a hidden line after `<body>` and, when the markup doesn't show every line of
+the account's postal address, a footer with it before `</body>`. The plain
+text part is made from the markup. The corpus in
+`internal/emails/testdata/html` has a file for every rule; each starts with
+the errors and warnings it should give.
+
+```sh
+mailgoose email create --name "Spring menu" --kind html
+mailgoose email import-html 3f1c... ./spring.html
+```
 
 ## Sending domains
 

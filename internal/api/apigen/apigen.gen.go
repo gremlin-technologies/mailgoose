@@ -528,6 +528,57 @@ func (e HtmlDocumentSchemaVersion) Valid() bool {
 	}
 }
 
+// Defines values for HtmlIssueCode.
+const (
+	HtmlIssueCodeDataUrl            HtmlIssueCode = "data_url"
+	HtmlIssueCodeEmbeddedObject     HtmlIssueCode = "embedded_object"
+	HtmlIssueCodeEventHandler       HtmlIssueCode = "event_handler"
+	HtmlIssueCodeExternalStylesheet HtmlIssueCode = "external_stylesheet"
+	HtmlIssueCodeForm               HtmlIssueCode = "form"
+	HtmlIssueCodeIframe             HtmlIssueCode = "iframe"
+	HtmlIssueCodeJavascriptUrl      HtmlIssueCode = "javascript_url"
+	HtmlIssueCodeMalformedMarkup    HtmlIssueCode = "malformed_markup"
+	HtmlIssueCodeMissingUnsubscribe HtmlIssueCode = "missing_unsubscribe"
+	HtmlIssueCodeRedirect           HtmlIssueCode = "redirect"
+	HtmlIssueCodeScript             HtmlIssueCode = "script"
+	HtmlIssueCodeTooLarge           HtmlIssueCode = "too_large"
+	HtmlIssueCodeUnsupportedCss     HtmlIssueCode = "unsupported_css"
+)
+
+// Valid indicates whether the value is a known member of the HtmlIssueCode enum.
+func (e HtmlIssueCode) Valid() bool {
+	switch e {
+	case HtmlIssueCodeDataUrl:
+		return true
+	case HtmlIssueCodeEmbeddedObject:
+		return true
+	case HtmlIssueCodeEventHandler:
+		return true
+	case HtmlIssueCodeExternalStylesheet:
+		return true
+	case HtmlIssueCodeForm:
+		return true
+	case HtmlIssueCodeIframe:
+		return true
+	case HtmlIssueCodeJavascriptUrl:
+		return true
+	case HtmlIssueCodeMalformedMarkup:
+		return true
+	case HtmlIssueCodeMissingUnsubscribe:
+		return true
+	case HtmlIssueCodeRedirect:
+		return true
+	case HtmlIssueCodeScript:
+		return true
+	case HtmlIssueCodeTooLarge:
+		return true
+	case HtmlIssueCodeUnsupportedCss:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ImageBlockType.
 const (
 	ImageBlockTypeImage ImageBlockType = "image"
@@ -1554,7 +1605,7 @@ type Health struct {
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
-// HtmlDocument An html email's settings and its markup (MG-22 adds the checks for sending).
+// HtmlDocument An html email's settings and its markup. importEmailHtml lists the checks the markup must pass.
 type HtmlDocument struct {
 	Html          string                    `json:"html"`
 	SchemaVersion HtmlDocumentSchemaVersion `json:"schema_version"`
@@ -1566,6 +1617,18 @@ type HtmlDocument struct {
 
 // HtmlDocumentSchemaVersion defines model for HtmlDocument.SchemaVersion.
 type HtmlDocumentSchemaVersion int
+
+// HtmlIssue defines model for HtmlIssue.
+type HtmlIssue struct {
+	Code HtmlIssueCode `json:"code"`
+
+	// Line The line it's on, counting from 1.
+	Line    int    `json:"line"`
+	Message string `json:"message"`
+}
+
+// HtmlIssueCode defines model for HtmlIssue.Code.
+type HtmlIssueCode string
 
 // ImageBlock defines model for ImageBlock.
 type ImageBlock struct {
@@ -1664,6 +1727,23 @@ type ImportColumns struct {
 	// contact. Tags the account doesn't have are created; a file may
 	// name at most 200 different tags. Found under the header `tags`.
 	Tags *string `json:"tags,omitempty"`
+}
+
+// ImportEmailHtmlRequest defines model for ImportEmailHtmlRequest.
+type ImportEmailHtmlRequest struct {
+	// Html The whole markup. Over 102 KB is refused as `too_large`.
+	Html string `json:"html"`
+
+	// Version The version you read.
+	Version int `json:"version"`
+}
+
+// ImportEmailHtmlResult defines model for ImportEmailHtmlResult.
+type ImportEmailHtmlResult struct {
+	Email Email `json:"email"`
+
+	// Warnings CSS that some clients drop; the email still sends.
+	Warnings []HtmlIssue `json:"warnings"`
 }
 
 // ImportList defines model for ImportList.
@@ -2006,6 +2086,9 @@ type InvalidBlockChange = Error
 // InvalidEmail defines model for InvalidEmail.
 type InvalidEmail = Error
 
+// InvalidHtml defines model for InvalidHtml.
+type InvalidHtml = Error
+
 // NotFound defines model for NotFound.
 type NotFound = Error
 
@@ -2194,6 +2277,9 @@ type ReplaceEmailDocumentJSONRequestBody = ReplaceEmailDocumentRequest
 
 // DuplicateEmailJSONRequestBody defines body for DuplicateEmail for application/json ContentType.
 type DuplicateEmailJSONRequestBody = DuplicateEmailRequest
+
+// ImportEmailHtmlJSONRequestBody defines body for ImportEmailHtml for application/json ContentType.
+type ImportEmailHtmlJSONRequestBody = ImportEmailHtmlRequest
 
 // CreateImportJSONRequestBody defines body for CreateImport for application/json ContentType.
 type CreateImportJSONRequestBody = CreateImportRequest
@@ -3040,6 +3126,9 @@ type ServerInterface interface {
 	// DuplicateEmail Duplicate an email
 	// (POST /v1/emails/{email_id}/duplicate)
 	DuplicateEmail(w http.ResponseWriter, r *http.Request, emailId EmailId)
+	// ImportEmailHtml Replace an html email's markup
+	// (PUT /v1/emails/{email_id}/html)
+	ImportEmailHtml(w http.ResponseWriter, r *http.Request, emailId EmailId)
 	// ListImports List CSV imports
 	// (GET /v1/imports)
 	ListImports(w http.ResponseWriter, r *http.Request, params ListImportsParams)
@@ -4289,6 +4378,32 @@ func (siw *ServerInterfaceWrapper) DuplicateEmail(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// ImportEmailHtml operation middleware
+func (siw *ServerInterfaceWrapper) ImportEmailHtml(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "email_id" -------------
+	var emailId EmailId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "email_id", r.PathValue("email_id"), &emailId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ImportEmailHtml(w, r, emailId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListImports operation middleware
 func (siw *ServerInterfaceWrapper) ListImports(w http.ResponseWriter, r *http.Request) {
 
@@ -4877,6 +4992,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails/{email_id}", wrapper.GetEmail)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/emails/{email_id}", wrapper.UpdateEmail)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/emails/{email_id}/document", wrapper.ReplaceEmailDocument)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/emails/{email_id}/html", wrapper.ImportEmailHtml)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/duplicate", wrapper.DuplicateEmail)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails/{email_id}/blocks", wrapper.ListEmailBlocks)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/blocks", wrapper.AddEmailBlock)

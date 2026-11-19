@@ -4,6 +4,34 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-18: HTML emails (MG-22, reversible defaults)
+
+Picked while building MG-22; easy to change.
+
+- **Errors stop the save**, not only the send: import, create and document
+  replace all refuse markup with errors, so a stored html email is always
+  sendable once it has content. Empty markup is allowed until the first
+  import. A code editor that saves as you type (DES-10) may need a draft
+  save that skips the check; that's for its ticket.
+- **More than the ticket's list is refused:** frames (`frame`, `frameset`)
+  with iframes, embedded objects (`object`, `embed`, `applet`), and
+  `vbscript:` with `javascript:`. Mail clients don't show any of them.
+  After review, also `data:` links, `<base>`, `<meta http-equiv="refresh">`
+  and `javascript:` inside a `<style>` element.
+- **The unsubscribe link must be a real link:** an `a` (or `area`) whose
+  `href` is exactly `{{unsubscribe_url}}`. The tag inside a comment or as
+  plain text doesn't count. `CompileHTML` runs the same check, so markup
+  that was never imported can't be sent.
+- **Malformed markup** means a non-void element that never closes, or an
+  end tag that closes nothing or skips an open element. End tags HTML lets
+  you leave out (`p`, `li`, `td`, `tr` and the like) aren't required.
+- **102 KB is 104,448 bytes** (102 × 1,024), Gmail's clipping point.
+- **The postal address footer** is added at send time, not on import, so
+  it follows the account's current address. It's skipped when every line
+  of the address already shows in the email's text (ignoring case and
+  spacing).
+- **The CSS warning list** is in the README and `emails.UnsupportedCSS`.
+
 ## 2026-11-18: Email renderer (MG-21, reversible defaults)
 
 Picked while building MG-21; easy to change.

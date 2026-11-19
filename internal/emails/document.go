@@ -49,7 +49,7 @@ var BlockTypes = []string{TypeHeading, TypeText, TypeImage, TypeButton, TypeDivi
 // Limits on a document.
 const (
 	MaxBlocks      = 200     // in the whole document, counting blocks inside columns
-	MaxHTMLBytes   = 512_000 // MG-22 adds the 102 KB sendable limit
+	MaxHTMLBytes   = 512_000 // the API refuses over MaxSendableHTMLBytes
 	MaxTextChars   = 20_000
 	MaxSocialLinks = 10
 )

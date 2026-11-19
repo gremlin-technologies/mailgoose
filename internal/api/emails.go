@@ -28,6 +28,7 @@ func (s *Server) emailError(w http.ResponseWriter, r *http.Request, err error) b
 	var docErr *emails.DocError
 	var verErr *emails.VersionError
 	var posErr *emails.PositionError
+	var htmlErr *emails.HTMLError
 	switch {
 	case err == nil:
 		return false
@@ -38,10 +39,14 @@ func (s *Server) emailError(w http.ResponseWriter, r *http.Request, err error) b
 		WriteError(w, Unprocessable("footer_locked", "The footer stays the last block: it can't be removed, moved or added, and nothing goes after it."))
 	case errors.Is(err, emails.ErrNotBlocks):
 		WriteError(w, Unprocessable("kind_mismatch", "This is an html email, which has no blocks.").
-			WithHint("Change its html with `mailgoose email replace`."))
+			WithHint("Change its html with `mailgoose email import-html`."))
 	case errors.Is(err, emails.ErrBlockNotFound):
 		WriteError(w, NotFound("block_not_found", "This email has no block with that id.").
 			WithHint("`mailgoose email blocks list <email>` shows each block's id."))
+	case errors.As(err, &htmlErr):
+		WriteError(w, Unprocessable("invalid_html", "The HTML can't be saved: "+htmlErr.Error()+".").
+			WithHint("Fix each problem in details.issues; each has its line.").
+			WithDetails(map[string]any{"issues": htmlErr.Issues}))
 	case errors.As(err, &docErr):
 		WriteError(w, Unprocessable("invalid_document", "The document isn't valid: "+docErr.Error()+".").
 			WithHint("The BlockDocument and HtmlDocument schemas in the API reference list every block type and field.").
@@ -171,6 +176,9 @@ func (s *Server) CreateEmail(w http.ResponseWriter, r *http.Request) {
 		if doc, err = emails.ParseDocument(kind, req.Document); s.emailError(w, r, err) {
 			return
 		}
+		if s.emailError(w, r, checkDocumentHTML(doc)) {
+			return
+		}
 	}
 	e, err := s.Emails.Create(r.Context(), c.AccountID, req.Name, kind, doc)
 	if s.emailError(w, r, err) {
@@ -256,11 +264,74 @@ func (s *Server) ReplaceEmailDocument(w http.ResponseWriter, r *http.Request, id
 	if s.emailError(w, r, err) {
 		return
 	}
+	if s.emailError(w, r, checkDocumentHTML(doc)) {
+		return
+	}
 	e, err = s.Emails.Replace(r.Context(), c.AccountID, id, *req.Version, doc)
 	if s.emailError(w, r, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toEmailJSON(e))
+}
+
+// checkDocumentHTML refuses an html document whose markup has errors.
+// Empty markup is allowed: it's an html email nothing was imported into
+// yet, and it can't be sent.
+func checkDocumentHTML(doc *emails.Document) error {
+	if doc == nil || doc.HTML == nil || *doc.HTML == "" {
+		return nil
+	}
+	if errs, _ := emails.CheckHTML(*doc.HTML); len(errs) > 0 {
+		return &emails.HTMLError{Issues: errs}
+	}
+	return nil
+}
+
+// ImportEmailHtml is PUT /v1/emails/{email_id}/html.
+func (s *Server) ImportEmailHtml(w http.ResponseWriter, r *http.Request, id string) {
+	c := s.emailsCaller(w, r)
+	if c == nil || !validEmailID(w, id) {
+		return
+	}
+	var req struct {
+		Version *int    `json:"version"`
+		HTML    *string `json:"html"`
+	}
+	if err := DecodeJSON(w, r, &req); err != nil {
+		WriteError(w, err)
+		return
+	}
+	if !needVersion(w, req.Version) {
+		return
+	}
+	if req.HTML == nil {
+		WriteError(w, BadRequest("invalid_parameter", "html is required: the email's whole markup."))
+		return
+	}
+	e, err := s.Emails.Get(r.Context(), c.AccountID, id)
+	if s.emailError(w, r, err) {
+		return
+	}
+	if e.Kind != emails.KindHTML {
+		WriteError(w, Unprocessable("kind_mismatch", "This is a blocks email, which has no markup to replace.").
+			WithHint("Create an html email with `mailgoose email create --kind html`, then import into it."))
+		return
+	}
+	errs, warns := emails.CheckHTML(*req.HTML)
+	if len(errs) > 0 {
+		s.emailError(w, r, &emails.HTMLError{Issues: errs})
+		return
+	}
+	doc := *e.Document
+	doc.HTML = req.HTML
+	e, err = s.Emails.Replace(r.Context(), c.AccountID, id, *req.Version, &doc)
+	if s.emailError(w, r, err) {
+		return
+	}
+	if warns == nil {
+		warns = []emails.HTMLIssue{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"email": toEmailJSON(e), "warnings": warns})
 }
 
 func needVersion(w http.ResponseWriter, v *int) bool {

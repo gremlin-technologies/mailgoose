@@ -268,7 +268,7 @@ var contractCases = map[string][]contractCase{
 	},
 	"createEmail": {
 		{name: "every block", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/emails", everyBlockEmail)), status: http.StatusCreated},
-		{name: "html", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/emails", `{"name":"Plain","kind":"html","document":{"html":"<p>Hi</p>"}}`)), status: http.StatusCreated},
+		{name: "html", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/emails", `{"name":"Plain","kind":"html","document":{"html":"<p>Hi</p><a href=\"{{unsubscribe_url}}\">Unsubscribe</a>"}}`)), status: http.StatusCreated},
 		{name: "malformed", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/emails", `{"name":"x","colour":1}`)), status: http.StatusBadRequest},
 		{name: "unknown block", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/emails", `{"name":"x","document":{"blocks":[{"type":"video"}]}}`)), status: http.StatusUnprocessableEntity},
 		{name: "no credentials", server: authServer, req: jsonRequest(http.MethodPost, "/v1/emails", `{"name":"x"}`), status: http.StatusUnauthorized},
@@ -305,6 +305,17 @@ var contractCases = map[string][]contractCase{
 		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(emailPath(http.MethodPut, "/document", `{"version":1,"document":`+blocksDoc+`}`))), status: http.StatusForbidden},
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/emails"))), req: bearer(emailPath(http.MethodPut, "/document", `{"version":1,"document":`+blocksDoc+`}`)), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(emailPath(http.MethodPut, "/document", `{"version":1,"document":`+blocksDoc+`}`)), status: http.StatusServiceUnavailable},
+	},
+	"importEmailHtml": {
+		{name: "imported", server: draftKey(authServer), before: addedHTMLEmail, req: bearer(emailPath(http.MethodPut, "/html", `{"version":1,"html":`+goodHTML+`}`)), status: http.StatusOK},
+		{name: "no version", server: fullKey(authServer), before: addedHTMLEmail, req: bearer(emailPath(http.MethodPut, "/html", `{"html":`+goodHTML+`}`)), status: http.StatusBadRequest},
+		{name: "unknown", server: fullKey(authServer), req: bearer(emailPath(http.MethodPut, "/html", `{"version":1,"html":`+goodHTML+`}`)), status: http.StatusNotFound},
+		{name: "stale version", server: fullKey(authServer), before: addedHTMLEmail, req: bearer(emailPath(http.MethodPut, "/html", `{"version":3,"html":`+goodHTML+`}`)), status: http.StatusConflict},
+		{name: "has a script", server: fullKey(authServer), before: addedHTMLEmail, req: bearer(emailPath(http.MethodPut, "/html", `{"version":1,"html":"<script>x()</script>{{unsubscribe_url}}"}`)), status: http.StatusUnprocessableEntity},
+		{name: "no credentials", server: authServer, req: emailPath(http.MethodPut, "/html", `{"version":1,"html":`+goodHTML+`}`), status: http.StatusUnauthorized},
+		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(emailPath(http.MethodPut, "/html", `{"version":1,"html":`+goodHTML+`}`))), status: http.StatusForbidden},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/emails"))), req: bearer(emailPath(http.MethodPut, "/html", `{"version":1,"html":`+goodHTML+`}`)), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(emailPath(http.MethodPut, "/html", `{"version":1,"html":`+goodHTML+`}`)), status: http.StatusServiceUnavailable},
 	},
 	"duplicateEmail": {
 		{name: "copied", server: draftKey(authServer), before: addedEmail, req: bearer(emailPath(http.MethodPost, "/duplicate", "")), status: http.StatusCreated},

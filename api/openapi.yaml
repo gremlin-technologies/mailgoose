@@ -1955,6 +1955,59 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/emails/{email_id}/html:
+    put:
+      operationId: importEmailHtml
+      summary: Replace an html email's markup
+      description: |
+        Swaps an html email's markup for `html`, whole, after checking it.
+        Errors stop the import and nothing changes: malformed markup,
+        script elements, forms, frames, embedded objects, external
+        stylesheets, inline event handlers, `javascript:` addresses, no
+        `{{unsubscribe_url}}`, or more than 102 KB. CSS that major clients
+        drop is only a warning; the import goes ahead and returns them.
+        Every problem has the line it's on. Settings stay as they are.
+        When sent, an email that doesn't show the account's postal address
+        gets it in a footer at the bottom. `version` works as in
+        updateEmail.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportEmailHtmlRequest"
+      responses:
+        "200":
+          description: The email as saved, with its new version, and any warnings.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportEmailHtmlResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/EmailVersionConflict"
+        "422":
+          $ref: "#/components/responses/InvalidHtml"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/emails/{email_id}/duplicate:
     post:
       operationId: duplicateEmail
@@ -3557,7 +3610,7 @@ components:
             $ref: "#/components/schemas/Block"
     HtmlDocument:
       type: object
-      description: An html email's settings and its markup (MG-22 adds the checks for sending).
+      description: An html email's settings and its markup. importEmailHtml lists the checks the markup must pass.
       additionalProperties: false
       required: [schema_version, settings, html]
       properties:
@@ -3675,6 +3728,47 @@ components:
           description: The version you read.
         document:
           $ref: "#/components/schemas/EmailDocument"
+    ImportEmailHtmlRequest:
+      type: object
+      additionalProperties: false
+      required: [version, html]
+      properties:
+        version:
+          type: integer
+          minimum: 1
+          description: The version you read.
+        html:
+          type: string
+          maxLength: 512000
+          description: The whole markup. Over 102 KB is refused as `too_large`.
+    ImportEmailHtmlResult:
+      type: object
+      additionalProperties: false
+      required: [email, warnings]
+      properties:
+        email:
+          $ref: "#/components/schemas/Email"
+        warnings:
+          type: array
+          description: CSS that some clients drop; the email still sends.
+          items:
+            $ref: "#/components/schemas/HtmlIssue"
+    HtmlIssue:
+      type: object
+      additionalProperties: false
+      required: [line, code, message]
+      properties:
+        line:
+          type: integer
+          minimum: 1
+          description: The line it's on, counting from 1.
+        code:
+          type: string
+          enum: [malformed_markup, script, form, iframe, embedded_object, external_stylesheet,
+            event_handler, javascript_url, data_url, redirect, missing_unsubscribe, too_large,
+            unsupported_css]
+        message:
+          type: string
     DuplicateEmailRequest:
       type: object
       additionalProperties: false
@@ -3996,6 +4090,22 @@ components:
         the place, such as `blocks[2].href`, and `details.path` holds it.
         `invalid_name` (empty or over 200 characters), `invalid_kind` (not
         blocks or html) or `kind_mismatch` (a document of the other kind).
+        `invalid_html`: an html document's markup has errors, listed in
+        `details.issues` as importEmailHtml describes; empty markup is
+        allowed.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InvalidHtml:
+      description: |
+        `invalid_html`: the markup has errors and nothing changed.
+        `details.issues` lists each, with its `line`, `code` and `message`;
+        `message` names the first. `kind_mismatch`: the email is a blocks
+        email, which has no markup.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
