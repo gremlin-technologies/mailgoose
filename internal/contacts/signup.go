@@ -49,35 +49,35 @@ func SignUp(ctx context.Context, tx pgx.Tx, accountID string, in SignUpInput) (*
 	if err != nil {
 		return nil, err
 	}
+	// The account is locked first, before the contact, as Confirm does,
+	// so signups and confirms for one account never wait on each other in
+	// a circle. While the account is at its limit every signup is refused
+	// alike, new address or not, so the answer doesn't tell a stranger
+	// who's on the list.
+	if err := ensureRoom(ctx, tx, accountID, 1); err != nil {
+		return nil, err
+	}
 	res := &SignUpResult{}
-	err = tx.QueryRow(ctx, `SELECT id, status FROM contacts WHERE account_id = $1 AND email = $2 FOR UPDATE`,
-		accountID, in.Email).Scan(&res.ContactID, &res.Status)
-	switch {
-	case errors.Is(err, pgx.ErrNoRows):
-		reason, err := takeSuppression(ctx, tx, accountID, in.Email)
+	// Two signups for the same new address can race: both miss the lock
+	// below, and the second insert finds the first's row. It then takes
+	// the existing-contact path, once.
+	for range 2 {
+		err = tx.QueryRow(ctx, `SELECT id, status FROM contacts WHERE account_id = $1 AND email = $2 FOR UPDATE`,
+			accountID, in.Email).Scan(&res.ContactID, &res.Status)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			break
+		}
+		created, err := insertSignup(ctx, tx, accountID, in, first, last, res)
 		if err != nil {
 			return nil, err
 		}
-		res.Status = StatusSubscribed
-		switch {
-		case reason != "":
-			// It unsubscribed, bounced or complained before it was deleted.
-			res.Status = reason
-		case in.DoubleOptIn:
-			res.Status = StatusUnconfirmed
+		if created {
+			res.Created = true
+			break
 		}
-		if Counted(res.Status) {
-			if err := ensureRoom(ctx, tx, accountID, 1); err != nil {
-				return nil, err
-			}
-		}
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO contacts (account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at)
-			VALUES ($1, $2, $3, $4, $5, 'form', $6, $6, $6) RETURNING id`,
-			accountID, in.Email, first, last, res.Status, in.Now).Scan(&res.ContactID); err != nil {
-			return nil, err
-		}
-		res.Created = true
+	}
+	switch {
+	case res.Created:
 	case err != nil:
 		return nil, err
 	default:
@@ -102,29 +102,66 @@ func SignUp(ctx context.Context, tx pgx.Tx, accountID string, in SignUpInput) (*
 	return res, nil
 }
 
-// Confirm subscribes a contact that confirmed a form signup, in tx, and
-// reports whether its status changed. Only an unconfirmed or unsubscribed
-// contact changes; a bounced or complained one doesn't. Becoming counted
-// must fit the free contact limit (*LimitError).
-func Confirm(ctx context.Context, tx pgx.Tx, accountID, contactID string, now time.Time) (bool, error) {
-	var status string
-	err := tx.QueryRow(ctx, `SELECT status FROM contacts WHERE account_id = $1 AND id = $2 FOR UPDATE`,
-		accountID, contactID).Scan(&status)
+// insertSignup adds the new contact for a signup and reports whether it
+// did. false means another signup added the address first; res is left
+// for the caller to read the existing contact into.
+func insertSignup(ctx context.Context, tx pgx.Tx, accountID string, in SignUpInput, first, last *string, res *SignUpResult) (bool, error) {
+	reason, err := takeSuppression(ctx, tx, accountID, in.Email)
+	if err != nil {
+		return false, err
+	}
+	status := StatusSubscribed
+	switch {
+	case reason != "":
+		// It unsubscribed, bounced or complained before it was deleted.
+		status = reason
+	case in.DoubleOptIn:
+		status = StatusUnconfirmed
+	}
+	err = tx.QueryRow(ctx, `
+		INSERT INTO contacts (account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at)
+		VALUES ($1, $2, $3, $4, $5, 'form', $6, $6, $6)
+		ON CONFLICT (account_id, email) DO NOTHING RETURNING id`,
+		accountID, in.Email, first, last, status, in.Now).Scan(&res.ContactID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, ErrNotFound
+		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
+	res.Status = status
+	return true, nil
+}
+
+// Confirm subscribes a contact that confirmed a form signup, in tx, and
+// returns its status afterwards. Only an unconfirmed or unsubscribed
+// contact changes; a bounced or complained one doesn't. Becoming counted
+// must fit the free contact limit (*LimitError).
+func Confirm(ctx context.Context, tx pgx.Tx, accountID, contactID string, now time.Time) (string, error) {
+	// The account first, then the contact: SignUp's order.
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM accounts WHERE id = $1 FOR UPDATE`, accountID); err != nil {
+		return "", err
+	}
+	var status string
+	err := tx.QueryRow(ctx, `SELECT status FROM contacts WHERE account_id = $1 AND id = $2 FOR UPDATE`,
+		accountID, contactID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
 	if status != StatusUnconfirmed && status != StatusUnsubscribed {
-		return false, nil
+		return status, nil
 	}
 	if !Counted(status) {
 		if err := ensureRoom(ctx, tx, accountID, 1); err != nil {
-			return false, err
+			return "", err
 		}
 	}
-	_, err = tx.Exec(ctx, `UPDATE contacts SET status = 'subscribed', status_changed_at = $2, updated_at = $2 WHERE id = $1`,
-		contactID, now)
-	return err == nil, err
+	if _, err = tx.Exec(ctx, `UPDATE contacts SET status = 'subscribed', status_changed_at = $2, updated_at = $2 WHERE id = $1`,
+		contactID, now); err != nil {
+		return "", err
+	}
+	return StatusSubscribed, nil
 }

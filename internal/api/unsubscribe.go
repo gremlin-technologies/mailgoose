@@ -167,7 +167,12 @@ var badLinkPage = page{
 func (s *Server) recipientPageLimited(w http.ResponseWriter, r *http.Request, retryAfter int) {
 	if !strings.HasPrefix(r.URL.Path, unsubscribe.PathPrefix) {
 		// Signup forms and confirm links keep the API's JSON error, as
-		// they had before this limiter answered with a page.
+		// they had before this limiter answered with a page. A form's
+		// answer carries the CORS header like its others, so the embed
+		// script can read it.
+		if strings.HasPrefix(r.URL.Path, signupPathPrefix) {
+			allowAnyOrigin(w)
+		}
 		writeTooManyRequests(w, r, retryAfter)
 		return
 	}

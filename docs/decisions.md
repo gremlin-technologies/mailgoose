@@ -48,14 +48,23 @@ Picked while building MG-36; easy to change.
   blanks; a signup never overwrites a name.
 - **At most one confirmation email per contact an hour**; a resubmission in
   that hour gets the normal answer and no email. Confirm links last 7 days.
+  The hour is stamped in the signup's transaction, before the email goes,
+  and cleared if the send fails, so posts that arrive together still send
+  one (MG-36 review follow-up, 2026-11-19).
 - **Opening a confirm link changes nothing;** the page's button confirms,
   because mail scanners open links.
 - **Over the free contact limit** a signup or a confirmation is refused
   (409); the person is asked to try later. Nothing tells the account owner
-  yet; MG-51's dashboard can.
+  yet; MG-51's dashboard can. While the account is full, every signup gets
+  that answer, including one from an address already on the list, so the
+  answer still doesn't show who's on it; an existing contact's tags aren't
+  added then (MG-36 review follow-up, 2026-11-19).
 - **Counts are columns on the form** (`signups`: posts taken, a repeat
-  counts again; `confirmations`: links used), not computed from consent
-  records, so deleting contacts doesn't change them.
+  counts again; `confirmations`: links used that left the contact
+  subscribed), not computed from consent records, so deleting contacts
+  doesn't change them. A link used by a contact that has since bounced or
+  complained is recorded on its consent but not counted (MG-36 review
+  follow-up, 2026-11-19).
 - **Consent records** keep the time, IP, form, the form's wording (name,
   field labels, button, and with double opt-in the confirmation subject and
   text) and the confirmation time. Deleting the form keeps them; deleting or
