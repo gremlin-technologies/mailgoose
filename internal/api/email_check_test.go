@@ -116,3 +116,33 @@ func TestCheckEmailNotFound(t *testing.T) {
 		t.Errorf("%d %s", rec.Code, rec.Body)
 	}
 }
+
+func TestCheckEmailLinkLimit(t *testing.T) {
+	srv := fullKey(authServer)(t)
+	links := &brokenLinks{}
+	srv.Links = links
+	h := srv.Handler()
+	addedEmailFrom(`{"name":"Links","document":{"settings":{"subject":"Hi"},"blocks":[
+		{"type":"button","text":"Menu","href":"https://bakery.example/menu"},{"type":"footer","text":""}]}}`)(t, h)
+
+	// The first checks in a minute fetch the link; the next one doesn't, and
+	// says when to try again.
+	for i := 0; i <= linkChecksPerMinute; i++ {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, bearer(emailPath(http.MethodPost, "/check", ""))(t))
+		var a checkAnswer
+		if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil || rec.Code != http.StatusOK {
+			t.Fatalf("check %d: %d %s", i, rec.Code, rec.Body)
+		}
+		if i < linkChecksPerMinute {
+			continue
+		}
+		_, warns := a.codes()
+		if !strings.Contains(warns, "link_not_checked") || !strings.Contains(rec.Body.String(), "check again in") {
+			t.Errorf("past the limit: %s", rec.Body)
+		}
+	}
+	if len(links.asked) != linkChecksPerMinute {
+		t.Errorf("fetched %d times, want %d", len(links.asked), linkChecksPerMinute)
+	}
+}

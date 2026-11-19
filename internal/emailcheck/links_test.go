@@ -35,6 +35,9 @@ func TestPublicAddress(t *testing.T) {
 		"2001:4860:4860::8888":     true,
 		"192.0.0.8":                false,
 		"8.8.8.8":                  true,
+		"240.0.0.1":                false, // reserved
+		"2002:a00:1::":             false, // 6to4 for 10.0.0.1
+		"fec0::1":                  false, // old site-local
 		"fc00::1":                  false,
 		"ff02::1":                  false,
 		"0:0:0:0:0:0:0:0":          false,
@@ -53,7 +56,6 @@ func TestPublicAddress(t *testing.T) {
 		"192.0.2.1":                true, // likewise
 		"203.0.113.1":              true,
 		"198.51.100.1":             true,
-		"240.0.0.1":                true,
 		"1.1.1.1":                  true,
 		"9.9.9.9":                  true,
 		"185.199.108.153":          true,
@@ -139,6 +141,22 @@ func TestCheckLinksRefusesPrivateAddresses(t *testing.T) {
 	}
 	if hits.Load() != 0 {
 		t.Errorf("the private server got %d requests", hits.Load())
+	}
+}
+
+func TestCheckLinksOnlyWebPorts(t *testing.T) {
+	// A public address on another port is refused before it's dialed, so
+	// the check can't probe other services. 203.0.113.5 is a documentation
+	// address; nothing is sent to it.
+	u := "http://203.0.113.5:8080/admin"
+	got := (&HTTPLinks{Timeout: time.Second}).CheckLinks(context.Background(), []string{u})
+	if st := got[u]; st.Result != ResultNotChecked || !strings.Contains(st.Detail, "port other than 80 or 443") {
+		t.Errorf("%+v", st)
+	}
+	for port, want := range map[uint16]bool{80: true, 443: true, 8080: false, 22: false, 5432: false} {
+		if webPort(port) != want {
+			t.Errorf("webPort(%d) = %v", port, !want)
+		}
 	}
 }
 

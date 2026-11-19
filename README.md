@@ -484,8 +484,10 @@ Links are fetched by `emailcheck.HTTPLinks`: a HEAD request each (GET when
 a site refuses HEAD), 3 seconds per link, 10 seconds in all, 8 at a time,
 at most 50 links and 5 redirects. It dials without a proxy and checks the
 address of every connection, so a link, a hostname or a redirect that leads
-to a private, loopback, link-local or other internal address is never
-fetched. Only `cmd/mailgoosed` wires it; a test server with no `Links` looks
+to a private, loopback, link-local or other internal address, or to a port
+other than 80 or 443, is never fetched. One account's checks fetch links at
+most 10 times a minute (`linkChecksPerMinute`); checks past that still run,
+with their links reported as not checked. Only `cmd/mailgoosed` wires it; a test server with no `Links` looks
 at the addresses without fetching them.
 
 ## Sending domains

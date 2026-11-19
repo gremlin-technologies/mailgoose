@@ -51,8 +51,8 @@ type HTTPLinks struct {
 	// Parallel is how many links are checked at once; zero means 8.
 	Parallel int
 	// Allow reports whether an address and port may be dialed. Nil allows
-	// public addresses only (PublicAddress). Tests point it at a local
-	// server.
+	// public addresses (PublicAddress) on ports 80 and 443 only. Tests point
+	// it at a local server.
 	Allow func(netip.AddrPort) bool
 }
 
@@ -65,17 +65,29 @@ const MaxRedirects = 5
 
 var errPrivate = errors.New("the address is private")
 
+// errPort refuses a public address on a port other than a web one, so the
+// check can't be used to probe other services.
+var errPort = errors.New("the port isn't a web port")
+
 // Ranges that are internal or special even though netip doesn't call them
 // private: carrier-grade NAT, "this network", IETF protocol assignments,
-// benchmarking, and NAT64, which can reach an IPv4 private address.
+// benchmarking, reserved IPv4 (240.0.0.0/4), NAT64 and 6to4, which can reach
+// an IPv4 private address, and the old IPv6 site-local range.
 var internalRanges = []netip.Prefix{
 	netip.MustParsePrefix("0.0.0.0/8"),
 	netip.MustParsePrefix("100.64.0.0/10"),
 	netip.MustParsePrefix("192.0.0.0/24"),
 	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("240.0.0.0/4"),
 	netip.MustParsePrefix("64:ff9b::/96"),
 	netip.MustParsePrefix("64:ff9b:1::/48"),
+	netip.MustParsePrefix("2002::/16"),
+	netip.MustParsePrefix("fec0::/10"),
 }
+
+// webPort reports whether a link check may dial port: 80 or 443, the
+// defaults for http and https.
+func webPort(port uint16) bool { return port == 80 || port == 443 }
 
 // PublicAddress reports whether a is a public unicast address, the only
 // kind HTTPLinks dials by default.
@@ -93,9 +105,20 @@ func PublicAddress(a netip.Addr) bool {
 }
 
 func (h *HTTPLinks) client() *http.Client {
-	allow := h.Allow
-	if allow == nil {
-		allow = func(ap netip.AddrPort) bool { return PublicAddress(ap.Addr()) }
+	allow := func(ap netip.AddrPort) error {
+		if h.Allow != nil {
+			if !h.Allow(ap) {
+				return errPrivate
+			}
+			return nil
+		}
+		if !PublicAddress(ap.Addr()) {
+			return errPrivate
+		}
+		if !webPort(ap.Port()) {
+			return errPort
+		}
+		return nil
 	}
 	dialer := &net.Dialer{
 		Timeout: h.timeout(),
@@ -103,10 +126,10 @@ func (h *HTTPLinks) client() *http.Client {
 		// be dialed, so no lookup or redirect can get around it.
 		Control: func(_, address string, _ syscall.RawConn) error {
 			ap, err := netip.ParseAddrPort(address)
-			if err != nil || !allow(ap) {
+			if err != nil {
 				return errPrivate
 			}
-			return nil
+			return allow(ap)
 		},
 	}
 	return &http.Client{
@@ -213,6 +236,8 @@ func (h *HTTPLinks) fetch(total context.Context, client *http.Client, method, u 
 		switch {
 		case errors.Is(err, errPrivate):
 			return LinkStatus{Result: ResultNotChecked, Detail: "it points to a private address, which isn't checked"}
+		case errors.Is(err, errPort):
+			return LinkStatus{Result: ResultNotChecked, Detail: "it uses a port other than 80 or 443, which isn't checked"}
 		case errors.As(err, &dnsErr) && dnsErr.IsNotFound:
 			return LinkStatus{Result: ResultMissing, final: true, Detail: "the site " + req.URL.Hostname() + " doesn't exist"}
 		case total.Err() != nil:

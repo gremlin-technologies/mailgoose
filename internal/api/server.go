@@ -71,6 +71,9 @@ type Server struct {
 	// links are only looked at, never fetched; the server wires
 	// emailcheck.HTTPLinks.
 	Links emailcheck.LinkChecker
+	// linkChecks limits how often one account's email checks fetch links;
+	// Handler sets it.
+	linkChecks *RateLimiter
 	// Now is the clock for rate limits and idempotency; nil means time.Now.
 	Now func() time.Time
 }
@@ -91,6 +94,8 @@ func (s *Server) Handler() http.Handler {
 	if store == nil {
 		store = &MemoryIdempotencyStore{}
 	}
+
+	s.linkChecks = &RateLimiter{PerMinute: linkChecksPerMinute, Now: now}
 
 	mux := s.routes()
 	var h http.Handler = mux

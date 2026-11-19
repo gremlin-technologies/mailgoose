@@ -2075,13 +2075,16 @@ paths:
 
         Warning codes: `insecure_link` (http://), `link_unreachable` (an
         error status or a timeout), `link_not_checked` (a private address,
-        or the check ran out of time), `missing_alt`, `near_size_limit`
+        a port other than 80 or 443, the check ran out of time, or links were
+        checked too often), `missing_alt`, `near_size_limit`
         (over 90 KB) and `unsupported_css`.
 
         Each link is fetched once with a HEAD request (GET if the site
         refuses HEAD), 3 seconds per link and 10 seconds in all, up to 50
-        links. Links to private, loopback or link-local addresses aren't
-        fetched, whichever way they get there.
+        links. Links to private, loopback or link-local addresses, or to ports
+        other than 80 and 443, aren't fetched, whichever way they get there.
+        One account's checks fetch links at most 10 times a minute; later
+        checks still run, with their links reported as not checked.
       tags: [emails]
       security:
         - apiKey: []

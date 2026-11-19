@@ -138,7 +138,7 @@ func Check(ctx context.Context, in Input, links LinkChecker) Result {
 	// An html email's unsubscribe link is checked in markup, where a tag
 	// inside a comment or as plain text doesn't count.
 	if doc.HTML == nil && !tpl.Has(render.TagUnsubscribeURL) {
-		c.fail(Issue{Code: MissingUnsubscribe, Path: "html",
+		c.fail(Issue{Code: MissingUnsubscribe, Path: "blocks",
 			Message: `There's no {{unsubscribe_url}}; every email needs an unsubscribe link.`})
 	}
 	if doc.HTML == nil {
