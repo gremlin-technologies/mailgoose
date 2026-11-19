@@ -92,6 +92,11 @@ func (s *Server) accountError(w http.ResponseWriter, r *http.Request, err error)
 		WriteError(w, Unauthorized("unauthenticated", "This account no longer exists."))
 		return true
 	}
+	if errors.Is(err, auth.ErrConfirmMismatch) {
+		WriteError(w, Unprocessable("confirmation_mismatch", "The confirmation isn't this account's name, so nothing was deleted.").
+			WithHint("Type the account's name exactly as it shows in settings or `mailgoose account get`."))
+		return true
+	}
 	return s.authError(w, r, err)
 }
 
@@ -107,4 +112,52 @@ func accountJSON(st *auth.Settings) apigen.AccountSettings {
 		MissingForSend: append([]string{}, st.MissingForSend()...),
 		CreatedAt:      st.CreatedAt.UTC(),
 	}
+}
+
+// DeleteAccount is DELETE /v1/account (AUTH-6). The confirmation is checked
+// before anything is removed. Sending domains go first, through the domains
+// service, so their Amazon SES identities are removed too; then the rest of
+// the account goes in one transaction.
+func (s *Server) DeleteAccount(w http.ResponseWriter, r *http.Request, params apigen.DeleteAccountParams) {
+	c := s.requireFull(w, r)
+	if c == nil {
+		return
+	}
+	if params.Confirm == nil || *params.Confirm == "" {
+		WriteError(w, BadRequest("invalid_parameter", "confirm is required: the account's name, exactly.").
+			WithHint("Deleting an account can't be undone. `mailgoose account get` shows its name."))
+		return
+	}
+	st, err := s.Auth.AccountSettings(r.Context(), c.AccountID)
+	if s.accountError(w, r, err) {
+		return
+	}
+	if *params.Confirm != st.Name {
+		s.accountError(w, r, auth.ErrConfirmMismatch)
+		return
+	}
+	if s.Domains != nil {
+		for {
+			ds, err := s.Domains.List(r.Context(), c.AccountID, "", "", 100)
+			if s.domainError(w, r, err) {
+				return
+			}
+			if len(ds) == 0 {
+				break
+			}
+			for _, d := range ds {
+				if err := s.Domains.Delete(r.Context(), c.AccountID, d.ID); s.domainError(w, r, err) {
+					return
+				}
+			}
+		}
+	}
+	if s.accountError(w, r, s.Auth.DeleteAccount(r.Context(), c.AccountID, *params.Confirm)) {
+		return
+	}
+	s.Log.InfoContext(r.Context(), "account deleted", "account_id", c.AccountID)
+	if c.Kind == KindSession {
+		clearSessionCookie(w)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

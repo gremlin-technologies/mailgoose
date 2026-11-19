@@ -3,6 +3,7 @@ package credits
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -122,6 +123,25 @@ func TestPaidAccountsGetNoGrant(t *testing.T) {
 	}
 	if _, err := h.ledger.Debit(context.Background(), id, TypeFee, 1, ""); !errors.Is(err, ErrInsufficientCredits) {
 		t.Errorf("debit with nothing: err = %v", err)
+	}
+}
+
+func TestClosedAccountsGetNoGrant(t *testing.T) {
+	h := newHarness(t)
+	id := h.account(t, "free")
+	if b := h.balance(t, id); b != FreeMonthlyGrant {
+		t.Fatalf("balance = %d", b)
+	}
+	if _, err := h.db.Exec(context.Background(), `UPDATE accounts SET status = 'closed', closed_at = now() WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	h.set(h.clock().AddDate(0, 2, 0))
+	s, err := h.ledger.Summary(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.NextGrantAt != nil || strings.Count(strings.Join(h.types(t, id), " "), "grant") != 1 {
+		t.Errorf("closed account: summary %+v, history %v", s, h.types(t, id))
 	}
 }
 

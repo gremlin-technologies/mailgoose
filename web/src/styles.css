@@ -1,14 +1,29 @@
+/*
+ * Design tokens, derived from the goose mascot (docs/brand.md). Every text and
+ * background pair meets WCAG 2.2 AA; src/styles.test.ts checks the ratios.
+ */
 :root {
-  --bg: #f4f4f5;
+  --bg: #faf5ef; /* cream, lightened */
   --surface: #ffffff;
-  --text: #18181b;
-  --muted: #71717a;
-  --border: #e4e4e7;
-  --accent: #18181b;
+  --text: #473e3b; /* eye charcoal */
+  --muted: #6b5f5a;
+  --border: #ebddd2; /* warm shade, lightened: decorative lines only */
+  --input-border: #8c7a72; /* 3:1 against surfaces, for controls */
+  --accent: #5562a3; /* deep periwinkle */
+  --accent-hover: #47528a;
   --accent-text: #ffffff;
-  --error-bg: #fef2f2;
-  --error-text: #991b1b;
-  --focus: #2563eb;
+  --accent-soft: #eceffa;
+  --accent-soft-text: #3f4a85;
+  --brand-mark: #f68a3f; /* beak orange: decoration only, never behind text */
+  --good-bg: #e6f2e8;
+  --good-text: #2f6b3a;
+  --warn-bg: #fcebd9;
+  --warn-text: #8a4b14;
+  --error-bg: #fbe7e4;
+  --error-text: #9b2c1f;
+  --danger: #b3261e;
+  --danger-text: #ffffff;
+  --focus: #5562a3;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 16px;
   line-height: 1.5;
@@ -18,16 +33,27 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #09090b;
-    --surface: #18181b;
-    --text: #f4f4f5;
-    --muted: #a1a1aa;
-    --border: #27272a;
-    --accent: #f4f4f5;
-    --accent-text: #18181b;
-    --error-bg: #450a0a;
-    --error-text: #fecaca;
-    --focus: #60a5fa;
+    --bg: #1f1b1a;
+    --surface: #2a2523;
+    --text: #f4e3d2; /* cream */
+    --muted: #c2b2a6;
+    --border: #3d3532;
+    --input-border: #8a7a72;
+    --accent: #9aa7e0;
+    --accent-hover: #b3bdea;
+    --accent-text: #1f1b1a;
+    --accent-soft: #2e3352;
+    --accent-soft-text: #c9d0f2;
+    --brand-mark: #f68a3f;
+    --good-bg: #1e3324;
+    --good-text: #a7d8b0;
+    --warn-bg: #3a2a18;
+    --warn-text: #f5c18e;
+    --error-bg: #3f1d19;
+    --error-text: #f4b4aa;
+    --danger: #f08c82;
+    --danger-text: #1f1b1a;
+    --focus: #9aa7e0;
   }
 }
 
@@ -61,6 +87,16 @@ code {
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+.brand::after {
+  content: "";
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-left: 0.1em;
+  border-radius: 50%;
+  background: var(--brand-mark);
 }
 
 .brand {
@@ -135,11 +171,12 @@ code {
   font-weight: 500;
 }
 
-.field input {
+.field input,
+.field textarea {
   font: inherit;
   font-weight: 400;
   padding: 0.625rem 0.75rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   background: var(--bg);
   color: var(--text);
@@ -161,7 +198,7 @@ code {
   font-weight: 600;
   padding: 0.625rem 1rem;
   border-radius: 8px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--input-border);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -171,6 +208,22 @@ code {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-text);
+}
+
+.button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--danger-text);
+}
+
+.button.small {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.875rem;
 }
 
 .button:disabled {
@@ -262,8 +315,8 @@ code {
 }
 
 .sidebar nav a.active {
-  background: var(--bg);
-  color: var(--text);
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
   font-weight: 600;
 }
 
@@ -306,5 +359,279 @@ code {
 
   .content {
     padding: 1.5rem 1rem;
+  }
+}
+
+/* Pages */
+
+h2 {
+  font-size: 1.125rem;
+  margin: 0;
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.page-head h1 {
+  margin-bottom: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+.crumb {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+}
+
+.row-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+.grow {
+  flex: 1 1 16rem;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 1rem;
+}
+
+.empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--input-border);
+  border-radius: 12px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  font-size: 0.9375rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.table th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.table .actions {
+  text-align: right;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge-neutral {
+  background: var(--bg);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+.badge-info {
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+}
+
+.badge-good {
+  background: var(--good-bg);
+  color: var(--good-text);
+}
+
+.badge-warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.badge-bad {
+  background: var(--error-bg);
+  color: var(--error-text);
+}
+
+.notice-warn {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  border-color: transparent;
+}
+
+.records {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.record {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.record-head {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.record-head .badge {
+  margin-left: auto;
+}
+
+.record-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.375rem 1rem;
+  margin: 0;
+}
+
+.record-fields dt {
+  color: var(--muted);
+  font-size: 0.875rem;
+  padding-top: 0.25rem;
+}
+
+.record-fields dd {
+  margin: 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.record-fields code,
+.secret-row code {
+  flex: 1;
+  overflow-wrap: anywhere;
+  padding: 0.25rem 0.5rem;
+  background: var(--bg);
+  border-radius: 6px;
+}
+
+.secret {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-color: var(--accent);
+}
+
+.secret-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.secret-row code {
+  font-size: 1rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.choices {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.choices legend {
+  font-weight: 500;
+  margin-bottom: 0.375rem;
+}
+
+.choice {
+  display: flex;
+  gap: 0.625rem;
+  align-items: flex-start;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.choice:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.choice input {
+  margin-top: 0.3rem;
+}
+
+.danger-zone {
+  border-color: var(--danger);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 720px) {
+  .table {
+    display: block;
+    overflow-x: auto;
+  }
+
+  .record-fields {
+    grid-template-columns: 1fr;
   }
 }

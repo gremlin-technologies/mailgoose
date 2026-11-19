@@ -61,7 +61,17 @@ export interface paths {
         get: operations["getAccount"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete the account
+         * @description Deletes the account and everything in it, now: contacts, emails,
+         *     sending domains (and their Amazon SES identities), API keys, CLI
+         *     logins and web sessions, and the person's sign-in. Only the billing
+         *     records the law requires stay, under a closed account with its name
+         *     and settings cleared. The address can sign up again afterwards.
+         *     `confirm` must be the account's name exactly, as `getAccount` shows
+         *     it. This can't be undone.
+         */
+        delete: operations["deleteAccount"];
         options?: never;
         head?: never;
         /**
@@ -2363,6 +2373,34 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteAccount: {
+        parameters: {
+            query?: {
+                /** @description The account's name, exactly. Required; a request without it is a 400. (It's checked after the key's scope, so a draft key always gets a 403.) */
+                confirm?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. A web session's cookie is cleared. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

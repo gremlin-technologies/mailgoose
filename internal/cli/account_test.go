@@ -97,3 +97,34 @@ func TestAccountUpdateUsage(t *testing.T) {
 		t.Errorf("sent %d requests", len(*bodies))
 	}
 }
+
+func TestAccountDelete(t *testing.T) {
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = append(got, r.Method+" "+r.URL.Path+" "+r.URL.Query().Get("confirm"))
+		if r.URL.Query().Get("confirm") != "Pat's Bakery" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = io.WriteString(w, `{"error":{"code":"confirmation_mismatch","message":"confirm must be the account's exact name"}}`)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_key"
+
+	if code := h.run("account", "delete"); code != ExitUsage || len(got) != 0 {
+		t.Fatalf("without --confirm: exit %d, %d requests", code, len(got))
+	}
+	if code := h.run("account", "delete", "--confirm", "Pats Bakery"); code == ExitOK || !strings.Contains(h.errOut.String(), "exact name") {
+		t.Fatalf("wrong name: exit %d: %s", code, h.errOut)
+	}
+	if code := h.run("account", "delete", "--confirm", "Pat's Bakery"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if got[1] != "DELETE /v1/account Pat's Bakery" || !strings.Contains(h.out.String(), "Deleted the account Pat's Bakery.") {
+		t.Errorf("requests %v, output:\n%s", got, h.out)
+	}
+}

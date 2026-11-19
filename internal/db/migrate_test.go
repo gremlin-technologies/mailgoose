@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"os"
 	"strconv"
@@ -129,5 +130,81 @@ func TestOpenRefetchesSecretAfterAuthFailure(t *testing.T) {
 	}
 	if src.calls != 2 {
 		t.Errorf("secret read %d times, want 2", src.calls)
+	}
+}
+
+// TestAccountClosingDownKeepsBillingRecords checks that rolling back the
+// account-closing migration refuses while closed accounts exist: deleting
+// them would cascade to the credit ledger, which must be kept.
+func TestAccountClosingDownKeepsBillingRecords(t *testing.T) {
+	dsn := os.Getenv("MAILGOOSE_TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("MAILGOOSE_TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	pool, err := Open(ctx, config.Database{URL: dsn}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	m, err := NewMigrator(pool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = m.Close() }()
+	if _, err := m.Up(ctx); err != nil {
+		t.Fatalf("up: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO accounts (name, status, closed_at) VALUES ('', 'closed', now())`); err != nil {
+		t.Fatalf("insert closed account: %v", err)
+	}
+
+	const closing = 15
+	for {
+		v, err := m.Down(ctx)
+		if err != nil {
+			if !strings.Contains(err.Error(), "closed accounts exist") {
+				t.Fatalf("down stopped with an unexpected error: %v", err)
+			}
+			break
+		}
+		if len(v) == 0 {
+			t.Fatal("every migration rolled back with a closed account in place")
+		}
+	}
+	status, err := m.Status(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var latest int64
+	for _, s := range status {
+		if s.State == goose.StateApplied && s.Source.Version > latest {
+			latest = s.Source.Version
+		}
+	}
+	if latest != closing {
+		t.Fatalf("rollback stopped at %d, want it refused at %d", latest, closing)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM accounts WHERE status = 'closed'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("closed account kept: n=%d err=%v", n, err)
+	}
+
+	// Once the closed account is gone the rollback goes through, leaving the
+	// database empty for the next run.
+	if _, err := pool.Exec(ctx, `DELETE FROM accounts`); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		v, err := m.Down(ctx)
+		if errors.Is(err, goose.ErrNoNextVersion) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("down after removing the closed account: %v", err)
+		}
+		if len(v) == 0 {
+			break
+		}
 	}
 }

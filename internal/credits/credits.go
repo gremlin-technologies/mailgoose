@@ -93,7 +93,7 @@ func (l *Ledger) Summary(ctx context.Context, accountID string) (*Summary, error
 			return err
 		}
 		out = &Summary{Balance: bal, Plan: acct.plan}
-		if acct.plan == "free" && acct.activatedAt != nil {
+		if acct.getsGrant() {
 			_, next := period(*acct.activatedAt, now)
 			out.NextGrantAt = &next
 		}
@@ -168,6 +168,7 @@ func (l *Ledger) inTx(ctx context.Context, f func(pgx.Tx, time.Time) error) erro
 
 type account struct {
 	plan        string
+	status      string
 	activatedAt *time.Time
 }
 
@@ -181,10 +182,17 @@ func CatchUp(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) er
 	return err
 }
 
+// getsGrant says whether the account gets the free monthly grant: a free
+// account that is active. Not one still pending, and not a deleted one,
+// whose ledger stays only as a billing record.
+func (a *account) getsGrant() bool {
+	return a.plan == "free" && a.status == "active" && a.activatedAt != nil
+}
+
 func catchUp(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) (*account, error) {
 	var a account
-	err := tx.QueryRow(ctx, `SELECT plan, activated_at FROM accounts WHERE id = $1 FOR UPDATE`, accountID).
-		Scan(&a.plan, &a.activatedAt)
+	err := tx.QueryRow(ctx, `SELECT plan, status, activated_at FROM accounts WHERE id = $1 FOR UPDATE`, accountID).
+		Scan(&a.plan, &a.status, &a.activatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoAccount
 	}
@@ -219,7 +227,7 @@ func catchUp(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) (*
 		}
 	}
 
-	if a.plan == "free" && a.activatedAt != nil {
+	if a.getsGrant() {
 		start, next := period(*a.activatedAt, now)
 		var granted bool
 		if err := tx.QueryRow(ctx, `

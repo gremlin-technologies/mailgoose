@@ -3,7 +3,12 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
+
+	"github.com/gremlin-technologies/mailgoose/internal/domains"
 )
 
 type accountBody struct {
@@ -49,4 +54,43 @@ func TestAccountThroughTheAPI(t *testing.T) {
 	read(jsonRequest(http.MethodPatch, "/v1/account", `{"time_zone":"EST5EDT "}`), http.StatusUnprocessableEntity)
 	read(jsonRequest(http.MethodPatch, "/v1/account", `{"plan":"paid"}`), http.StatusBadRequest)
 	read(jsonRequest(http.MethodPatch, "/v1/account", `{"name":5}`), http.StatusBadRequest)
+}
+
+func TestDeleteAccountThroughTheAPI(t *testing.T) {
+	srv := authServer(t)
+	h := srv.Handler()
+	signedIn(t, h)
+	send := func(req func(*testing.T) *http.Request) *httptest.ResponseRecorder {
+		t.Helper()
+		return do(t, h, withSession(req)(t))
+	}
+	if rec := send(jsonRequest(http.MethodPost, "/v1/domains", `{"name":"news.example.com"}`)); rec.Code != http.StatusCreated {
+		t.Fatalf("add domain: %d %s", rec.Code, rec.Body)
+	}
+	var acct accountBody
+	if err := json.Unmarshal(send(request(http.MethodGet, "/v1/account")).Body.Bytes(), &acct); err != nil || acct.Name == "" {
+		t.Fatalf("account: %+v %v", acct, err)
+	}
+
+	if rec := send(request(http.MethodDelete, "/v1/account?confirm="+url.QueryEscape(strings.ToUpper(acct.Name)))); rec.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(rec.Body.String(), "confirmation_mismatch") {
+		t.Fatalf("wrong name: %d %s", rec.Code, rec.Body)
+	}
+	rec := send(request(http.MethodDelete, "/v1/account?confirm="+url.QueryEscape(acct.Name)))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
+	}
+	cleared := false
+	for _, c := range rec.Result().Cookies() {
+		cleared = cleared || (c.Name == SessionCookie && c.MaxAge < 0)
+	}
+	if !cleared {
+		t.Error("the session cookie should be cleared")
+	}
+	if rec := send(request(http.MethodGet, "/v1/account")); rec.Code != http.StatusUnauthorized {
+		t.Errorf("after delete: %d %s", rec.Code, rec.Body)
+	}
+	if ses := srv.Domains.SES.(*domains.FakeSES); len(ses.Deleted) != 1 || ses.Deleted[0] != "news.example.com" {
+		t.Errorf("SES identities deleted: %v", ses.Deleted)
+	}
 }

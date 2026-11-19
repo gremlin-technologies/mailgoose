@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -111,7 +112,39 @@ address with --postal-address-file, or with \n between lines.`,
 	uf.StringVar(&postalFile, "postal-address-file", "", "read the postal address from this file")
 	uf.StringVar(&tz, "time-zone", "", "IANA time zone, such as America/New_York")
 
-	cmd.AddCommand(get, update)
+	var confirm string
+	del := calls("deleteAccount", &cobra.Command{
+		Use:   "delete",
+		Short: "Delete the account and everything in it",
+		Long: `Deletes the account at once: emails, contacts, tags, imports, the suppression
+list, sending domains (and their SES identities), API keys and every sign-in.
+It can't be undone. The credit ledger is kept, with the account's name and
+settings cleared, because payments and refunds need it.
+
+Pass --confirm with the account's exact name, as "mailgoose account get" shows
+it. Only a signed-in person or a full-scope API key can delete an account.`,
+		Example: `  mailgoose account delete --confirm "Pat's Bakery"`,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if confirm == "" {
+				return needFlag("confirm", "The account's exact name (deleting can't be undone)")
+			}
+			path := "/v1/account?" + url.Values{"confirm": {confirm}}.Encode()
+			if err := a.call(cmd.Context(), http.MethodDelete, path, nil, nil, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(map[string]any{"name": confirm, "deleted": true})
+				return nil
+			}
+			fmt.Fprintf(a.Stdout, "Deleted the account %s.\n", confirm)
+			fmt.Fprintln(a.Stdout, "Its API keys and logins no longer work. Run `mailgoose logout` to remove a stored login from this computer.")
+			return nil
+		},
+	})
+	del.Flags().StringVar(&confirm, "confirm", "", "the account's exact name; deleting can't be undone")
+
+	cmd.AddCommand(get, update, del)
 	return cmd
 }
 

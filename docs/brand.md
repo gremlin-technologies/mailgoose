@@ -29,12 +29,17 @@ Sampled from `brand/mascot.png`. These are a starting point, not final tokens.
 | Buckle gold | `#D8A24C` | the buckle | highlights |
 | Eye charcoal | `#473E3B` | the eye | text |
 
-## Contrast still to check
+## Tokens
 
-The palette hasn't been tuned for accessibility. When the web and editor
-tickets build tokens, check every text and background pair against WCAG 2.2 AA
-(4.5:1 for body text, 3:1 for large text and UI parts) and adjust shades as
-needed. Ratios of the raw colors, for a head start:
+`web/src/styles.css` turns the palette into light and dark design tokens,
+adjusted for contrast, and `web/src/styles.test.ts` checks every text and
+background pair the app draws against WCAG 2.2 AA. Change a token there and
+the test says whether the new shade still passes.
+
+## Contrast notes
+
+Ratios of the raw colors, which the tokens work around (4.5:1 for body text,
+3:1 for large text and UI parts):
 
 - Charcoal text on cream: 8.3:1. Passes.
 - White text on deep periwinkle: 5.7:1. Passes.

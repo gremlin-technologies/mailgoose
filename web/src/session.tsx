@@ -21,6 +21,8 @@ type SessionContextValue = {
   signedIn: (session: Session) => void;
   /** Ends this session. Returns why it failed, if it did. */
   signOut: () => Promise<Failure | undefined>;
+  /** Records that the API already ended this session, as deleting the account does. */
+  ended: () => void;
 };
 
 const SessionContext = createContext<SessionContextValue | null>(null);
@@ -54,6 +56,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       state,
       refresh,
       signedIn: (session) => setState({ status: "signed-in", session }),
+      ended: () => setState({ status: "signed-out", left: true }),
       signOut: async () => {
         const res = await attempt(() => api.DELETE("/v1/sessions/current"));
         if (!res.ok && res.failure.status !== 401) return res.failure;

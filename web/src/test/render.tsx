@@ -10,8 +10,8 @@ import { SessionProvider } from "../session";
 afterEach(cleanup);
 
 type Reply = { status: number; body?: unknown };
-/** Answers one request; gets the parsed JSON body, if any. */
-type Route = (body: unknown) => Reply;
+/** Answers one request; gets the parsed JSON body, if any, and the URL. */
+type Route = (body: unknown, url: URL) => Reply;
 
 export type Call = { method: string; path: string; body: unknown };
 
@@ -28,7 +28,7 @@ export function fakeApi(routes: Record<string, Route>) {
     const key = `${req.method} ${url.pathname}`;
     calls.push({ method: req.method, path: url.pathname, body });
     const route = routes[key];
-    const reply = route ? route(body) : apiError(404, "not_found", "No such endpoint.");
+    const reply = route ? route(body, url) : apiError(404, "not_found", "No such endpoint.");
     return new Response(reply.body === undefined ? null : JSON.stringify(reply.body), {
       status: reply.status,
       headers: reply.body === undefined ? {} : { "Content-Type": "application/json" },

@@ -147,6 +147,50 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: deleteAccount
+      summary: Delete the account
+      description: |
+        Deletes the account and everything in it, now: contacts, emails,
+        sending domains (and their Amazon SES identities), API keys, CLI
+        logins and web sessions, and the person's sign-in. Only the billing
+        records the law requires stay, under a closed account with its name
+        and settings cleared. The address can sign up again afterwards.
+        `confirm` must be the account's name exactly, as `getAccount` shows
+        it. This can't be undone.
+      tags: [account]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - name: confirm
+          in: query
+          description: >-
+            The account's name, exactly. Required; a request without it is a
+            400. (It's checked after the key's scope, so a draft key always
+            gets a 403.)
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        "204":
+          description: Deleted. A web session's cookie is cleared.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/api-keys:
     get:
       operationId: listApiKeys

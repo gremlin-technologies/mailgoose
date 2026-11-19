@@ -11,5 +11,5 @@ export const navPages: NavPage[] = [
   { path: "/domains", label: "Domains", about: "Verify the domain your emails come from." },
   { path: "/api-keys", label: "API keys", about: "Keys for the CLI, your scripts and your AI agent." },
   { path: "/credits", label: "Credits", about: "Your credit balance, buying credits and your billing history." },
-  { path: "/settings", label: "Settings", about: "Your account name, sending defaults and signing out everywhere." },
+  { path: "/settings", label: "Settings", about: "Your account name, sending defaults and postal address." },
 ];

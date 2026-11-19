@@ -2027,6 +2027,12 @@ type Unauthorized = Error
 // ValidationFailed defines model for ValidationFailed.
 type ValidationFailed = Error
 
+// DeleteAccountParams defines parameters for DeleteAccount.
+type DeleteAccountParams struct {
+	// Confirm The account's name, exactly. Required; a request without it is a 400. (It's checked after the key's scope, so a draft key always gets a 403.)
+	Confirm *string `form:"confirm,omitempty" json:"confirm,omitempty"`
+}
+
 // ListApiKeysParams defines parameters for ListApiKeys.
 type ListApiKeysParams struct {
 	// Limit Items per page.
@@ -2917,6 +2923,9 @@ type ServerInterface interface {
 	// GetReadiness Readiness check
 	// (GET /readyz)
 	GetReadiness(w http.ResponseWriter, r *http.Request)
+	// DeleteAccount Delete the account
+	// (DELETE /v1/account)
+	DeleteAccount(w http.ResponseWriter, r *http.Request, params DeleteAccountParams)
 	// GetAccount Show account settings
 	// (GET /v1/account)
 	GetAccount(w http.ResponseWriter, r *http.Request)
@@ -3112,6 +3121,39 @@ func (siw *ServerInterfaceWrapper) GetReadiness(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetReadiness(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteAccount operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteAccountParams
+
+	// ------------- Optional query parameter "confirm" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm", r.URL.Query(), &params.Confirm, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteAccount(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4785,6 +4827,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/healthz", wrapper.GetHealth)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/readyz", wrapper.GetReadiness)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/account", wrapper.DeleteAccount)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/account", wrapper.GetAccount)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/account", wrapper.UpdateAccount)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/api-keys", wrapper.ListApiKeys)
