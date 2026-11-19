@@ -10,6 +10,6 @@ export const navPages: NavPage[] = [
   { path: "/forms", label: "Signup forms", about: "Make a signup form and copy its embed code." },
   { path: "/domains", label: "Domains", about: "Verify the domain your emails come from." },
   { path: "/api-keys", label: "API keys", about: "Keys for the CLI, your scripts and your AI agent." },
-  { path: "/credits", label: "Credits", about: "Your credit balance, buying credits and your billing history." },
+  { path: "/credits", label: "Credits and billing", about: "Your plan, your credit balance, buying credits and your history." },
   { path: "/settings", label: "Settings", about: "Your account name, sending defaults and postal address." },
 ];

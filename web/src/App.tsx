@@ -4,6 +4,7 @@ import { Route, Routes } from "react-router";
 import { RequireSession, SignedOutOnly } from "./guards";
 import { ApiKeys } from "./pages/ApiKeys";
 import { AppLayout } from "./pages/AppLayout";
+import { Billing } from "./billing/Billing";
 import { CampaignDetail } from "./campaigns/CampaignDetail";
 import { CampaignReport } from "./campaigns/Report";
 import { Campaigns, NewCampaign } from "./pages/Campaigns";
@@ -27,6 +28,7 @@ const built: Record<string, ReactNode> = {
   "/emails": <Emails />,
   "/campaigns": <Campaigns />,
   "/forms": <Forms />,
+  "/credits": <Billing />,
   "/contacts": <Contacts />,
   "/tags": <Tags />,
   "/domains": <Domains />,
@@ -85,6 +87,7 @@ export function AppRoutes() {
         <Route path="/campaigns/:id" element={<CampaignDetail />} />
         <Route path="/campaigns/:id/report" element={<CampaignReport />} />
         <Route path="/forms/:id" element={<FormEditor />} />
+        <Route path="/billing" element={<Billing />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

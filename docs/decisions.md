@@ -24,6 +24,27 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: Credits and billing page (MG-50, reversible defaults)
+
+Picked while building MG-50; easy to change.
+
+- **The ticket's "next fee date and amount" is the plan's next payment**,
+  since the fee became a card subscription on Nov 18: the renewal date and
+  what the contacts' plan units cost then, before sales tax. A cancelled
+  plan shows when it ends instead.
+- **The "paused for an unpaid fee" banner shows while the subscription is
+  `past_due` or `unpaid`**, on every signed-in page, and links to this page.
+  It reads the plan again on each page change, so it goes away once the
+  payment goes through.
+- **Payments open Stripe's own pages.** The page only goes to an https
+  address on stripe.com, and says so if the API answers with anything else.
+- **The pack buttons list the four decided packs** (BIL-3). A server set up
+  with other packs still prices the purchase itself; the buttons would need
+  an API that lists packs to follow it.
+- **The page answers at both `/credits` (the menu, and where a credit pack's
+  checkout returns) and `/billing` (where the plan's checkout returns)**, and
+  the menu item is now "Credits and billing".
+
 ## 2026-11-19: Signup form pages (MG-49, reversible defaults)
 
 Picked while building MG-49; easy to change.
@@ -38,6 +59,9 @@ Picked while building MG-49; easy to change.
   shows exactly what a site gets.
 - **Fields are email (always), then first and last name**, each with its own
   label and a required switch. A form keeps the order it was made with.
+- **A form that goes to a page keeps its saved message.** The message box is
+  hidden in that mode, but the API still needs a message, so an emptied one
+  is left as it was saved rather than failing on a field nobody can see.
 
 ## 2026-11-19: Report page (MG-48, reversible defaults)
 

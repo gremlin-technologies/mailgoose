@@ -56,8 +56,13 @@ function valuesOf(f: Form): Values {
   };
 }
 
-/** The PATCH body for the values: every option, so the form is saved as shown. */
-export function bodyOf(v: Values) {
+/**
+ * The PATCH body for the values: every option, so the form is saved as shown.
+ * The message box is hidden while the form goes to a page, but the API still
+ * needs a message, so an empty one there keeps the saved message.
+ */
+export function bodyOf(v: Values, savedMessage = "") {
+  const message = v.successMessage.trim();
   return {
     name: v.name.trim(),
     fields: v.fields
@@ -65,7 +70,7 @@ export function bodyOf(v: Values) {
       .map((r) => ({ name: r.name, label: r.label.trim(), required: r.name === "email" || r.required })),
     tag_ids: v.tagIds,
     button_text: v.buttonText.trim(),
-    success_message: v.successMessage.trim(),
+    success_message: v.after === "redirect" && !message ? savedMessage : message,
     redirect_url: v.after === "redirect" ? v.redirectUrl.trim() : "",
     double_opt_in: v.doubleOptIn,
     confirm_subject: v.confirmSubject.trim(),
@@ -173,7 +178,8 @@ function Options({
   const [v, setV] = useState<Values>(start);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure>();
-  const dirty = JSON.stringify(bodyOf(v)) !== JSON.stringify(bodyOf(start));
+  const body = bodyOf(v, form.success_message);
+  const dirty = JSON.stringify(body) !== JSON.stringify(bodyOf(start, form.success_message));
   const set = (patch: Partial<Values>) => {
     edited();
     setV((old) => ({ ...old, ...patch }));
@@ -185,7 +191,7 @@ function Options({
     e.preventDefault();
     setBusy(true);
     setFailure(undefined);
-    const res = await attempt(() => api.PATCH("/v1/forms/{form_id}", { params: { path: { form_id: form.id } }, body: bodyOf(v) }));
+    const res = await attempt(() => api.PATCH("/v1/forms/{form_id}", { params: { path: { form_id: form.id } }, body }));
     setBusy(false);
     if (!res.ok) return setFailure(res.failure);
     if (res.data) saved(res.data);
@@ -255,7 +261,7 @@ function Options({
 
       <label className="field">
         <span>Button text</span>
-        <input value={v.buttonText} onChange={(e) => set({ buttonText: e.target.value })} maxLength={50} placeholder="Subscribe" />
+        <input value={v.buttonText} onChange={(e) => set({ buttonText: e.target.value })} maxLength={50} placeholder="Subscribe" required />
       </label>
 
       <fieldset className="choices">
@@ -271,7 +277,7 @@ function Options({
         {v.after === "message" ? (
           <label className="field">
             <span>Message</span>
-            <textarea rows={2} value={v.successMessage} onChange={(e) => set({ successMessage: e.target.value })} maxLength={500} />
+            <textarea rows={2} value={v.successMessage} onChange={(e) => set({ successMessage: e.target.value })} maxLength={500} required />
           </label>
         ) : (
           <label className="field">

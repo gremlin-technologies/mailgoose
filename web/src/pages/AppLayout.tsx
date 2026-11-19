@@ -2,6 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet } from "react-router";
 
 import type { Failure } from "../api/result";
+import { PausedBanner } from "../billing/PausedBanner";
 import { FailureNotice } from "../components";
 import { useSession } from "../session";
 import { navPages } from "./nav";
@@ -49,6 +50,7 @@ export function AppLayout() {
         </div>
       </aside>
       <main className="content">
+        <PausedBanner />
         <Outlet />
       </main>
     </div>
