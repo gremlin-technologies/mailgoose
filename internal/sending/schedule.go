@@ -45,7 +45,7 @@ func (s *Service) lockScheduled(ctx context.Context, tx pgx.Tx, accountID, campa
 // campaign changes nothing. One that has started sending can't be
 // cancelled this way (a StatusError).
 func (s *Service) Cancel(ctx context.Context, accountID, campaignID string) (*campaigns.Campaign, error) {
-	return s.end(ctx, accountID, campaignID, "cancelled before sending", campaigns.StatusScheduled)
+	return s.end(ctx, accountID, campaignID, "cancelled before sending", nil, campaigns.StatusScheduled)
 }
 
 // Stop is the kill switch for one campaign (CMP-8): a scheduled, sending or
@@ -54,12 +54,20 @@ func (s *Service) Cancel(ctx context.Context, accountID, campaignID string) (*ca
 // nothing more (each send checks the campaign first). Copies being sent
 // at that moment still go. Stopping a cancelled campaign changes nothing.
 func (s *Service) Stop(ctx context.Context, accountID, campaignID string) (*campaigns.Campaign, error) {
-	return s.end(ctx, accountID, campaignID, "stopped by mailgoose",
+	return s.StopAnd(ctx, accountID, campaignID, nil)
+}
+
+// StopAnd is Stop, calling then in the same transaction when the campaign
+// was stopped, with the status it had. A campaign cancelled already isn't
+// stopped again and then isn't called. An error from then undoes the stop.
+func (s *Service) StopAnd(ctx context.Context, accountID, campaignID string, then func(tx pgx.Tx, before string) error) (*campaigns.Campaign, error) {
+	return s.end(ctx, accountID, campaignID, "stopped by mailgoose", then,
 		campaigns.StatusScheduled, campaigns.StatusSending, campaigns.StatusPaused)
 }
 
-// end cancels a campaign in one of the allowed statuses.
-func (s *Service) end(ctx context.Context, accountID, campaignID, note string, allowed ...string) (*campaigns.Campaign, error) {
+// end cancels a campaign in one of the allowed statuses, then calls then,
+// if any, in the same transaction.
+func (s *Service) end(ctx context.Context, accountID, campaignID, note string, then func(tx pgx.Tx, before string) error, allowed ...string) (*campaigns.Campaign, error) {
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		c, err := s.lockScheduled(ctx, tx, accountID, campaignID)
 		if err != nil {
@@ -88,8 +96,13 @@ func (s *Service) end(ctx context.Context, accountID, campaignID, note string, a
 			WHERE account_id = $1 AND id = $2`, accountID, campaignID, now); err != nil {
 			return err
 		}
-		_, err = tx.Exec(ctx, `UPDATE send_queue SET done_at = $2 WHERE campaign_id = $1 AND done_at IS NULL`, campaignID, now)
-		return err
+		if _, err := tx.Exec(ctx, `UPDATE send_queue SET done_at = $2 WHERE campaign_id = $1 AND done_at IS NULL`, campaignID, now); err != nil {
+			return err
+		}
+		if then != nil {
+			return then(tx, c.Status)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -151,7 +164,7 @@ func StartDue(ctx context.Context, db *pgxpool.Pool, now time.Time) ([]string, e
 }
 
 // RunScheduler starts due scheduled campaigns every interval until ctx
-// ends. The worker runs it; the dispatcher also starts a due campaign it
+// ends, and fails the stale claims of stopped campaigns. The worker runs it; the dispatcher also starts a due campaign it
 // comes to first, and either way it starts once.
 func RunScheduler(ctx context.Context, db *pgxpool.Pool, interval time.Duration, log *slog.Logger) {
 	t := time.NewTicker(interval)
@@ -163,6 +176,13 @@ func RunScheduler(ctx context.Context, db *pgxpool.Pool, interval time.Duration,
 			log.ErrorContext(ctx, "start scheduled campaigns", "err", err)
 		case len(ids) > 0:
 			log.InfoContext(ctx, "scheduled campaigns started", "campaign_ids", ids)
+		}
+		n, err := FailStoppedClaims(ctx, db, time.Now())
+		switch {
+		case err != nil && ctx.Err() == nil:
+			log.ErrorContext(ctx, "fail stale claims of stopped campaigns", "err", err)
+		case n > 0:
+			log.InfoContext(ctx, "stale claims of stopped campaigns failed", "rows", n)
 		}
 		select {
 		case <-ctx.Done():

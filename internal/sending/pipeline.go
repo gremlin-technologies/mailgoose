@@ -297,6 +297,64 @@ func (p *Pipeline) failStaleClaims(ctx context.Context, tx pgx.Tx, accountID, ca
 	return nil
 }
 
+// FailStoppedClaims does what failStaleClaims does for campaigns the
+// dispatcher no longer visits: ones stopped or cancelled while a worker
+// held a copy, when that worker then died. Their stale claims are marked
+// failed and the credits given back. It returns how many rows it failed.
+// Claimed rows always came in a batch, so enqueued_at is set, which lets
+// the in-flight index find them.
+func FailStoppedClaims(ctx context.Context, db *pgxpool.Pool, now time.Time) (int64, error) {
+	rows, err := db.Query(ctx, `
+		SELECT DISTINCT r.account_id, r.campaign_id FROM campaign_recipients r
+		WHERE r.status = 'sending' AND r.enqueued_at IS NOT NULL AND r.claimed_at <= $1
+			AND NOT EXISTS (SELECT 1 FROM send_queue q WHERE q.campaign_id = r.campaign_id AND q.done_at IS NULL)`, now.Add(-ClaimTimeout))
+	if err != nil {
+		return 0, err
+	}
+	type stale struct{ account, campaign string }
+	var found []stale
+	for rows.Next() {
+		var st stale
+		if err := rows.Scan(&st.account, &st.campaign); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		found = append(found, st)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	var total int64
+	for _, st := range found {
+		err := pgx.BeginFunc(ctx, db, func(tx pgx.Tx) error {
+			// The status check makes each row fail once, however many
+			// workers sweep at the same time.
+			tag, err := tx.Exec(ctx, `
+				UPDATE campaign_recipients SET status = 'failed',
+					error = 'interrupted while sending; not sent again in case it went out'
+				WHERE campaign_id = $1 AND status = 'sending' AND claimed_at <= $2
+					AND NOT EXISTS (SELECT 1 FROM send_queue q WHERE q.campaign_id = $1 AND q.done_at IS NULL)`,
+				st.campaign, now.Add(-ClaimTimeout))
+			if err != nil {
+				return err
+			}
+			n := tag.RowsAffected()
+			if n > 0 {
+				if _, err := credits.Release(ctx, tx, st.account, creditsRef(st.campaign), n, now); err != nil {
+					return err
+				}
+			}
+			total += n
+			return nil
+		})
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
+}
+
 // finishIfDone ends a campaign whose rows are all done: sent, or failed
 // when none went out.
 func (p *Pipeline) finishIfDone(ctx context.Context, tx pgx.Tx, rowID int64, accountID, campaignID string, now time.Time) error {
