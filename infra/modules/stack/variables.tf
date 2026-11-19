@@ -90,6 +90,12 @@ variable "initial_image_tag" {
   default     = "bootstrap"
 }
 
+variable "images_cdn" {
+  description = "Serve uploaded images through CloudFront. With false, the API serves them itself from the private bucket (presigned redirects), e.g. while CloudFront isn't allowed on the account yet."
+  type        = bool
+  default     = true
+}
+
 variable "api_cpu" {
   type    = number
   default = 256

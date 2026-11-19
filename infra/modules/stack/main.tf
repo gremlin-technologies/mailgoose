@@ -109,13 +109,15 @@ resource "aws_secretsmanager_secret" "app" {
   recovery_window_in_days = 7
 }
 
-# Uploaded images (DES-5), served through CloudFront. Staging's bucket may be
-# destroyed with images in it; prod's may not.
+# Uploaded images (DES-5), served through CloudFront, or by the API itself
+# when images_cdn is false. Staging's bucket may be destroyed with images in
+# it; prod's may not.
 module "images" {
   source = "../images"
 
   name          = local.name
   force_destroy = !var.deletion_protection
+  cdn           = var.images_cdn
 }
 
 # --- Queues ---
@@ -201,10 +203,13 @@ locals {
   }
 
   # The API also serves image uploads, so only it gets the image bucket.
+  # Without the CDN, IMAGES_BASE_URL is left unset and the API serves the
+  # images at PUBLIC_BASE_URL/images, redirecting to presigned URLs.
   api_env = merge(local.common_env, {
-    PORT            = tostring(var.container_port)
-    IMAGES_BUCKET   = module.images.bucket_name
-    IMAGES_BASE_URL = module.images.base_url
+    PORT          = tostring(var.container_port)
+    IMAGES_BUCKET = module.images.bucket_name
+    }, {
+    for k, v in { IMAGES_BASE_URL = module.images.base_url } : k => v if var.images_cdn
   })
 
   # The whole app secret (JSON) is injected at task start; the app parses it.
@@ -269,6 +274,14 @@ data "aws_iam_policy_document" "api" {
   statement {
     sid       = "WriteImages"
     actions   = ["s3:PutObject", "s3:DeleteObject"]
+    resources = ["${module.images.bucket_arn}/*"]
+  }
+
+  # Without the CDN, the API presigns the URLs images are read from, which
+  # needs read on the bucket.
+  statement {
+    sid       = "ReadImages"
+    actions   = ["s3:GetObject"]
     resources = ["${module.images.bucket_arn}/*"]
   }
 
