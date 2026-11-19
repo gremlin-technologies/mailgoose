@@ -17,3 +17,12 @@ output "api_target_group_arn" {
 output "https_listener_arn" {
   value = aws_lb_listener.https.arn
 }
+
+# For CloudWatch alarms on the load balancer and the API's target group.
+output "alb_arn_suffix" {
+  value = aws_lb.this.arn_suffix
+}
+
+output "api_target_group_arn_suffix" {
+  value = aws_lb_target_group.api.arn_suffix
+}

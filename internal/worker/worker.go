@@ -69,6 +69,10 @@ type Worker struct {
 // Run polls every configured queue. With no queues configured it idles until
 // ctx is cancelled, so the container stays up and stops cleanly.
 func (w *Worker) Run(ctx context.Context) error {
+	if w.Log == nil {
+		w.Log = slog.New(slog.DiscardHandler)
+	}
+	w.Log = slog.New(LogWithJobs(w.Log.Handler()))
 	var queues []Queue
 	for _, q := range w.Queues {
 		if q.URL == "" {
@@ -137,14 +141,14 @@ func (w *Worker) poll(ctx context.Context, q Queue) {
 }
 
 func (w *Worker) handle(ctx context.Context, q Queue, msg types.Message) {
-	id := aws.ToString(msg.MessageId)
+	// Everything logged while handling the message, here or in its handler,
+	// carries the queue and message_id (OPS-4).
+	ctx = WithJob(ctx, Job{Queue: q.Name, MessageID: aws.ToString(msg.MessageId)})
 	stop := w.keepInvisible(ctx, q, msg)
 	err := q.Handler.Handle(ctx, msg)
 	stop()
 	if err != nil {
-		w.Log.Warn("message left on queue",
-			"queue", q.Name,
-			"message_id", id,
+		w.Log.WarnContext(ctx, "message left on queue",
 			"receive_count", msg.Attributes[string(types.MessageSystemAttributeNameApproximateReceiveCount)],
 			"err", err,
 		)
@@ -158,7 +162,7 @@ func (w *Worker) handle(ctx context.Context, q Queue, msg types.Message) {
 		QueueUrl:      aws.String(q.URL),
 		ReceiptHandle: msg.ReceiptHandle,
 	}); err != nil {
-		w.Log.Error("delete failed; message will be redelivered", "queue", q.Name, "message_id", id, "err", err)
+		w.Log.ErrorContext(delCtx, "delete failed; message will be redelivered", "err", err)
 	}
 }
 

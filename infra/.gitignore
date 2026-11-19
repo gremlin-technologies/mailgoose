@@ -5,3 +5,6 @@
 tfplan
 crash.log
 backend.hcl
+# Where each environment's alarm address goes (see README, "Alarms"), so no
+# personal address lands in the repo.
+alerts.auto.tfvars

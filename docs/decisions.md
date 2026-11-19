@@ -24,6 +24,36 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: Monitoring and alarms (MG-53, reversible defaults)
+
+Picked while building MG-53; easy to change. The owner applies it and picks
+the address alarms go to.
+
+- **Error tracking is CloudWatch, not Sentry.** The app already logs JSON
+  lines that ECS ships to CloudWatch Logs; a metric filter counts the
+  `ERROR` lines per service and alarms at 5 in 5 minutes. No new vendor,
+  account, secret or data leaving AWS. Sentry (or similar) can be added
+  later for stack traces and grouping without changing the alarms.
+- **Worker log lines carry `queue` and `message_id`**, the worker's
+  counterpart to the API's `request_id`, added from the context so a
+  handler's own lines carry them too.
+- **Alarms go to one SNS topic per environment, by email.** The address is
+  set in a git-ignored `alerts.auto.tfvars`, so no personal address is
+  committed. With none set, alarms only show in the CloudWatch console.
+- **Thresholds**: a queue's oldest message over 15 minutes; any message on
+  a dead-letter queue; over 5% of API requests failing with a 5xx in 5
+  minutes, judged from 20 requests; no healthy API task for 5 minutes; no
+  api or worker task reporting for 10 minutes.
+- **SES bounce and complaint rate alarms are in prod only**, since those
+  metrics cover the whole AWS account that staging shares. They fire at
+  4% bounces and 0.08% complaints, under AWS's review levels of 5% and
+  0.1%. They start when prod is first applied.
+- **"Task health" uses metrics ECS and the load balancer send for free**
+  (the target group's healthy hosts, and whether each service reports CPU),
+  rather than turning on Container Insights, which costs extra.
+- **Cost**: 10 alarms (12 in prod) and 2 log metrics per environment, roughly $2
+  a month each beyond CloudWatch's free tier (10 alarms, 10 metrics).
+
 ## 2026-11-19: Policy pages (MG-57, reversible defaults)
 
 Picked while building MG-57; easy to change. The legal text itself is the

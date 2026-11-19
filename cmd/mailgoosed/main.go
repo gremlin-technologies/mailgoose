@@ -53,7 +53,13 @@ import (
 )
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// JSON lines on stdout, which ECS ships to CloudWatch Logs. A line logged
+	// with a request's or a queue message's context carries its request_id,
+	// or its queue and message_id, so one request or job can be followed
+	// across components (OPS-4). Lines at level ERROR feed the error alarm
+	// (infra/modules/monitoring).
+	log := slog.New(worker.LogWithJobs(api.LogWithRequestIDs(
+		slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))))
 	slog.SetDefault(log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

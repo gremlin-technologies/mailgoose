@@ -43,4 +43,9 @@ module "stack" {
   # When on, only jobs running in the GitHub "production" environment (which can
   # require a manual approval) may deploy prod.
   github_deploy_subjects = ["environment:production"]
+
+  # Alarms email this address once it confirms AWS's subscription email.
+  alert_email = var.alert_email
+  # SES reputation is the AWS account's, shared with staging; prod watches it.
+  ses_reputation_alarms = true
 }

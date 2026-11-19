@@ -35,4 +35,7 @@ module "stack" {
   # docs/decisions.md). When on, any push to main deploys staging.
   enable_github_deploy   = false
   github_deploy_subjects = ["ref:refs/heads/main"]
+
+  # Alarms email this address once it confirms AWS's subscription email.
+  alert_email = var.alert_email
 }
