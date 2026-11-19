@@ -78,6 +78,7 @@ const (
 	AdminActionActionPause         AdminActionAction = "pause"
 	AdminActionActionRevokeAdmin   AdminActionAction = "revoke_admin"
 	AdminActionActionStopCampaign  AdminActionAction = "stop_campaign"
+	AdminActionActionThrottle      AdminActionAction = "throttle"
 	AdminActionActionUnpause       AdminActionAction = "unpause"
 )
 
@@ -97,6 +98,8 @@ func (e AdminActionAction) Valid() bool {
 	case AdminActionActionRevokeAdmin:
 		return true
 	case AdminActionActionStopCampaign:
+		return true
+	case AdminActionActionThrottle:
 		return true
 	case AdminActionActionUnpause:
 		return true
@@ -1161,6 +1164,13 @@ type AccountSettings struct {
 	// Springfield, IL 62701
 	PostalAddress *string `json:"postal_address"`
 
+	// SendLimit How many campaign recipients the account may send to in 24 hours.
+	// New accounts start low and double each week of clean sending up to
+	// the usual limit. A campaign whose spam complaints or hard bounces
+	// pass the early-warning limits (0.1% and 2% by default) lowers it to
+	// the new-account limit for 7 days.
+	SendLimit SendLimit `json:"send_limit"`
+
 	// TimeZone An IANA time zone name.
 	//
 	// Examples: America/Chicago
@@ -1207,14 +1217,24 @@ type AdminAccount struct {
 	Id             string            `json:"id"`
 
 	// Last30Days Copies sent, and the recipients who hard bounced or complained.
-	Last30Days          AdminRates          `json:"last_30_days"`
-	LiveCampaigns       []AdminLiveCampaign `json:"live_campaigns"`
-	Name                string              `json:"name"`
-	OwnerEmail          *string             `json:"owner_email"`
-	Plan                string              `json:"plan"`
-	SendingPausedAt     *time.Time          `json:"sending_paused_at"`
-	SendingPausedReason *string             `json:"sending_paused_reason"`
-	Status              string              `json:"status"`
+	Last30Days    AdminRates          `json:"last_30_days"`
+	LiveCampaigns []AdminLiveCampaign `json:"live_campaigns"`
+	Name          string              `json:"name"`
+	OwnerEmail    *string             `json:"owner_email"`
+	Plan          string              `json:"plan"`
+
+	// SendLimit How many campaign recipients the account may send to in 24 hours.
+	// New accounts start low and double each week of clean sending up to
+	// the usual limit. A campaign whose spam complaints or hard bounces
+	// pass the early-warning limits (0.1% and 2% by default) lowers it to
+	// the new-account limit for 7 days.
+	SendLimit           SendLimit  `json:"send_limit"`
+	SendingPausedAt     *time.Time `json:"sending_paused_at"`
+	SendingPausedReason *string    `json:"sending_paused_reason"`
+	Status              string     `json:"status"`
+
+	// Throttles Its early-warning throttles in the last 30 days, newest first.
+	Throttles []AdminThrottle `json:"throttles"`
 }
 
 // AdminAccountList defines model for AdminAccountList.
@@ -1293,6 +1313,17 @@ type AdminRates struct {
 type AdminReasonRequest struct {
 	// Reason Why, for the admin log (and, for a pause, the account). At most 500 characters.
 	Reason string `json:"reason"`
+}
+
+// AdminThrottle defines model for AdminThrottle.
+type AdminThrottle struct {
+	CampaignId *string   `json:"campaign_id"`
+	CreatedAt  time.Time `json:"created_at"`
+	Id         int64     `json:"id"`
+	Reason     string    `json:"reason"`
+
+	// Until When it lifts, or lifted.
+	Until time.Time `json:"until"`
 }
 
 // Align defines model for Align.
@@ -2708,6 +2739,27 @@ type ReportOpens struct {
 type RescheduleCampaignRequest struct {
 	// SendAt The new send time, with its offset; stored in UTC.
 	SendAt time.Time `json:"send_at"`
+}
+
+// SendLimit How many campaign recipients the account may send to in 24 hours.
+// New accounts start low and double each week of clean sending up to
+// the usual limit. A campaign whose spam complaints or hard bounces
+// pass the early-warning limits (0.1% and 2% by default) lowers it to
+// the new-account limit for 7 days.
+type SendLimit struct {
+	// Daily Examples: 1000
+	Daily int `json:"daily"`
+
+	// LoweredUntil When a lowered limit lifts; null when it isn't lowered.
+	LoweredUntil *time.Time `json:"lowered_until"`
+
+	// Reason Why `daily` is under `usual` (or set by mailgoose); null at the usual limit.
+	Reason *string `json:"reason"`
+
+	// Usual The limit for an established account in good standing.
+	//
+	// Examples: 10000
+	Usual int `json:"usual"`
 }
 
 // Session defines model for Session.

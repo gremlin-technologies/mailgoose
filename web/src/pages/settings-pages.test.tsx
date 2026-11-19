@@ -193,6 +193,37 @@ describe("API keys", () => {
   });
 });
 
+describe("settings send limit", () => {
+  it("warns when the daily limit is lowered", async () => {
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/account": () => ({
+        status: 200,
+        body: {
+          id: "7c1d0f7e-8f43-4a8e-9d35-2b8a7c6e1a10",
+          name: "Pat's Bakery",
+          plan: "free",
+          from_name: null,
+          from_email: null,
+          postal_address: "12 Main St",
+          time_zone: "UTC",
+          missing_for_send: [],
+          send_limit: {
+            daily: 1000,
+            usual: 10000,
+            reason: "Lowered automatically: 0.2% marked it as spam.",
+            lowered_until: "2026-11-26T10:00:00Z",
+          },
+          created_at: "2026-11-18T10:00:00Z",
+        },
+      }),
+    });
+    renderApp("/settings", api.fetch);
+    expect(await screen.findByText("Your daily send limit is lowered to 1,000.")).toBeTruthy();
+    expect(screen.getByText(/0.2% marked it as spam/)).toBeTruthy();
+  });
+});
+
 describe("settings", () => {
   const account = {
     id: "7c1d0f7e-8f43-4a8e-9d35-2b8a7c6e1a10",
@@ -203,6 +234,12 @@ describe("settings", () => {
     postal_address: null,
     time_zone: "UTC",
     missing_for_send: ["postal_address"],
+    send_limit: {
+      daily: 1000,
+      usual: 10000,
+      reason: "New accounts start at 1,000 a day; it doubles each week of clean sending, up to 10,000 a day.",
+      lowered_until: null,
+    },
     created_at: "2026-11-18T10:00:00Z",
   };
 
@@ -220,6 +257,7 @@ describe("settings", () => {
     renderApp("/settings", api.fetch);
 
     expect(await screen.findByText(/Campaigns can't launch until you add a postal address/)).toBeTruthy();
+    expect(screen.getByText(/Daily send limit: 1,000 recipients. New accounts start at 1,000 a day/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Save settings" }));
     expect(screen.getByText("Nothing changed.")).toBeTruthy();
 

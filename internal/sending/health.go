@@ -100,21 +100,10 @@ func accountClean(ctx context.Context, q querier, accountID string, now time.Tim
 	return !paused && !r.Unhealthy(), nil
 }
 
-// dailyLimit is an account's daily limit: its own, or the schedule's for
-// its age and history.
+// dailyLimit is an account's daily limit: see Limits.ForAccount.
 func (p *Pipeline) dailyLimit(ctx context.Context, q querier, accountID string, own *int, since, now time.Time) (int, error) {
-	if own != nil {
-		return *own, nil
-	}
-	age := now.Sub(since)
-	if age < NewAccountDays*24*time.Hour {
-		return p.Limits.NewDaily, nil
-	}
-	clean, err := accountClean(ctx, q, accountID, now)
-	if err != nil {
-		return 0, err
-	}
-	return LimitSchedule(p.Limits.NewDaily, p.Limits.Daily, age, clean), nil
+	l, err := p.Limits.ForAccount(ctx, q, accountID, own, since, now)
+	return l.Daily, err
 }
 
 // AutoPause is an account paused by a campaign's bounces or complaints.
@@ -143,42 +132,59 @@ func CampaignRates(ctx context.Context, q querier, campaignID string) (Rates, er
 	return r, err
 }
 
+// Health is what a campaign's rates led to: a pause, a throttle (MG-61),
+// or neither (both nil).
+type Health struct {
+	Pause    *AutoPause
+	Throttle *Throttle
+}
+
 // CheckCampaign pauses the campaign's account if its rates are over a
-// threshold (CMP-6), inside tx, and returns the pause, or nil. A campaign
-// pauses its account once: after someone lifts the pause, more bounces on
-// the same campaign don't pause it again. An account paused already (by
-// an admin) keeps that pause and its reason; the campaign is still marked
-// and the pause still reported.
-func CheckCampaign(ctx context.Context, tx pgx.Tx, campaignID string, now time.Time) (*AutoPause, error) {
+// threshold (CMP-6), or throttles it if they're over an early-warning one
+// (MG-61), inside tx. A campaign pauses its account once: after someone
+// lifts the pause, more bounces on the same campaign don't pause it again.
+// An account paused already (by an admin) keeps that pause and its reason;
+// the campaign is still marked and the pause still reported. A campaign
+// throttles its account once too, and may pause it later if it gets worse.
+func CheckCampaign(ctx context.Context, tx pgx.Tx, campaignID string, now time.Time, warn Warning) (Health, error) {
 	r, err := CampaignRates(ctx, tx, campaignID)
-	if err != nil || !r.Unhealthy() {
-		return nil, err
-	}
-	ap := &AutoPause{CampaignID: campaignID, Rates: r, At: now}
-	err = tx.QueryRow(ctx, `
-		UPDATE campaigns SET auto_paused_at = $2 WHERE id = $1 AND auto_paused_at IS NULL
-		RETURNING account_id, name`, campaignID, now).Scan(&ap.AccountID, &ap.CampaignName)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
-	}
 	if err != nil {
-		return nil, err
+		return Health{}, err
 	}
-	ap.Reason = pauseReason(ap)
+	switch {
+	case r.Unhealthy():
+		ap := &AutoPause{CampaignID: campaignID, Rates: r, At: now}
+		err := tx.QueryRow(ctx, `
+			UPDATE campaigns SET auto_paused_at = $2 WHERE id = $1 AND auto_paused_at IS NULL
+			RETURNING account_id, name`, campaignID, now).Scan(&ap.AccountID, &ap.CampaignName)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Health{}, nil
+		}
+		if err != nil {
+			return Health{}, err
+		}
+		ap.Reason = pauseReason(ap)
+		return Health{Pause: ap}, pauseAccount(ctx, tx, ap)
+	case r.OverWarning(warn):
+		return throttle(ctx, tx, campaignID, r, now, warn)
+	}
+	return Health{}, nil
+}
+
+// pauseAccount pauses ap's account for its campaign and logs it, inside tx.
+func pauseAccount(ctx context.Context, tx pgx.Tx, ap *AutoPause) error {
 	if err := tx.QueryRow(ctx, `
 		UPDATE accounts SET
 			sending_paused_reason = CASE WHEN sending_paused_at IS NULL THEN $3 ELSE sending_paused_reason END,
 			sending_paused_at = coalesce(sending_paused_at, $2)
-		WHERE id = $1 RETURNING name`, ap.AccountID, now, ap.Reason).Scan(&ap.AccountName); err != nil {
-		return nil, err
+		WHERE id = $1 RETURNING name`, ap.AccountID, ap.At, ap.Reason).Scan(&ap.AccountName); err != nil {
+		return err
 	}
-	if _, err := tx.Exec(ctx, `
+	_, err := tx.Exec(ctx, `
 		INSERT INTO admin_actions (actor, action, account_id, target_id, reason, details, created_at)
 		VALUES ('automatic', 'auto_pause', $1, $2, $3, $4, $5)`,
-		ap.AccountID, campaignID, ap.Reason, r, now); err != nil {
-		return nil, err
-	}
-	return ap, nil
+		ap.AccountID, ap.CampaignID, ap.Reason, ap.Rates, ap.At)
+	return err
 }
 
 func percent(n, of int) string {

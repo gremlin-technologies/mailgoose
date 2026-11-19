@@ -49,11 +49,19 @@ type adminAccountSummary struct {
 // adminAccount is the API's AdminAccount.
 type adminAccount struct {
 	adminAccountSummary
-	DailySendLimit int        `json:"daily_send_limit"`
-	Contacts       int64      `json:"contacts"`
-	CreditBalance  int64      `json:"credit_balance"`
-	Last30Days     adminRates `json:"last_30_days"`
-	HeldImports    []struct {
+	DailySendLimit *int      `json:"daily_send_limit"`
+	SendLimit      sendLimit `json:"send_limit"`
+	Throttles      []struct {
+		ID         int64     `json:"id"`
+		CampaignID *string   `json:"campaign_id"`
+		Reason     string    `json:"reason"`
+		CreatedAt  time.Time `json:"created_at"`
+		Until      time.Time `json:"until"`
+	} `json:"throttles"`
+	Contacts      int64      `json:"contacts"`
+	CreditBalance int64      `json:"credit_balance"`
+	Last30Days    adminRates `json:"last_30_days"`
+	HeldImports   []struct {
 		ID         string    `json:"id"`
 		TotalRows  int64     `json:"total_rows"`
 		HoldReason string    `json:"hold_reason"`
@@ -172,10 +180,21 @@ func (a *App) printAdminAccount(acc adminAccount) {
 	} else {
 		fmt.Fprintln(w, "Sending:      on")
 	}
-	fmt.Fprintf(w, "Daily limit:  %d\n", acc.DailySendLimit)
+	limit := fmt.Sprint(acc.SendLimit.Daily)
+	switch {
+	case acc.SendLimit.LoweredUntil != nil:
+		limit += " (THROTTLED until " + acc.SendLimit.LoweredUntil.Local().Format("2006-01-02 15:04") + ")"
+	case acc.DailySendLimit != nil:
+		limit += " (set for this account)"
+	}
+	fmt.Fprintf(w, "Daily limit:  %s\n", limit)
 	fmt.Fprintf(w, "Contacts:     %d\n", acc.Contacts)
 	fmt.Fprintf(w, "Credits:      %d\n", acc.CreditBalance)
 	fmt.Fprintf(w, "Last 30 days: %s\n", acc.Last30Days)
+	for _, th := range acc.Throttles {
+		fmt.Fprintf(w, "Throttled:    %s to %s: %s\n", th.CreatedAt.Local().Format("2006-01-02 15:04"),
+			th.Until.Local().Format("2006-01-02 15:04"), th.Reason)
+	}
 	for _, i := range acc.HeldImports {
 		fmt.Fprintf(w, "Held import:  %s, %d rows (%s), from %s\n", i.ID, i.TotalRows, i.HoldReason, i.CreatedAt.Local().Format("2006-01-02"))
 	}

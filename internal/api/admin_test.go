@@ -162,6 +162,13 @@ func TestAdminPauseFlow(t *testing.T) {
 	if data := found["data"].([]any); len(data) != 1 {
 		t.Fatalf("found %v", found)
 	}
+	acct := do(http.MethodGet, "/v1/admin/accounts/ACCOUNT", "", http.StatusOK)
+	if l, ok := acct["send_limit"].(map[string]any); !ok || l["daily"] != float64(1000) || l["usual"] != float64(10000) {
+		t.Errorf("send_limit = %v", acct["send_limit"])
+	}
+	if th, ok := acct["throttles"].([]any); !ok || len(th) != 0 {
+		t.Errorf("throttles = %v", acct["throttles"])
+	}
 	paused := do(http.MethodPost, "/v1/admin/accounts/ACCOUNT/pause", `{"reason":"Phishing reports"}`, http.StatusOK)
 	if paused["sending_paused_reason"] != "Phishing reports" || paused["sending_paused_at"] == nil {
 		t.Errorf("paused = %v", paused)

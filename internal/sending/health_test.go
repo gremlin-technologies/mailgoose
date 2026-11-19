@@ -86,17 +86,22 @@ func (h *harness) markSent(t *testing.T, at time.Time) {
 
 func (h *harness) check(t *testing.T) *AutoPause {
 	t.Helper()
+	return h.checkHealth(t).Pause
+}
+
+func (h *harness) checkHealth(t *testing.T) Health {
+	t.Helper()
 	ctx := context.Background()
-	var ap *AutoPause
+	var out Health
 	err := pgx.BeginFunc(ctx, h.db, func(tx pgx.Tx) error {
 		var err error
-		ap, err = CheckCampaign(ctx, tx, h.campaign.ID, h.now)
+		out, err = CheckCampaign(ctx, tx, h.campaign.ID, h.now, Warning{})
 		return err
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ap
+	return out
 }
 
 func (h *harness) paused(t *testing.T) (bool, string) {
@@ -136,7 +141,7 @@ func TestAutoPauseOnComplaints(t *testing.T) {
 	}
 	var actor, action string
 	var details []byte
-	if err := h.db.QueryRow(context.Background(), `SELECT actor, action, details FROM admin_actions WHERE account_id = $1`, h.acc).
+	if err := h.db.QueryRow(context.Background(), `SELECT actor, action, details FROM admin_actions WHERE account_id = $1 AND action <> 'throttle'`, h.acc).
 		Scan(&actor, &action, &details); err != nil {
 		t.Fatal(err)
 	}

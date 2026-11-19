@@ -38,6 +38,7 @@ const (
 	ActionStopCampaign  = "stop_campaign"
 	ActionApproveImport = "approve_import"
 	ActionGrantCredits  = "grant_credits"
+	ActionThrottle      = "throttle"
 )
 
 // Limits on what an admin sends.
@@ -76,7 +77,9 @@ type Service struct {
 	DB *pgxpool.Pool
 	// Sending stops campaigns.
 	Sending *sending.Service
-	Log     *slog.Logger
+	// Limits are the send limits, for showing an account's.
+	Limits sending.Limits
+	Log    *slog.Logger
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }
@@ -257,16 +260,29 @@ type LiveCampaign struct {
 	Rates      sending.Rates `json:"rates"`
 }
 
+// Throttle is an early-warning throttle (MG-61).
+type Throttle struct {
+	ID         int64     `json:"id"`
+	CampaignID *string   `json:"campaign_id"`
+	Reason     string    `json:"reason"`
+	CreatedAt  time.Time `json:"created_at"`
+	Until      time.Time `json:"until"`
+}
+
 // Account is everything an admin looks at.
 type Account struct {
 	AccountSummary
 	// DailySendLimit is the account's own limit; nil uses the schedule.
-	DailySendLimit *int           `json:"daily_send_limit"`
-	Contacts       int            `json:"contacts"`
-	Balance        int64          `json:"credit_balance"`
-	Last30Days     sending.Rates  `json:"last_30_days"`
-	HeldImports    []HeldImport   `json:"held_imports"`
-	LiveCampaigns  []LiveCampaign `json:"live_campaigns"`
+	DailySendLimit *int `json:"daily_send_limit"`
+	// SendLimit is its limit now, and why (MG-61).
+	SendLimit sending.SendLimit `json:"send_limit"`
+	// Throttles are its throttles in the last 30 days, newest first.
+	Throttles     []Throttle     `json:"throttles"`
+	Contacts      int            `json:"contacts"`
+	Balance       int64          `json:"credit_balance"`
+	Last30Days    sending.Rates  `json:"last_30_days"`
+	HeldImports   []HeldImport   `json:"held_imports"`
+	LiveCampaigns []LiveCampaign `json:"live_campaigns"`
 }
 
 // GetAccount is one account in full.
@@ -299,8 +315,24 @@ func (s *Service) GetAccount(ctx context.Context, id string) (*Account, error) {
 		return nil, err
 	}
 	a.Balance = sum.Balance
-
+	if a.SendLimit, err = s.Limits.Account(ctx, s.DB, id, s.now()); err != nil {
+		return nil, err
+	}
 	rows, err := s.DB.Query(ctx, `
+		SELECT id, campaign_id, reason, created_at, until FROM account_throttles
+		WHERE account_id = $1 AND created_at > $2 ORDER BY created_at DESC, id DESC`, id, s.now().Add(-sending.ThrottleWindow))
+	if err != nil {
+		return nil, err
+	}
+	if a.Throttles, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (Throttle, error) {
+		var t Throttle
+		err := row.Scan(&t.ID, &t.CampaignID, &t.Reason, &t.CreatedAt, &t.Until)
+		return t, err
+	}); err != nil {
+		return nil, err
+	}
+
+	rows, err = s.DB.Query(ctx, `
 		SELECT id, file_name, total_rows, coalesce(hold_reason, ''), status, created_at FROM imports
 		WHERE account_id = $1 AND review = 'held' ORDER BY created_at`, id)
 	if err != nil {

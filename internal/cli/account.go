@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +22,37 @@ type account struct {
 	PostalAddress  *string   `json:"postal_address"`
 	TimeZone       string    `json:"time_zone"`
 	MissingForSend []string  `json:"missing_for_send"`
+	SendLimit      sendLimit `json:"send_limit"`
 	CreatedAt      time.Time `json:"created_at"`
+}
+
+// sendLimit is the API's SendLimit.
+type sendLimit struct {
+	Daily        int        `json:"daily"`
+	Usual        int        `json:"usual"`
+	Reason       *string    `json:"reason"`
+	LoweredUntil *time.Time `json:"lowered_until"`
+}
+
+// String is the limit, with why it's lower than usual.
+func (l sendLimit) String() string {
+	s := thousands(l.Daily) + " a day"
+	if l.Reason != nil {
+		s += "\n             " + *l.Reason
+	}
+	return s
+}
+
+// thousands writes n with thousands separators: 10,000.
+func thousands(n int) string {
+	if n < 0 {
+		return "-" + thousands(-n)
+	}
+	s := strconv.Itoa(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
 }
 
 func (a *App) accountCmd() *cobra.Command {
@@ -168,6 +199,9 @@ func (a *App) printAccount(acct account) {
 	addr := orNone(acct.PostalAddress)
 	fmt.Fprintf(a.Stdout, "Postal:      %s\n", strings.ReplaceAll(addr, "\n", "\n             "))
 	fmt.Fprintf(a.Stdout, "Time zone:   %s\n", acct.TimeZone)
+	if acct.SendLimit.Daily > 0 {
+		fmt.Fprintf(a.Stdout, "Send limit:  %s\n", acct.SendLimit)
+	}
 	if len(acct.MissingForSend) > 0 {
 		fmt.Fprintf(a.Stdout, "\nCampaigns can't launch until you set: %s\n", strings.Join(acct.MissingForSend, ", "))
 	}

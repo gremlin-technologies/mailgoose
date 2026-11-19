@@ -32,6 +32,8 @@ type Service struct {
 	Domains     VerifiedFrom
 	Unsubscribe *unsubscribe.Service
 	Mail        mail.Sender
+	// Limits are the send limits, for showing an account its own.
+	Limits Limits
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }

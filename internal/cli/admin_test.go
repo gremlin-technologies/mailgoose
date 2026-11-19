@@ -16,7 +16,9 @@ func adminStub(t *testing.T, bodies map[string]map[string]any) *harness {
 	t.Helper()
 	account := `{"id":"` + testAccountID + `","name":"Pat's Bakery","status":"active","plan":"paid","owner_email":"pat@example.com",` +
 		`"sending_paused_at":"2026-11-18T10:00:00Z","sending_paused_reason":"Phishing reports","created_at":"2026-11-01T09:00:00Z",` +
-		`"daily_send_limit":2000,"contacts":1200,"credit_balance":9000,"last_30_days":{"sent":1000,"hard_bounces":12,"complaints":4},` +
+		`"daily_send_limit":2000,"send_limit":{"daily":1000,"usual":10000,"reason":"Lowered automatically.","lowered_until":"2026-11-25T10:00:00Z"},` +
+		`"throttles":[{"id":3,"campaign_id":"camp-1","reason":"Lowered automatically: 0.2% marked it as spam.","created_at":"2026-11-18T10:00:00Z","until":"2026-11-25T10:00:00Z"}],` +
+		`"contacts":1200,"credit_balance":9000,"last_30_days":{"sent":1000,"hard_bounces":12,"complaints":4},` +
 		`"held_imports":[{"id":"imp-1","file_name":null,"total_rows":3000,"hold_reason":"large_first_import","status":"done","created_at":"2026-11-17T09:00:00Z"}],` +
 		`"live_campaigns":[{"id":"camp-1","name":"Bread week","status":"sending","send_at":null,"recipients":1000,"rates":{"sent":1000,"hard_bounces":12,"complaints":4}}]}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +62,7 @@ func TestAdminCommands(t *testing.T) {
 		want []string
 	}{
 		{[]string{"admin", "find", "pat"}, []string{testAccountID, "Pat's Bakery", "pat@example.com", "paused"}},
-		{[]string{"admin", "account", testAccountID}, []string{"PAUSED", "Phishing reports", "Daily limit:  2000", "1000 sent, 12 hard bounces (1.20%), 4 complaints (0.40%)", "imp-1", "Bread week"}},
+		{[]string{"admin", "account", testAccountID}, []string{"PAUSED", "Phishing reports", "Daily limit:  1000 (THROTTLED until 2026-11-25", "Throttled:    2026-11-18", "0.2% marked it as spam", "1000 sent, 12 hard bounces (1.20%), 4 complaints (0.40%)", "imp-1", "Bread week"}},
 		{[]string{"admin", "pause", testAccountID, "--reason", "Phishing reports"}, []string{"Paused sending for Pat's Bakery"}},
 		{[]string{"admin", "unpause", testAccountID, "--reason", "Owner fixed the list"}, []string{"can send again"}},
 		{[]string{"admin", "stop-campaign", testAccountID, "--reason", "Phishing", "--yes"}, []string{"Stopped campaign \"Bread week\""}},

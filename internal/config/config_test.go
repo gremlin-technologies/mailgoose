@@ -155,6 +155,28 @@ func TestSendLimitSettings(t *testing.T) {
 	}
 }
 
+func TestEarlyWarningSettings(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || cfg.EarlyWarningComplaintsPer10k != 10 || cfg.EarlyWarningHardBouncesPer10k != 200 {
+		t.Fatalf("defaults = %d, %d, %v", cfg.EarlyWarningComplaintsPer10k, cfg.EarlyWarningHardBouncesPer10k, err)
+	}
+	cfg, err = load(env(map[string]string{"EARLY_WARNING_COMPLAINT_PERCENT": "0.15", "EARLY_WARNING_HARD_BOUNCE_PERCENT": "2.5%"}))
+	if err != nil || cfg.EarlyWarningComplaintsPer10k != 15 || cfg.EarlyWarningHardBouncesPer10k != 250 {
+		t.Fatalf("set = %d, %d, %v", cfg.EarlyWarningComplaintsPer10k, cfg.EarlyWarningHardBouncesPer10k, err)
+	}
+	// Each must be over 0 and under the threshold that pauses.
+	for name, bads := range map[string][]string{
+		"EARLY_WARNING_COMPLAINT_PERCENT":   {"0", "-1", "0.3", "1", "lots"},
+		"EARLY_WARNING_HARD_BOUNCE_PERCENT": {"0", "5", "12"},
+	} {
+		for _, bad := range bads {
+			if _, err := load(env(map[string]string{name: bad})); err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("%s=%q: %v", name, bad, err)
+			}
+		}
+	}
+}
+
 func TestStripeSettings(t *testing.T) {
 	cfg, err := load(env(map[string]string{
 		"APP_ENV":          "staging",

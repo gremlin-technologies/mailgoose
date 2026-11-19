@@ -86,7 +86,8 @@ paths:
       description: |
         The account's name, plan, default From name and address, postal
         address and time zone. `missing_for_send` lists the settings a
-        campaign can't launch without.
+        campaign can't launch without. `send_limit` is its daily send limit
+        now, and why it's lower than usual.
       tags: [account]
       security:
         - apiKey: []
@@ -4254,7 +4255,7 @@ components:
           $ref: "#/components/schemas/ApiKeyScope"
     AccountSettings:
       type: object
-      required: [id, name, plan, from_name, from_email, postal_address, time_zone, missing_for_send, created_at]
+      required: [id, name, plan, from_name, from_email, postal_address, time_zone, missing_for_send, send_limit, created_at]
       properties:
         id:
           type: string
@@ -4285,9 +4286,35 @@ components:
           items:
             type: string
           description: Settings a campaign can't launch without, such as `postal_address`. Empty when none are missing.
+        send_limit:
+          $ref: "#/components/schemas/SendLimit"
         created_at:
           type: string
           format: date-time
+    SendLimit:
+      type: object
+      description: |
+        How many campaign recipients the account may send to in 24 hours.
+        New accounts start low and double each week of clean sending up to
+        the usual limit. A campaign whose spam complaints or hard bounces
+        pass the early-warning limits (0.1% and 2% by default) lowers it to
+        the new-account limit for 7 days.
+      required: [daily, usual, reason, lowered_until]
+      properties:
+        daily:
+          type: integer
+          examples: [1000]
+        usual:
+          type: integer
+          description: The limit for an established account in good standing.
+          examples: [10000]
+        reason:
+          type: [string, "null"]
+          description: Why `daily` is under `usual` (or set by mailgoose); null at the usual limit.
+        lowered_until:
+          type: [string, "null"]
+          format: date-time
+          description: When a lowered limit lifts; null when it isn't lowered.
     UpdateAccountRequest:
       type: object
       additionalProperties: false
@@ -6140,11 +6167,18 @@ components:
       allOf:
         - $ref: "#/components/schemas/AdminAccountSummary"
         - type: object
-          required: [daily_send_limit, contacts, credit_balance, last_30_days, held_imports, live_campaigns]
+          required: [daily_send_limit, send_limit, throttles, contacts, credit_balance, last_30_days, held_imports, live_campaigns]
           properties:
             daily_send_limit:
               type: [integer, "null"]
               description: The account's own daily limit; null follows the schedule.
+            send_limit:
+              $ref: "#/components/schemas/SendLimit"
+            throttles:
+              type: array
+              description: Its early-warning throttles in the last 30 days, newest first.
+              items:
+                $ref: "#/components/schemas/AdminThrottle"
             contacts:
               type: integer
             credit_balance:
@@ -6160,6 +6194,25 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/AdminLiveCampaign"
+    AdminThrottle:
+      type: object
+      required: [id, campaign_id, reason, created_at, until]
+      properties:
+        id:
+          type: integer
+          format: int64
+        campaign_id:
+          type: [string, "null"]
+          format: uuid
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        until:
+          type: string
+          format: date-time
+          description: When it lifts, or lifted.
     CreditGrant:
       type: object
       required: [account_id, amount, expires_at, credit_balance]
@@ -6202,7 +6255,7 @@ components:
           description: The admin's address, `mailgoosed` (the server's command line) or `automatic`.
         action:
           type: string
-          enum: [grant_admin, revoke_admin, pause, unpause, auto_pause, stop_campaign, approve_import, grant_credits]
+          enum: [grant_admin, revoke_admin, pause, unpause, auto_pause, stop_campaign, approve_import, grant_credits, throttle]
         account_id:
           type: [string, "null"]
           format: uuid

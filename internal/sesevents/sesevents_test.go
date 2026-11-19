@@ -477,6 +477,8 @@ func TestComplaintsPauseAccount(t *testing.T) {
 	}
 	var alerts []sending.AutoPause
 	h.svc.Alert = func(_ context.Context, p sending.AutoPause) { alerts = append(alerts, p) }
+	var throttles []sending.Throttle
+	h.svc.Throttled = func(_ context.Context, t sending.Throttle) { throttles = append(throttles, t) }
 	complain := func(i int) {
 		t.Helper()
 		id := fmt.Sprintf("copy-%d", i)
@@ -484,11 +486,19 @@ func TestComplaintsPauseAccount(t *testing.T) {
 			t.Fatalf("complaint %d: %s", i, got)
 		}
 	}
-	for i := 1; i <= 3; i++ {
+	complain(1)
+	if len(throttles) != 0 {
+		t.Fatalf("throttled at 0.1%%: %+v", throttles)
+	}
+	// Past the 0.1% early warning: throttled (MG-61), once.
+	for i := 2; i <= 3; i++ {
 		complain(i)
 	}
 	if len(alerts) != 0 {
 		t.Fatalf("paused at 0.3%%: %+v", alerts)
+	}
+	if len(throttles) != 1 || throttles[0].AccountID != h.acc || throttles[0].Rates.Complaints != 2 {
+		t.Fatalf("throttles = %+v", throttles)
 	}
 	complain(4)
 	if len(alerts) != 1 || alerts[0].AccountID != h.acc || alerts[0].Rates.Complaints != 4 || alerts[0].Rates.Sent != 1000 {

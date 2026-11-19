@@ -73,9 +73,9 @@ func authServerTB(t testing.TB) *Server {
 		},
 	}
 	s.Sending = &sending.Service{DB: db, Campaigns: s.Campaigns, Emails: s.Emails, Settings: s.Auth,
-		Domains: s.Domains, Unsubscribe: s.Unsubscribe, Mail: fake}
+		Domains: s.Domains, Unsubscribe: s.Unsubscribe, Mail: fake, Limits: testLimits}
 	s.Signups = &signups.Service{DB: db, Forms: s.Forms, Settings: s.Auth, Domains: s.Domains, Mail: fake}
-	s.Admin = &admin.Service{DB: db, Sending: s.Sending}
+	s.Admin = &admin.Service{DB: db, Sending: s.Sending, Limits: testLimits}
 	s.Tracking = &tracking.Service{DB: db, Unsubscribe: s.Unsubscribe}
 	s.Reports = &reports.Service{DB: db}
 	s.Images = &images.Service{DB: db, Store: &images.Memory{}, BaseURL: testImagesURL}
@@ -83,6 +83,9 @@ func authServerTB(t testing.TB) *Server {
 		Packs: billing.DefaultPacks, BaseURL: "https://app.mailgoose.test"}
 	return s
 }
+
+// testLimits are the default send limits.
+var testLimits = sending.Limits{PerSecond: 10, Daily: 10000, NewDaily: 1000}
 
 func rateLimitedAuthServer(t *testing.T) *Server {
 	s := authServer(t)

@@ -56,7 +56,8 @@ export interface paths {
          * Show account settings
          * @description The account's name, plan, default From name and address, postal
          *     address and time zone. `missing_for_send` lists the settings a
-         *     campaign can't launch without.
+         *     campaign can't launch without. `send_limit` is its daily send limit
+         *     now, and why it's lower than usual.
          */
         get: operations["getAccount"];
         put?: never;
@@ -2126,8 +2127,32 @@ export interface components {
             time_zone: string;
             /** @description Settings a campaign can't launch without, such as `postal_address`. Empty when none are missing. */
             missing_for_send: string[];
+            send_limit: components["schemas"]["SendLimit"];
             /** Format: date-time */
             created_at: string;
+        };
+        /**
+         * @description How many campaign recipients the account may send to in 24 hours.
+         *     New accounts start low and double each week of clean sending up to
+         *     the usual limit. A campaign whose spam complaints or hard bounces
+         *     pass the early-warning limits (0.1% and 2% by default) lowers it to
+         *     the new-account limit for 7 days.
+         */
+        SendLimit: {
+            /** @example 1000 */
+            daily: number;
+            /**
+             * @description The limit for an established account in good standing.
+             * @example 10000
+             */
+            usual: number;
+            /** @description Why `daily` is under `usual` (or set by mailgoose); null at the usual limit. */
+            reason: string | null;
+            /**
+             * Format: date-time
+             * @description When a lowered limit lifts; null when it isn't lowered.
+             */
+            lowered_until: string | null;
         };
         UpdateAccountRequest: {
             name?: string;
@@ -3245,12 +3270,29 @@ export interface components {
         AdminAccount: components["schemas"]["AdminAccountSummary"] & {
             /** @description The account's own daily limit; null follows the schedule. */
             daily_send_limit: number | null;
+            send_limit: components["schemas"]["SendLimit"];
+            /** @description Its early-warning throttles in the last 30 days, newest first. */
+            throttles: components["schemas"]["AdminThrottle"][];
             contacts: number;
             /** Format: int64 */
             credit_balance: number;
             last_30_days: components["schemas"]["AdminRates"];
             held_imports: components["schemas"]["AdminHeldImport"][];
             live_campaigns: components["schemas"]["AdminLiveCampaign"][];
+        };
+        AdminThrottle: {
+            /** Format: int64 */
+            id: number;
+            /** Format: uuid */
+            campaign_id: string | null;
+            reason: string;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When it lifts, or lifted.
+             */
+            until: string;
         };
         CreditGrant: {
             /** Format: uuid */
@@ -3279,7 +3321,7 @@ export interface components {
             /** @description The admin's address, `mailgoosed` (the server's command line) or `automatic`. */
             actor: string;
             /** @enum {string} */
-            action: "grant_admin" | "revoke_admin" | "pause" | "unpause" | "auto_pause" | "stop_campaign" | "approve_import" | "grant_credits";
+            action: "grant_admin" | "revoke_admin" | "pause" | "unpause" | "auto_pause" | "stop_campaign" | "approve_import" | "grant_credits" | "throttle";
             /** Format: uuid */
             account_id: string | null;
             /** @description The campaign, import or user acted on. */
