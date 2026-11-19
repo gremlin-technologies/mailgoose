@@ -12,6 +12,8 @@ import { Device } from "./pages/Device";
 import { Designer } from "./designer/Designer";
 import { DomainDetail, Domains } from "./pages/Domains";
 import { Emails } from "./pages/Emails";
+import { FormEditor } from "./forms/FormEditor";
+import { Forms } from "./pages/Forms";
 import { ImportContacts, ImportDetail } from "./pages/Imports";
 import { navPages } from "./pages/nav";
 import { NotFound, Placeholder } from "./pages/Placeholder";
@@ -24,6 +26,7 @@ import { Tags } from "./pages/Tags";
 const built: Record<string, ReactNode> = {
   "/emails": <Emails />,
   "/campaigns": <Campaigns />,
+  "/forms": <Forms />,
   "/contacts": <Contacts />,
   "/tags": <Tags />,
   "/domains": <Domains />,
@@ -81,6 +84,7 @@ export function AppRoutes() {
         <Route path="/campaigns/new" element={<NewCampaign />} />
         <Route path="/campaigns/:id" element={<CampaignDetail />} />
         <Route path="/campaigns/:id/report" element={<CampaignReport />} />
+        <Route path="/forms/:id" element={<FormEditor />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
