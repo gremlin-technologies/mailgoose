@@ -141,6 +141,22 @@ func TestAbuseEmail(t *testing.T) {
 	}
 }
 
+func TestSignupReview(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || cfg.SignupReview != "all" {
+		t.Fatalf("default = %q, %v", cfg.SignupReview, err)
+	}
+	for _, v := range []string{"all", "flagged", "off"} {
+		cfg, err := load(env(map[string]string{"SIGNUP_REVIEW": v}))
+		if err != nil || cfg.SignupReview != v {
+			t.Errorf("%s = %q, %v", v, cfg.SignupReview, err)
+		}
+	}
+	if _, err := load(env(map[string]string{"SIGNUP_REVIEW": "some"})); err == nil {
+		t.Fatal("SIGNUP_REVIEW=some loaded")
+	}
+}
+
 func TestWebDirSetting(t *testing.T) {
 	cfg, err := load(env(nil))
 	if err != nil || cfg.WebDir != "" {

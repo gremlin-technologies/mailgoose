@@ -46,6 +46,9 @@ type adminAccountSummary struct {
 	SuspendedAt         *time.Time `json:"suspended_at"`
 	SuspendedReason     *string    `json:"suspended_reason"`
 	SuspendedBy         *string    `json:"suspended_by"`
+	Review              *string    `json:"review"`
+	ReviewFlags         []string   `json:"review_flags"`
+	ReviewAt            *time.Time `json:"review_at"`
 	CreatedAt           time.Time  `json:"created_at"`
 }
 
@@ -124,14 +127,15 @@ func (a *App) adminCmd() *cobra.Command {
 		Use:   "admin",
 		Short: "mailgoose staff tools (admins only)",
 		Long: `Tools for mailgoose staff: find an account, pause or unpause its
-sending, suspend or unsuspend it, stop a campaign in flight, approve a held
-import and grant credits.
+sending, suspend or unsuspend it, review new sign-ups, stop a campaign in
+flight, approve a held import and grant credits.
 They need you signed in with ` + "`mailgoose login`" + ` as an admin; API keys
 are refused. Every action takes --reason and is logged with who did it
 (` + "`mailgoose admin log`" + `).`,
 	}
 	cmd.AddCommand(a.adminFindCmd(), a.adminAccountCmd(), a.adminPauseCmd(true), a.adminPauseCmd(false),
-		a.adminSuspendCmd(true), a.adminSuspendCmd(false), a.adminStopCmd(), a.adminApproveImportCmd(), a.adminGrantCmd(), a.adminLogCmd())
+		a.adminSuspendCmd(true), a.adminSuspendCmd(false), a.adminSignupsCmd(), a.adminReviewCmd(true), a.adminReviewCmd(false),
+		a.adminStopCmd(), a.adminApproveImportCmd(), a.adminGrantCmd(), a.adminLogCmd())
 	return cmd
 }
 
@@ -193,6 +197,13 @@ func (a *App) printAdminAccount(acc adminAccount) {
 	if acc.SuspendedAt != nil {
 		fmt.Fprintf(w, "Suspended:    since %s by %s: %s\n", acc.SuspendedAt.Local().Format("2006-01-02 15:04"),
 			ptrString(acc.SuspendedBy), ptrString(acc.SuspendedReason))
+	}
+	if acc.Review != nil {
+		review := *acc.Review
+		if len(acc.ReviewFlags) > 0 {
+			review += ", flagged " + strings.Join(acc.ReviewFlags, ", ")
+		}
+		fmt.Fprintf(w, "Sign-up:      %s\n", review)
 	}
 	if acc.SendingPausedAt != nil {
 		reason := ""
@@ -358,6 +369,112 @@ logged.`
 		},
 	})
 	c.Flags().StringVar(&reason, "reason", "", "why (logged; a suspension reason is shown to the account)")
+	return c
+}
+
+// adminSignupsCmd is `mailgoose admin signups` (MG-66).
+func (a *App) adminSignupsCmd() *cobra.Command {
+	var limit int
+	c := calls("listSignupReviews", &cobra.Command{
+		Use:   "signups",
+		Short: "List new accounts waiting for their sign-up review",
+		Long: `Lists the accounts waiting for their sign-up review, oldest first, with
+what flagged them: disposable_domain (a throwaway address), ip_burst (more
+than 3 accounts from its IP in 24 hours), suspended_ip or suspended_domain
+(an IP or company domain shared with a suspended account). The server's
+SIGNUP_REVIEW setting says who waits: every new account, only flagged ones,
+or none. Approve with ` + "`mailgoose admin approve-signup`" + `, or reject (and
+suspend) with ` + "`mailgoose admin reject-signup`" + `.`,
+		Example: `  mailgoose admin signups`,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			path := "/v1/admin/signups"
+			if limit > 0 {
+				path += "?limit=" + strconv.Itoa(limit)
+			}
+			var page struct {
+				Data       []adminAccountSummary `json:"data"`
+				NextCursor *string               `json:"next_cursor"`
+			}
+			if err := a.call(cmd.Context(), http.MethodGet, path, nil, &page, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(page)
+				return nil
+			}
+			if len(page.Data) == 0 {
+				fmt.Fprintln(a.Stdout, "No sign-ups are waiting for review.")
+				return nil
+			}
+			tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(tw, "ID\tNAME\tOWNER\tWAITING SINCE\tFLAGS")
+			for _, s := range page.Data {
+				flags := "-"
+				if len(s.ReviewFlags) > 0 {
+					flags = strings.Join(s.ReviewFlags, ", ")
+				}
+				since := ""
+				if s.ReviewAt != nil {
+					since = s.ReviewAt.Local().Format("2006-01-02 15:04")
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", s.ID, s.Name, s.OwnerEmail, since, flags)
+			}
+			return tw.Flush()
+		},
+	})
+	c.Flags().IntVar(&limit, "limit", 0, "most accounts to show (1 to 100, default 50)")
+	return c
+}
+
+// adminReviewCmd is `mailgoose admin approve-signup` and `reject-signup`
+// (MG-66).
+func (a *App) adminReviewCmd(approve bool) *cobra.Command {
+	var reason string
+	op, use, short, long, def := "approveSignup", "approve-signup", "Approve a new account waiting for review",
+		`Approves a new account waiting for its sign-up review: it can launch
+campaigns and take form signups from now on. --reason is logged.`, "Sign-up approved."
+	if !approve {
+		op, use, short, long, def = "rejectSignup", "reject-signup", "Reject a new account and suspend it",
+			`Rejects a new account waiting for its sign-up review, and suspends it as
+`+"`mailgoose admin suspend`"+` does: the owner gets an email saying why and how
+to appeal. --reason is logged and shown to the account as why.`, ""
+	}
+	c := calls(op, &cobra.Command{
+		Use:     use + " <account-id>",
+		Short:   short,
+		Long:    long,
+		Example: `  mailgoose admin ` + use + ` 3f1c... --reason "Throwaway address, no website"`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := adminIDArg(args[0], "an account")
+			if err != nil {
+				return err
+			}
+			if err := needReason(reason); err != nil {
+				return err
+			}
+			var acc adminAccount
+			if err := a.call(cmd.Context(), http.MethodPost, adminAccountPath(id)+"/"+use, map[string]any{"reason": reason}, &acc, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(acc)
+				return nil
+			}
+			if approve {
+				fmt.Fprintf(a.Stdout, "Approved %s (%s). It can launch campaigns now.\n", acc.Name, acc.ID)
+			} else {
+				fmt.Fprintf(a.Stdout, "Rejected %s (%s) and suspended it. The owner has been emailed.\n", acc.Name, acc.ID)
+			}
+			return nil
+		},
+	})
+	help := "why (logged; a rejection reason is shown to the account)"
+	if approve {
+		help = "why (logged)"
+	}
+	c.Flags().StringVar(&reason, "reason", def, help)
 	return c
 }
 

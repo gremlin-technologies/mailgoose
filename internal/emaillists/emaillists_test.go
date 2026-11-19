@@ -42,3 +42,26 @@ func TestAddress(t *testing.T) {
 		t.Fatal("no @ should fail")
 	}
 }
+
+func TestFreeMail(t *testing.T) {
+	for domain, want := range map[string]bool{
+		"gmail.com": true, "Outlook.com": true, "proton.me": true,
+		"patsbakery.com": false, "mail.gmail.com": false,
+	} {
+		if got := FreeMail(domain); got != want {
+			t.Errorf("FreeMail(%q) = %v", domain, got)
+		}
+	}
+}
+
+// A free-mail provider is never disposable.
+func TestListsDontOverlap(t *testing.T) {
+	if len(freeMail) < 20 {
+		t.Errorf("freemail: %d entries", len(freeMail))
+	}
+	for d := range freeMail {
+		if _, ok := disposable[d]; ok {
+			t.Errorf("%s is on both lists", d)
+		}
+	}
+}

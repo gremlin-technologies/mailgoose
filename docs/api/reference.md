@@ -2220,7 +2220,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `confirmation_required`: nothing was launched. `details.summary` (`campaign_id`, `name`, `subject`, `from`, `reply_to`, `recipient_count`, `send_at`, `credits`, `balance`, `warnings`) is what the person confirms, `details.code` the code that launches it once they say yes, and `details.expires_at` when the code stops working. `campaign_locked`: the campaign isn't a draft and wasn't launched; `details.status` is its status. [Error](#schema-error)
-- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `new_terms_not_accepted` (the terms changed and the account hasn't accepted the new version; `details.current_version` and `details.accepted_version`, then `acceptTerms`), `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, and `credits_short` with `details.needed`, `details.balance` and `details.short`. `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
+- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up review), `new_terms_not_accepted` (the terms changed and the account hasn't accepted the new version; `details.current_version` and `details.accepted_version`, then `acceptTerms`), `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, and `credits_short` with `details.needed`, `details.balance` and `details.short`. `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-cancelcampaign"></a>
@@ -2678,6 +2678,99 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `account_suspended`: the account is suspended already. `account_not_suspended`: the account isn't suspended. [Error](#schema-error)
+- `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-listsignupreviews"></a>
+
+### List sign-ups waiting for review (admin)
+
+`GET /v1/admin/signups`
+
+- Operation: `listSignupReviews`
+- CLI: `mailgoose admin signups`
+- Needs a `full`-scope key
+
+mailgoose staff only (MG-66): accounts waiting for their sign-up
+review, oldest first, with what flagged them (`review_flags`). At
+most `limit` of them; there's no next page. Which new accounts wait
+depends on the server's `SIGNUP_REVIEW` setting: all of them, only
+flagged ones, or none.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `limit` | query | integer |  | Items per page. |
+
+Responses:
+
+- `200`: The accounts waiting. [AdminAccountList](#schema-adminaccountlist)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-approvesignup"></a>
+
+### Approve a sign-up (admin)
+
+`POST /v1/admin/accounts/{account_id}/approve-signup`
+
+- Operation: `approveSignup`
+- CLI: `mailgoose admin approve-signup`
+- Needs a `full`-scope key
+
+mailgoose staff only (MG-66): the account stops waiting for review
+and can launch campaigns and take form signups. An account that
+isn't waiting answers 409 `signup_not_waiting`.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `account_id` | path | string (uuid) | yes | The account's `id`. |
+
+Request body (`application/json`, required): [AdminReasonRequest](#schema-adminreasonrequest)
+
+Responses:
+
+- `200`: The account. [AdminAccount](#schema-adminaccount)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `signup_not_waiting`: the account isn't waiting for its sign-up review. [Error](#schema-error)
+- `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-rejectsignup"></a>
+
+### Reject a sign-up (admin)
+
+`POST /v1/admin/accounts/{account_id}/reject-signup`
+
+- Operation: `rejectSignup`
+- CLI: `mailgoose admin reject-signup`
+- Needs a `full`-scope key
+
+mailgoose staff only (MG-66): the account is rejected and suspended,
+exactly as `suspendAccount` does, with the reason shown to its owner.
+An account that isn't waiting answers 409 `signup_not_waiting`.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `account_id` | path | string (uuid) | yes | The account's `id`. |
+
+Request body (`application/json`, required): [AdminReasonRequest](#schema-adminreasonrequest)
+
+Responses:
+
+- `200`: The account. [AdminAccount](#schema-adminaccount)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `signup_not_waiting`: the account isn't waiting for its sign-up review. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
@@ -3531,6 +3624,7 @@ Type: string: one of `grant`, `purchase`, `reserve`, `release`, `spend`, `fee`, 
 | `status` | string: one of `pending`, `active` | yes |  |
 | `plan` | string: one of `free`, `paid` | yes |  |
 | `suspension` | [AccountSuspension](#schema-accountsuspension) or null | yes | Set while the account is suspended; null otherwise. |
+| `in_review` | boolean | yes | True while a new account waits for its sign-up review (MG-66). Until it's approved it can build emails, import contacts and send tests, but can't launch campaigns or take form signups. |
 | `created_at` | string (date-time) | yes |  |
 
 <a id="schema-accountsuspension"></a>
@@ -4396,6 +4490,9 @@ Copies sent, and the recipients who hard bounced or complained.
 | `suspended_at` | string (date-time) or null | yes | When the account was suspended (MG-65); null when it isn't. |
 | `suspended_reason` | string or null | yes |  |
 | `suspended_by` | string or null | yes | The admin's address, `mailgoosed`, or `automatic`. |
+| `review` | string or null: one of `waiting`, `approved`, `rejected`, `<nil>` | yes | The sign-up review (MG-66); null for an account that never needed one. |
+| `review_flags` | array of string: one of `disposable_domain`, `ip_burst`, `suspended_ip`, `suspended_domain` | yes | What looked risky at sign-up: a disposable address, more than 3 accounts from its IP in 24 hours, or an IP or company domain shared with a suspended account. Empty when nothing did. |
+| `review_at` | string (date-time) or null | yes | When the account started waiting for review. |
 | `created_at` | string (date-time) | yes |  |
 
 <a id="schema-adminaccountlist"></a>
@@ -4483,7 +4580,7 @@ Type: [AdminAccountSummary](#schema-adminaccountsummary) and object
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
 | `actor` | string | yes | The admin's address, `mailgoosed` (the server's command line) or `automatic`. |
-| `action` | string: one of `grant_admin`, `revoke_admin`, `pause`, `unpause`, `auto_pause`, `stop_campaign`, `approve_import`, `grant_credits`, `throttle`, `suspend`, `unsuspend`, `auto_suspend` | yes |  |
+| `action` | string: one of `grant_admin`, `revoke_admin`, `pause`, `unpause`, `auto_pause`, `stop_campaign`, `approve_import`, `grant_credits`, `throttle`, `suspend`, `unsuspend`, `auto_suspend`, `approve_signup`, `reject_signup` | yes |  |
 | `account_id` | string (uuid) or null | yes |  |
 | `target_id` | string or null | yes | The campaign, import or user acted on. |
 | `reason` | string | yes |  |

@@ -70,14 +70,112 @@ func (e AccountSettingsPlan) Valid() bool {
 	}
 }
 
+// Defines values for AdminAccountReview.
+const (
+	AdminAccountReviewApproved    AdminAccountReview = "approved"
+	AdminAccountReviewLessThannil AdminAccountReview = "<nil>"
+	AdminAccountReviewRejected    AdminAccountReview = "rejected"
+	AdminAccountReviewWaiting     AdminAccountReview = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the AdminAccountReview enum.
+func (e AdminAccountReview) Valid() bool {
+	switch e {
+	case AdminAccountReviewApproved:
+		return true
+	case AdminAccountReviewLessThannil:
+		return true
+	case AdminAccountReviewRejected:
+		return true
+	case AdminAccountReviewWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminAccountReviewFlags.
+const (
+	AdminAccountReviewFlagsDisposableDomain AdminAccountReviewFlags = "disposable_domain"
+	AdminAccountReviewFlagsIpBurst          AdminAccountReviewFlags = "ip_burst"
+	AdminAccountReviewFlagsSuspendedDomain  AdminAccountReviewFlags = "suspended_domain"
+	AdminAccountReviewFlagsSuspendedIp      AdminAccountReviewFlags = "suspended_ip"
+)
+
+// Valid indicates whether the value is a known member of the AdminAccountReviewFlags enum.
+func (e AdminAccountReviewFlags) Valid() bool {
+	switch e {
+	case AdminAccountReviewFlagsDisposableDomain:
+		return true
+	case AdminAccountReviewFlagsIpBurst:
+		return true
+	case AdminAccountReviewFlagsSuspendedDomain:
+		return true
+	case AdminAccountReviewFlagsSuspendedIp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminAccountSummaryReview.
+const (
+	AdminAccountSummaryReviewApproved    AdminAccountSummaryReview = "approved"
+	AdminAccountSummaryReviewLessThannil AdminAccountSummaryReview = "<nil>"
+	AdminAccountSummaryReviewRejected    AdminAccountSummaryReview = "rejected"
+	AdminAccountSummaryReviewWaiting     AdminAccountSummaryReview = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the AdminAccountSummaryReview enum.
+func (e AdminAccountSummaryReview) Valid() bool {
+	switch e {
+	case AdminAccountSummaryReviewApproved:
+		return true
+	case AdminAccountSummaryReviewLessThannil:
+		return true
+	case AdminAccountSummaryReviewRejected:
+		return true
+	case AdminAccountSummaryReviewWaiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminAccountSummaryReviewFlags.
+const (
+	AdminAccountSummaryReviewFlagsDisposableDomain AdminAccountSummaryReviewFlags = "disposable_domain"
+	AdminAccountSummaryReviewFlagsIpBurst          AdminAccountSummaryReviewFlags = "ip_burst"
+	AdminAccountSummaryReviewFlagsSuspendedDomain  AdminAccountSummaryReviewFlags = "suspended_domain"
+	AdminAccountSummaryReviewFlagsSuspendedIp      AdminAccountSummaryReviewFlags = "suspended_ip"
+)
+
+// Valid indicates whether the value is a known member of the AdminAccountSummaryReviewFlags enum.
+func (e AdminAccountSummaryReviewFlags) Valid() bool {
+	switch e {
+	case AdminAccountSummaryReviewFlagsDisposableDomain:
+		return true
+	case AdminAccountSummaryReviewFlagsIpBurst:
+		return true
+	case AdminAccountSummaryReviewFlagsSuspendedDomain:
+		return true
+	case AdminAccountSummaryReviewFlagsSuspendedIp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AdminActionAction.
 const (
 	AdminActionActionApproveImport AdminActionAction = "approve_import"
+	AdminActionActionApproveSignup AdminActionAction = "approve_signup"
 	AdminActionActionAutoPause     AdminActionAction = "auto_pause"
 	AdminActionActionAutoSuspend   AdminActionAction = "auto_suspend"
 	AdminActionActionGrantAdmin    AdminActionAction = "grant_admin"
 	AdminActionActionGrantCredits  AdminActionAction = "grant_credits"
 	AdminActionActionPause         AdminActionAction = "pause"
+	AdminActionActionRejectSignup  AdminActionAction = "reject_signup"
 	AdminActionActionRevokeAdmin   AdminActionAction = "revoke_admin"
 	AdminActionActionStopCampaign  AdminActionAction = "stop_campaign"
 	AdminActionActionSuspend       AdminActionAction = "suspend"
@@ -91,6 +189,8 @@ func (e AdminActionAction) Valid() bool {
 	switch e {
 	case AdminActionActionApproveImport:
 		return true
+	case AdminActionActionApproveSignup:
+		return true
 	case AdminActionActionAutoPause:
 		return true
 	case AdminActionActionAutoSuspend:
@@ -100,6 +200,8 @@ func (e AdminActionAction) Valid() bool {
 	case AdminActionActionGrantCredits:
 		return true
 	case AdminActionActionPause:
+		return true
+	case AdminActionActionRejectSignup:
 		return true
 	case AdminActionActionRevokeAdmin:
 		return true
@@ -1211,11 +1313,16 @@ type AcceptTermsRequest struct {
 
 // Account defines model for Account.
 type Account struct {
-	CreatedAt time.Time     `json:"created_at"`
-	Id        string        `json:"id"`
-	Name      string        `json:"name"`
-	Plan      AccountPlan   `json:"plan"`
-	Status    AccountStatus `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+	Id        string    `json:"id"`
+
+	// InReview True while a new account waits for its sign-up review (MG-66).
+	// Until it's approved it can build emails, import contacts and send
+	// tests, but can't launch campaigns or take form signups.
+	InReview bool          `json:"in_review"`
+	Name     string        `json:"name"`
+	Plan     AccountPlan   `json:"plan"`
+	Status   AccountStatus `json:"status"`
 
 	// Suspension Set while the account is suspended; null otherwise.
 	Suspension *AccountSuspension `json:"suspension"`
@@ -1328,6 +1435,17 @@ type AdminAccount struct {
 	OwnerEmail    *string             `json:"owner_email"`
 	Plan          string              `json:"plan"`
 
+	// Review The sign-up review (MG-66); null for an account that never needed one.
+	Review *AdminAccountReview `json:"review"`
+
+	// ReviewAt When the account started waiting for review.
+	ReviewAt *time.Time `json:"review_at"`
+
+	// ReviewFlags What looked risky at sign-up: a disposable address, more than 3
+	// accounts from its IP in 24 hours, or an IP or company domain
+	// shared with a suspended account. Empty when nothing did.
+	ReviewFlags []AdminAccountReviewFlags `json:"review_flags"`
+
 	// SendLimit How many campaign recipients the account may send to in 24 hours.
 	// New accounts start low and double each week of clean sending up to
 	// the usual limit. A campaign whose spam complaints or hard bounces
@@ -1355,6 +1473,12 @@ type AdminAccount struct {
 	Throttles []AdminThrottle `json:"throttles"`
 }
 
+// AdminAccountReview The sign-up review (MG-66); null for an account that never needed one.
+type AdminAccountReview string
+
+// AdminAccountReviewFlags defines model for AdminAccount.ReviewFlags.
+type AdminAccountReviewFlags string
+
 // AdminAccountList defines model for AdminAccountList.
 type AdminAccountList struct {
 	Data       []AdminAccountSummary `json:"data"`
@@ -1363,14 +1487,25 @@ type AdminAccountList struct {
 
 // AdminAccountSummary defines model for AdminAccountSummary.
 type AdminAccountSummary struct {
-	CreatedAt           time.Time  `json:"created_at"`
-	Id                  string     `json:"id"`
-	Name                string     `json:"name"`
-	OwnerEmail          *string    `json:"owner_email"`
-	Plan                string     `json:"plan"`
-	SendingPausedAt     *time.Time `json:"sending_paused_at"`
-	SendingPausedReason *string    `json:"sending_paused_reason"`
-	Status              string     `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	Id         string    `json:"id"`
+	Name       string    `json:"name"`
+	OwnerEmail *string   `json:"owner_email"`
+	Plan       string    `json:"plan"`
+
+	// Review The sign-up review (MG-66); null for an account that never needed one.
+	Review *AdminAccountSummaryReview `json:"review"`
+
+	// ReviewAt When the account started waiting for review.
+	ReviewAt *time.Time `json:"review_at"`
+
+	// ReviewFlags What looked risky at sign-up: a disposable address, more than 3
+	// accounts from its IP in 24 hours, or an IP or company domain
+	// shared with a suspended account. Empty when nothing did.
+	ReviewFlags         []AdminAccountSummaryReviewFlags `json:"review_flags"`
+	SendingPausedAt     *time.Time                       `json:"sending_paused_at"`
+	SendingPausedReason *string                          `json:"sending_paused_reason"`
+	Status              string                           `json:"status"`
 
 	// SuspendedAt When the account was suspended (MG-65); null when it isn't.
 	SuspendedAt *time.Time `json:"suspended_at"`
@@ -1379,6 +1514,12 @@ type AdminAccountSummary struct {
 	SuspendedBy     *string `json:"suspended_by"`
 	SuspendedReason *string `json:"suspended_reason"`
 }
+
+// AdminAccountSummaryReview The sign-up review (MG-66); null for an account that never needed one.
+type AdminAccountSummaryReview string
+
+// AdminAccountSummaryReviewFlags defines model for AdminAccountSummary.ReviewFlags.
+type AdminAccountSummaryReviewFlags string
 
 // AdminAction defines model for AdminAction.
 type AdminAction struct {
@@ -3422,6 +3563,9 @@ type RequestTooLarge = Error
 // ServiceUnavailable defines model for ServiceUnavailable.
 type ServiceUnavailable = Error
 
+// SignupReviewConflict defines model for SignupReviewConflict.
+type SignupReviewConflict = Error
+
 // SuspensionConflict defines model for SuspensionConflict.
 type SuspensionConflict = Error
 
@@ -3479,6 +3623,12 @@ type ListAdminActionsParams struct {
 
 	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListSignupReviewsParams defines parameters for ListSignupReviews.
+type ListSignupReviewsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListApiKeysParams defines parameters for ListApiKeys.
@@ -3643,11 +3793,17 @@ type UpdateAccountJSONRequestBody = UpdateAccountRequest
 // AcceptTermsJSONRequestBody defines body for AcceptTerms for application/json ContentType.
 type AcceptTermsJSONRequestBody = AcceptTermsRequest
 
+// ApproveSignupJSONRequestBody defines body for ApproveSignup for application/json ContentType.
+type ApproveSignupJSONRequestBody = AdminReasonRequest
+
 // GrantCreditsJSONRequestBody defines body for GrantCredits for application/json ContentType.
 type GrantCreditsJSONRequestBody = GrantCreditsRequest
 
 // PauseAccountJSONRequestBody defines body for PauseAccount for application/json ContentType.
 type PauseAccountJSONRequestBody = AdminReasonRequest
+
+// RejectSignupJSONRequestBody defines body for RejectSignup for application/json ContentType.
+type RejectSignupJSONRequestBody = AdminReasonRequest
 
 // SuspendAccountJSONRequestBody defines body for SuspendAccount for application/json ContentType.
 type SuspendAccountJSONRequestBody = AdminReasonRequest
@@ -4488,12 +4644,18 @@ type ServerInterface interface {
 	// GetAdminAccount Look at an account (admin)
 	// (GET /v1/admin/accounts/{account_id})
 	GetAdminAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// ApproveSignup Approve a sign-up (admin)
+	// (POST /v1/admin/accounts/{account_id}/approve-signup)
+	ApproveSignup(w http.ResponseWriter, r *http.Request, accountId AccountId)
 	// GrantCredits Grant credits (admin)
 	// (POST /v1/admin/accounts/{account_id}/credits)
 	GrantCredits(w http.ResponseWriter, r *http.Request, accountId AccountId)
 	// PauseAccount Pause an account's sending (admin)
 	// (POST /v1/admin/accounts/{account_id}/pause)
 	PauseAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// RejectSignup Reject a sign-up (admin)
+	// (POST /v1/admin/accounts/{account_id}/reject-signup)
+	RejectSignup(w http.ResponseWriter, r *http.Request, accountId AccountId)
 	// SuspendAccount Suspend an account (admin)
 	// (POST /v1/admin/accounts/{account_id}/suspend)
 	SuspendAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
@@ -4512,6 +4674,9 @@ type ServerInterface interface {
 	// ApproveImport Approve a held import (admin)
 	// (POST /v1/admin/imports/{import_id}/approve)
 	ApproveImport(w http.ResponseWriter, r *http.Request, importId ImportId)
+	// ListSignupReviews List sign-ups waiting for review (admin)
+	// (GET /v1/admin/signups)
+	ListSignupReviews(w http.ResponseWriter, r *http.Request, params ListSignupReviewsParams)
 	// ListApiKeys List API keys
 	// (GET /v1/api-keys)
 	ListApiKeys(w http.ResponseWriter, r *http.Request, params ListApiKeysParams)
@@ -4935,6 +5100,32 @@ func (siw *ServerInterfaceWrapper) GetAdminAccount(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// ApproveSignup operation middleware
+func (siw *ServerInterfaceWrapper) ApproveSignup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApproveSignup(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GrantCredits operation middleware
 func (siw *ServerInterfaceWrapper) GrantCredits(w http.ResponseWriter, r *http.Request) {
 
@@ -4978,6 +5169,32 @@ func (siw *ServerInterfaceWrapper) PauseAccount(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.PauseAccount(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RejectSignup operation middleware
+func (siw *ServerInterfaceWrapper) RejectSignup(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RejectSignup(w, r, accountId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5167,6 +5384,39 @@ func (siw *ServerInterfaceWrapper) ApproveImport(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ApproveImport(w, r, importId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSignupReviews operation middleware
+func (siw *ServerInterfaceWrapper) ListSignupReviews(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSignupReviewsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSignupReviews(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7570,6 +7820,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/unpause", wrapper.UnpauseAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/suspend", wrapper.SuspendAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/unsuspend", wrapper.UnsuspendAccount)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/signups", wrapper.ListSignupReviews)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/approve-signup", wrapper.ApproveSignup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/reject-signup", wrapper.RejectSignup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/credits", wrapper.GrantCredits)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/campaigns/{campaign_id}/stop", wrapper.StopCampaign)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/imports/{import_id}/approve", wrapper.ApproveImport)

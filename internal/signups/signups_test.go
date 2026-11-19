@@ -375,6 +375,17 @@ func TestRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Nor does one waiting for its sign-up review (MG-66).
+	if _, err := h.db.Exec(ctx, `UPDATE accounts SET review = 'waiting', review_at = now()`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.submit(h.post("ann@example.com")); !errors.Is(err, ErrFormClosed) {
+		t.Errorf("waiting for review: %v", err)
+	}
+	if _, err := h.db.Exec(ctx, `UPDATE accounts SET review = 'approved'`); err != nil {
+		t.Fatal(err)
+	}
+
 	// A closed account's form is gone.
 	if _, err := h.db.Exec(ctx, `UPDATE accounts SET status = 'closed'`); err != nil {
 		t.Fatal(err)

@@ -61,6 +61,9 @@ func (s *Server) adminError(w http.ResponseWriter, r *http.Request, err error) {
 			WithHint("`mailgoose admin account <account-id>` shows why."))
 	case errors.Is(err, admin.ErrNotSuspended):
 		WriteError(w, Conflict("account_not_suspended", "The account isn't suspended, so nothing changed."))
+	case errors.Is(err, admin.ErrNotWaiting):
+		WriteError(w, Conflict("signup_not_waiting", "The account isn't waiting for its sign-up review, so nothing changed.").
+			WithHint("`mailgoose admin signups` lists the accounts waiting."))
 	case errors.Is(err, admin.ErrNotHeld):
 		WriteError(w, Conflict("import_not_held", "The import isn't waiting for approval, so nothing changed."))
 	case errors.As(err, &st):
@@ -166,6 +169,37 @@ func (s *Server) SuspendAccount(w http.ResponseWriter, r *http.Request, id apige
 // UnsuspendAccount is POST /v1/admin/accounts/{account_id}/unsuspend.
 func (s *Server) UnsuspendAccount(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
 	s.pauseOrUnpause(w, r, id, s.Admin.Unsuspend)
+}
+
+// ListSignupReviews is GET /v1/admin/signups (MG-66).
+func (s *Server) ListSignupReviews(w http.ResponseWriter, r *http.Request, _ apigen.ListSignupReviewsParams) {
+	if s.requireAdmin(w, r) == nil {
+		return
+	}
+	pr, err := ParsePageRequest(r)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	found, err := s.Admin.ListSignups(r.Context(), pr.Limit)
+	if err != nil {
+		s.adminError(w, r, err)
+		return
+	}
+	if found == nil {
+		found = []admin.AccountSummary{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": found, "next_cursor": nil})
+}
+
+// ApproveSignup is POST /v1/admin/accounts/{account_id}/approve-signup.
+func (s *Server) ApproveSignup(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
+	s.pauseOrUnpause(w, r, id, s.Admin.ApproveSignup)
+}
+
+// RejectSignup is POST /v1/admin/accounts/{account_id}/reject-signup.
+func (s *Server) RejectSignup(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
+	s.pauseOrUnpause(w, r, id, s.Admin.RejectSignup)
 }
 
 func (s *Server) pauseOrUnpause(w http.ResponseWriter, r *http.Request, id string,

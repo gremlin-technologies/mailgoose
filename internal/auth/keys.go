@@ -230,12 +230,12 @@ func (s *Service) Authenticate(ctx context.Context, secret string) (*Principal, 
 	)
 	err = tx.QueryRow(ctx, `
 		SELECT k.id, k.kind, k.scope, k.created_by, k.last_used_at,
-		       a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason
+		       a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason, coalesce(a.review = 'waiting', false)
 		FROM api_keys k JOIN accounts a ON a.id = k.account_id
 		WHERE k.secret_hash = $1 AND k.revoked_at IS NULL`, TokenHash(secret)).
 		Scan(&p.KeyID, &p.Kind, &p.Scope, &userID, &lastUsed,
 			&p.Account.ID, &p.Account.Name, &p.Account.Status, &p.Account.Plan, &p.Account.CreatedAt,
-			&suspendedAt, &suspendedReason)
+			&suspendedAt, &suspendedReason, &p.Account.InReview)
 	p.Account.Suspension = suspension(suspendedAt, suspendedReason)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrInvalidKey

@@ -53,6 +53,7 @@ export const session = {
     plan: "free",
     created_at: "2026-11-18T10:00:00Z",
     suspension: null,
+    in_review: false,
   },
   user: { id: "0b6f5f7e-2a43-4c8e-8d35-1b8a7c6e1a11", email: "pat@example.com", created_at: "2026-11-18T10:00:00Z" },
   expires_at: "2026-12-18T10:00:00Z",

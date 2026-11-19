@@ -4,6 +4,37 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-19: Sign-up review (MG-66, reversible defaults)
+
+Picked while building MG-66; easy to change.
+
+- **`SIGNUP_REVIEW` defaults to `all`**, as the ticket says, for the beta and
+  launch month; `flagged` and `off` are the other values. The setting applies
+  at sign-up: changing it doesn't release or hold accounts already made.
+  Accounts made before this change have no review and aren't held.
+- **The local stack (`make dev`) runs with `SIGNUP_REVIEW=off`** unless it's
+  set, so a local sign-up can launch straight away. The end-to-end tests in
+  CI use that stack and launch campaigns; the review itself is covered by the
+  Go tests.
+- **Flags.** A disposable address (the vendored list, parent domains
+  included), the 4th or later account from one IP in 24 hours, or an IP or
+  company domain shared with a suspended account. Free-mail domains (a short
+  hand-made list in `internal/emaillists`) never count against each other.
+  Unconfirmed sign-ups count towards the IP limit too.
+- **The ops email** goes when the waiting account confirms its address (its
+  first sign-in), not when the sign-up form is sent, so abandoned sign-ups
+  don't email anyone.
+- **What a waiting account can't do** is launch campaigns (problem
+  `account_in_review`) and take form signups (403 `form_closed`). Everything
+  else, test sends included, works as for any account.
+- **Approve** takes a reason like every admin action; the CLI fills in
+  "Sign-up approved." when none is given. **Reject** logs `reject_signup` and
+  suspends the account through the same code as `mailgoose admin suspend`,
+  with the rejection reason as the suspension's. Rejecting an account that's
+  suspended already leaves its suspension as it was.
+- The owner isn't emailed when their account is approved; the note in the
+  web app goes away on their next sign-in or reload.
+
 ## 2026-11-19: Terms versions (MG-68, reversible defaults)
 
 Picked while building MG-68; easy to change.

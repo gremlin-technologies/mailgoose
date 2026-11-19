@@ -1511,7 +1511,8 @@ progress {
   color: var(--good-text);
 }
 
-.paused-banner {
+.paused-banner,
+.review-banner {
   margin-bottom: 1rem;
 }
 

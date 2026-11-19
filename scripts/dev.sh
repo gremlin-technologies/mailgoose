@@ -15,6 +15,10 @@ export PORT="${PORT:-8080}"
 export PUBLIC_BASE_URL="${PUBLIC_BASE_URL:-http://localhost:$PORT}"
 export MAIL_SENDER=fake
 export MAIL_CAPTURE_DIR="$PWD/.local/mail"
+# New accounts don't wait for an admin locally (MG-66), so a sign-up can
+# launch straight away, as the end-to-end tests do. SIGNUP_REVIEW=all or
+# flagged tries the review.
+export SIGNUP_REVIEW="${SIGNUP_REVIEW:-off}"
 if [ -f web/dist/index.html ]; then
   export WEB_DIR="$PWD/web/dist"
 fi

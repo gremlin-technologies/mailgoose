@@ -1749,6 +1749,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/signups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List sign-ups waiting for review (admin)
+         * @description mailgoose staff only (MG-66): accounts waiting for their sign-up
+         *     review, oldest first, with what flagged them (`review_flags`). At
+         *     most `limit` of them; there's no next page. Which new accounts wait
+         *     depends on the server's `SIGNUP_REVIEW` setting: all of them, only
+         *     flagged ones, or none.
+         */
+        get: operations["listSignupReviews"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/{account_id}/approve-signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a sign-up (admin)
+         * @description mailgoose staff only (MG-66): the account stops waiting for review
+         *     and can launch campaigns and take form signups. An account that
+         *     isn't waiting answers 409 `signup_not_waiting`.
+         */
+        post: operations["approveSignup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/{account_id}/reject-signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reject a sign-up (admin)
+         * @description mailgoose staff only (MG-66): the account is rejected and suspended,
+         *     exactly as `suspendAccount` does, with the reason shown to its owner.
+         *     An account that isn't waiting answers 409 `signup_not_waiting`.
+         */
+        post: operations["rejectSignup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/accounts/{account_id}/credits": {
         parameters: {
             query?: never;
@@ -2667,6 +2735,12 @@ export interface components {
             plan: "free" | "paid";
             /** @description Set while the account is suspended; null otherwise. */
             suspension: components["schemas"]["AccountSuspension"] | null;
+            /**
+             * @description True while a new account waits for its sign-up review (MG-66).
+             *     Until it's approved it can build emails, import contacts and send
+             *     tests, but can't launch campaigns or take form signups.
+             */
+            in_review: boolean;
             /** Format: date-time */
             created_at: string;
         };
@@ -3487,6 +3561,22 @@ export interface components {
             suspended_reason: string | null;
             /** @description The admin's address, `mailgoosed`, or `automatic`. */
             suspended_by: string | null;
+            /**
+             * @description The sign-up review (MG-66); null for an account that never needed one.
+             * @enum {string|null}
+             */
+            review: "waiting" | "approved" | "rejected" | null;
+            /**
+             * @description What looked risky at sign-up: a disposable address, more than 3
+             *     accounts from its IP in 24 hours, or an IP or company domain
+             *     shared with a suspended account. Empty when nothing did.
+             */
+            review_flags: ("disposable_domain" | "ip_burst" | "suspended_ip" | "suspended_domain")[];
+            /**
+             * Format: date-time
+             * @description When the account started waiting for review.
+             */
+            review_at: string | null;
             /** Format: date-time */
             created_at: string;
         };
@@ -3591,7 +3681,7 @@ export interface components {
             /** @description The admin's address, `mailgoosed` (the server's command line) or `automatic`. */
             actor: string;
             /** @enum {string} */
-            action: "grant_admin" | "revoke_admin" | "pause" | "unpause" | "auto_pause" | "stop_campaign" | "approve_import" | "grant_credits" | "throttle" | "suspend" | "unsuspend" | "auto_suspend";
+            action: "grant_admin" | "revoke_admin" | "pause" | "unpause" | "auto_pause" | "stop_campaign" | "approve_import" | "grant_credits" | "throttle" | "suspend" | "unsuspend" | "auto_suspend" | "approve_signup" | "reject_signup";
             /** Format: uuid */
             account_id: string | null;
             /** @description The campaign, import or user acted on. */
@@ -3852,6 +3942,19 @@ export interface components {
             };
         };
         /**
+         * @description `signup_not_waiting`: the account isn't waiting for its sign-up
+         *     review.
+         */
+        SignupReviewConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `campaign_locked`: only drafts can be changed, tested, launched or
          *     deleted; `details.status` is the campaign's status.
          *     `version_conflict`: the campaign changed since the version given;
@@ -3915,7 +4018,8 @@ export interface components {
          *     (a link on Google Web Risk's malware, phishing or unwanted software
          *     lists, named in `url`; it also pauses the account's sending),
          *     `untested` (no test since the last change), `send_at_passed`,
-         *     `account_paused`, `account_suspended`, `new_terms_not_accepted` (the terms changed and
+         *     `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up
+         *     review), `new_terms_not_accepted` (the terms changed and
          *     the account hasn't accepted the new version; `details.current_version`
          *     and `details.accepted_version`, then `acceptTerms`),
          *     `subscription_past_due` (sending is paused until the paid plan's
@@ -6977,6 +7081,89 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["SuspensionConflict"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listSignupReviews: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The accounts waiting. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAccountList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    approveSignup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AdminAccount"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["SignupReviewConflict"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    rejectSignup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AdminAccount"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["SignupReviewConflict"];
             422: components["responses"]["InvalidAdminRequest"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
