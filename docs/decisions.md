@@ -24,6 +24,29 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: HTML code editor (MG-46, reversible defaults)
+
+Picked while building MG-46; easy to change.
+
+- **The editor is CodeMirror 6** (the `codemirror`, `@codemirror/lang-html`,
+  `@codemirror/lint`, `@codemirror/state` and `@codemirror/view` packages, at
+  pinned versions), not Monaco, which is several times bigger. It's loaded
+  only when an HTML email is opened, so other pages don't download it.
+- **The live preview renders the typed code in the browser**, in a sandboxed
+  frame that runs no scripts, with merge tags filled from the same sample
+  contact as the server's preview. It updates 0.3 seconds after typing
+  stops, so it never waits on the API.
+- **The API checks the markup by saving it.** Each pause in typing saves the
+  code (0.8 seconds, as in the designer). Errors come back with their lines,
+  are marked in the editor and listed under it, and leave the saved email as
+  it was, so a broken draft is never what gets sent. CSS warnings show the
+  same way but don't stop the save.
+- **An empty HTML email offers a small starter template** with the
+  unsubscribe link in it. An uploaded `.html` file replaces the code.
+- **The Emails page asks blocks or HTML** when an email is created.
+- **HTML emails hide the background color and content width settings**,
+  which only blocks emails use.
+
 ## 2026-11-19: Designer properties, preview and autosave (MG-45, reversible defaults)
 
 Picked while building MG-45; easy to change.

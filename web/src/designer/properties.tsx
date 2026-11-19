@@ -14,13 +14,25 @@ import { insert, link, list, wrap } from "./format";
 
 export type Settings = components["schemas"]["EmailSettings"];
 type Image = components["schemas"]["Image"];
-export type Fields = Record<string, unknown>;
+export type { Fields } from "./autosave";
+import type { Fields } from "./autosave";
 
-export function EmailProperties({ name, settings, set }: { name: string; settings: Settings; set: (f: Fields) => void }) {
+/** An email's name and settings. An HTML email sets its own colors and width in its markup. */
+export function EmailProperties({
+  name,
+  settings,
+  set,
+  html = false,
+}: {
+  name: string;
+  settings: Settings;
+  set: (f: Fields) => void;
+  html?: boolean;
+}) {
   return (
     <form className="stack" aria-label="Email settings" onSubmit={(e) => e.preventDefault()}>
       <h2>Email settings</h2>
-      <p className="muted small">Select a block on the email to change it.</p>
+      {!html && <p className="muted small">Select a block on the email to change it.</p>}
       <label className="field">
         <span>Name (only you see it)</span>
         <input value={name} maxLength={200} onChange={(e) => set({ name: e.target.value })} />
@@ -50,14 +62,18 @@ export function EmailProperties({ name, settings, set }: { name: string; setting
         <span>Reply-to address (optional)</span>
         <input type="email" value={settings.reply_to ?? ""} onChange={(e) => set({ reply_to: e.target.value.trim() || null })} />
       </label>
-      <ColorField label="Background color" value={settings.background_color} onChange={(v) => set({ background_color: v })} />
-      <NumberField
-        label="Content width on desktop (pixels)"
-        value={settings.content_width}
-        min={480}
-        max={800}
-        onChange={(v) => v !== null && set({ content_width: v })}
-      />
+      {!html && (
+        <>
+          <ColorField label="Background color" value={settings.background_color} onChange={(v) => set({ background_color: v })} />
+          <NumberField
+            label="Content width on desktop (pixels)"
+            value={settings.content_width}
+            min={480}
+            max={800}
+            onChange={(v) => v !== null && set({ content_width: v })}
+          />
+        </>
+      )}
     </form>
   );
 }

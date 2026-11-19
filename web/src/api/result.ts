@@ -6,6 +6,8 @@ export type Failure = {
   hint: string;
   /** The HTTP status; 0 when there was no response. */
   status: number;
+  /** The error's details, for codes that have them. */
+  details?: Record<string, unknown>;
 };
 
 export type Result<T> = { ok: true; data: T } | { ok: false; failure: Failure };
@@ -41,9 +43,10 @@ export async function attempt<R extends Response_>(
 
 function failureFrom(body: unknown, status: number): Failure {
   if (typeof body === "object" && body !== null && "error" in body) {
-    const e = (body as { error: Partial<Failure> }).error;
+    const e = (body as { error: Partial<Failure> & { details?: unknown } }).error;
     if (typeof e?.message === "string") {
-      return { code: e.code ?? "error", message: e.message, hint: e.hint ?? "", status };
+      const details = typeof e.details === "object" && e.details !== null ? (e.details as Record<string, unknown>) : undefined;
+      return { code: e.code ?? "error", message: e.message, hint: e.hint ?? "", status, ...(details ? { details } : {}) };
     }
   }
   return {

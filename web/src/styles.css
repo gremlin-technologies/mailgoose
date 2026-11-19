@@ -1091,3 +1091,80 @@ progress {
   border-radius: 12px;
   background: #ffffff;
 }
+
+/* HTML email editor (MG-46) */
+.html-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .html-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.html-tools {
+  align-items: end;
+  flex-wrap: wrap;
+}
+
+/* CodeMirror's syntax colors are made for a light background, so the editor stays light in dark mode too. */
+.code-editor {
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+  color: #18181b;
+}
+
+.code-editor .cm-editor {
+  min-height: 24rem;
+  max-height: 70vh;
+}
+
+.code-editor .cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.875rem;
+}
+
+.code-editor .cm-editor.cm-focused {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.problems h2 {
+  margin: 0;
+}
+
+.problem-error strong {
+  color: var(--error-text);
+}
+
+.problem-warning strong {
+  color: var(--warn-text);
+}
+
+.preview-frame.live-mobile {
+  width: 375px;
+  max-width: 100%;
+  justify-self: center;
+}
+
+.html-settings {
+  margin-top: 1.25rem;
+  max-width: 40rem;
+}
+
+.kind-choice {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.kind-choice legend {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}

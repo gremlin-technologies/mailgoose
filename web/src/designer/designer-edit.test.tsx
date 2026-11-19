@@ -223,7 +223,9 @@ describe("designer properties and autosave", () => {
     const api = server({
       [`POST ${base}/blocks`]: (b) => {
         const body = b as { version: number };
-        return body.version === 4 ? { status: 201, body: { block: doc().blocks[0], email: { ...doc(), id: emailId } } } : apiError(409, "version_conflict", "Stale.");
+        if (body.version !== 4) return apiError(409, "version_conflict", "Stale.");
+        const added = { block: doc().blocks[0], path: "blocks[0]", parent_id: null, column: null, index: 0 };
+        return { status: 201, body: { block: added, email: { ...structuredClone(api.email), version: 5 } } };
       },
     });
     const user = userEvent.setup();

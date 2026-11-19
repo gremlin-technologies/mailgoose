@@ -21,6 +21,7 @@ export function Emails() {
   );
   const { state, reload } = useLoad<Page>(load);
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<"blocks" | "html">("blocks");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure>();
 
@@ -28,7 +29,7 @@ export function Emails() {
     e.preventDefault();
     setBusy(true);
     setFailure(undefined);
-    const res = await attempt(() => api.POST("/v1/emails", { body: { name: name.trim(), kind: "blocks" } }));
+    const res = await attempt(() => api.POST("/v1/emails", { body: { name: name.trim(), kind } }));
     setBusy(false);
     if (!res.ok) return setFailure(res.failure);
     if (res.data) navigate(`/emails/${res.data.id}`);
@@ -36,7 +37,7 @@ export function Emails() {
 
   return (
     <section className="page">
-      <PageHeader title="Emails" about="Design an email with blocks, then send it in a campaign." />
+      <PageHeader title="Emails" about="Design an email with blocks, or bring your own HTML, then send it in a campaign." />
       <form onSubmit={create} className="panel row-form">
         <label className="field grow">
           <span>New email</span>
@@ -50,8 +51,21 @@ export function Emails() {
             required
           />
         </label>
+        <fieldset className="field kind-choice">
+          <legend>Build it with</legend>
+          <div className="row">
+            <label className="choice">
+              <input type="radio" name="kind" checked={kind === "blocks"} onChange={() => setKind("blocks")} />
+              Blocks
+            </label>
+            <label className="choice">
+              <input type="radio" name="kind" checked={kind === "html"} onChange={() => setKind("html")} />
+              My own HTML
+            </label>
+          </div>
+        </fieldset>
         <button type="submit" className="button primary" disabled={busy}>
-          {busy ? "Creating…" : "Create and design"}
+          {busy ? "Creating…" : kind === "html" ? "Create and edit" : "Create and design"}
         </button>
       </form>
       <FailureNotice failure={failure} />
