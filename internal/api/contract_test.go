@@ -367,6 +367,23 @@ var contractCases = map[string][]contractCase{
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/campaigns"))), req: bearer(campaignAction("reschedule", rescheduleBody)), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(campaignAction("reschedule", rescheduleBody)), status: http.StatusServiceUnavailable},
 	},
+	"listImages": {
+		{name: "listed", server: draftKey(authServer), before: send(bearer(jsonRequest(http.MethodPost, "/v1/images", pngUpload))), req: bearer(request(http.MethodGet, "/v1/images")), status: http.StatusOK},
+		{name: "bad cursor", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/images?cursor=nope")), status: http.StatusBadRequest},
+		{name: "no credentials", server: authServer, req: request(http.MethodGet, "/v1/images"), status: http.StatusUnauthorized},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/images"))), req: bearer(request(http.MethodGet, "/v1/images")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodGet, "/v1/images")), status: http.StatusServiceUnavailable},
+	},
+	"uploadImage": {
+		{name: "uploaded", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/images", pngUpload)), status: http.StatusCreated},
+		{name: "not base64", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/images", `{"data":"%%%"}`)), status: http.StatusBadRequest},
+		{name: "too large", server: fullKey(authServer), req: bearer(tooLargeImage), status: http.StatusRequestEntityTooLarge},
+		{name: "not an image", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/images", `{"data":"JVBERi0xLjcK"}`)), status: http.StatusUnprocessableEntity},
+		{name: "no credentials", server: authServer, req: jsonRequest(http.MethodPost, "/v1/images", pngUpload), status: http.StatusUnauthorized},
+		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(jsonRequest(http.MethodPost, "/v1/images", pngUpload))), status: http.StatusForbidden},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/images"))), req: bearer(jsonRequest(http.MethodPost, "/v1/images", pngUpload)), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(jsonRequest(http.MethodPost, "/v1/images", pngUpload)), status: http.StatusServiceUnavailable},
+	},
 	"listForms": {
 		{name: "listed", server: draftKey(authServer), before: addedForm, req: bearer(request(http.MethodGet, "/v1/forms")), status: http.StatusOK},
 		{name: "bad cursor", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/forms?cursor=nope")), status: http.StatusBadRequest},

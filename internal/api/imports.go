@@ -19,6 +19,9 @@ func bodyLimit(r *http.Request) int64 {
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/imports" {
 		return MaxImportBodyBytes
 	}
+	if r.Method == http.MethodPost && r.URL.Path == "/v1/images" {
+		return MaxImageBodyBytes
+	}
 	return MaxBodyBytes
 }
 

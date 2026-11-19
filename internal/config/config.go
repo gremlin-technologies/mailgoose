@@ -78,7 +78,32 @@ type Config struct {
 
 	// Stripe is how credits are sold (BIL-3).
 	Stripe Stripe
+
+	// Images is where uploaded pictures for image blocks go (DES-5).
+	Images Images
 }
+
+// Images says where uploaded images are stored and served from. With
+// neither a bucket nor a directory, uploads answer 503.
+type Images struct {
+	// Bucket is the S3 bucket (IMAGES_BUCKET), in AWSRegion.
+	Bucket string
+	// Dir is a local directory the API stores images in and serves at
+	// /images/ (IMAGES_DIR); it defaults to .local/images when APP_ENV is
+	// local and there's no bucket. Prod refuses it.
+	Dir string
+	// BaseURL is where the stored files are served from (IMAGES_BASE_URL),
+	// such as the CDN in front of the bucket. Without one, the API serves
+	// them itself at PUBLIC_BASE_URL/images.
+	BaseURL string
+	// ServedByAPI is true when there's no IMAGES_BASE_URL, so the API serves
+	// the files at /images/: straight from the directory, or from the bucket
+	// by redirecting to presigned URLs (staging, while it has no CDN).
+	ServedByAPI bool
+}
+
+// Enabled reports whether images can be uploaded.
+func (i Images) Enabled() bool { return i.Bucket != "" || i.Dir != "" }
 
 // Stripe holds the Stripe keys, from the <env>/app secret (or the
 // environment, locally), and the credit packs' prices.
@@ -207,6 +232,24 @@ func load(getenv func(string) string) (Config, error) {
 		cfg.Stripe.Problem = "STRIPE_SECRET_KEY isn't a live key; prod would sell credits for test payments"
 	case cfg.Stripe.WebhookSecret == "":
 		cfg.Stripe.Problem = "STRIPE_SECRET_KEY is set without STRIPE_WEBHOOK_SECRET; purchases would never be credited"
+	}
+
+	cfg.Images = Images{Bucket: strings.TrimSpace(getenv("IMAGES_BUCKET")), Dir: strings.TrimSpace(getenv("IMAGES_DIR")),
+		BaseURL: strings.TrimRight(strings.TrimSpace(getenv("IMAGES_BASE_URL")), "/")}
+	switch {
+	case cfg.Images.Bucket != "" && cfg.Images.Dir != "":
+		errs = append(errs, errors.New("set IMAGES_BUCKET or IMAGES_DIR, not both"))
+	case cfg.Images.Dir != "" && cfg.AppEnv == "prod":
+		errs = append(errs, errors.New("IMAGES_DIR is not allowed in prod; images would vanish with the container"))
+	case cfg.Images.Bucket == "" && cfg.Images.Dir == "" && cfg.AppEnv == "local":
+		cfg.Images.Dir = ".local/images"
+	}
+	if cfg.Images.Enabled() && cfg.Images.BaseURL == "" {
+		cfg.Images.BaseURL = strings.TrimRight(cfg.PublicBaseURL, "/") + "/images"
+		cfg.Images.ServedByAPI = true
+	}
+	if u := cfg.Images.BaseURL; u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		errs = append(errs, fmt.Errorf("IMAGES_BASE_URL must start with https://, got %q", u))
 	}
 
 	for _, o := range strings.Split(getenv("WEB_ORIGINS"), ",") {

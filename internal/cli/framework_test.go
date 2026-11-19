@@ -194,6 +194,7 @@ func TestNoCommandWaitsForInput(t *testing.T) {
 			_, _ = w.Write([]byte(`{"url":"https://checkout.stripe.test/c","interval":"month","units":1,"unit_price_cents":500,"currency":"usd","expires_at":"2026-11-19T12:00:00Z"}`))
 		},
 		"/v1/plan/portal": func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"url":"https://billing.stripe.test/p"}`)) },
+		"/v1/images":      func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },
 		"/v1/account": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte(`{"id":"x","name":"A","plan":"free","from_name":null,"from_email":null,"postal_address":null,"time_zone":"UTC","missing_for_send":[],"created_at":"2026-11-18T12:00:00Z"}`))
 		},

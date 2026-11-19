@@ -143,6 +143,8 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Stripe's secret key and the webhook endpoint's signing secret, from the `<env>/app` secret (or the environment, locally). Only prod may use a live key, and prod only a live one; a wrong key, or a key without the webhook secret, turns buying credits off and says why in the log, rather than stopping the server. |
 | `CREDIT_PACKS` | The credit packs as `name=credits:cents,...`. Empty means the decided packs: `10k=10000:2000,50k=50000:7500,200k=200000:24000,1m=1000000:90000`. |
 | `PLAN_PRICES` | One paid-plan unit's price in cents, as `month:cents,year:cents`. Empty means the decided prices: `month:500,year:5000`. |
+| `IMAGES_BUCKET`, `IMAGES_BASE_URL` | The S3 bucket uploaded images go in, and the CDN address they're served from. Without `IMAGES_BASE_URL` the API serves them at `PUBLIC_BASE_URL/images/`, redirecting to short-lived presigned URLs (staging until it has a CDN). With no bucket outside local, image uploads answer 503. |
+| `IMAGES_DIR` | Local only: a directory images go in instead of S3, served by the API at `/images/`. Defaults to `.local/images` when `APP_ENV=local` and there's no bucket; its URLs then start `PUBLIC_BASE_URL/images`. Prod refuses it. |
 
 ## Sign up and sessions
 
@@ -566,6 +568,27 @@ other than 80 or 443, is never fetched. One account's checks fetch links at
 most 10 times a minute (`linkChecksPerMinute`); checks past that still run,
 with their links reported as not checked. Only `cmd/mailgoosed` wires it; a test server with no `Links` looks
 at the addresses without fetching them.
+
+## Images
+
+`internal/images` stores the pictures used in image blocks. An upload is
+checked by what the file holds, not its name: JPEG, PNG, GIF and WebP up to
+5 MB, and up to 1,000 per account. It's stored as
+`<account id>/<32 random hex>.<ext>` and served from the CDN in front of the
+store (`IMAGES_BASE_URL`), cached for a year since a name never changes what
+it holds. Without a CDN the API serves them at `/images/`, redirecting each
+request to a presigned URL that lasts five minutes. The answer's `url` goes straight into an image block's `src`.
+
+```sh
+mailgoose image upload ./logo.png        # prints the URL
+mailgoose email blocks add <id> --type image --src <url> --alt "Our logo"
+mailgoose image list
+```
+
+The API takes the file base64-encoded in JSON (`POST /v1/images`, body up to
+7 MB), like every other request. Images can't be deleted one at a time,
+since sent emails keep pointing at them; deleting the account deletes them
+all. Locally they go in `.local/images` and the API serves them itself.
 
 ## Campaigns
 

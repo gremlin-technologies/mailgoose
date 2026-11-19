@@ -360,16 +360,24 @@ type fakeStripe struct {
 	current map[string][]byte
 	reads   int
 	getErr  error
+	// onGet, if set, runs during a read, after the answer is taken.
+	onGet func(id string)
 }
 
 func (f *fakeStripe) GetSubscription(_ context.Context, id string) ([]byte, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.reads++
-	if f.getErr != nil {
-		return nil, f.getErr
+	b, ok := f.current[id]
+	err := f.getErr
+	onGet := f.onGet
+	f.mu.Unlock()
+	if onGet != nil {
+		onGet(id)
 	}
-	if b, ok := f.current[id]; ok {
+	if err != nil {
+		return nil, err
+	}
+	if ok {
 		return b, nil
 	}
 	return nil, &StripeError{Status: 404, Type: "invalid_request_error", Message: "No such subscription"}
@@ -519,5 +527,29 @@ func TestExpireCredits(t *testing.T) {
 	}
 	if expiries() != 1 {
 		t.Errorf("%d expiry entries after a second run", expiries())
+	}
+}
+
+// An ops alert goes only once the event is recorded, so a failed
+// transaction that Stripe retries doesn't alert twice.
+func TestWebhookAlertsAfterCommit(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	alerts := 0
+	h.svc.Alert = func(context.Context, string, string) {
+		alerts++
+		var recorded bool
+		if err := h.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM stripe_events WHERE id = 'evt_wrong')`).Scan(&recorded); err != nil {
+			t.Fatal(err)
+		}
+		if !recorded {
+			t.Error("alerted before the event was committed")
+		}
+	}
+	if got := h.send(t, h.event("evt_wrong", "checkout.session.completed", "cs_wrong", "paid", "10k", 1)); got != OutcomeMismatch {
+		t.Fatalf("outcome %s", got)
+	}
+	if alerts != 1 {
+		t.Errorf("%d alerts", alerts)
 	}
 }

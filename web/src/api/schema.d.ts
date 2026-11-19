@@ -1519,6 +1519,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List uploaded images
+         * @description The account's uploaded images, newest first.
+         */
+        get: operations["listImages"];
+        put?: never;
+        /**
+         * Upload an image
+         * @description Stores a picture for image blocks and answers with its `url`, which
+         *     goes in an image block's `src`. JPEG, PNG, GIF and WebP up to 5 MB
+         *     are accepted, checked by what the file holds, not its name, and an
+         *     account keeps up to 1,000. The file
+         *     is sent base64-encoded in `data`, so the request body can be up to
+         *     7 MB. `mailgoose image upload ./pic.png` does the encoding.
+         */
+        post: operations["uploadImage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/accounts": {
         parameters: {
             query?: never;
@@ -2748,6 +2777,35 @@ export interface components {
             message: string;
             hint: string;
         };
+        Image: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uri
+             * @description Where the image is served from; use it as an image block's `src`.
+             */
+            url: string;
+            /** @description The uploaded file's name, for showing; empty if none was given. */
+            file_name: string;
+            /** @enum {string} */
+            content_type: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
+            bytes: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        ImageList: {
+            data: components["schemas"]["Image"][];
+            next_cursor: string | null;
+        };
+        UploadImageRequest: {
+            /**
+             * Format: byte
+             * @description The file, in standard base64 with padding. Anything else is a 400.
+             */
+            data: string;
+            /** @description The file's name, for showing in lists. It doesn't decide the type. */
+            file_name?: string;
+        };
         FormList: {
             data: components["schemas"]["Form"][];
             next_cursor: string | null;
@@ -3415,6 +3473,21 @@ export interface components {
          *     email, which has no markup.
          */
         InvalidHtml: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `invalid_image`: the file is empty, over 5 MB, or isn't a JPEG,
+         *     PNG, GIF or WebP; `details.detected` says what it looks like when
+         *     it's another kind of file.
+         *     `too_many_images`: the account already keeps 1,000 images.
+         */
+        InvalidImage: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -6316,6 +6389,68 @@ export interface operations {
             404: components["responses"]["BlockNotFound"];
             409: components["responses"]["EmailVersionConflict"];
             422: components["responses"]["InvalidBlockChange"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listImages: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of images. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    uploadImage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadImageRequest"];
+            };
+        };
+        responses: {
+            /** @description The stored image. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Image"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            413: components["responses"]["RequestTooLarge"];
+            422: components["responses"]["InvalidImage"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

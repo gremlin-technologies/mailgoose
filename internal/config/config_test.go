@@ -185,3 +185,37 @@ func TestStripeSettings(t *testing.T) {
 		t.Errorf("no keys: %+v", cfg.Stripe)
 	}
 }
+
+func TestImagesSettings(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want Images
+	}{
+		{"local default", nil, Images{Dir: ".local/images", BaseURL: "http://localhost:8080/images", ServedByAPI: true}},
+		{"local dir", map[string]string{"IMAGES_DIR": "/tmp/img", "PUBLIC_BASE_URL": "http://localhost:9000/"},
+			Images{Dir: "/tmp/img", BaseURL: "http://localhost:9000/images", ServedByAPI: true}},
+		{"dir with base url", map[string]string{"IMAGES_DIR": "/tmp/img", "IMAGES_BASE_URL": "https://img.example"},
+			Images{Dir: "/tmp/img", BaseURL: "https://img.example"}},
+		{"bucket", map[string]string{"APP_ENV": "staging", "IMAGES_BUCKET": "mailgoose-staging-images", "IMAGES_BASE_URL": "https://img.staging.mailgoose.app/"},
+			Images{Bucket: "mailgoose-staging-images", BaseURL: "https://img.staging.mailgoose.app"}},
+		{"bucket without a CDN", map[string]string{"APP_ENV": "staging", "IMAGES_BUCKET": "mailgoose-staging-images", "PUBLIC_BASE_URL": "https://api.staging.mailgoose.app"},
+			Images{Bucket: "mailgoose-staging-images", BaseURL: "https://api.staging.mailgoose.app/images", ServedByAPI: true}},
+		{"off outside local", map[string]string{"APP_ENV": "staging"}, Images{}},
+	}
+	for _, c := range cases {
+		cfg, err := load(env(c.env))
+		if err != nil || cfg.Images != c.want || cfg.Images.Enabled() != (c.want != Images{}) {
+			t.Errorf("%s: %v %+v", c.name, err, cfg.Images)
+		}
+	}
+	for name, e := range map[string]map[string]string{
+		"both":         {"IMAGES_BUCKET": "b", "IMAGES_DIR": "d", "IMAGES_BASE_URL": "https://x"},
+		"dir in prod":  {"APP_ENV": "prod", "IMAGES_DIR": "d", "MAIL_SENDER": "ses"},
+		"bad base url": {"IMAGES_BUCKET": "b", "IMAGES_BASE_URL": "img.example"},
+	} {
+		if _, err := load(env(e)); err == nil || !strings.Contains(err.Error(), "IMAGES_") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

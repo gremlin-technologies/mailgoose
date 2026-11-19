@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -37,6 +39,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
+	"github.com/gremlin-technologies/mailgoose/internal/images"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
@@ -140,6 +143,9 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		if srv.Domains, err = newDomains(ctx, cfg, pool, log); err != nil {
 			return err
 		}
+		if srv.Images, srv.ImageFiles, err = newImages(ctx, cfg, pool, log); err != nil {
+			return err
+		}
 
 		sender, err := mail.New(ctx, cfg)
 		if err != nil {
@@ -189,6 +195,37 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	}
 
 	return api.ListenAndServe(ctx, log, ":"+strconv.Itoa(cfg.Port), srv.Handler())
+}
+
+// newImages builds the image store (DES-5): the S3 bucket behind the CDN
+// (or, without IMAGES_BASE_URL, served by the API through presigned
+// redirects), or a local directory the API serves itself at /images/.
+func newImages(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*images.Service, http.Handler, error) {
+	svc := &images.Service{DB: pool, BaseURL: cfg.Images.BaseURL}
+	switch {
+	case cfg.Images.Bucket != "":
+		awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.AWSRegion))
+		if err != nil {
+			return nil, nil, fmt.Errorf("load AWS config: %w", err)
+		}
+		bucket := &images.S3{Client: s3.NewFromConfig(awsCfg), Bucket: cfg.Images.Bucket, Log: log}
+		svc.Store = bucket
+		if cfg.Images.ServedByAPI {
+			// No CDN (staging while AWS withholds CloudFront): the API
+			// redirects /images/ requests to presigned URLs.
+			log.Info("serving images from the bucket through presigned redirects", "url", cfg.Images.BaseURL)
+			return svc, bucket.Handler(), nil
+		}
+		return svc, nil, nil
+	case cfg.Images.Dir != "":
+		dir := &images.Dir{Path: cfg.Images.Dir}
+		svc.Store = dir
+		log.Info("storing images in a local directory", "dir", cfg.Images.Dir, "url", cfg.Images.BaseURL)
+		return svc, dir.Handler(), nil
+	default:
+		log.Warn("IMAGES_BUCKET is not set; image uploads will answer 503")
+		return nil, nil, nil
+	}
 }
 
 // newDomains builds the sending-domains service: real SES and DNS, or with

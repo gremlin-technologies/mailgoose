@@ -33,6 +33,7 @@ var AccountTables = []string{
 	"consents",
 	"forms",
 	"emails",
+	"images",
 	"imports",
 	"contacts",
 	"tags",
@@ -57,7 +58,8 @@ var KeptAccountTables = []string{
 // confirm is the account's name exactly. Contacts, emails, domains, keys,
 // sessions and the person's sign-in go now; the account row stays, closed,
 // with its name and settings cleared, so the credit ledger keeps its owner.
-// Sending domains' Amazon SES identities are the caller's to remove first.
+// Sending domains' Amazon SES identities, and uploaded image files, are the
+// caller's to remove first.
 func (s *Service) DeleteAccount(ctx context.Context, accountID, confirm string) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		var name, status string

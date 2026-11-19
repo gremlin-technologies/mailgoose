@@ -23,6 +23,32 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-19: Image upload (MG-24, reversible defaults)
+
+Picked while building MG-24; easy to change.
+
+- **The file goes base64-encoded in JSON** (`POST /v1/images`), like every
+  other request, so the CLI, agents and the web app share one way in.
+  Multipart or a raw body can be added later without breaking it.
+- **Up to 1,000 images per account**, so the CDN isn't free file hosting.
+- **No deleting single images.** Sent emails keep pointing at their images,
+  so a delete would break them in people's inboxes. An account's images are
+  deleted with the account.
+- **SVG isn't accepted.** Many mail clients don't show it, and it can carry
+  scripts.
+- **Images aren't resized or re-encoded**; they're served as uploaded.
+- **Storage is an S3 bucket in us-east-2 behind CloudFront**, files cached
+  for a year. The bucket and CDN are MG-23 (merged and applied by the
+  owner). The API task role has put, delete and list access there (deleting
+  an account deletes its images), and the tasks get `IMAGES_BUCKET`, plus
+  `IMAGES_BASE_URL` when the CDN is on. Without `IMAGES_BUCKET` the API
+  answers 503 to uploads. Local dev stores them in `.local/images`.
+- **Without a CDN** (no `IMAGES_BASE_URL`, as on staging while AWS withholds
+  CloudFront; see "The image CDN can be turned off"), the API serves images at
+  `PUBLIC_BASE_URL/images/<key>` with a 302 to a presigned URL that lasts five
+  minutes; the redirect may be cached for a minute. The API role has
+  `s3:GetObject` there to presign.
+
 ## 2026-11-18: Contacts and tags pages (MG-42, reversible defaults)
 
 Picked while building MG-42; easy to change.
@@ -93,8 +119,11 @@ Picked while building the subscription; easy to change.
 - **Event order doesn't matter:** on each subscription event the webhook
   reads the subscription from Stripe as it is now and applies that, so two
   events in one second arriving the wrong way round can't leave a paying
-  account free. If Stripe doesn't answer, the webhook answers 503 and
-  Stripe sends the event again. Without a Stripe client (or if Stripe
+  account free. The read happens before the webhook's database
+  transaction, so a slow Stripe holds no connection or account lock; a read
+  older than the one already applied changes nothing, and a redelivered
+  event isn't read again. If Stripe doesn't answer, the webhook answers 503
+  and Stripe sends the event again. Without a Stripe client (or if Stripe
   doesn't know the subscription), the event's own copy is applied: an older
   event changes nothing, and a new subscription's `incomplete` state doesn't
   replace a live one from the same second. An old subscription ending
@@ -109,7 +138,8 @@ Picked while building the subscription; easy to change.
 - **Payments to sort out by hand** (a payment that adds no credits, one for
   a closed account, a second live subscription, a closed account with a
   live subscription) are logged as errors and emailed to `OPS_ALERT_EMAIL`
-  when it's set.
+  when it's set. The email goes once the event is recorded, so a failed
+  attempt that Stripe retries doesn't send it twice.
 - **The worker checks hourly** for unit changes and for credits past their
   expiry.
 
