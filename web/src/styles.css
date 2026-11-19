@@ -1340,3 +1340,61 @@ progress {
   color: var(--muted);
   white-space: nowrap;
 }
+
+/* Signup form pages (MG-49) */
+.form-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.form-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  align-items: flex-end;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.form-field-row > .check {
+  flex: 1 1 100%;
+}
+
+.form-field-row > .field {
+  flex: 1 1 12rem;
+}
+
+.tag-choices.flush {
+  padding-left: 0;
+}
+
+.form-preview {
+  width: 100%;
+  min-height: 18rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.code-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.code-copy .code {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  resize: vertical;
+}
+
+@media (max-width: 60rem) {
+  .form-editor {
+    grid-template-columns: 1fr;
+  }
+}

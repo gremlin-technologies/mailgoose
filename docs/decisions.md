@@ -24,6 +24,21 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: Signup form pages (MG-49, reversible defaults)
+
+Picked while building MG-49; easy to change.
+
+- **A new form is made from its name alone**, with the API's defaults
+  (email only, double opt-in on), and opened to set the rest.
+- **Form options are saved with a button, not autosaved**, because a saved
+  change reaches the live form on a site at once (its tags, message and
+  confirmation email).
+- **The preview is the saved form's own embed code**, in a sandboxed frame
+  that runs no scripts and can't submit. It refreshes after each save, so it
+  shows exactly what a site gets.
+- **Fields are email (always), then first and last name**, each with its own
+  label and a required switch. A form keeps the order it was made with.
+
 ## 2026-11-19: Report page (MG-48, reversible defaults)
 
 Picked while building MG-48; easy to change.
