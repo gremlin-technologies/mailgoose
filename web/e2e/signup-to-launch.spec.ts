@@ -104,7 +104,9 @@ test("sign up, set up, design, test and launch a campaign", async ({ page }) => 
     await page.goto("/campaigns/new");
     const form = page.getByRole("form", { name: "Campaign" });
     await form.getByLabel("Campaign name").fill(`Spring menu ${run}`);
-    await form.getByLabel("Email", { exact: true }).selectOption({ label: `Spring menu ${run}` });
+    // The select's label reads "Email" plus its chosen option, and each
+    // option reads "<name> (<subject>)".
+    await form.getByLabel(/^Email/).selectOption({ label: `Spring menu ${run} (Spring is here ${run})` });
     await form.getByLabel("All subscribed contacts").check();
     await form.getByRole("button", { name: "Save draft" }).click();
     await expect(page.getByRole("button", { name: "Send test" })).toBeVisible();
