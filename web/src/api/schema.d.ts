@@ -1410,13 +1410,17 @@ export interface paths {
          *     sending domain), `missing_postal_address`, `empty_email`,
          *     `merge_tag` (a tag that can't be filled), `missing_unsubscribe`,
          *     `broken_link` (not a full web address, or the page or site doesn't
-         *     exist), `too_large` (over 102 KB as rendered), and `invalid_html`.
+         *     exist), `too_large` (over 102 KB as rendered), `invalid_html`, and
+         *     `unsafe_link` (on Google Web Risk's malware, phishing or unwanted
+         *     software lists; `url` names it).
          *
          *     Warning codes: `insecure_link` (http://), `link_unreachable` (an
          *     error status or a timeout), `link_not_checked` (a private address,
          *     a port other than 80 or 443, the check ran out of time, or links were
-         *     checked too often), `missing_alt`, `near_size_limit`
-         *     (over 90 KB) and `unsupported_css`.
+         *     checked too often), `link_safety_not_checked` (links weren't looked
+         *     up on the phishing and malware lists: the lookup isn't set up, or
+         *     didn't answer within 2 seconds; they pass), `missing_alt`,
+         *     `near_size_limit` (over 90 KB) and `unsupported_css`.
          *
          *     Each link is fetched once with a HEAD request (GET if the site
          *     refuses HEAD), 3 seconds per link and 10 seconds in all, up to 50
@@ -1424,6 +1428,12 @@ export interface paths {
          *     other than 80 and 443, aren't fetched, whichever way they get there.
          *     One account's checks fetch links at most 10 times a minute; later
          *     checks still run, with their links reported as not checked.
+         *
+         *     Every web link is also looked up on Google Web Risk's lists, by
+         *     where it goes (one of mailgoose's own tracked links by its
+         *     target). Answers are cached, so a campaign's links are looked up
+         *     once. A listed link also stops a test send, and stops a launch and
+         *     pauses the account's sending.
          */
         post: operations["checkEmail"];
         delete?: never;
@@ -2734,7 +2744,7 @@ export interface components {
             /** @default  */
             alt: string;
             /**
-             * @description Where a click on the image goes, if anywhere.
+             * @description Where a click on the image goes, if anywhere. The same rules as a button's link.
              * @default null
              */
             href: string | null;
@@ -2754,7 +2764,7 @@ export interface components {
              */
             type: "button";
             text: string;
-            /** @description An http, https or mailto address, or a merge tag such as `{{unsubscribe_url}}`. */
+            /** @description An http, https or mailto address, or exactly `{{unsubscribe_url}}`. Other merge tags may come only after a fixed `https://host/` or in a mailto address, so a contact's field can't decide where the link goes. */
             href: string;
             /** @default center */
             align: components["schemas"]["Align"];
@@ -3273,7 +3283,7 @@ export interface components {
             /** @description The line it's on, counting from 1. */
             line: number;
             /** @enum {string} */
-            code: "malformed_markup" | "script" | "form" | "iframe" | "embedded_object" | "external_stylesheet" | "event_handler" | "javascript_url" | "data_url" | "redirect" | "missing_unsubscribe" | "too_large" | "unsupported_css";
+            code: "malformed_markup" | "script" | "form" | "iframe" | "embedded_object" | "external_stylesheet" | "event_handler" | "javascript_url" | "data_url" | "redirect" | "missing_unsubscribe" | "merge_tag_link" | "too_large" | "unsupported_css";
             message: string;
         };
         EmailCheck: {
@@ -3284,7 +3294,7 @@ export interface components {
         };
         EmailCheckIssue: {
             /** @enum {string} */
-            code: "missing_subject" | "missing_from" | "unverified_from" | "missing_postal_address" | "empty_email" | "merge_tag" | "missing_unsubscribe" | "broken_link" | "too_large" | "invalid_html" | "insecure_link" | "link_unreachable" | "link_not_checked" | "missing_alt" | "near_size_limit" | "unsupported_css";
+            code: "missing_subject" | "missing_from" | "unverified_from" | "missing_postal_address" | "empty_email" | "merge_tag" | "missing_unsubscribe" | "broken_link" | "too_large" | "invalid_html" | "unsafe_link" | "insecure_link" | "link_unreachable" | "link_not_checked" | "link_safety_not_checked" | "missing_alt" | "near_size_limit" | "unsupported_css";
             message: string;
             /** @description The block field or setting it's about, such as `blocks[2].alt` or `settings.subject`. */
             path?: string;
@@ -3782,8 +3792,8 @@ export interface components {
          * @description `not_ready`: something stops the email being sent;
          *     `details.problems` lists each with its `code` (`no_email`,
          *     `missing_from`, `unverified_from`, `missing_postal_address`,
-         *     `missing_subject`, `empty_email`, `merge_tag`, `invalid_html`), `message`
-         *     and `hint`.
+         *     `missing_subject`, `empty_email`, `merge_tag`, `invalid_html`,
+         *     `unsafe_link` with the link in `url`), `message` and `hint`.
          *     `invalid_test`: `to` has an address that isn't one, or more than 5.
          *     `test_recipient_not_allowed`: an address in `to` isn't the owner's
          *     or on a verified sending domain; `details.address` names it.
@@ -3823,9 +3833,12 @@ export interface components {
          *     each reason with its `code`, `message` and `hint`: Prepare's
          *     (`no_email`, `missing_from`, `unverified_from`,
          *     `missing_postal_address`, `missing_subject`, `empty_email`,
-         *     `merge_tag`), `check_failed` (an email check error), `untested` (no
-         *     test since the last change), `send_at_passed`, `account_paused`,
-         *     `account_suspended`, `subscription_past_due` (sending is paused until the paid plan's
+         *     `merge_tag`), `check_failed` (an email check error), `unsafe_link`
+         *     (a link on Google Web Risk's malware, phishing or unwanted software
+         *     lists, named in `url`; it also pauses the account's sending),
+         *     `untested` (no test since the last change), `send_at_passed`,
+         *     `account_paused`, `account_suspended`,
+         *     `subscription_past_due` (sending is paused until the paid plan's
          *     payment goes through), `no_recipients`, and `credits_short` with `details.needed`,
          *     `details.balance` and `details.short`. `invalid_confirmation`: the
          *     code can't be used; `details.reason` is `no_code`, `expired`,

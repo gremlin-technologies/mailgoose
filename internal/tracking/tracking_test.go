@@ -307,3 +307,20 @@ func splice(t *testing.T, body, sig string) string {
 	out := append(b[:len(b)-macLen:len(b)-macLen], g[len(g)-macLen:]...)
 	return tokenPrefix + base64.RawURLEncoding.EncodeToString(out)
 }
+
+func TestClickTarget(t *testing.T) {
+	// A token as Links.Click makes one; the signature isn't checked.
+	body := make([]byte, headerLen, headerLen+64)
+	body = append(body, "https://shop.example/sale?x=1"...)
+	body = append(body, make([]byte, macLen)...)
+	tracked := "https://app.example" + ClickPrefix + encode(body)
+	if got, ok := ClickTarget(tracked); !ok || got != "https://shop.example/sale?x=1" {
+		t.Errorf("tracked: %q %v", got, ok)
+	}
+	for _, link := range []string{"https://shop.example/sale", "https://app.example/t/c/nope", "https://app.example/t/o/t1AAAA",
+		"https://app.example" + ClickPrefix + encode(make([]byte, headerLen+macLen)), "::"} {
+		if got, ok := ClickTarget(link); ok {
+			t.Errorf("%s: %q", link, got)
+		}
+	}
+}

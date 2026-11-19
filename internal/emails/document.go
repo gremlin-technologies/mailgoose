@@ -664,10 +664,14 @@ func needText(path, v string, max int) error {
 }
 
 // linkURL checks an absolute http or https URL; mailto also counts for a
-// link someone clicks. A merge tag such as {{unsubscribe_url}} is allowed
-// for links, and the renderer (MG-21) checks it.
+// link someone clicks. A link may be exactly {{unsubscribe_url}}; any
+// other merge tag may only come after a fixed address (FixedLinkHost),
+// and the renderer (MG-21) checks the tags themselves.
 func linkURL(path, v string, link bool) error {
-	if link && strings.HasPrefix(v, "{{") && strings.HasSuffix(v, "}}") {
+	if link && !FixedLinkHost(v) {
+		return docErr(path, "%s", TagLinkMessage)
+	}
+	if link && unsubscribeHref.MatchString(v) {
 		return nil
 	}
 	u, err := url.Parse(v)

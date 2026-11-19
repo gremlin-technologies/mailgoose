@@ -580,6 +580,7 @@ const (
 	EmailCheckIssueCodeInsecureLink         EmailCheckIssueCode = "insecure_link"
 	EmailCheckIssueCodeInvalidHtml          EmailCheckIssueCode = "invalid_html"
 	EmailCheckIssueCodeLinkNotChecked       EmailCheckIssueCode = "link_not_checked"
+	EmailCheckIssueCodeLinkSafetyNotChecked EmailCheckIssueCode = "link_safety_not_checked"
 	EmailCheckIssueCodeLinkUnreachable      EmailCheckIssueCode = "link_unreachable"
 	EmailCheckIssueCodeMergeTag             EmailCheckIssueCode = "merge_tag"
 	EmailCheckIssueCodeMissingAlt           EmailCheckIssueCode = "missing_alt"
@@ -589,6 +590,7 @@ const (
 	EmailCheckIssueCodeMissingUnsubscribe   EmailCheckIssueCode = "missing_unsubscribe"
 	EmailCheckIssueCodeNearSizeLimit        EmailCheckIssueCode = "near_size_limit"
 	EmailCheckIssueCodeTooLarge             EmailCheckIssueCode = "too_large"
+	EmailCheckIssueCodeUnsafeLink           EmailCheckIssueCode = "unsafe_link"
 	EmailCheckIssueCodeUnsupportedCss       EmailCheckIssueCode = "unsupported_css"
 	EmailCheckIssueCodeUnverifiedFrom       EmailCheckIssueCode = "unverified_from"
 )
@@ -605,6 +607,8 @@ func (e EmailCheckIssueCode) Valid() bool {
 	case EmailCheckIssueCodeInvalidHtml:
 		return true
 	case EmailCheckIssueCodeLinkNotChecked:
+		return true
+	case EmailCheckIssueCodeLinkSafetyNotChecked:
 		return true
 	case EmailCheckIssueCodeLinkUnreachable:
 		return true
@@ -623,6 +627,8 @@ func (e EmailCheckIssueCode) Valid() bool {
 	case EmailCheckIssueCodeNearSizeLimit:
 		return true
 	case EmailCheckIssueCodeTooLarge:
+		return true
+	case EmailCheckIssueCodeUnsafeLink:
 		return true
 	case EmailCheckIssueCodeUnsupportedCss:
 		return true
@@ -763,6 +769,7 @@ const (
 	HtmlIssueCodeIframe             HtmlIssueCode = "iframe"
 	HtmlIssueCodeJavascriptUrl      HtmlIssueCode = "javascript_url"
 	HtmlIssueCodeMalformedMarkup    HtmlIssueCode = "malformed_markup"
+	HtmlIssueCodeMergeTagLink       HtmlIssueCode = "merge_tag_link"
 	HtmlIssueCodeMissingUnsubscribe HtmlIssueCode = "missing_unsubscribe"
 	HtmlIssueCodeRedirect           HtmlIssueCode = "redirect"
 	HtmlIssueCodeScript             HtmlIssueCode = "script"
@@ -788,6 +795,8 @@ func (e HtmlIssueCode) Valid() bool {
 	case HtmlIssueCodeJavascriptUrl:
 		return true
 	case HtmlIssueCodeMalformedMarkup:
+		return true
+	case HtmlIssueCodeMergeTagLink:
 		return true
 	case HtmlIssueCodeMissingUnsubscribe:
 		return true
@@ -1510,7 +1519,7 @@ type ButtonBlock struct {
 	// BackgroundColor Examples: #18181b
 	BackgroundColor Color `json:"background_color"`
 
-	// Href An http, https or mailto address, or a merge tag such as `{{unsubscribe_url}}`.
+	// Href An http, https or mailto address, or exactly `{{unsubscribe_url}}`. Other merge tags may come only after a fixed `https://host/` or in a mailto address, so a contact's field can't decide where the link goes.
 	Href string `json:"href"`
 
 	// Id Stable for the block's life: edits and moves keep it. Leave it out
@@ -2594,7 +2603,7 @@ type ImageBlock struct {
 	Align Align  `json:"align"`
 	Alt   string `json:"alt"`
 
-	// Href Where a click on the image goes, if anywhere.
+	// Href Where a click on the image goes, if anywhere. The same rules as a button's link.
 	Href *string `json:"href"`
 
 	// Id Stable for the block's life: edits and moves keep it. Leave it out

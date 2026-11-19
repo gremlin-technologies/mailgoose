@@ -33,11 +33,13 @@ some readers would trip on (warnings).
 Errors: no subject, no From address, a From that isn't on a verified sending
 domain, no postal address on the account, an empty email, a merge tag that
 can't be filled, no unsubscribe link, a link that isn't a full address or
-leads to a missing page, an email over 102 KB, or markup that isn't allowed.
+leads to a missing page, a link on Google's phishing or malware lists, an
+email over 102 KB, or markup that isn't allowed.
 
 Warnings: http:// links, links that time out or answer with an error, links
-that weren't checked, images without alt text, an email close to the size
-limit, and CSS some clients drop.
+that weren't checked or couldn't be looked up on the phishing and malware
+lists, images without alt text, an email close to the size limit, and CSS
+some clients drop.
 
 Each link is fetched once, with a few seconds for each and 10 seconds in
 all; links to private addresses or to ports other than 80 and 443 aren't

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
+	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
 )
 
 // brokenLinks says every link is a 404 and records what it was asked.
@@ -144,5 +145,43 @@ func TestCheckEmailLinkLimit(t *testing.T) {
 	}
 	if len(links.asked) != linkChecksPerMinute {
 		t.Errorf("fetched %d times, want %d", len(links.asked), linkChecksPerMinute)
+	}
+}
+
+func TestCheckEmailUnsafeLink(t *testing.T) {
+	srv := fullKey(authServer)(t)
+	f := &linkrisk.Fake{}
+	f.List("https://prize.example/claim", linkrisk.Malware)
+	srv.LinkSafety = &linkrisk.Checker{Lookup: f}
+	h := srv.Handler()
+	addedEmailFrom(`{"name":"Spring","document":{"settings":{"subject":"Spring menu"},"blocks":[
+		{"type":"button","text":"Claim","href":"https://prize.example/claim"},
+		{"type":"footer","text":""}]}}`)(t, h)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(emailPath(http.MethodPost, "/check", ""))(t))
+	var a checkAnswer
+	if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("check: %d %s", rec.Code, rec.Body)
+	}
+	var unsafe *emailcheck.Issue
+	for i := range a.Errors {
+		if a.Errors[i].Code == emailcheck.UnsafeLink {
+			unsafe = &a.Errors[i]
+		}
+	}
+	if a.OK || unsafe == nil || unsafe.URL != "https://prize.example/claim" || !strings.Contains(unsafe.Message, "malware") {
+		t.Errorf("answer %s", rec.Body)
+	}
+
+	// Without an API key the link passes, with a warning.
+	srv.LinkSafety = &linkrisk.Checker{}
+	h = srv.Handler()
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(emailPath(http.MethodPost, "/check", ""))(t))
+	a = checkAnswer{}
+	_ = json.Unmarshal(rec.Body.Bytes(), &a)
+	errs, warns := a.codes()
+	if strings.Contains(errs, "unsafe_link") || !strings.Contains(warns, "link_safety_not_checked") {
+		t.Errorf("no key: errors %q, warnings %q", errs, warns)
 	}
 }

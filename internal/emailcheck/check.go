@@ -7,12 +7,15 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 
 	"golang.org/x/net/html"
 
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
+	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
+	"github.com/gremlin-technologies/mailgoose/internal/tracking"
 )
 
 // Error codes: any of these stops a launch.
@@ -27,6 +30,9 @@ const (
 	BrokenLink           = "broken_link"
 	TooLarge             = "too_large"
 	InvalidHTML          = "invalid_html"
+	// UnsafeLink is a link on Google Web Risk's malware, phishing or
+	// unwanted software lists (MG-64).
+	UnsafeLink = "unsafe_link"
 )
 
 // Warning codes.
@@ -34,9 +40,13 @@ const (
 	InsecureLink    = "insecure_link"
 	LinkUnreachable = "link_unreachable"
 	LinkNotChecked  = "link_not_checked"
-	MissingAlt      = "missing_alt"
-	NearSizeLimit   = "near_size_limit"
-	UnsupportedCSS  = emails.HTMLUnsupportedCSS
+	// LinkSafetyNotChecked means some links weren't looked up on the
+	// phishing and malware lists: the check isn't set up, or Web Risk
+	// didn't answer. They pass.
+	LinkSafetyNotChecked = "link_safety_not_checked"
+	MissingAlt           = "missing_alt"
+	NearSizeLimit        = "near_size_limit"
+	UnsupportedCSS       = emails.HTMLUnsupportedCSS
 )
 
 // NearSizeBytes is where the size warning starts: tracking adds to every
@@ -75,6 +85,9 @@ type Input struct {
 	FromEmail string
 	// FromVerified is whether FromEmail is on a verified sending domain.
 	FromVerified bool
+	// Safety looks links up on the phishing and malware lists (MG-64); nil
+	// skips that.
+	Safety *linkrisk.Checker
 }
 
 // unsubscribeSample stands in for each recipient's own unsubscribe link,
@@ -154,7 +167,7 @@ func Check(ctx context.Context, in Input, links LinkChecker) Result {
 		c.warn(Issue{Code: NearSizeLimit, Message: fmt.Sprintf(
 			"The email is %s, close to the %s where Gmail clips it; link tracking adds a little more.", kb(n), kb(emails.MaxSendableHTMLBytes))})
 	}
-	c.links(ctx, msg.HTML, links)
+	c.links(ctx, msg.HTML, tagLinks(tpl.TaggedHTML()), links, in.Safety)
 	return c.res
 }
 
@@ -232,12 +245,26 @@ func (c *checker) blockAlts(doc *emails.Document) {
 	}
 }
 
-// links checks every link in the rendered email, once each.
-func (c *checker) links(ctx context.Context, src string, checker LinkChecker) {
+// tagLinks marks, by position, the links whose address a merge tag decides.
+// Render and markup already report each one, and the sample contact's
+// field it would fill in says nothing about where the link really goes.
+func tagLinks(tagged string) map[int]bool {
+	out := map[int]bool{}
+	for i, href := range hrefs(tagged) {
+		if !emails.FixedLinkHost(href) {
+			out[i] = true
+		}
+	}
+	return out
+}
+
+// links checks every link in the rendered email, once each, apart from the
+// ones at the positions in skip.
+func (c *checker) links(ctx context.Context, src string, skip map[int]bool, checker LinkChecker, safety *linkrisk.Checker) {
 	var fetch []string
 	seen := map[string]bool{}
-	for _, href := range hrefs(src) {
-		if seen[href] || href == unsubscribeSample {
+	for i, href := range hrefs(src) {
+		if skip[i] || seen[href] || href == unsubscribeSample {
 			continue
 		}
 		seen[href] = true
@@ -260,6 +287,9 @@ func (c *checker) links(ctx context.Context, src string, checker LinkChecker) {
 		}
 		fetch = append(fetch, href)
 	}
+	if safety != nil && len(fetch) > 0 {
+		c.safety(ctx, fetch, safety)
+	}
 	if checker == nil || len(fetch) == 0 {
 		return
 	}
@@ -280,6 +310,84 @@ func (c *checker) links(ctx context.Context, src string, checker LinkChecker) {
 			c.warn(Issue{Code: LinkNotChecked, URL: href, Message: fmt.Sprintf("The link %s wasn't checked: %s.", clip(href), detail)})
 		}
 	}
+}
+
+// safety looks each link up on the phishing and malware lists: a listed
+// link is an error; links that couldn't be looked up pass with one
+// warning. One of mailgoose's own tracked links is looked up by where it
+// goes.
+func (c *checker) safety(ctx context.Context, hrefs []string, safety *linkrisk.Checker) {
+	targets := make([]string, len(hrefs))
+	for i, href := range hrefs {
+		targets[i] = href
+		if t, ok := tracking.ClickTarget(href); ok {
+			targets[i] = t
+		}
+	}
+	res := safety.Check(ctx, targets)
+	for i, href := range hrefs {
+		threats, listed := res.Listed[targets[i]]
+		if !listed {
+			continue
+		}
+		c.fail(Issue{Code: UnsafeLink, URL: href, Message: UnsafeLinkMessage(href, threats)})
+	}
+	if n := len(res.Unchecked); n > 0 {
+		what := "Links weren't"
+		if n < len(slices.Compact(slices.Sorted(slices.Values(targets)))) {
+			what = fmt.Sprintf("%d %s weren't", n, plural(n, "link", "links"))
+		}
+		c.warn(Issue{Code: LinkSafetyNotChecked,
+			Message: fmt.Sprintf("%s checked against Google's phishing and malware lists: %s. They aren't blocked for it.", what, res.Why)})
+	}
+}
+
+// Safety looks up the links in a rendered email on the phishing and
+// malware lists, as Check does, and returns its errors (each UnsafeLink)
+// and its warning (LinkSafetyNotChecked). Links in skip aren't looked up.
+func Safety(ctx context.Context, src string, safety *linkrisk.Checker, skip ...string) (errs, warns []Issue) {
+	if safety == nil {
+		return nil, nil
+	}
+	var links []string
+	seen := map[string]bool{}
+	for _, href := range hrefs(src) {
+		if seen[href] || slices.Contains(skip, href) {
+			continue
+		}
+		seen[href] = true
+		if u, err := url.Parse(href); err == nil && u.Host != "" && (strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https")) {
+			links = append(links, href)
+		}
+	}
+	if len(links) == 0 {
+		return nil, nil
+	}
+	c := &checker{}
+	c.safety(ctx, links, safety)
+	return c.res.Errors, c.res.Warnings
+}
+
+// UnsafeLinkMessage says a link is on the lists in threats.
+func UnsafeLinkMessage(link string, threats []string) string {
+	var kinds []string
+	for _, t := range threats {
+		if d := linkrisk.Describe(t); !slices.Contains(kinds, d) {
+			kinds = append(kinds, d)
+		}
+	}
+	list := strings.Join(kinds, " and ")
+	if len(kinds) > 2 {
+		list = strings.Join(kinds[:len(kinds)-1], ", ") + " and " + kinds[len(kinds)-1]
+	}
+	return fmt.Sprintf("The link %s is on Google's list of %s sites, so the email can't be sent with it.", clip(link), list)
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // hrefs lists every <a href> in the HTML, in order.

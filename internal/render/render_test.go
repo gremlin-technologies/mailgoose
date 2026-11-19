@@ -206,6 +206,10 @@ func TestMarkdown(t *testing.T) {
 		{"[**bold** link](mailto:pat@example.com)", `<a href="mailto:pat@example.com" style="L"><strong>bold</strong> link</a>`, "bold link (mailto:pat@example.com)"},
 		{"[bad](javascript:alert(1))", "[bad](javascript:alert(1))", "[bad](javascript:alert(1))"},
 		{"[https://x.example](https://x.example)", `<a href="https://x.example" style="L">https://x.example</a>`, "https://x.example"},
+		{"[shop]({{first_name|https://shop.example}})", "[shop]({{first_name|https://shop.example}})", "[shop]({{first_name|https://shop.example}})"},
+		{"[shop](https://shop.example{{last_name}})", "[shop](https://shop.example{{last_name}})", "[shop](https://shop.example{{last_name}})"},
+		{"[hi](https://shop.example/?n={{first_name}})", `<a href="https://shop.example/?n={{first_name}}" style="L">hi</a>`, "hi (https://shop.example/?n={{first_name}})"},
+		{"[leave]({{unsubscribe_url}})", `<a href="{{unsubscribe_url}}" style="L">leave</a>`, "leave ({{unsubscribe_url}})"},
 	}
 	for _, c := range cases {
 		var h, txt strings.Builder
@@ -300,5 +304,39 @@ func TestUnsubscribeHeaders(t *testing.T) {
 	}
 	if h := UnsubscribeHeaders(" https://x.example/u/tok "); len(h) != 2 || h[0].Value != "<https://x.example/u/tok>" {
 		t.Errorf("headers %+v", h)
+	}
+}
+
+// A link whose destination a merge tag decides would go wherever a
+// contact's field points, past the link check (MG-64). Saving refuses
+// one, and Lint and Compile refuse one saved before that rule.
+func TestLintRefusesTagLinks(t *testing.T) {
+	d := doc(t, `{"id":"b","type":"button","text":"Shop","href":"https://shop.example"},
+		{"id":"i","type":"image","src":"https://cdn.example/a.png","alt":"A","href":"https://shop.example"},
+		{"id":"t","type":"text","text":"See [the shop]({{email}}) or [ours](https://shop.example/?n={{first_name}})."},
+		{"id":"f","type":"footer","text":"Bye"}`, "")
+	for _, info := range emails.ListBlocks(d) {
+		switch b := info.Block.(type) {
+		case *emails.Button:
+			b.Href = "{{first_name|https://shop.example}}"
+		case *emails.Image:
+			h := "https://shop.example{{last_name}}"
+			b.Href = &h
+		}
+	}
+	var got []string
+	for _, e := range Lint(d) {
+		got = append(got, e.Path+": "+e.Message)
+	}
+	want := []string{
+		"blocks[0].href: " + emails.TagLinkMessage,
+		"blocks[1].href: " + emails.TagLinkMessage,
+		"blocks[2].text: in the link [the shop]({{email}}), " + emails.TagLinkMessage,
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if _, err := Compile(d, Account{PostalAddress: postal}); err == nil {
+		t.Error("Compile rendered a link a merge tag decides")
 	}
 }

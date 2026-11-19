@@ -9,6 +9,7 @@ package sending
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
+	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
@@ -37,6 +39,13 @@ type Service struct {
 	// Slicing is how a new account's campaigns are sliced (MG-62); zero
 	// values are the defaults.
 	Slicing Slicing
+	// LinkSafety looks links up on the phishing and malware lists at test
+	// and launch (MG-64); nil skips that.
+	LinkSafety *linkrisk.Checker
+	// Alert tells the ops address about an account paused for an unsafe
+	// link; nil only logs it.
+	Alert AlertFunc
+	Log   *slog.Logger
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }

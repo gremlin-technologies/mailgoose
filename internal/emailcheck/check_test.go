@@ -186,3 +186,39 @@ func TestResultJSONHasEmptyLists(t *testing.T) {
 		t.Errorf("%s", b)
 	}
 }
+
+// A link whose whole address is a merge tag would go wherever each
+// contact's field points, so the link check would only ever see the
+// fallback. The check refuses it, in plain words (MG-64).
+func TestTagDecidedLinkRefused(t *testing.T) {
+	in := good
+	in.Doc = blocksDoc(t, `{"subject":"Spring menu"}`,
+		`{"type":"button","text":"Shop","href":"https://bakery.example/shop"},`+
+			`{"type":"footer","text":"You signed up at the bakery."}`)
+	for _, info := range emails.ListBlocks(in.Doc) {
+		if b, ok := info.Block.(*emails.Button); ok {
+			b.Href = "{{first_name|https://bakery.example/shop}}" // saved before the rule
+		}
+	}
+	links := &fakeLinks{}
+	res := Check(context.Background(), in, links)
+	if got := codes(res.Errors); got != "broken_link@blocks[0].href" {
+		t.Fatalf("errors %s", got)
+	}
+	if m := res.Errors[0].Message; !strings.HasPrefix(m, "A merge tag can't decide where a link goes") || !strings.HasSuffix(m, ".") {
+		t.Errorf("message %q", m)
+	}
+	if len(links.asked) != 0 {
+		t.Errorf("checked %v; the sample contact's name says nothing about where the link goes", links.asked)
+	}
+
+	in.Doc = htmlDoc(t, `{"subject":"Spring menu"}`,
+		"<p>Hi</p>\n<a href=\"{{first_name}}\">Shop</a>\n<a href=\"{{unsubscribe_url}}\">Unsubscribe</a>")
+	res = Check(context.Background(), in, links)
+	if got := codes(res.Errors); got != "invalid_html@line2" {
+		t.Fatalf("html errors %s", got)
+	}
+	if m := res.Errors[0].Message; !strings.Contains(m, `The href on <a> is "{{first_name}}": a merge tag can't decide where a link goes`) {
+		t.Errorf("html message %q", m)
+	}
+}

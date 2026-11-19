@@ -577,9 +577,16 @@ func TestPipelineGlobalRate(t *testing.T) {
 	if len(sent) != 12 || took < 500*time.Millisecond {
 		t.Errorf("%d sent in %v", len(sent), took)
 	}
-	for i := 1; i < len(sent); i++ {
-		if gap := sent[i].At.Sub(sent[i-1].At); gap < 30*time.Millisecond {
-			t.Errorf("copies %d and %d %v apart", i-1, i, gap)
+	// The fake stamps a copy when it's handed over, after the work that
+	// follows its slot, so one copy can land a little late and the next on
+	// time. Pairs are too close to tell the rate from that. Every four
+	// slots are 200ms apart when the rate is shared, and 100ms when each
+	// worker keeps its own: 150ms tells them apart with room for a late
+	// copy.
+	const span = 4
+	for i := span; i < len(sent); i++ {
+		if gap := sent[i].At.Sub(sent[i-span].At); gap < 150*time.Millisecond {
+			t.Errorf("copies %d and %d %v apart", i-span, i, gap)
 		}
 	}
 }
