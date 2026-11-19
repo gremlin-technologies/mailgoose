@@ -244,6 +244,67 @@ func TestWebhookAddsNothing(t *testing.T) {
 	}
 }
 
+// A session carries the price and credits it was opened at, so changing
+// CREDIT_PACKS while a checkout is open still credits what was paid for.
+func TestWebhookPriceChangedWhileOpen(t *testing.T) {
+	h := newHarness(t)
+	stamped := func(id, session string, amount int64) []byte {
+		return []byte(strings.Replace(string(h.event(id, "checkout.session.completed", session, "paid", "10k", amount)),
+			`"credits":"10000"`, `"credits":"10000","price_cents":"2000"`, 1))
+	}
+	// The 10k pack now costs $25 and is renamed; the open session was $20.
+	h.svc.Packs = []Pack{{Name: "10k-new", Credits: 10_000, PriceCents: 2_500}}
+	before := h.balance(t)
+	if got := h.send(t, stamped("evt_1", "cs_1", 2000)); got != OutcomeCredited {
+		t.Fatalf("outcome %s", got)
+	}
+	if got := h.balance(t) - before; got != 10_000 {
+		t.Errorf("added %d credits", got)
+	}
+	// What was charged must still match the stamped price.
+	if got := h.send(t, stamped("evt_2", "cs_2", 1)); got != OutcomeMismatch {
+		t.Errorf("underpaid: outcome %s", got)
+	}
+	if got := h.balance(t) - before; got != 10_000 {
+		t.Errorf("added %d credits in all", got)
+	}
+}
+
+// A paid session for an account that's gone, closed or not an id adds
+// nothing and isn't retried.
+func TestWebhookNoAccount(t *testing.T) {
+	cases := map[string]func(h *harness) string{
+		"missing":   func(*harness) string { return "0b7b0b9e-5d4e-4a0e-9a53-5c1f4c1e2f00" },
+		"not an id": func(*harness) string { return "acc_nope" },
+		"closed": func(h *harness) string {
+			if _, err := h.db.Exec(context.Background(), `UPDATE accounts SET status = 'closed', closed_at = $2 WHERE id = $1`, h.acc, h.now); err != nil {
+				t.Fatal(err)
+			}
+			return h.acc
+		},
+	}
+	for name, account := range cases {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			acc := account(h)
+			body := []byte(strings.ReplaceAll(string(h.event("evt_1", "checkout.session.completed", "cs_1", "paid", "10k", 2000)),
+				`"`+h.acc+`"`, `"`+acc+`"`))
+			out, err := h.svc.HandleWebhook(context.Background(), body, Sign(body, secret, h.now))
+			if err != nil || out != OutcomeNoAccount {
+				t.Fatalf("outcome %s, %v", out, err)
+			}
+			var n int
+			if err := h.db.QueryRow(context.Background(), `SELECT count(*) FROM credit_transactions WHERE type = 'purchase'`).Scan(&n); err != nil || n != 0 {
+				t.Errorf("%d purchases, %v", n, err)
+			}
+			// Recorded, so a redelivery is a duplicate rather than a retry loop.
+			if out, err := h.svc.HandleWebhook(context.Background(), body, Sign(body, secret, h.now)); err != nil || out != OutcomeDuplicate {
+				t.Errorf("redelivered: %s, %v", out, err)
+			}
+		})
+	}
+}
+
 func TestWebhookBadSignature(t *testing.T) {
 	h := newHarness(t)
 	body := h.event("evt_1", "checkout.session.completed", "cs_1", "paid", "10k", 2000)

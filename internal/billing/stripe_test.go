@@ -56,6 +56,7 @@ func TestCreateCheckoutSession(t *testing.T) {
 		"metadata[account_id]":                          "acc_1",
 		"metadata[pack]":                                "10k",
 		"metadata[credits]":                             "10000",
+		"metadata[price_cents]":                         "2000",
 		"success_url":                                   "https://app.example/credits?checkout=done",
 		"cancel_url":                                    "https://app.example/credits?checkout=cancelled",
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -98,6 +99,9 @@ const (
 	OutcomeIgnored   Outcome = "ignored"
 	OutcomeUnpaid    Outcome = "unpaid"
 	OutcomeMismatch  Outcome = "mismatch"
+	// OutcomeNoAccount is a paid session for an account that doesn't exist
+	// or is closed: nothing is added, and it's logged for a refund.
+	OutcomeNoAccount Outcome = "no_account"
 )
 
 // HandleWebhook checks and handles one Stripe webhook. A paid Checkout
@@ -143,13 +147,30 @@ func (s *Service) handle(ctx context.Context, tx pgx.Tx, e *event) (Outcome, err
 		return OutcomeUnpaid, nil
 	}
 	accountID := cs.Metadata["account_id"]
-	pack, err := s.Pack(cs.Metadata["pack"])
-	if err != nil || accountID == "" || accountID != cs.ClientReferenceID ||
-		cs.AmountSubtotal != pack.PriceCents || !strings.EqualFold(cs.Currency, "usd") ||
-		cs.Metadata["credits"] != strconv.FormatInt(pack.Credits, 10) {
+	pack, ok := s.sessionPack(cs)
+	if !ok || accountID == "" || accountID != cs.ClientReferenceID ||
+		cs.AmountSubtotal != pack.PriceCents || !strings.EqualFold(cs.Currency, "usd") {
 		s.log().ErrorContext(ctx, "a paid Stripe session doesn't match a credit pack; no credits added",
 			"session_id", cs.ID, "event_id", e.ID, "pack", cs.Metadata["pack"], "amount_subtotal", cs.AmountSubtotal)
 		return OutcomeMismatch, nil
+	}
+	// The account must still be there and open. Answering 200 stops Stripe
+	// retrying something that can't succeed; the log says to refund it.
+	open := false
+	if id, err := uuid.Parse(accountID); err == nil && id.String() == accountID {
+		var status string
+		err := tx.QueryRow(ctx, `SELECT status FROM accounts WHERE id = $1 FOR UPDATE`, accountID).Scan(&status)
+		switch {
+		case err == nil:
+			open = status != "closed"
+		case !errors.Is(err, pgx.ErrNoRows):
+			return "", err
+		}
+	}
+	if !open {
+		s.log().ErrorContext(ctx, "a paid Stripe session is for an account that doesn't exist or is closed; no credits added, refund it",
+			"session_id", cs.ID, "event_id", e.ID, "account_id", accountID, "amount_subtotal", cs.AmountSubtotal)
+		return OutcomeNoAccount, nil
 	}
 	added, err := purchase(ctx, tx, accountID, cs.ID, pack.Credits, s.now())
 	if err != nil {
@@ -160,4 +181,31 @@ func (s *Service) handle(ctx context.Context, tx pgx.Tx, e *event) (Outcome, err
 	}
 	s.log().InfoContext(ctx, "credits bought", "account_id", accountID, "pack", pack.Name, "session_id", cs.ID)
 	return OutcomeCredited, nil
+}
+
+// sessionPack is the pack a session was opened for. A session carries its
+// pack's price and credits in its metadata, set by mailgoose when it was
+// opened; those are what the customer agreed to, so a price change in
+// CREDIT_PACKS while a checkout is open doesn't strand the payment. Only
+// mailgoose's own key can set metadata, and the webhook is signed. A
+// session opened before prices were stamped is checked against the pack as
+// configured now.
+func (s *Service) sessionPack(cs checkoutSession) (Pack, bool) {
+	name := cs.Metadata["pack"]
+	credits, err := strconv.ParseInt(cs.Metadata["credits"], 10, 64)
+	if err != nil || credits <= 0 || name == "" {
+		return Pack{}, false
+	}
+	if stamped := cs.Metadata["price_cents"]; stamped != "" {
+		price, err := strconv.ParseInt(stamped, 10, 64)
+		if err != nil || price <= 0 {
+			return Pack{}, false
+		}
+		return Pack{Name: name, Credits: credits, PriceCents: price}, true
+	}
+	pack, err := s.Pack(name)
+	if err != nil || pack.Credits != credits {
+		return Pack{}, false
+	}
+	return pack, true
 }

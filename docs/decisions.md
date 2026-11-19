@@ -40,8 +40,16 @@ Picked while building MG-39; easy to change.
   and prod only a live one; a wrong key turns buying credits off (with a log
   line) instead of stopping the server.
 - **The webhook trusts the pack, not the session alone:** a paid session
-  adds credits only if its amount, currency and credits match the pack as
-  configured now. One that doesn't is logged as an error and adds nothing.
+  adds credits only if its amount and currency match the pack's price. One
+  that doesn't is logged as an error and adds nothing.
+- **Price changes apply to new checkouts.** Each session carries the price
+  and credits it was opened at, and a paid session is credited at those, so
+  changing `CREDIT_PACKS` while a checkout is open (they last up to 24
+  hours) doesn't strand a payment. Only mailgoose's own key can set a
+  session's metadata.
+- **A payment for an account that's gone or closed** adds nothing, is
+  logged as an error to refund by hand, and answers Stripe with 200 so it
+  isn't retried for days.
 - **Paid from the first purchase:** the account becomes paid when its first
   pack is paid for, and `paid_since` records when (the monthly fee, MG-40,
   will count from it). It gets no more free monthly grants.

@@ -37,7 +37,8 @@ func (e *StripeError) Error() string {
 // checkoutForm is the Checkout session for a pack: a one-off card payment
 // for the pack at its price in US dollars, sales tax worked out by Stripe
 // Tax (on top of the price) and the billing address collected for it.
-// The account and pack ride in the metadata for the webhook.
+// The account, the pack and its credits and price ride in the metadata for
+// the webhook.
 func checkoutForm(r SessionRequest) url.Values {
 	f := url.Values{}
 	f.Set("mode", "payment")
@@ -60,6 +61,7 @@ func checkoutForm(r SessionRequest) url.Values {
 	f.Set("metadata[account_id]", r.AccountID)
 	f.Set("metadata[pack]", r.Pack.Name)
 	f.Set("metadata[credits]", strconv.FormatInt(r.Pack.Credits, 10))
+	f.Set("metadata[price_cents]", strconv.FormatInt(r.Pack.PriceCents, 10))
 	f.Set("payment_intent_data[metadata][account_id]", r.AccountID)
 	f.Set("payment_intent_data[metadata][pack]", r.Pack.Name)
 	return f
