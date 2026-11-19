@@ -21,7 +21,8 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   API, so the API sends no image bytes.)
 - **Turning it back on is the one variable.** With the CDN, `IMAGES_BASE_URL`
   is the CloudFront address and new uploads use it; images uploaded without it
-  keep their API URLs.
+  keep their API URLs, which the API goes on serving by presigned redirects
+  with the CDN on (MG-24 review).
 
 ## 2026-11-19: Image upload (MG-24, reversible defaults)
 
@@ -31,6 +32,9 @@ Picked while building MG-24; easy to change.
   other request, so the CLI, agents and the web app share one way in.
   Multipart or a raw body can be added later without breaking it.
 - **Up to 1,000 images per account**, so the CDN isn't free file hosting.
+  The image's row is added under the account's lock before the file is
+  stored, so uploads at once can't pass the cap, and removed again if
+  storing fails.
 - **No deleting single images.** Sent emails keep pointing at their images,
   so a delete would break them in people's inboxes. An account's images are
   deleted with the account.

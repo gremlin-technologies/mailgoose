@@ -96,9 +96,11 @@ type Images struct {
 	// such as the CDN in front of the bucket. Without one, the API serves
 	// them itself at PUBLIC_BASE_URL/images.
 	BaseURL string
-	// ServedByAPI is true when there's no IMAGES_BASE_URL, so the API serves
-	// the files at /images/: straight from the directory, or from the bucket
-	// by redirecting to presigned URLs (staging, while it has no CDN).
+	// ServedByAPI is true when there's no IMAGES_BASE_URL, so new images get
+	// API URLs at /images/: served straight from the directory, or from the
+	// bucket by redirecting to presigned URLs (staging, while it has no CDN).
+	// The API serves /images/ from a bucket with a CDN too, for images
+	// uploaded before it was turned on.
 	ServedByAPI bool
 }
 

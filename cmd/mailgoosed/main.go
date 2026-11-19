@@ -211,12 +211,13 @@ func newImages(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, log *
 		bucket := &images.S3{Client: s3.NewFromConfig(awsCfg), Bucket: cfg.Images.Bucket, Log: log}
 		svc.Store = bucket
 		if cfg.Images.ServedByAPI {
-			// No CDN (staging while AWS withholds CloudFront): the API
-			// redirects /images/ requests to presigned URLs.
+			// No CDN (staging while AWS withholds CloudFront).
 			log.Info("serving images from the bucket through presigned redirects", "url", cfg.Images.BaseURL)
-			return svc, bucket.Handler(), nil
 		}
-		return svc, nil, nil
+		// The API serves /images/ by presigned redirects with or without a
+		// CDN: images uploaded before the CDN was turned on keep their API
+		// URLs, which sent emails already point at.
+		return svc, bucket.Handler(), nil
 	case cfg.Images.Dir != "":
 		dir := &images.Dir{Path: cfg.Images.Dir}
 		svc.Store = dir
