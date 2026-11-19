@@ -198,7 +198,9 @@ unseen: a stale one fails with version_conflict.`,
 	var limit int
 	var cursor string
 	list := calls("listEmails", &cobra.Command{
-		Use:   "list",
+		Use: "list",
+		Example: `  mailgoose email list
+  mailgoose email list --limit 100 --json`,
 		Short: "List emails, newest first",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

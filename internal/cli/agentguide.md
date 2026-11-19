@@ -1,0 +1,192 @@
+# mailgoose for AI agents
+
+mailgoose designs emails, sends them to a list of contacts, and collects
+subscribers with signup forms. Everything the web app does, the `mailgoose`
+CLI does too, so you can work for the person you help from their terminal.
+
+This guide covers one campaign from start to finish. Every command has more
+in its `--help`, with examples. `mailgoose commands --json` lists them all.
+
+## Ground rules
+
+- **Add `--json` to every command.** Output is then one JSON value on stdout,
+  and errors are `{"error": {"code", "message", "hint"}}` on stderr. Branch on
+  `code`, never on the wording.
+- **Read the exit code.** 0 ok, 1 error, 2 bad usage, 3 not signed in or not
+  allowed, 4 not found, 5 needs an explicit confirmation. See
+  `mailgoose help exit-codes`.
+- **Nothing prompts.** A command that would delete or send something refuses
+  until you pass `--yes` or `--confirm`. Pass them only when the person has
+  agreed to that exact step.
+- **Never launch a campaign on your own.** Launching sends real email to real
+  people and spends credits. Show the person the launch summary and run the
+  launch with `--confirm` only after they say yes in your chat.
+
+## 1. Sign in with an API key
+
+The person makes a key on the web app's API keys page, or with
+`mailgoose keys create`, and gives it to you as an environment variable:
+
+```sh
+export MAILGOOSE_API_KEY=mg_live_...
+mailgoose whoami --json
+```
+
+A key has a scope. A `draft` key can do everything except launch, cancel or
+reschedule campaigns, change billing, buy credits and manage keys: it suits
+an agent that drafts and tests, and leaves launching to the person in the
+web app. A `full` key can do everything, launching included, always after
+the person's yes. Ask for the scope the work needs, and no more.
+
+`mailgoose status --json` shows which API and credential the CLI is using.
+
+## 2. Check the account is ready to send
+
+```sh
+mailgoose account get --json      # missing_for_send lists what's still needed
+mailgoose domain list --json      # a sending domain must be "verified"
+mailgoose credits --json          # the balance; each email sent uses one credit
+```
+
+A campaign can't launch until the account has a postal address (it goes in
+every email's footer, as anti-spam law requires) and a verified sending
+domain. Adding a domain prints DNS records the person must add at their DNS
+host; `mailgoose domain verify <domain>` checks again once they have.
+
+## 3. Build an email from blocks
+
+```sh
+mailgoose email create --name "Spring menu" --json
+```
+
+Note the `id` it prints. An email is a list of blocks: `heading`, `text`,
+`image`, `button`, `divider`, `spacer`, `columns` and `social`. The footer
+block is added for you and can't be removed.
+
+```sh
+mailgoose email blocks add <email-id> --type heading --text "Spring is here" --json
+mailgoose email blocks add <email-id> --type text --text "Our spring menu starts Monday, {{first_name|there}}." --json
+mailgoose email blocks add <email-id> --type button --text "See the menu" --href https://example.com/menu --json
+mailgoose email blocks list <email-id> --json
+```
+
+Each block has an id (`b_...`). Change one with `email blocks update`, move it
+with `email blocks move`, remove it with `email blocks remove`. Put blocks
+side by side with a `columns` block and `--in <columns-id> --column 0`.
+Upload a picture first with `mailgoose image upload photo.jpg --json` and use
+its `url` as an image block's `--src`.
+
+Then set the subject and sender:
+
+```sh
+mailgoose email update <email-id> --subject "Spring is here" --preview-text "New bakes from Monday" --from-name "Pat's Bakery" --from-email news@example.com --json
+```
+
+To change many blocks at once, edit the whole document instead:
+`mailgoose email get <email-id> --json > email.json`, edit the file, then
+`mailgoose email replace <email-id> --file email.json --version <version>`.
+The version makes the change fail, rather than overwrite, if someone edited
+the email meanwhile.
+
+Prefer your own HTML? `mailgoose email create --name "..." --kind html`, then
+`mailgoose email import-html <email-id> email.html`. The markup is checked
+first, and every problem is listed with its line. It must contain
+`{{unsubscribe_url}}`.
+
+## 4. Check it
+
+```sh
+mailgoose email check <email-id> --json
+mailgoose email preview <email-id> --out preview.html
+```
+
+The check lists errors, which stop a send (no subject, a From that isn't on
+a verified domain, no postal address, merge tags that can't be filled), and
+warnings, which some readers would trip on (such as images without alt text).
+Fix the errors, and tell the person about the warnings. The preview is the email as it will be sent, filled in with sample
+data.
+
+## 5. Make a campaign and send a test
+
+```sh
+mailgoose campaign create --name "Spring menu" --email <email-id> --all --json
+mailgoose campaign create --name "VIP preview" --email <email-id> --tag VIP --send-at "2026-12-01 09:00" --json
+mailgoose campaign count --tag VIP --json     # how many contacts it reaches now
+mailgoose campaign test <campaign-id> --json
+```
+
+A campaign goes to every subscribed contact (`--all`), or to subscribed
+contacts with any of the tags given. Without `--send-at` it goes out as soon
+as it is launched; a send time is read in the account's time zone.
+
+The test goes to the account owner, or with `--to` to up to five addresses
+on the account. Ask the person to look at it in their inbox. A campaign can
+only launch once it has been tested as it is now, so send a new test after
+any change to the campaign or its email.
+
+## 6. Launch, with the person's yes
+
+Launching takes a `full` key, and two steps. With a `draft` key, stop
+after the test and ask the person to launch it in the web app.
+
+```sh
+mailgoose campaign launch <campaign-id> --json
+```
+
+Without `--confirm` nothing is sent. It prints a summary (subject, From, how
+many contacts it reaches, when it goes, the credits it uses) and a
+confirmation code, and exits with code 5.
+
+**Show the person that summary in your chat and ask them to confirm.** Only
+when they say yes, run:
+
+```sh
+mailgoose campaign launch <campaign-id> --confirm <code> --json
+```
+
+The code works for 15 minutes, for the campaign exactly as it was
+summarized. If anything changed, or the code ran out, ask for a new summary
+and ask the person again. Never reuse a yes for a different summary.
+
+A scheduled campaign can be moved with `campaign reschedule` or stopped with
+`campaign cancel --yes` (both need a `full` key).
+
+## 7. Read the report
+
+```sh
+mailgoose campaign report <campaign-id> --json
+```
+
+Sent, delivered, bounced, complaints, unsubscribes, opens and clicks. Opens
+are estimates: many mail apps load images on their own, or never.
+
+## Contacts and signup forms
+
+```sh
+mailgoose contacts add pat@example.com --first-name Pat --json
+mailgoose import contacts.csv --wait --json
+mailgoose tags add VIP pat@example.com --json
+mailgoose form create --name "Footer" --json
+mailgoose form embed <form-id> > signup.html
+```
+
+Import only people who agreed to hear from the person you help. Without
+`--permission-confirmed`, imported contacts start unconfirmed and get a
+confirmation email first. Signup forms ask people to confirm by email unless
+the person turns that off.
+
+## When something fails
+
+- Exit 3 with `unauthenticated`: the key is missing or wrong. Exit 3 with
+  `insufficient_scope`: the key is `draft` and the step needs `full`; ask the
+  person to do it or to give you a full key.
+- `version_conflict`: someone changed the thing since you read it. Read it
+  again and redo your change.
+- `rate_limited`: wait for the seconds in the hint, then retry.
+- `not_ready` on launch: `details` lists every reason the campaign can't go
+  yet, such as no test of this version, no postal address, or too few
+  credits. Fix what you can and tell the person the rest; credits are theirs
+  to buy (`mailgoose credits buy`).
+
+The full API reference, with every field, is generated from the OpenAPI spec
+in `docs/api/reference.md` in the mailgoose repository.

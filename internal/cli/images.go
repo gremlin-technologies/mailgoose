@@ -58,7 +58,9 @@ holds, not its name.`,
 	}
 
 	upload := calls("uploadImage", &cobra.Command{
-		Use:   "upload <path>",
+		Use: "upload <path>",
+		Example: `  mailgoose image upload bun.png
+  mailgoose image upload bun.png --json`,
 		Short: "Upload a picture and print its URL",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -93,9 +95,10 @@ holds, not its name.`,
 	var cursor string
 	var limit int
 	list := calls("listImages", &cobra.Command{
-		Use:   "list",
-		Short: "List uploaded pictures, newest first",
-		Args:  cobra.NoArgs,
+		Use:     "list",
+		Example: `  mailgoose image list --limit 20`,
+		Short:   "List uploaded pictures, newest first",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			q := url.Values{}
 			if cursor != "" {

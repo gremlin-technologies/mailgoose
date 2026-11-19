@@ -105,7 +105,9 @@ unique ignoring case.`,
 	var limit int
 	var cursor string
 	list := calls("listTags", &cobra.Command{
-		Use:   "list",
+		Use: "list",
+		Example: `  mailgoose tags list
+  mailgoose tags list --json`,
 		Short: "List tags with how many contacts have each",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

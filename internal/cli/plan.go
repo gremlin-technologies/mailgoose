@@ -42,7 +42,9 @@ subscribed or waiting to confirm. Sales tax, if any, is added at checkout.`
 
 func (a *App) planCmd() *cobra.Command {
 	cmd := calls("getPlan", &cobra.Command{
-		Use:   "plan",
+		Use: "plan",
+		Example: `  mailgoose plan
+  mailgoose plan --json`,
 		Short: "Show the account's plan",
 		Long:  planHelp,
 		Args:  cobra.NoArgs,
@@ -126,8 +128,9 @@ Stripe confirms it. Monthly unless --yearly. Needs a full-scope key.
 	upgrade.Flags().BoolVar(&yearly, "yearly", false, "pay yearly ($50 a year instead of $5 a month)")
 
 	manage := calls("createPlanPortal", &cobra.Command{
-		Use:   "manage",
-		Short: "Get a Stripe link to change the card, see invoices or cancel",
+		Use:     "manage",
+		Example: `  mailgoose plan manage`,
+		Short:   "Get a Stripe link to change the card, see invoices or cancel",
 		Long: `Prints a link to Stripe's billing page for the subscription, where the
 card can be changed, invoices downloaded and the plan cancelled. A
 cancelled plan runs to the end of the period it's paid for; bought credits

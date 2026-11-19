@@ -34,7 +34,9 @@ can't launch without it) and the time zone.`,
 	}
 
 	get := calls("getAccount", &cobra.Command{
-		Use:   "get",
+		Use: "get",
+		Example: `  mailgoose account get
+  mailgoose account get --json`,
 		Short: "Show account settings",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

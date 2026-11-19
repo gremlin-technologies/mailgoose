@@ -186,9 +186,10 @@ func (a *App) printAdminAccount(acc adminAccount) {
 
 func (a *App) adminAccountCmd() *cobra.Command {
 	return calls("getAdminAccount", &cobra.Command{
-		Use:   "account <account-id>",
-		Short: "Show an account's state, limits, health and held imports",
-		Args:  cobra.ExactArgs(1),
+		Use:     "account <account-id>",
+		Example: `  mailgoose admin account 3f1c...`,
+		Short:   "Show an account's state, limits, health and held imports",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := adminIDArg(args[0], "an account")
 			if err != nil {
@@ -377,7 +378,9 @@ func (a *App) adminLogCmd() *cobra.Command {
 	var account, cursor string
 	var limit int
 	log := calls("listAdminActions", &cobra.Command{
-		Use:   "log",
+		Use: "log",
+		Example: `  mailgoose admin log --limit 20
+  mailgoose admin log --account 3f1c... --json`,
 		Short: "List admin actions, newest first",
 		Long: `Lists what admins (and automatic pauses) did, with who, why and when,
 newest first. --account narrows it to one account.`,

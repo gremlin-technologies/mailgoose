@@ -147,7 +147,7 @@ machine-readable output. Set MAILGOOSE_API_KEY to run headless.`,
 
 	root.AddCommand(a.versionCmd(), a.statusCmd(), a.configCmd(), a.commandsCmd(), a.keysCmd(), a.planCmd(), a.creditsCmd(), a.contactsCmd(), a.tagsCmd(), a.importCmd(), a.exportCmd(), a.imageCmd(),
 		a.emailCmd(), a.campaignCmd(), a.formCmd(), a.domainCmd(), a.accountCmd(),
-		a.signupCmd(), a.loginCmd(), a.logoutCmd(), a.whoamiCmd(), a.adminCmd(), &cobra.Command{
+		a.signupCmd(), a.loginCmd(), a.logoutCmd(), a.whoamiCmd(), a.adminCmd(), a.docsCmd(), &cobra.Command{
 			Use:   "exit-codes",
 			Short: "What each exit code means",
 			Long:  exitCodesHelp,
@@ -200,7 +200,9 @@ func (a *App) printJSON(v any) {
 
 func (a *App) versionCmd() *cobra.Command {
 	return local(&cobra.Command{
-		Use:   "version",
+		Use: "version",
+		Example: `  mailgoose version
+  mailgoose version --json`,
 		Short: "Print the CLI version, commit and build date",
 		Args:  cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
@@ -224,10 +226,11 @@ func orUnknown(s string) string {
 
 func (a *App) commandsCmd() *cobra.Command {
 	return local(&cobra.Command{
-		Use:    "commands",
-		Short:  "List every command and the API operation it calls",
-		Hidden: true,
-		Args:   cobra.NoArgs,
+		Use:     "commands",
+		Example: `  mailgoose commands --json`,
+		Short:   "List every command and the API operation it calls",
+		Hidden:  true,
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			reg := Registry(cmd.Root())
 			if a.jsonOut {
@@ -244,7 +247,9 @@ func (a *App) commandsCmd() *cobra.Command {
 
 func (a *App) statusCmd() *cobra.Command {
 	return calls("getHealth", &cobra.Command{
-		Use:   "status",
+		Use: "status",
+		Example: `  mailgoose status
+  mailgoose status --json`,
 		Short: "Check that the API is reachable",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -282,9 +287,10 @@ func (a *App) configCmd() *cobra.Command {
 	}
 
 	show := local(&cobra.Command{
-		Use:   "show",
-		Short: "Show the settings in effect and where each comes from",
-		Args:  cobra.NoArgs,
+		Use:     "show",
+		Example: `  mailgoose config show`,
+		Short:   "Show the settings in effect and where each comes from",
+		Args:    cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			s, err := a.settings()
 			if err != nil {
@@ -358,9 +364,10 @@ func (a *App) configCmd() *cobra.Command {
 	})
 
 	unset := local(&cobra.Command{
-		Use:   "unset <key>",
-		Short: "Remove a saved setting: api-url or api-key",
-		Args:  cobra.ExactArgs(1),
+		Use:     "unset <key>",
+		Example: `  mailgoose config unset api-key`,
+		Short:   "Remove a saved setting: api-url or api-key",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			path, err := ConfigPath(a.Getenv)
 			if err != nil {
