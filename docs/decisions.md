@@ -24,6 +24,32 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: End-to-end tests (MG-58, reversible defaults)
+
+Picked while building MG-58; easy to change.
+
+- **The local worker plays SES's mailbox simulator.** With the fake sender
+  and no SES events queue, mail to `success@`, `bounce@`, `ooto@`,
+  `suppressionlist@` or `complaint@simulator.amazonses.com` (a `+label` is
+  allowed) gets the event SES would publish, a second later, through the
+  same handler as the real queue. So bounces and complaints are tested end
+  to end with no AWS, and the same addresses work against staging's real
+  SES.
+- **The CLI test is a shell script** (`scripts/e2e-cli.sh`, `make e2e-cli`)
+  that runs only `mailgoose ... --json`, plus `curl` for the one-click
+  unsubscribe a mail client would make. It signs up with the emailed code,
+  makes a full API key and uses only that from then on.
+- **The browser test is Playwright, Chromium only**
+  (`web/e2e/`, `make e2e-web`). The other browsers are MG-59's manual pass.
+- **Both run in a new `End-to-end` CI job** against `scripts/dev.sh`, with
+  Postgres as a service and mail written to `.local/mail`. The runner's own
+  Node is used, as in the Go job.
+- **The test emails have no links to other sites,** because the email check
+  follows every link and the tests shouldn't depend on another site being
+  up. Click tracking stays covered by the unit tests.
+- **Against staging,** the CLI script needs the mail it reads from
+  `.local/mail`; running it there waits for a way to read staging's mail.
+
 ## 2026-11-19: Monitoring and alarms (MG-53, reversible defaults)
 
 Picked while building MG-53; easy to change. The owner applies it and picks

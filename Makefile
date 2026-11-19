@@ -20,13 +20,19 @@ ECR_REPO    ?= mailgoose
 
 TEST_DB_URL ?= postgres://mailgoose:mailgoose@localhost:5432/mailgoose_test?sslmode=disable
 
-.PHONY: help dev web web-dev web-check mail build test test-db vet lint lint-api generate docs fmt tidy run-api run-worker migrate up down image push-ecr clean
+.PHONY: help dev e2e-cli e2e-web web web-dev web-check mail build test test-db vet lint lint-api generate docs fmt tidy run-api run-worker migrate up down image push-ecr clean
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
 
 dev: ## Run Postgres, migrations, the API and the worker locally; mail goes to .local/mail
 	./scripts/dev.sh
+
+e2e-cli: ## End-to-end test of the CLI against the stack from make dev
+	./scripts/e2e-cli.sh
+
+e2e-web: web/node_modules ## End-to-end test of the web app (Playwright) against make dev, with the app built (make web)
+	cd web && npx playwright test
 
 web: web/node_modules ## Build the web app into web/dist (make dev serves it)
 	cd web && npm run -s build
