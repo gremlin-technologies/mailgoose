@@ -28,6 +28,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
+	"github.com/gremlin-technologies/mailgoose/internal/images"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
@@ -86,6 +87,13 @@ type Server struct {
 	// Billing sells credit packs through Stripe; nil (no database) makes
 	// checkout and the Stripe webhook answer 503.
 	Billing *billing.Service
+	// Images stores pictures for image blocks; nil without a database or an
+	// image store, which makes the image endpoints answer 503.
+	Images *images.Service
+	// ImageFiles serves the image store at /images/: a local directory, or
+	// the bucket through presigned redirects when there's no CDN; nil when
+	// images are served from a CDN.
+	ImageFiles http.Handler
 	// Reports counts campaign results; nil answers 503.
 	Reports *reports.Service
 	// Admin backs the mailgoose staff tools (OPS-6); nil without a
@@ -151,6 +159,10 @@ func (s *Server) Handler() http.Handler {
 	stripeHook := requestIDs(s.recoverer(s.logRequests(http.HandlerFunc(s.stripeWebhook))))
 	// The web app skips the API's middleware: its files need no rate limit,
 	// session lookup or idempotency.
+	var imageFiles http.Handler
+	if s.ImageFiles != nil {
+		imageFiles = requestIDs(s.recoverer(http.StripPrefix("/images", s.ImageFiles)))
+	}
 	var web http.Handler
 	if s.Web != nil {
 		web = requestIDs(s.recoverer(s.Web))
@@ -159,6 +171,8 @@ func (s *Server) Handler() http.Handler {
 		switch {
 		case r.URL.Path == StripeWebhookPath:
 			stripeHook.ServeHTTP(w, r)
+		case imageFiles != nil && strings.HasPrefix(r.URL.Path, "/images/") && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+			imageFiles.ServeHTTP(w, r)
 		case isTrackingPath(r.URL.Path):
 			tracked.ServeHTTP(w, r)
 		case isRecipientPage(r.URL.Path):

@@ -759,6 +759,30 @@ func (e HtmlIssueCode) Valid() bool {
 	}
 }
 
+// Defines values for ImageContentType.
+const (
+	ImageContentTypeImagegif  ImageContentType = "image/gif"
+	ImageContentTypeImagejpeg ImageContentType = "image/jpeg"
+	ImageContentTypeImagepng  ImageContentType = "image/png"
+	ImageContentTypeImagewebp ImageContentType = "image/webp"
+)
+
+// Valid indicates whether the value is a known member of the ImageContentType enum.
+func (e ImageContentType) Valid() bool {
+	switch e {
+	case ImageContentTypeImagegif:
+		return true
+	case ImageContentTypeImagejpeg:
+		return true
+	case ImageContentTypeImagepng:
+		return true
+	case ImageContentTypeImagewebp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ImageBlockType.
 const (
 	ImageBlockTypeImage ImageBlockType = "image"
@@ -2344,6 +2368,23 @@ type HtmlIssue struct {
 // HtmlIssueCode defines model for HtmlIssue.Code.
 type HtmlIssueCode string
 
+// Image defines model for Image.
+type Image struct {
+	Bytes       int              `json:"bytes"`
+	ContentType ImageContentType `json:"content_type"`
+	CreatedAt   time.Time        `json:"created_at"`
+
+	// FileName The uploaded file's name, for showing; empty if none was given.
+	FileName string `json:"file_name"`
+	Id       string `json:"id"`
+
+	// Url Where the image is served from; use it as an image block's `src`.
+	Url string `json:"url"`
+}
+
+// ImageContentType defines model for Image.ContentType.
+type ImageContentType string
+
 // ImageBlock defines model for ImageBlock.
 type ImageBlock struct {
 	Align Align  `json:"align"`
@@ -2367,6 +2408,12 @@ type ImageBlock struct {
 
 // ImageBlockType defines model for ImageBlock.Type.
 type ImageBlockType string
+
+// ImageList defines model for ImageList.
+type ImageList struct {
+	Data       []Image `json:"data"`
+	NextCursor *string `json:"next_cursor"`
+}
 
 // Import defines model for Import.
 type Import struct {
@@ -2922,6 +2969,15 @@ type UpdateFormRequest struct {
 	TagIds         *[]string    `json:"tag_ids,omitempty"`
 }
 
+// UploadImageRequest defines model for UploadImageRequest.
+type UploadImageRequest struct {
+	// Data The file, in standard base64 with padding. Anything else is a 400.
+	Data []byte `json:"data"`
+
+	// FileName The file's name, for showing in lists. It doesn't decide the type.
+	FileName *string `json:"file_name,omitempty"`
+}
+
 // User defines model for User.
 type User struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -3031,6 +3087,9 @@ type InvalidForm = Error
 
 // InvalidHtml defines model for InvalidHtml.
 type InvalidHtml = Error
+
+// InvalidImage defines model for InvalidImage.
+type InvalidImage = Error
 
 // LaunchConfirmation defines model for LaunchConfirmation.
 type LaunchConfirmation = Error
@@ -3226,6 +3285,15 @@ type ListFormsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListImagesParams defines parameters for ListImages.
+type ListImagesParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListImportsParams defines parameters for ListImports.
 type ListImportsParams struct {
 	// Limit Items per page.
@@ -3345,6 +3413,9 @@ type CreateFormJSONRequestBody = CreateFormRequest
 
 // UpdateFormJSONRequestBody defines body for UpdateForm for application/json ContentType.
 type UpdateFormJSONRequestBody = UpdateFormRequest
+
+// UploadImageJSONRequestBody defines body for UploadImage for application/json ContentType.
+type UploadImageJSONRequestBody = UploadImageRequest
 
 // CreateImportJSONRequestBody defines body for CreateImport for application/json ContentType.
 type CreateImportJSONRequestBody = CreateImportRequest
@@ -4281,6 +4352,12 @@ type ServerInterface interface {
 	// GetFormEmbed Get a signup form's embed code
 	// (GET /v1/forms/{form_id}/embed)
 	GetFormEmbed(w http.ResponseWriter, r *http.Request, formId FormId)
+	// ListImages List uploaded images
+	// (GET /v1/images)
+	ListImages(w http.ResponseWriter, r *http.Request, params ListImagesParams)
+	// UploadImage Upload an image
+	// (POST /v1/images)
+	UploadImage(w http.ResponseWriter, r *http.Request)
 	// ListImports List CSV imports
 	// (GET /v1/imports)
 	ListImports(w http.ResponseWriter, r *http.Request, params ListImportsParams)
@@ -6367,6 +6444,66 @@ func (siw *ServerInterfaceWrapper) GetFormEmbed(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListImages operation middleware
+func (siw *ServerInterfaceWrapper) ListImages(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListImagesParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListImages(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UploadImage operation middleware
+func (siw *ServerInterfaceWrapper) UploadImage(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UploadImage(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListImports operation middleware
 func (siw *ServerInterfaceWrapper) ListImports(w http.ResponseWriter, r *http.Request) {
 
@@ -7027,6 +7164,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/emails/{email_id}/blocks/{block_id}", wrapper.RemoveEmailBlock)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/emails/{email_id}/blocks/{block_id}", wrapper.UpdateEmailBlock)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/blocks/{block_id}/move", wrapper.MoveEmailBlock)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/images", wrapper.ListImages)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/images", wrapper.UploadImage)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/accounts", wrapper.FindAdminAccounts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/accounts/{account_id}", wrapper.GetAdminAccount)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/pause", wrapper.PauseAccount)

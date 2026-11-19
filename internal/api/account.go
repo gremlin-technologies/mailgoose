@@ -159,6 +159,11 @@ func (s *Server) DeleteAccount(w http.ResponseWriter, r *http.Request, params ap
 			}
 		}
 	}
+	if s.Images != nil {
+		if err := s.Images.DeleteAccount(r.Context(), c.AccountID); s.imageError(w, r, err) {
+			return
+		}
+	}
 	if s.accountError(w, r, s.Auth.DeleteAccount(r.Context(), c.AccountID, *params.Confirm)) {
 		return
 	}

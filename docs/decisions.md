@@ -23,6 +23,32 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-19: Image upload (MG-24, reversible defaults)
+
+Picked while building MG-24; easy to change.
+
+- **The file goes base64-encoded in JSON** (`POST /v1/images`), like every
+  other request, so the CLI, agents and the web app share one way in.
+  Multipart or a raw body can be added later without breaking it.
+- **Up to 1,000 images per account**, so the CDN isn't free file hosting.
+- **No deleting single images.** Sent emails keep pointing at their images,
+  so a delete would break them in people's inboxes. An account's images are
+  deleted with the account.
+- **SVG isn't accepted.** Many mail clients don't show it, and it can carry
+  scripts.
+- **Images aren't resized or re-encoded**; they're served as uploaded.
+- **Storage is an S3 bucket in us-east-2 behind CloudFront**, files cached
+  for a year. The bucket and CDN are MG-23 (merged and applied by the
+  owner). The API task role has put, delete and list access there (deleting
+  an account deletes its images), and the tasks get `IMAGES_BUCKET`, plus
+  `IMAGES_BASE_URL` when the CDN is on. Without `IMAGES_BUCKET` the API
+  answers 503 to uploads. Local dev stores them in `.local/images`.
+- **Without a CDN** (no `IMAGES_BASE_URL`, as on staging while AWS withholds
+  CloudFront; see "The image CDN can be turned off"), the API serves images at
+  `PUBLIC_BASE_URL/images/<key>` with a 302 to a presigned URL that lasts five
+  minutes; the redirect may be cached for a minute. The API role has
+  `s3:GetObject` there to presign.
+
 ## 2026-11-18: Contacts and tags pages (MG-42, reversible defaults)
 
 Picked while building MG-42; easy to change.

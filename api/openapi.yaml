@@ -3231,6 +3231,80 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/images:
+    get:
+      operationId: listImages
+      summary: List uploaded images
+      description: The account's uploaded images, newest first.
+      tags: [images]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of images.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: uploadImage
+      summary: Upload an image
+      description: |
+        Stores a picture for image blocks and answers with its `url`, which
+        goes in an image block's `src`. JPEG, PNG, GIF and WebP up to 5 MB
+        are accepted, checked by what the file holds, not its name, and an
+        account keeps up to 1,000. The file
+        is sent base64-encoded in `data`, so the request body can be up to
+        7 MB. `mailgoose image upload ./pic.png` does the encoding.
+      tags: [images]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadImageRequest"
+      responses:
+        "201":
+          description: The stored image.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Image"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "413":
+          $ref: "#/components/responses/RequestTooLarge"
+        "422":
+          $ref: "#/components/responses/InvalidImage"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/admin/accounts:
     get:
       operationId: findAdminAccounts
@@ -5211,6 +5285,51 @@ components:
           type: string
         hint:
           type: string
+    Image:
+      type: object
+      required: [id, url, file_name, content_type, bytes, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+          description: Where the image is served from; use it as an image block's `src`.
+        file_name:
+          type: string
+          description: The uploaded file's name, for showing; empty if none was given.
+        content_type:
+          type: string
+          enum: [image/jpeg, image/png, image/gif, image/webp]
+        bytes:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+    ImageList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Image"
+        next_cursor:
+          type: [string, "null"]
+    UploadImageRequest:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data:
+          type: string
+          format: byte
+          description: The file, in standard base64 with padding. Anything else is a 400.
+        file_name:
+          type: string
+          maxLength: 200
+          description: The file's name, for showing in lists. It doesn't decide the type.
     FormList:
       type: object
       required: [data, next_cursor]
@@ -6378,6 +6497,19 @@ components:
         `details.issues` lists each, with its `line`, `code` and `message`;
         `message` names the first. `kind_mismatch`: the email is a blocks
         email, which has no markup.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InvalidImage:
+      description: |
+        `invalid_image`: the file is empty, over 5 MB, or isn't a JPEG,
+        PNG, GIF or WebP; `details.detected` says what it looks like when
+        it's another kind of file.
+        `too_many_images`: the account already keeps 1,000 images.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
