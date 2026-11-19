@@ -9,7 +9,16 @@ ALTER TABLE accounts
     ADD COLUMN closed_at timestamptz;
 
 -- +goose Down
-DELETE FROM accounts WHERE status = 'closed';
+-- Closed accounts still own billing records, and deleting them would cascade
+-- to the credit ledger, so a rollback refuses while any exist.
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM accounts WHERE status = 'closed') THEN
+        RAISE EXCEPTION 'closed accounts exist; their billing records must be kept, so this migration cannot be rolled back';
+    END IF;
+END $$;
+-- +goose StatementEnd
 ALTER TABLE accounts
     DROP COLUMN closed_at,
     DROP CONSTRAINT accounts_status_check,
