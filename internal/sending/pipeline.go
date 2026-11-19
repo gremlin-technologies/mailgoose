@@ -170,7 +170,8 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 	var limit *int
 	var since time.Time
 	err = tx.QueryRow(ctx, `
-		SELECT q.id, q.account_id, q.campaign_id, c.status, a.sending_paused_at IS NOT NULL, a.daily_send_limit,
+		SELECT q.id, q.account_id, q.campaign_id, c.status,
+			a.sending_paused_at IS NOT NULL OR a.suspended_at IS NOT NULL, a.daily_send_limit,
 			coalesce(a.activated_at, a.created_at)
 		FROM send_queue q JOIN campaigns c ON c.id = q.campaign_id JOIN accounts a ON a.id = q.account_id
 		WHERE q.done_at IS NULL AND q.run_at <= $1 AND q.id > $2
@@ -402,7 +403,7 @@ func (p *Pipeline) loadCampaign(ctx context.Context, b Batch) (*sendable, error)
 	var s sendable
 	var raw []byte
 	err := p.DB.QueryRow(ctx, `
-		SELECT c.status, a.sending_paused_at IS NOT NULL, c.launch
+		SELECT c.status, a.sending_paused_at IS NOT NULL OR a.suspended_at IS NOT NULL, c.launch
 		FROM campaigns c JOIN accounts a ON a.id = c.account_id
 		WHERE c.id = $1 AND c.account_id = $2`, b.CampaignID, b.AccountID).Scan(&s.status, &s.paused, &raw)
 	if err != nil {
@@ -573,18 +574,19 @@ func (p *Pipeline) claim(ctx context.Context, b Batch, id int64) (claimed, bool,
 	defer func() { _ = tx.Rollback(ctx) }()
 	now := p.now()
 	var contactID *string
-	// Only while the campaign is sending and its account isn't paused, so
-	// a pause or a stop takes effect at the next copy (CMP-8).
+	// Only while the campaign is sending and its account isn't paused or
+	// suspended, so a pause, a stop or a suspension takes effect at the
+	// next copy (CMP-8, MG-65).
 	err = tx.QueryRow(ctx, `
 		UPDATE campaign_recipients SET status = 'sending', claimed_at = $3
 		WHERE id = $1 AND campaign_id = $2 AND status = 'queued'
 			AND EXISTS (SELECT 1 FROM campaigns c JOIN accounts a ON a.id = c.account_id
-				WHERE c.id = $2 AND c.status = 'sending' AND a.sending_paused_at IS NULL)
+				WHERE c.id = $2 AND c.status = 'sending' AND a.sending_paused_at IS NULL AND a.suspended_at IS NULL)
 		RETURNING contact_id`, id, b.CampaignID, now).Scan(&contactID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var live bool
 		if err := tx.QueryRow(ctx, `
-			SELECT c.status = 'sending' AND a.sending_paused_at IS NULL
+			SELECT c.status = 'sending' AND a.sending_paused_at IS NULL AND a.suspended_at IS NULL
 			FROM campaigns c JOIN accounts a ON a.id = c.account_id WHERE c.id = $1`, b.CampaignID).Scan(&live); err != nil &&
 			!errors.Is(err, pgx.ErrNoRows) {
 			return r, false, err

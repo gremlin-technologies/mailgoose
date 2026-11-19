@@ -56,6 +56,11 @@ func (s *Server) adminError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, admin.ErrNotFound), errors.Is(err, campaigns.ErrNotFound):
 		WriteError(w, NotFound("not_found", "Nothing with that id.").
 			WithHint("`mailgoose admin find <address, name or domain>` finds an account."))
+	case errors.Is(err, admin.ErrSuspended):
+		WriteError(w, Conflict("account_suspended", "The account is suspended already, so nothing changed.").
+			WithHint("`mailgoose admin account <account-id>` shows why."))
+	case errors.Is(err, admin.ErrNotSuspended):
+		WriteError(w, Conflict("account_not_suspended", "The account isn't suspended, so nothing changed."))
 	case errors.Is(err, admin.ErrNotHeld):
 		WriteError(w, Conflict("import_not_held", "The import isn't waiting for approval, so nothing changed."))
 	case errors.As(err, &st):
@@ -151,6 +156,16 @@ func (s *Server) PauseAccount(w http.ResponseWriter, r *http.Request, id apigen.
 // UnpauseAccount is POST /v1/admin/accounts/{account_id}/unpause.
 func (s *Server) UnpauseAccount(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
 	s.pauseOrUnpause(w, r, id, s.Admin.Unpause)
+}
+
+// SuspendAccount is POST /v1/admin/accounts/{account_id}/suspend (MG-65).
+func (s *Server) SuspendAccount(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
+	s.pauseOrUnpause(w, r, id, s.Admin.Suspend)
+}
+
+// UnsuspendAccount is POST /v1/admin/accounts/{account_id}/unsuspend.
+func (s *Server) UnsuspendAccount(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
+	s.pauseOrUnpause(w, r, id, s.Admin.Unsuspend)
 }
 
 func (s *Server) pauseOrUnpause(w http.ResponseWriter, r *http.Request, id string,

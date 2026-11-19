@@ -116,6 +116,9 @@ type AutoPause struct {
 	// Reason is what the account's owner is told.
 	Reason string
 	At     time.Time
+	// Suspension is set when this pause suspended the account too: its
+	// second automatic pause in 30 days (MG-65).
+	Suspension *Suspension
 }
 
 // CampaignRates counts a campaign's copies sent, hard bounces and
@@ -184,6 +187,10 @@ func pauseAccount(ctx context.Context, tx pgx.Tx, ap *AutoPause) error {
 		INSERT INTO admin_actions (actor, action, account_id, target_id, reason, details, created_at)
 		VALUES ('automatic', 'auto_pause', $1, $2, $3, $4, $5)`,
 		ap.AccountID, ap.CampaignID, ap.Reason, ap.Rates, ap.At)
+	if err != nil {
+		return err
+	}
+	ap.Suspension, err = suspendOnRepeat(ctx, tx, ap, ap.At)
 	return err
 }
 
@@ -202,13 +209,19 @@ func pauseReason(ap *AutoPause) string {
 }
 
 // OpsAlert tells mailgoose's operators about automatic pauses (CMP-6): an
-// error in the log always, and an email when To is set.
+// error in the log always, and an email when To is set. It also sends the
+// owner's notice of a suspension (MG-65).
 type OpsAlert struct {
 	Mail mail.Sender
 	From mail.Address
 	// To is the ops address; empty sends no email.
-	To  string
-	Log *slog.Logger
+	To string
+	// Abuse is where a suspended account's owner appeals, by replying to
+	// the notice; empty means abuse@ the From address's domain.
+	Abuse string
+	// AppURL is where people sign in, for the suspension notice.
+	AppURL string
+	Log    *slog.Logger
 }
 
 // AutoPaused reports a pause. It never fails: an alert that can't be sent
@@ -221,6 +234,9 @@ func (a *OpsAlert) AutoPaused(ctx context.Context, ap AutoPause) {
 	log.ErrorContext(ctx, "account paused automatically", "account_id", ap.AccountID, "campaign_id", ap.CampaignID,
 		"sent", ap.Rates.Sent, "hard_bounces", ap.Rates.HardBounces, "complaints", ap.Rates.Complaints)
 	if a.To == "" || a.Mail == nil {
+		if ap.Suspension != nil {
+			a.Suspended(ctx, *ap.Suspension)
+		}
 		return
 	}
 	text := fmt.Sprintf(`Sending is paused for %s (account %s).
@@ -246,6 +262,9 @@ Lift the pause with:
 	})
 	if err != nil {
 		log.ErrorContext(ctx, "send the pause alert", "err", err, "account_id", ap.AccountID)
+	}
+	if ap.Suspension != nil {
+		a.Suspended(ctx, *ap.Suspension)
 	}
 }
 

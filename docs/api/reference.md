@@ -28,6 +28,13 @@ API keys sent as bearer tokens, which the CLI reads from `MAILGOOSE_API_KEY`
 or its config file. Operations marked `x-required-scope: full` refuse
 draft-scope keys with a 403 `insufficient_scope`.
 
+A suspended account (`account.suspension` on the session) has no API
+keys or CLI logins; its owner can still sign in to the web app. Its
+session may then read (GET) for 30 days after the suspension, to export
+contacts and campaigns, and sign out; everything else is a 403
+`account_suspended`, as is every read after the 30 days except the
+session, `getAccount` and `whoami`.
+
 Servers:
 
 - Staging: `https://api.staging.mailgoose.app`
@@ -320,7 +327,8 @@ setting a session cookie. This is how `mailgoose signup` finishes
 without a browser: a person still has to read the code from the email
 and type it in. On success a pending account becomes active. A wrong,
 expired, used or locked code gets the same `invalid_code` error; a
-code stops working after 5 wrong tries.
+code stops working after 5 wrong tries. A suspended account gets
+`account_suspended` (403): it has no CLI logins.
 
 Request body (`application/json`, required): [CliTokenRequest](#schema-clitokenrequest)
 
@@ -328,6 +336,7 @@ Responses:
 
 - `201`: Signed in; the token is shown only here. [DeviceLoginToken](#schema-devicelogintoken)
 - `400`: The request is malformed. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
@@ -491,7 +500,7 @@ Responses:
 - `204`: Deleted. A web session's cookie is cleared.
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `502`: `payment_provider_error`: Stripe couldn't make the Checkout page; try again shortly. [Error](#schema-error)
@@ -523,7 +532,7 @@ Responses:
 - `200`: A page of keys. [ApiKeyList](#schema-apikeylist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -550,7 +559,7 @@ Responses:
 - `201`: The new key, with its secret. [CreatedApiKey](#schema-createdapikey)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
@@ -576,7 +585,7 @@ Responses:
 - `204`: Revoked.
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
@@ -634,7 +643,7 @@ Responses:
 - `201`: The Checkout page to pay at. [PlanCheckout](#schema-plancheckout)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `409`: `plan_required`: credit packs are for the paid plan; start it with createPlanCheckout. `already_subscribed`: the account is already on the paid plan. `not_subscribed`: the account has no subscription to manage. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `502`: `payment_provider_error`: Stripe couldn't make the Checkout page; try again shortly. [Error](#schema-error)
@@ -660,7 +669,7 @@ Responses:
 
 - `201`: The portal page. [PlanPortal](#schema-planportal)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `409`: `plan_required`: credit packs are for the paid plan; start it with createPlanCheckout. `already_subscribed`: the account is already on the paid plan. `not_subscribed`: the account has no subscription to manage. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `502`: `payment_provider_error`: Stripe couldn't make the Checkout page; try again shortly. [Error](#schema-error)
@@ -718,7 +727,7 @@ Responses:
 - `201`: The Checkout page to pay at. [CreditCheckout](#schema-creditcheckout)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `409`: `plan_required`: credit packs are for the paid plan; start it with createPlanCheckout. `already_subscribed`: the account is already on the paid plan. `not_subscribed`: the account has no subscription to manage. [Error](#schema-error)
 - `422`: `unknown_pack`: there's no pack by that name; `details.packs` lists the packs with their credits and prices. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
@@ -2152,10 +2161,10 @@ Responses:
 - `200`: Launched, now or by an earlier call. [LaunchResult](#schema-launchresult)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `confirmation_required`: nothing was launched. `details.summary` (`campaign_id`, `name`, `subject`, `from`, `reply_to`, `recipient_count`, `send_at`, `credits`, `balance`, `warnings`) is what the person confirms, `details.code` the code that launches it once they say yes, and `details.expires_at` when the code stops working. `campaign_locked`: the campaign isn't a draft and wasn't launched; `details.status` is its status. [Error](#schema-error)
-- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, and `credits_short` with `details.needed`, `details.balance` and `details.short`. `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
+- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, and `credits_short` with `details.needed`, `details.balance` and `details.short`. `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-cancelcampaign"></a>
@@ -2182,7 +2191,7 @@ Responses:
 - `200`: Cancelled, now or before. [Campaign](#schema-campaign)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
@@ -2244,7 +2253,7 @@ Responses:
 - `200`: Moved. [Campaign](#schema-campaign)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
 - `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email` and `unknown_tag`: an id isn't one of the account's. [Error](#schema-error)
@@ -2446,7 +2455,7 @@ Responses:
 - `200`: The accounts found. [AdminAccountList](#schema-adminaccountlist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -2473,7 +2482,7 @@ Responses:
 - `200`: The account. [AdminAccount](#schema-adminaccount)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
@@ -2505,7 +2514,7 @@ Responses:
 - `200`: The account. [AdminAccount](#schema-adminaccount)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
@@ -2535,8 +2544,81 @@ Responses:
 - `200`: The account. [AdminAccount](#schema-adminaccount)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-suspendaccount"></a>
+
+### Suspend an account (admin)
+
+`POST /v1/admin/accounts/{account_id}/suspend`
+
+- Operation: `suspendAccount`
+- CLI: `mailgoose admin suspend`
+- Needs a `full`-scope key
+
+mailgoose staff only (MG-65): for abuse, when a pause isn't enough.
+Revokes every API key and CLI login, ends web sessions, cancels
+scheduled campaigns and stops sending ones before their next batch
+(their unsent reservations come back); signup forms stop taking
+signups. The owner can still sign in to a read-only page that says
+why and exports their contacts and campaigns for 30 days. The owner
+gets an email saying why and how to appeal; the operators get one
+too. Credits stay as they are. The reason is logged and shown to the
+account. An account that's suspended already answers 409
+`account_suspended`.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `account_id` | path | string (uuid) | yes | The account's `id`. |
+
+Request body (`application/json`, required): [AdminReasonRequest](#schema-adminreasonrequest)
+
+Responses:
+
+- `200`: The account. [AdminAccount](#schema-adminaccount)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `account_suspended`: the account is suspended already. `account_not_suspended`: the account isn't suspended. [Error](#schema-error)
+- `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-unsuspendaccount"></a>
+
+### Lift a suspension (admin)
+
+`POST /v1/admin/accounts/{account_id}/unsuspend`
+
+- Operation: `unsuspendAccount`
+- CLI: `mailgoose admin unsuspend`
+- Needs a `full`-scope key
+
+mailgoose staff only (MG-65): the account can sign in and send
+again. Its API keys and CLI logins stay revoked, so the owner makes
+new ones; its stopped campaigns stay stopped, and a pause stays
+until it's lifted with `unpauseAccount`. An account that isn't
+suspended answers 409 `account_not_suspended`.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `account_id` | path | string (uuid) | yes | The account's `id`. |
+
+Request body (`application/json`, required): [AdminReasonRequest](#schema-adminreasonrequest)
+
+Responses:
+
+- `200`: The account. [AdminAccount](#schema-adminaccount)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `account_suspended`: the account is suspended already. `account_not_suspended`: the account isn't suspended. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
@@ -2565,7 +2647,7 @@ Responses:
 - `200`: Granted. [CreditGrant](#schema-creditgrant)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
@@ -2598,7 +2680,7 @@ Responses:
 - `200`: Stopped, now or before. [Campaign](#schema-campaign)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
@@ -2629,7 +2711,7 @@ Responses:
 - `200`: Approved. [ApprovedImport](#schema-approvedimport)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `import_not_held`: the import isn't waiting for approval. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
@@ -2660,7 +2742,7 @@ Responses:
 - `200`: A page of the log. [AdminActionList](#schema-adminactionlist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -3335,7 +3417,22 @@ Type: string: one of `grant`, `purchase`, `reserve`, `release`, `spend`, `fee`, 
 | `name` | string | yes |  |
 | `status` | string: one of `pending`, `active` | yes |  |
 | `plan` | string: one of `free`, `paid` | yes |  |
+| `suspension` | [AccountSuspension](#schema-accountsuspension) or null | yes | Set while the account is suspended; null otherwise. |
 | `created_at` | string (date-time) | yes |  |
+
+<a id="schema-accountsuspension"></a>
+
+### AccountSuspension
+
+Why and since when the account is suspended. Nothing is sent from it
+and its forms take no signups. Its owner appeals by replying to the
+email about it.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `suspended_at` | string (date-time) | yes |  |
+| `reason` | string | yes |  |
+| `export_until` | string (date-time) | yes | Until when the owner can still sign in to export contacts and campaigns. |
 
 <a id="schema-user"></a>
 
@@ -4166,6 +4263,9 @@ Copies sent, and the recipients who hard bounced or complained.
 | `owner_email` | string or null | yes |  |
 | `sending_paused_at` | string (date-time) or null | yes |  |
 | `sending_paused_reason` | string or null | yes |  |
+| `suspended_at` | string (date-time) or null | yes | When the account was suspended (MG-65); null when it isn't. |
+| `suspended_reason` | string or null | yes |  |
+| `suspended_by` | string or null | yes | The admin's address, `mailgoosed`, or `automatic`. |
 | `created_at` | string (date-time) | yes |  |
 
 <a id="schema-adminaccountlist"></a>
@@ -4250,7 +4350,7 @@ Type: [AdminAccountSummary](#schema-adminaccountsummary) and object
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
 | `actor` | string | yes | The admin's address, `mailgoosed` (the server's command line) or `automatic`. |
-| `action` | string: one of `grant_admin`, `revoke_admin`, `pause`, `unpause`, `auto_pause`, `stop_campaign`, `approve_import`, `grant_credits`, `throttle` | yes |  |
+| `action` | string: one of `grant_admin`, `revoke_admin`, `pause`, `unpause`, `auto_pause`, `stop_campaign`, `approve_import`, `grant_credits`, `throttle`, `suspend`, `unsuspend`, `auto_suspend` | yes |  |
 | `account_id` | string (uuid) or null | yes |  |
 | `target_id` | string or null | yes | The campaign, import or user acted on. |
 | `reason` | string | yes |  |

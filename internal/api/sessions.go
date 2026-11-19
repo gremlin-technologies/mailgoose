@@ -8,6 +8,7 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 )
 
 // CreateSignIn is POST /v1/sign-in.
@@ -110,11 +111,23 @@ func sessionJSON(a auth.Account, u auth.User, expires time.Time) apigen.Session 
 
 func accountSummaryJSON(a auth.Account) apigen.Account {
 	return apigen.Account{
-		Id:        a.ID,
-		Name:      a.Name,
-		Status:    apigen.AccountStatus(a.Status),
-		Plan:      apigen.AccountPlan(a.Plan),
-		CreatedAt: a.CreatedAt.UTC(),
+		Id:         a.ID,
+		Name:       a.Name,
+		Status:     apigen.AccountStatus(a.Status),
+		Plan:       apigen.AccountPlan(a.Plan),
+		CreatedAt:  a.CreatedAt.UTC(),
+		Suspension: suspensionJSON(a.Suspension),
+	}
+}
+
+func suspensionJSON(s *auth.Suspension) *apigen.AccountSuspension {
+	if s == nil {
+		return nil
+	}
+	return &apigen.AccountSuspension{
+		SuspendedAt: s.At.UTC(),
+		Reason:      s.Reason,
+		ExportUntil: s.At.Add(sending.SuspensionExport).UTC(),
 	}
 }
 

@@ -87,6 +87,11 @@ func (s *Server) CreateCliToken(w http.ResponseWriter, r *http.Request) {
 		clientName = *req.ClientName
 	}
 	t, err := s.Auth.VerifyForCLI(r.Context(), req.Email, req.Code, clientName)
+	if errors.Is(err, auth.ErrSuspended) {
+		WriteError(w, Forbidden("account_suspended", "This account is suspended, so it can't have CLI logins.").
+			WithHint("Sign in to the web app to see why and to export your data. To appeal, reply to the email about the suspension."))
+		return
+	}
 	if errors.Is(err, auth.ErrInvalidCode) {
 		WriteError(w, Unprocessable("invalid_code", "That code is wrong, expired or already used.").
 			WithHint("Ask for a new code with `mailgoose signup` and use it within 10 minutes. A code stops working after 5 wrong tries."))

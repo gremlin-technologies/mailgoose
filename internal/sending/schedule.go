@@ -79,24 +79,7 @@ func (s *Service) end(ctx context.Context, accountID, campaignID, note string, t
 		if !slices.Contains(allowed, c.Status) {
 			return &campaigns.StatusError{Status: c.Status, To: campaigns.StatusCancelled}
 		}
-		now := s.now()
-		tag, err := tx.Exec(ctx, `
-			UPDATE campaign_recipients SET status = 'skipped', error = $2
-			WHERE campaign_id = $1 AND status = 'queued'`, campaignID, note)
-		if err != nil {
-			return err
-		}
-		if n := tag.RowsAffected(); n > 0 {
-			if _, err := credits.Release(ctx, tx, accountID, creditsRef(campaignID), n, now); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE campaigns SET status = 'cancelled', status_changed_at = $3, updated_at = $3
-			WHERE account_id = $1 AND id = $2`, accountID, campaignID, now); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `UPDATE send_queue SET done_at = $2 WHERE campaign_id = $1 AND done_at IS NULL`, campaignID, now); err != nil {
+		if err := cancelLaunched(ctx, tx, accountID, campaignID, note, s.now()); err != nil {
 			return err
 		}
 		if then != nil {
@@ -108,6 +91,30 @@ func (s *Service) end(ctx context.Context, accountID, campaignID, note string, t
 		return nil, err
 	}
 	return s.Campaigns.Get(ctx, accountID, campaignID)
+}
+
+// cancelLaunched cancels a launched campaign whose queue row and campaign
+// row tx has locked: its queued recipients are skipped with note, their
+// reserved credits given back, and its queue row finished.
+func cancelLaunched(ctx context.Context, tx pgx.Tx, accountID, campaignID, note string, now time.Time) error {
+	tag, err := tx.Exec(ctx, `
+		UPDATE campaign_recipients SET status = 'skipped', error = $2
+		WHERE campaign_id = $1 AND status = 'queued'`, campaignID, note)
+	if err != nil {
+		return err
+	}
+	if n := tag.RowsAffected(); n > 0 {
+		if _, err := credits.Release(ctx, tx, accountID, creditsRef(campaignID), n, now); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE campaigns SET status = 'cancelled', status_changed_at = $3, updated_at = $3
+		WHERE account_id = $1 AND id = $2`, accountID, campaignID, now); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE send_queue SET done_at = $2 WHERE campaign_id = $1 AND done_at IS NULL`, campaignID, now)
+	return err
 }
 
 // Reschedule moves a scheduled campaign's send time. The time must be in

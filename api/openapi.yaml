@@ -26,6 +26,13 @@ info:
     API keys sent as bearer tokens, which the CLI reads from `MAILGOOSE_API_KEY`
     or its config file. Operations marked `x-required-scope: full` refuse
     draft-scope keys with a 403 `insufficient_scope`.
+
+    A suspended account (`account.suspension` on the session) has no API
+    keys or CLI logins; its owner can still sign in to the web app. Its
+    session may then read (GET) for 30 days after the suspension, to export
+    contacts and campaigns, and sign out; everything else is a 403
+    `account_suspended`, as is every read after the 30 days except the
+    session, `getAccount` and `whoami`.
 servers:
   - url: https://api.staging.mailgoose.app
     description: Staging
@@ -879,7 +886,8 @@ paths:
         without a browser: a person still has to read the code from the email
         and type it in. On success a pending account becomes active. A wrong,
         expired, used or locked code gets the same `invalid_code` error; a
-        code stops working after 5 wrong tries.
+        code stops working after 5 wrong tries. A suspended account gets
+        `account_suspended` (403): it has no CLI logins.
       tags: [auth]
       security: []
       requestBody:
@@ -900,6 +908,8 @@ paths:
                 $ref: "#/components/schemas/DeviceLoginToken"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ValidationFailed"
         "429":
@@ -3458,6 +3468,95 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/accounts/{account_id}/suspend:
+    post:
+      operationId: suspendAccount
+      summary: Suspend an account (admin)
+      description: |
+        mailgoose staff only (MG-65): for abuse, when a pause isn't enough.
+        Revokes every API key and CLI login, ends web sessions, cancels
+        scheduled campaigns and stops sending ones before their next batch
+        (their unsent reservations come back); signup forms stop taking
+        signups. The owner can still sign in to a read-only page that says
+        why and exports their contacts and campaigns for 30 days. The owner
+        gets an email saying why and how to appeal; the operators get one
+        too. Credits stay as they are. The reason is logged and shown to the
+        account. An account that's suspended already answers 409
+        `account_suspended`.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReasonRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AdminAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/SuspensionConflict"
+        "422":
+          $ref: "#/components/responses/InvalidAdminRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/accounts/{account_id}/unsuspend:
+    post:
+      operationId: unsuspendAccount
+      summary: Lift a suspension (admin)
+      description: |
+        mailgoose staff only (MG-65): the account can sign in and send
+        again. Its API keys and CLI logins stay revoked, so the owner makes
+        new ones; its stopped campaigns stay stopped, and a pause stays
+        until it's lifted with `unpauseAccount`. An account that isn't
+        suspended answers 409 `account_not_suspended`.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReasonRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AdminAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/SuspensionConflict"
+        "422":
+          $ref: "#/components/responses/InvalidAdminRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/admin/accounts/{account_id}/credits:
     post:
       operationId: grantCredits
@@ -4752,7 +4851,7 @@ components:
           format: date-time
     Account:
       type: object
-      required: [id, name, status, plan, created_at]
+      required: [id, name, status, plan, suspension, created_at]
       properties:
         id:
           type: string
@@ -4765,9 +4864,31 @@ components:
         plan:
           type: string
           enum: [free, paid]
+        suspension:
+          oneOf:
+            - $ref: "#/components/schemas/AccountSuspension"
+            - type: "null"
+          description: Set while the account is suspended; null otherwise.
         created_at:
           type: string
           format: date-time
+    AccountSuspension:
+      type: object
+      description: |
+        Why and since when the account is suspended. Nothing is sent from it
+        and its forms take no signups. Its owner appeals by replying to the
+        email about it.
+      required: [suspended_at, reason, export_until]
+      properties:
+        suspended_at:
+          type: string
+          format: date-time
+        reason:
+          type: string
+        export_until:
+          type: string
+          format: date-time
+          description: Until when the owner can still sign in to export contacts and campaigns.
     User:
       type: object
       required: [id, email, created_at]
@@ -6096,7 +6217,8 @@ components:
           type: integer
     AdminAccountSummary:
       type: object
-      required: [id, name, status, plan, owner_email, sending_paused_at, sending_paused_reason, created_at]
+      required: [id, name, status, plan, owner_email, sending_paused_at, sending_paused_reason,
+        suspended_at, suspended_reason, suspended_by, created_at]
       properties:
         id:
           type: string
@@ -6114,6 +6236,15 @@ components:
           format: date-time
         sending_paused_reason:
           type: [string, "null"]
+        suspended_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the account was suspended (MG-65); null when it isn't.
+        suspended_reason:
+          type: [string, "null"]
+        suspended_by:
+          type: [string, "null"]
+          description: The admin's address, `mailgoosed`, or `automatic`.
         created_at:
           type: string
           format: date-time
@@ -6255,7 +6386,8 @@ components:
           description: The admin's address, `mailgoosed` (the server's command line) or `automatic`.
         action:
           type: string
-          enum: [grant_admin, revoke_admin, pause, unpause, auto_pause, stop_campaign, approve_import, grant_credits, throttle]
+          enum: [grant_admin, revoke_admin, pause, unpause, auto_pause, stop_campaign, approve_import, grant_credits, throttle,
+            suspend, unsuspend, auto_suspend]
         account_id:
           type: [string, "null"]
           format: uuid
@@ -6594,6 +6726,17 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    SuspensionConflict:
+      description: |
+        `account_suspended`: the account is suspended already.
+        `account_not_suspended`: the account isn't suspended.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     CampaignConflict:
       description: |
         `campaign_locked`: only drafts can be changed, tested, launched or
@@ -6651,7 +6794,7 @@ components:
         `missing_postal_address`, `missing_subject`, `empty_email`,
         `merge_tag`), `check_failed` (an email check error), `untested` (no
         test since the last change), `send_at_passed`, `account_paused`,
-        `subscription_past_due` (sending is paused until the paid plan's
+        `account_suspended`, `subscription_past_due` (sending is paused until the paid plan's
         payment goes through), `no_recipients`, and `credits_short` with `details.needed`,
         `details.balance` and `details.short`. `invalid_confirmation`: the
         code can't be used; `details.reason` is `no_code`, `expired`,
@@ -6772,7 +6915,8 @@ components:
         `insufficient_scope`: a draft-scope key can't do this; use a full-scope
         key or the web app. `cross_origin_request`: a browser sent this from
         another site. `admin_only`: only a signed-in mailgoose admin can do
-        this.
+        this. `account_suspended`: the account is suspended; see the API's
+        description for what it can still do.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

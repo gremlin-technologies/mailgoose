@@ -149,6 +149,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `SEND_RATE_PER_SECOND` | Campaign emails sent a second, across every worker. Default 10. |
 | `ACCOUNT_DAILY_SEND_LIMIT`, `NEW_ACCOUNT_DAILY_SEND_LIMIT` | The most campaign emails an account may send in any 24 hours (10,000 by default), and its limit in its first 7 days (1,000). In between the limit grows on a schedule (see [Account health](#account-health-and-send-limits)). An account's own `daily_send_limit` overrides both. |
 | `OPS_ALERT_EMAIL` | Where to email an alert when an account is paused automatically, or a payment needs refunding or cancelling by hand in Stripe. Unset, these are only logged (as errors). |
+| `ABUSE_EMAIL` | Where a suspended account's owner appeals: the Reply-To of the email that tells them about the suspension, and named in its errors. Defaults to `abuse@` the `SYSTEM_SENDING_DOMAIN`; that mailbox has to exist. |
 | `SYSTEM_SENDING_DOMAIN` | mailgoose's own sending domain; sign-in codes come from `signin@` it. Defaults to `mail.localhost` when mail is captured (`MAIL_SENDER=fake`). Unset with SES, sign-up and sign-in answer 503. |
 | `WEB_DIR` | The built web app (`web/dist`) the API serves at `/`. The image sets it to `/srv/web`; unset, the API serves no web app. |
 | `WEB_ORIGINS` | Comma-separated origins, besides the API's own, that may send cookie-authenticated requests that change something, such as `https://app.staging.mailgoose.app`. Empty by default. |
@@ -833,6 +834,17 @@ goes to `OPS_ALERT_EMAIL`.
 email: the rows not yet sent are handed back and wait, and the campaign
 carries on where it stopped when the account is unpaused.
 
+**Suspension.** For abuse, an admin suspends an account (`mailgoose admin
+suspend`), and an account paused automatically for the second time in 30
+days is suspended automatically. Its API keys and CLI logins are revoked,
+web sessions end, scheduled and sending campaigns are cancelled (unsent
+reservations come back; other credits are untouched), and its forms stop
+taking signups. Its owner can still sign in to a page that says why and,
+for 30 days, downloads their contacts and campaigns; every other request is
+403 `account_suspended`. The owner is emailed why, with `ABUSE_EMAIL` as the
+Reply-To for appeals, and an alert goes to `OPS_ALERT_EMAIL`. Unsuspending
+restores sign-in and sending; old keys stay revoked.
+
 ### Admin tools
 
 mailgoose staff use `mailgoose admin` (the `/v1/admin/*` endpoints). They
@@ -847,6 +859,8 @@ an admin; API keys are refused, even an admin's. Every action takes a
 | `mailgoose admin account <id>` | Status, pause, daily limit, contacts, credits, 30-day rates, held imports and live campaigns. |
 | `mailgoose admin pause <id> --reason` | Pauses sending (campaigns stop before their next email). The reason is shown to the account. |
 | `mailgoose admin unpause <id> --reason` | Lifts a pause; paused campaigns carry on. |
+| `mailgoose admin suspend <id> --reason` | Suspends the account (see [Suspension](#account-health-and-send-limits)) and emails the owner why and how to appeal. |
+| `mailgoose admin unsuspend <id> --reason` | Lifts a suspension; API keys stay revoked and a pause stays. |
 | `mailgoose admin stop-campaign <id> --reason --yes` | The kill switch: nobody else gets it, unused credits come back, it ends `cancelled`. |
 | `mailgoose admin approve-import <id> --reason` | Lets a held import's contacts be mailed. |
 | `mailgoose admin grant-credits <id> --amount --reason` | Adds up to 1,000,000 credits, lasting 24 months. |

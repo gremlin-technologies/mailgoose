@@ -509,7 +509,8 @@ export interface paths {
          *     without a browser: a person still has to read the code from the email
          *     and type it in. On success a pending account becomes active. A wrong,
          *     expired, used or locked code gets the same `invalid_code` error; a
-         *     code stops working after 5 wrong tries.
+         *     code stops working after 5 wrong tries. A suspended account gets
+         *     `account_suspended` (403): it has no CLI logins.
          */
         post: operations["createCliToken"];
         delete?: never;
@@ -1640,6 +1641,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/accounts/{account_id}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend an account (admin)
+         * @description mailgoose staff only (MG-65): for abuse, when a pause isn't enough.
+         *     Revokes every API key and CLI login, ends web sessions, cancels
+         *     scheduled campaigns and stops sending ones before their next batch
+         *     (their unsent reservations come back); signup forms stop taking
+         *     signups. The owner can still sign in to a read-only page that says
+         *     why and exports their contacts and campaigns for 30 days. The owner
+         *     gets an email saying why and how to appeal; the operators get one
+         *     too. Credits stay as they are. The reason is logged and shown to the
+         *     account. An account that's suspended already answers 409
+         *     `account_suspended`.
+         */
+        post: operations["suspendAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/{account_id}/unsuspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lift a suspension (admin)
+         * @description mailgoose staff only (MG-65): the account can sign in and send
+         *     again. Its API keys and CLI logins stay revoked, so the owner makes
+         *     new ones; its stopped campaigns stay stopped, and a pause stays
+         *     until it's lifted with `unpauseAccount`. An account that isn't
+         *     suspended answers 409 `account_not_suspended`.
+         */
+        post: operations["unsuspendAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/accounts/{account_id}/credits": {
         parameters: {
             query?: never;
@@ -2475,8 +2529,25 @@ export interface components {
             status: "pending" | "active";
             /** @enum {string} */
             plan: "free" | "paid";
+            /** @description Set while the account is suspended; null otherwise. */
+            suspension: components["schemas"]["AccountSuspension"] | null;
             /** Format: date-time */
             created_at: string;
+        };
+        /**
+         * @description Why and since when the account is suspended. Nothing is sent from it
+         *     and its forms take no signups. Its owner appeals by replying to the
+         *     email about it.
+         */
+        AccountSuspension: {
+            /** Format: date-time */
+            suspended_at: string;
+            reason: string;
+            /**
+             * Format: date-time
+             * @description Until when the owner can still sign in to export contacts and campaigns.
+             */
+            export_until: string;
         };
         User: {
             /** Format: uuid */
@@ -3240,6 +3311,14 @@ export interface components {
             /** Format: date-time */
             sending_paused_at: string | null;
             sending_paused_reason: string | null;
+            /**
+             * Format: date-time
+             * @description When the account was suspended (MG-65); null when it isn't.
+             */
+            suspended_at: string | null;
+            suspended_reason: string | null;
+            /** @description The admin's address, `mailgoosed`, or `automatic`. */
+            suspended_by: string | null;
             /** Format: date-time */
             created_at: string;
         };
@@ -3321,7 +3400,7 @@ export interface components {
             /** @description The admin's address, `mailgoosed` (the server's command line) or `automatic`. */
             actor: string;
             /** @enum {string} */
-            action: "grant_admin" | "revoke_admin" | "pause" | "unpause" | "auto_pause" | "stop_campaign" | "approve_import" | "grant_credits" | "throttle";
+            action: "grant_admin" | "revoke_admin" | "pause" | "unpause" | "auto_pause" | "stop_campaign" | "approve_import" | "grant_credits" | "throttle" | "suspend" | "unsuspend" | "auto_suspend";
             /** Format: uuid */
             account_id: string | null;
             /** @description The campaign, import or user acted on. */
@@ -3567,6 +3646,19 @@ export interface components {
             };
         };
         /**
+         * @description `account_suspended`: the account is suspended already.
+         *     `account_not_suspended`: the account isn't suspended.
+         */
+        SuspensionConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `campaign_locked`: only drafts can be changed, tested, launched or
          *     deleted; `details.status` is the campaign's status.
          *     `version_conflict`: the campaign changed since the version given;
@@ -3628,7 +3720,7 @@ export interface components {
          *     `missing_postal_address`, `missing_subject`, `empty_email`,
          *     `merge_tag`), `check_failed` (an email check error), `untested` (no
          *     test since the last change), `send_at_passed`, `account_paused`,
-         *     `subscription_past_due` (sending is paused until the paid plan's
+         *     `account_suspended`, `subscription_past_due` (sending is paused until the paid plan's
          *     payment goes through), `no_recipients`, and `credits_short` with `details.needed`,
          *     `details.balance` and `details.short`. `invalid_confirmation`: the
          *     code can't be used; `details.reason` is `no_code`, `expired`,
@@ -3765,7 +3857,8 @@ export interface components {
          * @description `insufficient_scope`: a draft-scope key can't do this; use a full-scope
          *     key or the web app. `cross_origin_request`: a browser sent this from
          *     another site. `admin_only`: only a signed-in mailgoose admin can do
-         *     this.
+         *     this. `account_suspended`: the account is suspended; see the API's
+         *     description for what it can still do.
          */
         Forbidden: {
             headers: {
@@ -4583,6 +4676,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["BadRequest"];
+            403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
@@ -6600,6 +6694,60 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    suspendAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AdminAccount"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["SuspensionConflict"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    unsuspendAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AdminAccount"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["SuspensionConflict"];
             422: components["responses"]["InvalidAdminRequest"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];

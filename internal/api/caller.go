@@ -30,6 +30,8 @@ type Caller struct {
 	Kind string
 	// Session is set for web sessions.
 	Session *auth.Current
+	// Suspension is set when the account is suspended (MG-65).
+	Suspension *auth.Suspension
 }
 
 type callerKey struct{}
@@ -79,7 +81,8 @@ func (s *Server) authenticate(next http.Handler, now func() time.Time) http.Hand
 				WriteError(w, Internal())
 				return
 			}
-			caller = &Caller{AccountID: p.Account.ID, UserID: p.UserID, Scope: p.Scope, KeyID: p.KeyID, Kind: p.Kind}
+			caller = &Caller{AccountID: p.Account.ID, UserID: p.UserID, Scope: p.Scope, KeyID: p.KeyID, Kind: p.Kind,
+				Suspension: p.Account.Suspension}
 		} else if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" {
 			cur, err := s.Auth.SessionByToken(r.Context(), c.Value)
 			switch {
@@ -89,8 +92,13 @@ func (s *Server) authenticate(next http.Handler, now func() time.Time) http.Hand
 				WriteError(w, Internal())
 				return
 			default:
-				caller = &Caller{AccountID: cur.Account.ID, UserID: cur.User.ID, Scope: auth.ScopeFull, Session: cur, Kind: KindSession}
+				caller = &Caller{AccountID: cur.Account.ID, UserID: cur.User.ID, Scope: auth.ScopeFull, Session: cur, Kind: KindSession,
+					Suspension: cur.Account.Suspension}
 			}
+		}
+		if caller != nil && caller.Suspension != nil && !allowedWhileSuspended(r, caller.Suspension, now()) {
+			WriteError(w, s.suspendedError(caller.Suspension))
+			return
 		}
 		if caller != nil {
 			r = r.WithContext(context.WithValue(r.Context(), callerKey{}, caller))

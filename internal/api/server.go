@@ -103,6 +103,9 @@ type Server struct {
 	// served from the API's own origin) allowed to send cookie-authenticated
 	// requests that change something. The API's own origin always is.
 	TrustedOrigins []string
+	// AbuseEmail is where a suspended account appeals (MG-65), named in
+	// its errors; empty names none.
+	AbuseEmail string
 	// WebURL is where people reach the web app, for links such as the CLI
 	// login approval page. Empty means the request's own origin.
 	WebURL string

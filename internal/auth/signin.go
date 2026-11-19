@@ -145,20 +145,24 @@ func (s *Service) SessionByToken(ctx context.Context, token string) (*Current, e
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var c Current
+	var suspendedAt *time.Time
+	var suspendedReason *string
 	err = tx.QueryRow(ctx, `
 		SELECT s.id, s.expires_at,
 		       u.id, u.email, u.created_at,
-		       a.id, a.name, a.status, a.plan, a.created_at
+		       a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		JOIN accounts a ON a.id = u.account_id
 		WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > $2`,
 		TokenHash(token), s.now()).Scan(&c.SessionID, &c.ExpiresAt,
 		&c.User.ID, &c.User.Email, &c.User.CreatedAt,
-		&c.Account.ID, &c.Account.Name, &c.Account.Status, &c.Account.Plan, &c.Account.CreatedAt)
+		&c.Account.ID, &c.Account.Name, &c.Account.Status, &c.Account.Plan, &c.Account.CreatedAt,
+		&suspendedAt, &suspendedReason)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoSession
 	}
+	c.Account.Suspension = suspension(suspendedAt, suspendedReason)
 	if err != nil {
 		return nil, fmt.Errorf("find session: %w", err)
 	}
