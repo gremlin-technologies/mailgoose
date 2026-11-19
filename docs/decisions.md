@@ -24,6 +24,28 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: Policy pages (MG-57, reversible defaults)
+
+Picked while building MG-57; easy to change. The legal text itself is the
+owner's to supply.
+
+- **Four pages in the web app, open to anyone:** `/terms`, `/privacy`,
+  `/anti-spam` and `/dpa`. Each starts with a "Placeholder" notice and lists,
+  section by section, what the final text must cover. The anti-spam page
+  already states the rules the app enforces (confirmed opt-in by default, no
+  bought lists, unsubscribe link, postal address, held imports, account
+  pauses on bounces and complaints).
+- **Sign-up links to all four**, in a new tab so the form isn't lost. The
+  terms and anti-spam policy are what the checkbox accepts; the privacy
+  policy and DPA are linked under it. `mailgoose signup --help` names the
+  pages too.
+- **The DPA is a page, not a document to sign.** Customers accept it with
+  the terms. A countersigned PDF for customers who ask can come later.
+- **Which version of the terms was accepted isn't recorded yet;** accounts
+  keep `terms_accepted_at` only. Once the real text exists, a version (or
+  date) per acceptance is worth adding, so a later change can ask people to
+  accept again.
+
 ## 2026-11-19: Agent docs (MG-55, reversible defaults)
 
 Picked while building MG-55; easy to change.
@@ -1183,7 +1205,7 @@ Picked while building MG-41; easy to change.
   checks from MG-02. That keeps `.github/workflows` unchanged; a separate web
   job can replace it once a workflow change is due anyway.
 - **The sign-up page's terms line has no links yet;** the policy pages come
-  with MG-57.
+  with MG-57. (Done in MG-57, Nov 19.)
 
 ## 2026-11-18: CLI device login details (MG-10, reversible defaults)
 

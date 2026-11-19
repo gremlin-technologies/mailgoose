@@ -85,8 +85,29 @@ export function SignUp() {
               onChange={(e) => setAccepted(e.target.checked)}
               required
             />
-            <span>I accept the terms of service and the anti-spam policy, and I'll only email people who asked to hear from me.</span>
+            <span>
+              I accept the{" "}
+              <a href="/terms" target="_blank" rel="noopener">
+                terms of service
+              </a>{" "}
+              and the{" "}
+              <a href="/anti-spam" target="_blank" rel="noopener">
+                anti-spam policy
+              </a>
+              , and I'll only email people who asked to hear from me.
+            </span>
           </label>
+          <p className="muted small">
+            How we handle personal data:{" "}
+            <a href="/privacy" target="_blank" rel="noopener">
+              privacy policy
+            </a>{" "}
+            and{" "}
+            <a href="/dpa" target="_blank" rel="noopener">
+              data processing agreement
+            </a>
+            .
+          </p>
           <FailureNotice failure={failure} />
           <button type="submit" className="button primary" disabled={busy}>
             {busy ? "Sending…" : "Email me a code"}

@@ -147,6 +147,45 @@ code {
   padding: 2rem;
 }
 
+/* Policy pages: the sign-in layout, wider for reading */
+
+.policy {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3rem 1rem;
+  gap: 1.5rem;
+}
+
+.policy-card {
+  max-width: 44rem;
+}
+
+.policy-card h2 {
+  font-size: 1.125rem;
+  margin: 1.5rem 0 0.5rem;
+}
+
+.policy-card ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.policy-nav ul {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem 1.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.policy-nav [aria-current="page"] {
+  color: var(--muted);
+}
+
 .auth-footer {
   color: var(--muted);
 }
