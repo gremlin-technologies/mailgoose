@@ -4,6 +4,21 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-19: Email check hardening (MG-26 follow-up, reversible defaults)
+
+From the MG-26 review; easy to change.
+
+- **Link checks dial ports 80 and 443 only.** A link on another port is
+  reported as not checked, so the check can't be used to probe other
+  services from our addresses.
+- **One account's checks fetch links at most 10 times a minute.** Checks
+  past that still run and report everything else; their links come back as
+  not checked, with when to try again. The limit is on the check endpoint
+  only.
+- **More ranges count as internal:** 240.0.0.0/4 (reserved), 2002::/16
+  (6to4) and fec0::/10 (old site-local).
+- **On a blocks email**, `missing_unsubscribe` reports the path `blocks`.
+
 ## 2026-11-18: Email check (MG-26, reversible defaults)
 
 Picked while building MG-26; easy to change.

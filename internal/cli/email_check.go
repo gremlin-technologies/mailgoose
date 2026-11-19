@@ -40,7 +40,8 @@ that weren't checked, images without alt text, an email close to the size
 limit, and CSS some clients drop.
 
 Each link is fetched once, with a few seconds for each and 10 seconds in
-all; links to private addresses aren't fetched.
+all; links to private addresses or to ports other than 80 and 443 aren't
+fetched. Links are fetched for at most 10 checks a minute.
 
 The exit code is 1 when there are errors and 0 when there are only warnings
 or nothing, so a script or an agent can check before it sends.`,
