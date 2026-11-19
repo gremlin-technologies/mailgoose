@@ -517,7 +517,8 @@ isn't, nothing is sent and each problem is listed with how to fix it.`,
 	})
 	test.Flags().StringArrayVar(&to, "to", nil, "send to this address instead of yours; repeat for up to 5")
 
-	cmd.AddCommand(list, create, get, update, del, count, test, a.campaignLaunchCmd(), a.campaignCancelCmd(), a.campaignRescheduleCmd())
+	cmd.AddCommand(list, create, get, update, del, count, test, a.campaignLaunchCmd(), a.campaignCancelCmd(), a.campaignRescheduleCmd(),
+		a.campaignReportCmd())
 	return cmd
 }
 

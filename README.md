@@ -496,7 +496,7 @@ at the addresses without fetching them.
 ## Campaigns
 
 `internal/campaigns` keeps an account's campaigns; the API has
-`/v1/campaigns` and the CLI `mailgoose campaign create|get|list|update|delete|count`.
+`/v1/campaigns` and the CLI `mailgoose campaign create|get|list|update|delete|count|report`.
 A campaign is a name, an email, recipients and a send time:
 
 ```
@@ -675,6 +675,24 @@ outside the spec and the API's sign-in, with their own per-IP limit of
 20,000 a minute (mail providers fetch images through a few proxies).
 `TestClickLatency` and `BenchmarkTrackedClick` (`internal/api`) time the
 redirect.
+
+### Reports
+
+`GET /v1/campaigns/{id}/report` and `mailgoose campaign report <id>`
+(`--json` for the API's shape) show a campaign's copies sent, delivered,
+hard bounced, complaints, unsubscribes, unique opens (always flagged
+estimated), unique and total clicks, credits used, and clicks per link.
+Both read `reports.Service.Campaign`, one query over `campaign_recipients`,
+`send_events`, `engagement_events`, `unsubscribes` and the credit ledger,
+run when asked, so the numbers move as soon as an event is stored. Counts
+of people count each copy once. A link whose address differs per copy
+(merge tags) shows only its site, so nobody's own link is shown.
+
+Raw events are kept 12 months (REP-5). The worker's pruner runs hourly: a
+campaign launched more than 12 months ago (and finished) has its report
+saved in `campaign_reports` and its raw events deleted; after that its
+report is the saved one, with `archived: true`. Any other open, click or
+SES event older than 12 months is deleted too.
 
 ### Account health and send limits
 

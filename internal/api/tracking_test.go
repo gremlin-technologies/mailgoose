@@ -16,6 +16,7 @@ import (
 
 // trackingFixture is one sent copy of a campaign and its tracked addresses.
 type trackingFixture struct {
+	srv   *Server
 	db    *pgxpool.Pool
 	h     http.Handler
 	rcpt  int64
@@ -26,7 +27,7 @@ func newTrackingFixture(tb testing.TB) *trackingFixture {
 	tb.Helper()
 	srv := authServerTB(tb)
 	v, _ := testDBs.Load(tb)
-	f := &trackingFixture{db: v.(*pgxpool.Pool)}
+	f := &trackingFixture{srv: srv, db: v.(*pgxpool.Pool)}
 	ctx := context.Background()
 	var acc, contact, campaign string
 	if err := f.db.QueryRow(ctx, `INSERT INTO accounts (name) VALUES ('Bakery') RETURNING id`).Scan(&acc); err != nil {

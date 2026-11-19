@@ -2323,6 +2323,45 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/campaigns/{campaign_id}/report:
+    get:
+      operationId: getCampaignReport
+      summary: Get a campaign's report
+      description: |
+        What happened to a campaign (REP-1, REP-2): copies sent, delivered,
+        hard bounced, complaints, unsubscribes, unique opens (always an
+        estimate), unique and total clicks, credits used, and clicks per
+        link. It's counted from the stored events when asked, so it's as
+        fresh as they are (deliveries, bounces and complaints arrive from
+        SES within a minute or two). A draft's numbers are all 0. Raw events
+        are kept 12 months after launch; after that the report is the one
+        saved then, with `archived` true.
+      tags: [campaigns]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+      responses:
+        "200":
+          description: The report.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CampaignReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/campaigns/{campaign_id}/reschedule:
     post:
       operationId: rescheduleCampaign
@@ -5059,6 +5098,105 @@ components:
         updated_at:
           type: string
           format: date-time
+    CampaignReport:
+      type: object
+      required: [campaign_id, status, launched_at, tracking, recipients, delivered, bounced, complaints, unsubscribes, opens, clicks, credits_used, links, archived, as_of]
+      properties:
+        campaign_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/CampaignStatus"
+        launched_at:
+          type: [string, "null"]
+          format: date-time
+          description: When it was launched; null for a draft.
+        tracking:
+          type: boolean
+          description: Whether opens and clicks were counted.
+        recipients:
+          type: integer
+          description: Copies sent.
+        delivered:
+          type: integer
+          description: Copies SES delivered to the receiving mail server.
+        bounced:
+          type: integer
+          description: Copies that hard bounced.
+        complaints:
+          type: integer
+          description: Copies marked as spam.
+        unsubscribes:
+          type: integer
+          description: People who unsubscribed from this campaign's link.
+        opens:
+          description: Null when the campaign wasn't tracked.
+          oneOf:
+            - $ref: "#/components/schemas/ReportOpens"
+            - type: "null"
+        clicks:
+          description: Null when the campaign wasn't tracked.
+          oneOf:
+            - $ref: "#/components/schemas/ReportClicks"
+            - type: "null"
+        credits_used:
+          type: integer
+          description: |
+            Credits the campaign took. While it's sending, this includes the
+            credits held for copies still to go.
+        links:
+          type: array
+          description: Clicks per link, in the email's order; only links someone clicked.
+          items:
+            $ref: "#/components/schemas/ReportLink"
+        archived:
+          type: boolean
+          description: True when the raw events are gone and these are the numbers saved 12 months after launch.
+        as_of:
+          type: string
+          format: date-time
+          description: When these numbers were counted.
+    ReportOpens:
+      type: object
+      required: [unique, estimated]
+      properties:
+        unique:
+          type: integer
+          description: Copies opened at least once (or clicked).
+        estimated:
+          type: boolean
+          description: |
+            Always true: mail apps that load images for privacy open every
+            copy, and those that block images open none.
+    ReportClicks:
+      type: object
+      required: [unique, total]
+      properties:
+        unique:
+          type: integer
+          description: Copies with at least one click.
+        total:
+          type: integer
+          description: All clicks.
+    ReportLink:
+      type: object
+      required: [position, url, varies, unique_clicks, total_clicks]
+      properties:
+        position:
+          type: integer
+          description: The link's place among the email's links, from 1.
+        url:
+          type: string
+          description: |
+            Where it goes. When merge tags make it differ between copies,
+            only the site (scheme and host), so no one person's link shows.
+        varies:
+          type: boolean
+          description: True when the address differs between copies.
+        unique_clicks:
+          type: integer
+        total_clicks:
+          type: integer
     CampaignLaunch:
       type: object
       required: [at, recipient_count, credits_reserved]

@@ -57,6 +57,13 @@ func TestCampaignsAgainstAPI(t *testing.T) {
 		}
 	}
 
+	if code := h.run("campaign", "report", id); code != ExitOK || !strings.Contains(h.out.String(), "hasn't been launched") {
+		t.Errorf("report: exit %d %s %s", code, h.out, h.errOut)
+	}
+	if code := h.run("campaign", "report", id, "--json"); code != ExitOK || h.jsonOut(t)["recipients"] != 0.0 {
+		t.Errorf("report json: exit %d %s %s", code, h.out, h.errOut)
+	}
+
 	if code := h.run("campaign", "update", id, "--all", "--send-at", "now", "--version", "1"); code != ExitOK {
 		t.Fatalf("update: exit %d %s", code, h.errOut)
 	}

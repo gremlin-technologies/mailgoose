@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -216,6 +217,78 @@ func TestRecord(t *testing.T) {
 	_ = h.db.QueryRow(ctx, `SELECT count(*) FROM engagement_events`).Scan(&n)
 	if n != len(want) {
 		t.Errorf("%d events, want %d", n, len(want))
+	}
+}
+
+// A click keeps only the link's site and path: merge tags filled into the
+// query or an address in the path aren't stored (from the MG-37 review).
+func TestStoredURL(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://shop.example/menu":                         "https://shop.example/menu",
+		"https://shop.example/menu?e=ann%40example.com#top": "https://shop.example/menu",
+		"https://ann:pw@shop.example/a b":                   "https://shop.example/a%20b",
+		"https://shop.example/u/ann@example.com":            "https://shop.example",
+		"https://shop.example/u/ann%40example.com/x":        "https://shop.example",
+		"http://shop.example":                               "http://shop.example",
+	} {
+		if got := StoredURL(raw); got != want {
+			t.Errorf("%s: %q, want %q", raw, got, want)
+		}
+	}
+	h := newHarness(t)
+	ctx := context.Background()
+	hit, err := h.svc.Check(ctx, token(h.links.Click(h.rcpt, 1, "https://shop.example/?e=ann@example.com"), ClickPrefix), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hit.URL != "https://shop.example/?e=ann@example.com" {
+		t.Errorf("the click goes to %q", hit.URL)
+	}
+	if err := h.svc.Record(ctx, hit); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	_ = h.db.QueryRow(ctx, `SELECT count(*) FROM engagement_events WHERE url LIKE '%ann%'`).Scan(&n)
+	if n != 0 {
+		t.Errorf("%d stored rows hold the address", n)
+	}
+}
+
+// A token naming an account with no key is refused without reading the
+// database again for a minute (from the MG-37 review).
+func TestKeylessAccountRemembered(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 19, 8, 0, 0, 0, time.UTC)
+	h.svc.Now = func() time.Time { return now }
+	var acc string
+	if err := h.db.QueryRow(ctx, `INSERT INTO accounts (name) VALUES ('No links yet') RETURNING id`).Scan(&acc); err != nil {
+		t.Fatal(err)
+	}
+	g, err := h.svc.Unsubscribe.Signer(ctx, acc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	links, _ := NewLinks(g, "https://app.test", h.camp)
+	tok := token(links.Open(h.rcpt), OpenPrefix)
+	var key []byte
+	if err := h.db.QueryRow(ctx, `DELETE FROM unsubscribe_keys WHERE account_id = $1 RETURNING key`, acc).Scan(&key); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Check(ctx, tok, false); !errors.Is(err, ErrBadToken) {
+		t.Fatalf("keyless: %v", err)
+	}
+	// The key comes back, but for a minute the miss is answered from
+	// memory, without a lookup.
+	if _, err := h.db.Exec(ctx, `INSERT INTO unsubscribe_keys (account_id, key) VALUES ($1, $2)`, acc, key); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Check(ctx, tok, false); !errors.Is(err, ErrBadToken) {
+		t.Errorf("remembered: %v", err)
+	}
+	now = now.Add(missTTL + time.Second)
+	if _, err := h.svc.Check(ctx, tok, false); err != nil {
+		t.Errorf("after a minute: %v", err)
 	}
 }
 

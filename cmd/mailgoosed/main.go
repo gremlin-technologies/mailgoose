@@ -37,6 +37,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/reports"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/sesevents"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
@@ -131,6 +132,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		srv.Campaigns = &campaigns.Service{DB: pool}
 		srv.Unsubscribe = &unsubscribe.Service{DB: pool}
 		srv.Tracking = &tracking.Service{DB: pool, Unsubscribe: srv.Unsubscribe}
+		srv.Reports = &reports.Service{DB: pool}
 		if srv.Domains, err = newDomains(ctx, cfg, pool, log); err != nil {
 			return err
 		}
@@ -273,6 +275,9 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	run(func() { imports.RunImports(ctx, log.With("job", "import"), 2*time.Second) })
 	// Scheduled campaigns start within 15 seconds of their time.
 	run(func() { sending.RunScheduler(ctx, pool, 15*time.Second, log.With("job", "schedule")) })
+	// Raw events are kept 12 months (REP-5); checked hourly.
+	pruner := &reports.Service{DB: pool}
+	run(func() { pruner.RunPruner(ctx, time.Hour, log.With("job", "prune")) })
 	if cfg.SendQueueURL == "" {
 		// No SQS (local): the worker dispatches too, into a queue in memory.
 		log.Info("no send queue configured; sending through an in-process queue")

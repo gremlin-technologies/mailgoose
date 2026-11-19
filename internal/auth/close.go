@@ -21,6 +21,7 @@ const ClosedAccountName = "Deleted account"
 // CASCADE.
 var AccountTables = []string{
 	"engagement_events",
+	"campaign_reports",
 	"send_events",
 	"unsubscribes",
 	"unsubscribe_keys",
