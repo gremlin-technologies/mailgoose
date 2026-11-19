@@ -118,11 +118,16 @@ func (s *Service) Reschedule(ctx context.Context, accountID, campaignID string, 
 // StartDue moves every scheduled campaign whose time has come to sending,
 // and returns their ids. Each is started once, however many workers run
 // it at the same time: the update only takes campaigns still scheduled.
+// It checks the campaign's own send_at too: the queue row isn't locked
+// here, so if a reschedule commits while this waits on the campaign,
+// Postgres rechecks only the campaign row, and send_at is what shows the
+// move.
 func StartDue(ctx context.Context, db *pgxpool.Pool, now time.Time) ([]string, error) {
 	rows, err := db.Query(ctx, `
 		UPDATE campaigns c SET status = 'sending', status_changed_at = $1, updated_at = $1
 		FROM send_queue q
-		WHERE q.campaign_id = c.id AND q.done_at IS NULL AND q.run_at <= $1 AND c.status = 'scheduled'
+		WHERE q.campaign_id = c.id AND q.done_at IS NULL AND q.run_at <= $1
+			AND c.status = 'scheduled' AND c.send_at <= $1
 		RETURNING c.id`, now.UTC())
 	if err != nil {
 		return nil, err
