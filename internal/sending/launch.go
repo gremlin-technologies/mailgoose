@@ -126,6 +126,8 @@ type launchCopy struct {
 	ReplyTo       []mail.Address   `json:"reply_to"`
 	PostalAddress string           `json:"postal_address"`
 	Template      *render.Template `json:"template"`
+	// Tracking adds the open pixel and tracked links to each copy (REP-3).
+	Tracking bool `json:"tracking"`
 }
 
 // creditsRef is the ref a campaign's credits are reserved under.
@@ -374,7 +376,7 @@ func (s *Service) confirm(ctx context.Context, accountID, campaignID, code strin
 		}
 
 		cp, err := json.Marshal(launchCopy{EmailID: p.Email.ID, EmailVersion: p.Email.Version, From: p.From,
-			ReplyTo: p.ReplyTo, PostalAddress: p.PostalAddress, Template: p.Template})
+			ReplyTo: p.ReplyTo, PostalAddress: p.PostalAddress, Template: p.Template, Tracking: c.Tracking})
 		if err != nil {
 			return err
 		}

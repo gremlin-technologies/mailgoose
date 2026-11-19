@@ -766,3 +766,90 @@ func TestPipelineLogsUnrecordedSend(t *testing.T) {
 		t.Errorf("sent %v; logs:\n%s", ok, logs.String())
 	}
 }
+
+// trackedCopy sends a campaign with two links to Sam, tracked or not, and
+// returns Sam's copy.
+func trackedCopy(t *testing.T, track bool) mail.Message {
+	t.Helper()
+	ctx := context.Background()
+	h := newHarness(t)
+	h.buy(t, 10)
+	doc := `{"settings":{"subject":"Menu"},"blocks":[
+		{"id":"a","type":"button","text":"Order","href":"https://patsbakery.com/order"},
+		{"id":"b","type":"button","text":"Menu","href":"https://patsbakery.com/menu?day=fri&size=2"}]}`
+	if _, err := h.db.Exec(ctx, `UPDATE emails SET document = $2 WHERE id = $1`, h.email.ID, doc); err != nil {
+		t.Fatal(err)
+	}
+	if !track {
+		off := false
+		c, err := h.svc.Campaigns.Update(ctx, h.acc, h.campaign.ID, campaigns.Changes{Tracking: &off})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.campaign = c
+	} else if !h.campaign.Tracking {
+		t.Fatal("tracking isn't on by default")
+	}
+	if _, err := h.test(); err != nil {
+		t.Fatal(err)
+	}
+	if test := h.fake.Sent(); len(test) != 1 || strings.Contains(test[0].Message.HTML, "/t/") {
+		t.Fatalf("test send: %d copies, tracked %v", len(test), len(test) == 1)
+	}
+	if _, err := h.launch(h.summary(t).Code); err != nil {
+		t.Fatal(err)
+	}
+	h.fake.Reset()
+	p := h.pipeline(fastLimits)
+	q := &recorded{}
+	dispatch(t, p, q)
+	for _, b := range q.take() {
+		if err := p.HandleBatch(ctx, b, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sent := h.fake.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("sent %d", len(sent))
+	}
+	m := sent[0].Message
+	if strings.Contains(m.Text, "/t/") {
+		t.Error("the plain-text part has tracked links")
+	}
+	unsub := ""
+	for _, x := range m.Headers {
+		if x.Name == "List-Unsubscribe" {
+			unsub = strings.Trim(x.Value, "<>")
+		}
+	}
+	if unsub == "" || !strings.Contains(m.HTML, `href="`+unsub+`"`) {
+		t.Errorf("the unsubscribe link %q isn't in the copy as it is", unsub)
+	}
+	return m
+}
+
+func TestPipelineTracksOpensAndClicks(t *testing.T) {
+	m := trackedCopy(t, true)
+	if strings.Contains(m.HTML, `href="https://patsbakery.com/`) {
+		t.Error("a link wasn't tracked")
+	}
+	if strings.Count(m.HTML, `href="`+baseURL+`/t/c/t1`) != 2 {
+		t.Errorf("want two tracked links in:\n%s", m.HTML)
+	}
+	if strings.Count(m.HTML, `<img src="`+baseURL+`/t/o/t1`) != 1 {
+		t.Errorf("want one open pixel in:\n%s", m.HTML)
+	}
+}
+
+// TestPipelineTrackingOff is REP-3's check: a campaign with tracking off
+// has no pixel and no rewritten links.
+func TestPipelineTrackingOff(t *testing.T) {
+	m := trackedCopy(t, false)
+	if strings.Contains(m.HTML, "/t/o/") || strings.Contains(m.HTML, "/t/c/") {
+		t.Errorf("tracking off, but the copy is tracked:\n%s", m.HTML)
+	}
+	if !strings.Contains(m.HTML, `href="https://patsbakery.com/order"`) ||
+		!strings.Contains(m.HTML, `href="https://patsbakery.com/menu?day=fri&amp;size=2"`) {
+		t.Errorf("links changed:\n%s", m.HTML)
+	}
+}

@@ -316,20 +316,22 @@ func (s *Service) store(ctx context.Context, e *event, p *parsed, key string) (O
 		return "", err
 	}
 
+	// A campaign's hard bounces and complaints can pause its account
+	// (CMP-6). This comes before the contact changes so locks are taken
+	// campaign, then account, then contact: the order launch (campaign,
+	// account) and signups (account, contact) use.
+	var paused *sending.AutoPause
+	if campaignID != nil && (p.typ == TypeComplaint || p.typ == TypeBounce && p.hard) {
+		if paused, err = sending.CheckCampaign(ctx, tx, *campaignID, s.now()); err != nil {
+			return "", err
+		}
+	}
 	contactIDs, err := s.contactsFor(ctx, tx, kind, accountID, contactID, p.addresses)
 	if err != nil {
 		return "", err
 	}
 	if err := s.apply(ctx, tx, p, contactIDs); err != nil {
 		return "", err
-	}
-	// A campaign's hard bounces and complaints can pause its account
-	// (CMP-6).
-	var paused *sending.AutoPause
-	if campaignID != nil && (p.typ == TypeComplaint || p.typ == TypeBounce && p.hard) {
-		if paused, err = sending.CheckCampaign(ctx, tx, *campaignID, s.now()); err != nil {
-			return "", err
-		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return "", err

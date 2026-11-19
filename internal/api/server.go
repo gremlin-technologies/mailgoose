@@ -29,6 +29,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
+	"github.com/gremlin-technologies/mailgoose/internal/tracking"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 )
@@ -76,6 +77,10 @@ type Server struct {
 	// Signups takes posts to signup forms and confirm links; nil without a
 	// database, which makes them answer 503.
 	Signups *signups.Service
+	// Tracking checks and records opens and clicks; nil without a
+	// database, which makes tracked links answer 503 (the pixel still
+	// loads).
+	Tracking *tracking.Service
 	// Admin backs the mailgoose staff tools (OPS-6); nil without a
 	// database, which makes them answer 503.
 	Admin *admin.Service
@@ -132,6 +137,8 @@ func (s *Server) Handler() http.Handler {
 	// of the API's sign-in layers.
 	pages := requestIDs(s.recoverer(s.logRequests(
 		(&RateLimiter{PerMinute: recipientPagesPerMinute, Now: now, Key: ClientIPKey, Limited: s.recipientPageLimited}).Middleware(s.recipientPages(now)))))
+	tracked := requestIDs(s.recoverer(s.logRequests(
+		(&RateLimiter{PerMinute: trackingPerMinute, Now: now, Key: ClientIPKey}).Middleware(s.trackingRoutes()))))
 	// The web app skips the API's middleware: its files need no rate limit,
 	// session lookup or idempotency.
 	var web http.Handler
@@ -140,6 +147,8 @@ func (s *Server) Handler() http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case isTrackingPath(r.URL.Path):
+			tracked.ServeHTTP(w, r)
 		case isRecipientPage(r.URL.Path):
 			pages.ServeHTTP(w, r)
 		case web == nil || isAPIRequest(mux, r):

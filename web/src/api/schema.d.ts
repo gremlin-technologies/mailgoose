@@ -2592,6 +2592,12 @@ export interface components {
              * @description When it goes out; null for when it's launched.
              */
             send_at: string | null;
+            /**
+             * @description Whether opens and clicks are counted, with mailgoose's own open
+             *     pixel and link redirects. On by default; off means no pixel and
+             *     no rewritten links. The unsubscribe link is never rewritten.
+             */
+            tracking: boolean;
             status: components["schemas"]["CampaignStatus"];
             /** @description Goes up with every change. */
             version: number;
@@ -2674,6 +2680,8 @@ export interface components {
              * @description A time in the next year; null or left out sends when launched.
              */
             send_at?: string | null;
+            /** @description Count opens and clicks (the default, true), or not. */
+            tracking?: boolean;
         };
         UpdateCampaignRequest: {
             name?: string;
@@ -2685,6 +2693,8 @@ export interface components {
              * @description A time in the next year; null sends when launched.
              */
             send_at?: string | null;
+            /** @description Count opens and clicks (the default, true), or not. */
+            tracking?: boolean;
             /** @description The version you read; the change is refused if the campaign changed since. */
             version?: number;
         };

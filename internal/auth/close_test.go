@@ -33,6 +33,7 @@ func TestDeleteAccount(t *testing.T) {
 			`INSERT INTO campaign_recipients (account_id, campaign_id, contact_id) SELECT $1, c.id, k.id FROM campaigns c, contacts k WHERE c.account_id = $1 AND k.account_id = $1`,
 			`INSERT INTO send_events (event_key, account_id, campaign_id, recipient_id, message_id, kind, type, occurred_at)
 				SELECT 'k' || account_id, account_id, campaign_id, id, 'm', 'campaign', 'delivery', now() FROM campaign_recipients WHERE account_id = $1`,
+			`INSERT INTO engagement_events (account_id, campaign_id, recipient_id, type) SELECT account_id, campaign_id, id, 'open' FROM campaign_recipients WHERE account_id = $1`,
 			`INSERT INTO campaign_launch_codes (campaign_id, account_id, code_hash, campaign_version, email_version, expires_at) SELECT id, $1, '\x00', 1, 1, now() FROM campaigns WHERE account_id = $1`,
 			`INSERT INTO domains (account_id, name, mail_from, created_at, check_until) VALUES ($1, 'd` + string(rune('0'+i)) + `.example', 'bounce', now(), now())`,
 			`INSERT INTO credit_transactions (account_id, type, amount, expires_at) VALUES ($1, 'grant', 1000, now() + interval '1 month')`,

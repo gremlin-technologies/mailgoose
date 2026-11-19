@@ -408,23 +408,14 @@ func (s *Service) StopCampaign(ctx context.Context, actor Actor, campaignID, rea
 	if err != nil {
 		return nil, err
 	}
-	before, err := s.Sending.Campaigns.Get(ctx, accountID, campaignID)
-	if err != nil {
-		return nil, err
-	}
-	c, err := s.Sending.Stop(ctx, accountID, campaignID)
-	if err != nil {
-		return nil, err
-	}
-	// Logged after: a stop that didn't happen isn't an action. The stop and
-	// its log aren't one transaction, so a failure to log is an error the
-	// admin sees, with the campaign already stopped.
-	err = s.inTx(ctx, func(tx pgx.Tx) error {
+	// The stop and its log are one transaction: a stop is never left
+	// unlogged, and stopping a cancelled campaign changes nothing and logs
+	// nothing.
+	return s.Sending.StopAnd(ctx, accountID, campaignID, func(tx pgx.Tx, before string) error {
 		_, err := s.record(ctx, tx, actor, ActionStopCampaign, &accountID, &campaignID, reason,
-			map[string]any{"status_before": before.Status}, s.now())
+			map[string]any{"status_before": before}, s.now())
 		return err
 	})
-	return c, err
 }
 
 // ApprovedImport is an import let through.

@@ -320,6 +320,60 @@ func TestPipelineAccountPausedMidBatch(t *testing.T) {
 	}
 }
 
+// A copy claimed when its campaign was stopped, whose worker then died, is
+// failed and its credit given back, though the dispatcher no longer visits
+// the campaign (from the MG-34 review).
+func TestFailStoppedClaims(t *testing.T) {
+	h := launchedHarness(t, 4)
+	ctx := context.Background()
+	p := h.pipeline(fastLimits)
+	q := &recorded{}
+	dispatch(t, p, q)
+	b := q.take()[0]
+	// A worker claims the first copy and dies.
+	if _, err := h.db.Exec(ctx, `UPDATE campaign_recipients SET status = 'sending', claimed_at = $2 WHERE id = $1`,
+		b.IDs[0], h.now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Stop(ctx, h.acc, h.campaign.ID); err != nil {
+		t.Fatal(err)
+	}
+	before := h.balance(t)
+	// Not yet stale: left alone.
+	if n, err := FailStoppedClaims(ctx, h.db, h.now.Add(ClaimTimeout-time.Second)); err != nil || n != 0 {
+		t.Fatalf("early: %d %v", n, err)
+	}
+	if n, err := FailStoppedClaims(ctx, h.db, h.now.Add(ClaimTimeout)); err != nil || n != 1 {
+		t.Fatalf("failed %d, %v", n, err)
+	}
+	if c := h.counts(t); c["failed"] != 1 || c["sending"] != 0 || c["skipped"] != 4 {
+		t.Errorf("counts %v", c)
+	}
+	if got := h.balance(t); got != before+1 {
+		t.Errorf("balance %d, want %d", got, before+1)
+	}
+	// Once only.
+	if n, _ := FailStoppedClaims(ctx, h.db, h.now.Add(ClaimTimeout)); n != 0 {
+		t.Errorf("failed %d more", n)
+	}
+}
+
+// A sending campaign's stale claims are the dispatcher's, not the sweep's.
+func TestFailStoppedClaimsLeavesSending(t *testing.T) {
+	h := launchedHarness(t, 1)
+	ctx := context.Background()
+	q := &recorded{}
+	dispatch(t, h.pipeline(fastLimits), q)
+	b := q.take()[0]
+	if _, err := h.db.Exec(ctx, `UPDATE campaign_recipients SET status = 'sending', claimed_at = $2 WHERE id = $1`,
+		b.IDs[0], h.now); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := FailStoppedClaims(ctx, h.db, h.now.Add(time.Hour)); err != nil || n != 0 {
+		t.Errorf("failed %d, %v", n, err)
+	}
+}
+
 func TestStopCampaignInFlight(t *testing.T) {
 	h := launchedHarness(t, 19)
 	ctx := context.Background()

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
+	"github.com/gremlin-technologies/mailgoose/internal/tracking"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
 
@@ -52,7 +53,7 @@ func isRecipientPage(path string) bool {
 // confirm token left out: a token is enough to unsubscribe or subscribe
 // someone.
 func logPath(path string) string {
-	for _, prefix := range []string{unsubscribe.PathPrefix, signups.ConfirmPrefix} {
+	for _, prefix := range []string{unsubscribe.PathPrefix, signups.ConfirmPrefix, tracking.OpenPrefix, tracking.ClickPrefix} {
 		if strings.HasPrefix(path, prefix) && len(path) > len(prefix) {
 			return prefix + "[token]"
 		}

@@ -322,19 +322,51 @@ func TestStopCampaign(t *testing.T) {
 	if l := h.last(t); l.action != ActionStopCampaign || l.target == nil || *l.target != camp {
 		t.Errorf("log = %+v", l)
 	}
+	// Stopping it again changes nothing and logs nothing.
+	n := len(h.log(t))
+	if _, err := h.svc.StopCampaign(ctx, h.staff, camp, "Again"); err != nil {
+		t.Errorf("again: %v", err)
+	}
+	if len(h.log(t)) != n {
+		t.Error("a stop that changed nothing was logged")
+	}
 	if _, err := h.svc.StopCampaign(ctx, h.staff, "00000000-0000-0000-0000-000000000000", "x"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("unknown: %v", err)
 	}
 	// A draft can't be stopped, and isn't logged.
 	var draft string
 	_ = h.db.QueryRow(ctx, `INSERT INTO campaigns (account_id, name, all_contacts) VALUES ($1, 'Draft', true) RETURNING id`, h.acc).Scan(&draft)
-	n := len(h.log(t))
+	n = len(h.log(t))
 	var st *campaigns.StatusError
 	if _, err := h.svc.StopCampaign(ctx, h.staff, draft, "x"); !errors.As(err, &st) {
 		t.Errorf("draft: %v", err)
 	}
 	if len(h.log(t)) != n {
 		t.Error("a refused stop was logged")
+	}
+}
+
+// A stop whose log can't be written doesn't happen (from the MG-34
+// review): the stop and its log are one transaction.
+func TestStopCampaignUnloggedUndone(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	var camp string
+	if err := h.db.QueryRow(ctx, `
+		INSERT INTO campaigns (account_id, name, all_contacts, status) VALUES ($1, 'Bread week', true, 'sending') RETURNING id`,
+		h.acc).Scan(&camp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.Exec(ctx, `ALTER TABLE admin_actions ADD CONSTRAINT no_stops CHECK (action <> 'stop_campaign') NOT VALID`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.StopCampaign(ctx, h.staff, camp, "Phishing content"); err == nil {
+		t.Fatal("no error")
+	}
+	var status string
+	_ = h.db.QueryRow(ctx, `SELECT status FROM campaigns WHERE id = $1`, camp).Scan(&status)
+	if status != campaigns.StatusSending {
+		t.Errorf("status %s: an unlogged stop happened", status)
 	}
 }
 

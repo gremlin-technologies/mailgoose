@@ -5013,7 +5013,7 @@ components:
             format: uuid
     Campaign:
       type: object
-      required: [id, name, email_id, recipients, send_at, status, version, last_test, launch, created_at, updated_at]
+      required: [id, name, email_id, recipients, send_at, tracking, status, version, last_test, launch, created_at, updated_at]
       properties:
         id:
           type: string
@@ -5032,6 +5032,12 @@ components:
           type: [string, "null"]
           format: date-time
           description: When it goes out; null for when it's launched.
+        tracking:
+          type: boolean
+          description: |
+            Whether opens and clicks are counted, with mailgoose's own open
+            pixel and link redirects. On by default; off means no pixel and
+            no rewritten links. The unsubscribe link is never rewritten.
         status:
           $ref: "#/components/schemas/CampaignStatus"
         version:
@@ -5168,6 +5174,9 @@ components:
           type: [string, "null"]
           format: date-time
           description: A time in the next year; null or left out sends when launched.
+        tracking:
+          type: boolean
+          description: Count opens and clicks (the default, true), or not.
     UpdateCampaignRequest:
       type: object
       additionalProperties: false
@@ -5185,6 +5194,9 @@ components:
           type: [string, "null"]
           format: date-time
           description: A time in the next year; null sends when launched.
+        tracking:
+          type: boolean
+          description: Count opens and clicks (the default, true), or not.
         version:
           type: integer
           description: The version you read; the change is refused if the campaign changed since.

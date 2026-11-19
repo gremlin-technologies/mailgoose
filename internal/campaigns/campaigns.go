@@ -85,7 +85,10 @@ type Campaign struct {
 	AllContacts bool
 	Tags        []Tag
 	// SendAt is nil for "when launched".
-	SendAt          *time.Time
+	SendAt *time.Time
+	// Tracking counts opens and clicks with mailgoose's pixel and
+	// redirects (REP-3); on unless turned off.
+	Tracking        bool
 	Status          string
 	Version         int
 	StatusChangedAt time.Time
@@ -139,6 +142,8 @@ type Changes struct {
 	// SendAt sets a send time; SendNow clears it, for "when launched".
 	SendAt  *time.Time
 	SendNow bool
+	// Tracking turns open and click tracking on or off.
+	Tracking *bool
 	// Version, when set, must be the campaign's current version.
 	Version *int
 }
@@ -163,14 +168,14 @@ func (s *Service) now() time.Time {
 	return time.Now()
 }
 
-const columns = `id, account_id, name, email_id, all_contacts, send_at, status, version, status_changed_at, created_at, updated_at,
+const columns = `id, account_id, name, email_id, all_contacts, send_at, tracking, status, version, status_changed_at, created_at, updated_at,
 	last_test_at, last_test_version, last_test_email_version, launched_at, recipient_total, credits_reserved`
 
 func scan(row pgx.Row) (*Campaign, error) {
 	var c Campaign
 	var testAt *time.Time
 	var testVersion, testEmailVersion *int
-	err := row.Scan(&c.ID, &c.AccountID, &c.Name, &c.EmailID, &c.AllContacts, &c.SendAt, &c.Status, &c.Version,
+	err := row.Scan(&c.ID, &c.AccountID, &c.Name, &c.EmailID, &c.AllContacts, &c.SendAt, &c.Tracking, &c.Status, &c.Version,
 		&c.StatusChangedAt, &c.CreatedAt, &c.UpdatedAt, &testAt, &testVersion, &testEmailVersion,
 		&c.LaunchedAt, &c.RecipientTotal, &c.CreditsReserved)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -211,6 +216,9 @@ func (s *Service) apply(c *Campaign, ch Changes) error {
 	}
 	if ch.SendNow {
 		c.SendAt = nil
+	}
+	if ch.Tracking != nil {
+		c.Tracking = *ch.Tracking
 	}
 	if ch.SendAt != nil {
 		now := s.now()
@@ -277,7 +285,7 @@ func setTags(ctx context.Context, tx pgx.Tx, accountID, campaignID string, ids [
 // Create makes a draft campaign. It needs a name, an email and recipients;
 // without a send time it goes out when launched.
 func (s *Service) Create(ctx context.Context, accountID string, ch Changes) (*Campaign, error) {
-	c := &Campaign{}
+	c := &Campaign{Tracking: true}
 	if err := s.apply(c, ch); err != nil {
 		return nil, err
 	}
@@ -293,9 +301,9 @@ func (s *Service) Create(ctx context.Context, accountID string, ch Changes) (*Ca
 			return err
 		}
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO campaigns (account_id, name, email_id, all_contacts, send_at)
-			VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-			accountID, c.Name, *ch.EmailID, c.AllContacts, c.SendAt).Scan(&id); err != nil {
+			INSERT INTO campaigns (account_id, name, email_id, all_contacts, send_at, tracking)
+			VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+			accountID, c.Name, *ch.EmailID, c.AllContacts, c.SendAt, c.Tracking).Scan(&id); err != nil {
 			return err
 		}
 		return setTags(ctx, tx, accountID, id, ch.Recipients.TagIDs)
@@ -334,10 +342,10 @@ func (s *Service) Update(ctx context.Context, accountID, id string, ch Changes) 
 			c.EmailID = ch.EmailID
 		}
 		if _, err := tx.Exec(ctx, `
-			UPDATE campaigns SET name = $3, email_id = $4, all_contacts = $5, send_at = $6,
+			UPDATE campaigns SET name = $3, email_id = $4, all_contacts = $5, send_at = $6, tracking = $7,
 				version = version + 1, updated_at = now()
 			WHERE account_id = $1 AND id = $2`,
-			accountID, id, c.Name, c.EmailID, c.AllContacts, c.SendAt); err != nil {
+			accountID, id, c.Name, c.EmailID, c.AllContacts, c.SendAt, c.Tracking); err != nil {
 			return err
 		}
 		if ch.Recipients != nil {

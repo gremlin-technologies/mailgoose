@@ -1289,8 +1289,13 @@ type Campaign struct {
 	// Status `draft` is being set up; `scheduled` is launched and waiting for its
 	// send time; `sending`, then `sent`. `cancelled` was stopped by the
 	// account, `paused` by us mid-send, and `failed` couldn't finish.
-	Status    CampaignStatus `json:"status"`
-	UpdatedAt time.Time      `json:"updated_at"`
+	Status CampaignStatus `json:"status"`
+
+	// Tracking Whether opens and clicks are counted, with mailgoose's own open
+	// pixel and link redirects. On by default; off means no pixel and
+	// no rewritten links. The unsubscribe link is never rewritten.
+	Tracking  bool      `json:"tracking"`
+	UpdatedAt time.Time `json:"updated_at"`
 
 	// Version Goes up with every change.
 	Version int `json:"version"`
@@ -1524,6 +1529,9 @@ type CreateCampaignRequest struct {
 
 	// SendAt A time in the next year; null or left out sends when launched.
 	SendAt *time.Time `json:"send_at,omitempty"`
+
+	// Tracking Count opens and clicks (the default, true), or not.
+	Tracking *bool `json:"tracking,omitempty"`
 }
 
 // CreateContactRequest defines model for CreateContactRequest.
@@ -2573,6 +2581,9 @@ type UpdateCampaignRequest struct {
 
 	// SendAt A time in the next year; null sends when launched.
 	SendAt *time.Time `json:"send_at,omitempty"`
+
+	// Tracking Count opens and clicks (the default, true), or not.
+	Tracking *bool `json:"tracking,omitempty"`
 
 	// Version The version you read; the change is refused if the campaign changed since.
 	Version *int `json:"version,omitempty"`

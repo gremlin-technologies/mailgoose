@@ -23,6 +23,30 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Open and click tracking (MG-37, reversible defaults)
+
+Picked while building MG-37; easy to change.
+
+- **What's tracked:** links in the HTML part to `http` or `https`
+  addresses, up to 2,000 characters. The unsubscribe link, `mailto:` and
+  other links, and the plain-text part are left alone. Test sends aren't
+  tracked.
+- **Tracked after personalizing**, per copy, so links filled in by merge
+  tags are tracked too.
+- **The link carries its destination**, signed with the account's
+  unsubscribe key under its own label, so the redirect needs no lookup and
+  a changed link can't redirect anywhere.
+- **A click counts as an open** when the copy has none yet, since many mail
+  apps block the pixel.
+- **No IP address or browser** is stored with an open or click.
+- **The pixel always loads**, even for a bad token, so mail apps show no
+  broken image; only valid tokens are recorded.
+- **Per-IP limit** of 20,000 a minute on `/t/`, well above other recipient
+  pages, because mail providers fetch images through a few proxies.
+- **Turning SES's OPEN and CLICK events off** in `infra/` is a separate PR
+  for the owner to merge and apply; until then the worker drops them, as
+  it already does.
+
 ## 2026-11-18: Send limits, account health and admin tools (MG-34, reversible defaults)
 
 Picked while building MG-34; easy to change.
