@@ -278,3 +278,25 @@ func TestImagesSettings(t *testing.T) {
 		}
 	}
 }
+
+func TestImportHoldSettings(t *testing.T) {
+	cfg, err := load(env(nil))
+	want := ImportHold{RiskyPercent: 10, InvalidPercent: 5, SharedPercent: 50, SharedMin: 200}
+	if err != nil || cfg.ImportHold != want {
+		t.Fatalf("defaults = %+v, %v", cfg.ImportHold, err)
+	}
+	cfg, err = load(env(map[string]string{"IMPORT_HOLD_RISKY_PERCENT": "20", "IMPORT_HOLD_SHARED_MIN": "50"}))
+	if err != nil || cfg.ImportHold.RiskyPercent != 20 || cfg.ImportHold.SharedMin != 50 {
+		t.Fatalf("set = %+v, %v", cfg.ImportHold, err)
+	}
+	for _, name := range []string{"IMPORT_HOLD_RISKY_PERCENT", "IMPORT_HOLD_INVALID_PERCENT", "IMPORT_HOLD_SHARED_PERCENT", "IMPORT_HOLD_SHARED_MIN"} {
+		for _, bad := range []string{"0", "-3", "lots"} {
+			if _, err := load(env(map[string]string{name: bad})); err == nil {
+				t.Errorf("%s=%q should be an error", name, bad)
+			}
+		}
+	}
+	if _, err := load(env(map[string]string{"IMPORT_HOLD_RISKY_PERCENT": "101"})); err == nil {
+		t.Error("a percentage over 100 should be an error")
+	}
+}

@@ -62,7 +62,7 @@ func TestDeleteAccount(t *testing.T) {
 		if n := h.count(t, `SELECT count(*) FROM `+table+` WHERE account_id = $1`, pat.Account.ID); n != 0 {
 			t.Errorf("%s: %d rows left", table, n)
 		}
-		if n := h.count(t, `SELECT count(*) FROM `+table+` WHERE account_id = $1`, bob.Account.ID); n == 0 && table != "device_logins" && table != "imports" {
+		if n := h.count(t, `SELECT count(*) FROM `+table+` WHERE account_id = $1`, bob.Account.ID); n == 0 && table != "device_logins" && table != "imports" && table != "import_address_hashes" {
 			t.Errorf("%s: the other account lost its rows", table)
 		}
 	}

@@ -276,9 +276,12 @@ func TestApproveImport(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	var imp string
+	other := h.account(t, "Other", "other@example.org")
 	if err := h.db.QueryRow(ctx, `
-		INSERT INTO imports (account_id, permission_confirmed, email_column, csv, total_rows, review, hold_reason, status)
-		VALUES ($1, true, 'email', 'email', 3000, 'held', 'large_first_import', 'done') RETURNING id`, h.acc).Scan(&imp); err != nil {
+		INSERT INTO imports (account_id, permission_confirmed, email_column, csv, total_rows, review, hold_reason, status,
+			list_source, invalid_rows, role_addresses, disposable_addresses, shared_addresses, shared_account_id)
+		VALUES ($1, true, 'email', 'email', 3000, 'held', 'shared_list', 'done', 'export', 4, 3, 2, 2500, $2)
+		RETURNING id`, h.acc, other).Scan(&imp); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.db.Exec(ctx, `
@@ -292,6 +295,12 @@ func TestApproveImport(t *testing.T) {
 	}
 	if len(a.HeldImports) != 1 || a.HeldImports[0].ID != imp || a.Contacts != 3 {
 		t.Errorf("account = %+v", a)
+	}
+	// The admin sees the checks' counts and the other account's id, no addresses.
+	if hi := a.HeldImports[0]; hi.HoldReason != "shared_list" || hi.ListSource == nil || *hi.ListSource != "export" ||
+		hi.Checks.InvalidRows != 4 || hi.Checks.RoleAddresses != 3 || hi.Checks.DisposableAddresses != 2 ||
+		hi.Checks.SharedAddresses != 2500 || hi.Checks.SharedAccountID == nil || *hi.Checks.SharedAccountID != other {
+		t.Errorf("held import = %+v", hi)
 	}
 	got, err := h.svc.ApproveImport(ctx, h.staff, imp, "Checked the source: a signup sheet")
 	if err != nil {

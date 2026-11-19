@@ -35,6 +35,7 @@ var AccountTables = []string{
 	"forms",
 	"emails",
 	"images",
+	"import_address_hashes",
 	"imports",
 	"contacts",
 	"tags",

@@ -4,6 +4,43 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-19: Import list checks and list source (MG-63, reversible defaults)
+
+Picked while building MG-63; easy to change.
+
+- **Five list sources**, stored as `form`, `customers`, `personal`, `export`
+  and `other` (with a description of up to 200 characters). The API, the CLI
+  (`mailgoose import --list-source`, a required flag) and the import page all
+  require one. Imports made before this have none.
+- **The source is each contact's consent record.** Every contact an import adds
+  gets a consent record with source `import`, no IP, the import's id and time,
+  and the list source, its description and the file name as its wording. The
+  CSV export's signup columns stay for form signups only.
+- **The thresholds are config values** (`IMPORT_HOLD_*`, see the README),
+  defaulting to the ticket's numbers: role plus disposable over 10% of valid
+  rows, invalid over 5% of all rows, shared at least 50% of the file's distinct
+  addresses and at least 200. They're first guesses to tune with real imports.
+- **The percentages apply to small files too.** A 20-row file with 2 bad rows
+  is held. Easy to add a minimum size if that proves noisy.
+- **One reason is recorded,** the first that applies: shared list, then risky
+  addresses, then invalid rows, then a large first import. The report still
+  counts everything.
+- **Role addresses** are a vendored list of 65 local parts (info, sales,
+  admin, support, noreply ...), matched ignoring `+tags`, dots, dashes and
+  underscores. **Disposable domains** are the CC0
+  `disposable-email-domains` list (about 10,300 domains, taken 2026-11-19),
+  matched on the domain or any parent domain. Both live in
+  `internal/emaillists` with their source and date; refreshing them is a file
+  swap.
+- **The shared-list check compares hashes.** Each import keeps a SHA-256 of
+  each distinct address (with a fixed prefix, the same for every account, so
+  accounts can be compared), for as long as the import exists. "Shared" counts
+  the file's addresses that are in any other account's imports, and records the
+  account with most of them. Only admins see the shared count and that account's
+  id; the customer sees a plain message and never another account's contacts.
+  Hashes of common addresses can be guessed, so they're treated as personal
+  data and deleted with the import, the account, or an erased contact.
+
 ## 2026-11-19: Sliced first sends (MG-62, reversible defaults)
 
 Picked while building MG-62; each is easy to change.

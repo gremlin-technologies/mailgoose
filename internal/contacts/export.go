@@ -48,7 +48,7 @@ func (s *Service) ExportCSV(ctx context.Context, accountID string, f Filter, w i
 		FROM contacts
 		LEFT JOIN LATERAL (SELECT k.form_id AS signup_form, k.created_at AS signup_at, k.ip AS signup_ip,
 				k.confirmed_at AS signup_confirmed
-			FROM consents k WHERE k.contact_id = contacts.id ORDER BY k.created_at DESC, k.id DESC LIMIT 1) sc ON true
+			FROM consents k WHERE k.contact_id = contacts.id AND k.source = 'form' ORDER BY k.created_at DESC, k.id DESC LIMIT 1) sc ON true
 		WHERE account_id = $1`, []any{accountID})
 	q += ` ORDER BY created_at, id`
 	rows, err := s.DB.Query(ctx, q, args...)
@@ -119,19 +119,26 @@ type ContactData struct {
 	// SkippedRows are rows of the account's imports that held the contact's
 	// address and weren't added, as the skip report keeps them.
 	SkippedRows []ContactSkippedRow
-	// Consents are the contact's signups through forms, oldest first.
+	// Consents are the contact's consent records, oldest first: signups
+	// through forms, and the list source of the import that added it.
 	Consents []Consent
 }
 
-// Consent is the record of one signup through a form (CMP-3).
+// Consent is the record of one signup through a form (CMP-3), or of the
+// list source an import gave for the contact (MG-63).
 type Consent struct {
 	ID string
-	// FormID is nil once the form is deleted; Wording still says what it
-	// showed.
+	// FormID is nil once the form is deleted, and for an import; Wording
+	// still says what it showed.
 	FormID *string
+	// Source is "form" or "import".
 	Source string
-	IP     string
-	// Wording is what the form showed, as JSON.
+	// IP is where a form signup was posted from; nil for an import.
+	IP *string
+	// ImportID is the import, for an import's record, while it exists.
+	ImportID *string
+	// Wording is what the form showed, as JSON; for an import, its
+	// list_source, list_source_detail and file_name.
 	Wording     json.RawMessage
 	CreatedAt   time.Time
 	ConfirmedAt *time.Time
@@ -152,6 +159,10 @@ type ImportRef struct {
 	PermissionConfirmed bool
 	// Held means the contact waits for the import's review (MG-34).
 	Held bool
+	// ListSource and ListSourceDetail are where the account said the list
+	// came from (MG-63); nil for imports from before then.
+	ListSource       *string
+	ListSourceDetail *string
 }
 
 // ContactSkippedRow is a skipped import row with a contact's address.
@@ -194,9 +205,9 @@ func (s *Service) Data(ctx context.Context, accountID, id string) (*ContactData,
 
 	var im ImportRef
 	err = s.DB.QueryRow(ctx, `
-		SELECT i.id, i.file_name, i.created_at, i.permission_confirmed, c.held_import_id IS NOT NULL
+		SELECT i.id, i.file_name, i.created_at, i.permission_confirmed, c.held_import_id IS NOT NULL, i.list_source, i.list_source_detail
 		FROM contacts c JOIN imports i ON i.id = c.import_id WHERE c.id = $1`, c.ID).
-		Scan(&im.ID, &im.FileName, &im.CreatedAt, &im.PermissionConfirmed, &im.Held)
+		Scan(&im.ID, &im.FileName, &im.CreatedAt, &im.PermissionConfirmed, &im.Held, &im.ListSource, &im.ListSourceDetail)
 	switch {
 	case err == nil:
 		d.Import = &im
@@ -224,7 +235,7 @@ func (s *Service) Data(ctx context.Context, accountID, id string) (*ContactData,
 	}
 
 	rows, err = s.DB.Query(ctx, `
-		SELECT id, form_id, source, ip, wording, created_at, confirmed_at FROM consents
+		SELECT id, form_id, source, ip, import_id, wording, created_at, confirmed_at FROM consents
 		WHERE contact_id = $1 ORDER BY created_at, id`, c.ID)
 	if err != nil {
 		return nil, err
@@ -232,7 +243,7 @@ func (s *Service) Data(ctx context.Context, accountID, id string) (*ContactData,
 	defer rows.Close()
 	for rows.Next() {
 		var k Consent
-		if err := rows.Scan(&k.ID, &k.FormID, &k.Source, &k.IP, &k.Wording, &k.CreatedAt, &k.ConfirmedAt); err != nil {
+		if err := rows.Scan(&k.ID, &k.FormID, &k.Source, &k.IP, &k.ImportID, &k.Wording, &k.CreatedAt, &k.ConfirmedAt); err != nil {
 			return nil, err
 		}
 		d.Consents = append(d.Consents, k)
@@ -241,8 +252,8 @@ func (s *Service) Data(ctx context.Context, accountID, id string) (*ContactData,
 }
 
 // Erase deletes a contact and every trace of its address, for a data request
-// (CMP-9): the contact, its tags and signup records, and the address in
-// import skip reports. Only
+// (CMP-9): the contact, its tags and consent records, the address in import
+// skip reports and its hash among the account's imports. Only
 // a hash of the address stays, on the suppression list, so the address isn't
 // added back and mailed by mistake: with the contact's status if it
 // unsubscribed, bounced or complained, and as unsubscribed otherwise.
@@ -272,6 +283,10 @@ func (s *Service) Erase(ctx context.Context, accountID, id string) error {
 	}
 	// The skip report keeps the row and its reason, without the address.
 	if _, err := tx.Exec(ctx, `UPDATE import_skips s SET email = '' WHERE `+skipMatches, accountID, email); err != nil {
+		return err
+	}
+	// So does the hash kept to compare imports across accounts (MG-63).
+	if _, err := tx.Exec(ctx, `DELETE FROM import_address_hashes WHERE account_id = $1 AND hash = $2`, accountID, importHash(email)); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

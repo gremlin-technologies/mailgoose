@@ -15,7 +15,7 @@ func TestExportDataAndEraseThroughTheAPI(t *testing.T) {
 	h := importRunner{s.Handler(), s.Contacts}
 	addedTag(t, h)
 	rec := do(t, h, bearer(jsonRequest(http.MethodPost, "/v1/imports",
-		`{"csv":"email,first_name,tags\npat@example.com,Pat,\"vip, friends\"\nsam@example.com,=1+1,\nPAT@example.com,Again,\n","permission_confirmed":true}`))(t))
+		`{"list_source":"form","csv":"email,first_name,tags\npat@example.com,Pat,\"vip, friends\"\nsam@example.com,=1+1,\nPAT@example.com,Again,\n","permission_confirmed":true}`))(t))
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("import: %d %s", rec.Code, rec.Body)
 	}
@@ -61,8 +61,16 @@ func TestExportDataAndEraseThroughTheAPI(t *testing.T) {
 		} `json:"contact"`
 		Tags   []map[string]any `json:"tags"`
 		Import *struct {
-			PermissionConfirmed bool `json:"permission_confirmed"`
+			ID                  string `json:"id"`
+			PermissionConfirmed bool   `json:"permission_confirmed"`
+			ListSource          string `json:"list_source"`
 		} `json:"import"`
+		Consents []struct {
+			Source   string         `json:"source"`
+			IP       *string        `json:"ip"`
+			ImportID *string        `json:"import_id"`
+			Wording  map[string]any `json:"wording"`
+		} `json:"consents"`
 		SkippedRows []struct {
 			Row    int    `json:"row"`
 			Reason string `json:"reason"`
@@ -71,8 +79,14 @@ func TestExportDataAndEraseThroughTheAPI(t *testing.T) {
 	rec = do(t, h, bearer(request(http.MethodGet, pat+"/data"))(t))
 	decodeInto(t, rec, &data)
 	if rec.Code != http.StatusOK || data.Contact.Email != "pat@example.com" || len(data.Tags) != 2 || data.Import == nil ||
-		!data.Import.PermissionConfirmed || len(data.SkippedRows) != 1 || data.SkippedRows[0].Reason != "duplicate" {
+		!data.Import.PermissionConfirmed || data.Import.ListSource != "form" || len(data.SkippedRows) != 1 || data.SkippedRows[0].Reason != "duplicate" {
 		t.Errorf("data = %d %+v", rec.Code, data)
+	}
+
+	// The import's list source is the contact's consent record (MG-63).
+	if len(data.Consents) != 1 || data.Consents[0].Source != "import" || data.Consents[0].IP != nil ||
+		data.Consents[0].ImportID == nil || *data.Consents[0].ImportID != data.Import.ID || data.Consents[0].Wording["list_source"] != "form" {
+		t.Errorf("consents = %+v", data.Consents)
 	}
 
 	// Erase, then nothing is left but the suppression.

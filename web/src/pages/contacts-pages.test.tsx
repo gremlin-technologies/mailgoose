@@ -234,6 +234,10 @@ describe("imports", () => {
       skipped_by_reason: { invalid_email: status === "done" ? 1 : 0, invalid_row: 0, duplicate: status === "done" ? 1 : 0, exists: 0, suppressed: 0, over_limit: 0 },
       review: "none",
       hold_reason: null,
+      hold_message: null,
+      list_source: "other",
+      list_source_detail: "A trade show",
+      checks: { invalid_rows: status === "done" ? 1 : 0, role_addresses: status === "done" ? 2 : 0, disposable_addresses: 0 },
       error: null,
       created_at: "2026-11-18T10:00:00Z",
       started_at: "2026-11-18T10:00:01Z",
@@ -276,6 +280,11 @@ describe("imports", () => {
     await user.selectOptions(screen.getByLabelText("Tags"), "Groups");
     await user.click(screen.getByRole("checkbox", { name: "VIP" }));
     await user.click(screen.getByRole("checkbox", { name: /given me permission/ }));
+    // Where the list came from is required.
+    expect((screen.getByRole("button", { name: "Import contacts" }) as HTMLButtonElement).disabled).toBe(true);
+    await user.click(screen.getByRole("radio", { name: "Somewhere else" }));
+    expect((screen.getByRole("button", { name: "Import contacts" }) as HTMLButtonElement).disabled).toBe(true);
+    await user.type(screen.getByLabelText("Where, in a few words"), "A trade show");
     await user.click(screen.getByRole("button", { name: "Import contacts" }));
 
     await waitFor(() => expect(location()).toBe(`/contacts/imports/${importID}`));
@@ -285,12 +294,16 @@ describe("imports", () => {
       columns: { email: "E-mail Address", first_name: "Given name", last_name: "Surname", tags: "Groups" },
       tags: [tagVip.id],
       permission_confirmed: true,
+      list_source: "other",
+      list_source_detail: "A trade show",
     });
 
     expect(await screen.findByText("2 of 4 rows")).toBeTruthy();
     expect(await screen.findByText("Done", {}, { timeout: 3000 })).toBeTruthy();
     expect(screen.getByText("Not an email address: 1")).toBeTruthy();
     expect(screen.getByText("Repeated in the file: 1")).toBeTruthy();
+    expect(screen.getByText("Where they came from: A trade show")).toBeTruthy();
+    expect(screen.getByText("Role addresses (like info@ or sales@): 2")).toBeTruthy();
     expect(await screen.findByText("not-an-address")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Show more" }));
     expect(await screen.findByRole("cell", { name: "Repeated in the file" })).toBeTruthy();
@@ -299,10 +312,15 @@ describe("imports", () => {
   });
 
   it("explains a held import and a failed one", async () => {
-    let im = anImport("done", 4, { review: "held", hold_reason: "large_first_import", skipped: 0 });
+    let im = anImport("done", 4, {
+      review: "held",
+      hold_reason: "risky_addresses",
+      hold_message: "Many of these addresses are role addresses (like info@ or sales@) or throwaway inboxes.",
+      skipped: 0,
+    });
     const api = fakeApi({ ...signedIn, [`GET /v1/imports/${importID}`]: () => ({ status: 200, body: im }) });
     const { unmount } = renderApp(`/contacts/imports/${importID}`, api.fetch);
-    expect(await screen.findByText(/It's a large first import, so mailgoose checks it/)).toBeTruthy();
+    expect(await screen.findByText(/Many of these addresses are role addresses/)).toBeTruthy();
     unmount();
 
     im = anImport("failed", 2, { error: "The file isn't UTF-8 text." });

@@ -1325,9 +1325,21 @@ address already in the account, a suppressed address, or one past a
 free account's 500-contact limit are skipped and listed by
 `listImportSkippedRows`. Existing contacts aren't changed.
 
-An account's first import of more than 2,000 rows, or an import that
-would take a free account past its limit, is held for review: its
-contacts are added but not mailed until mailgoose approves it.
+Every import says where its people came from in `list_source`; an
+import carries no proof that they asked for mail, the way a form
+signup does. Each added contact's consent record (`getContactData`)
+keeps the source and when it was given.
+
+The file's addresses are checked as it's queued: `checks` counts rows
+that aren't addresses, role addresses (info@, sales@ ...) and
+addresses at disposable (throwaway) mail domains. An import is held
+for review when role and disposable addresses are over 10% of its
+valid rows, rows that aren't addresses are over 5% of all rows, or at
+least half of its addresses (and at least 200) are already on lists
+imported to other mailgoose accounts. So is an account's first import
+of more than 2,000 rows, and an import that would take a free account
+past its limit. A held import's contacts are added but not mailed
+until mailgoose approves it; `hold_message` says why it's held.
 
 The request body can be up to 10 MB.
 
@@ -1340,7 +1352,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `413`: `request_too_large`: the request body is over the operation's limit. [Error](#schema-error)
-- `422`: The file can't be imported, and nothing was queued. `code` says why: `no_rows`, `no_email_column` (name the column in `columns.email`), `invalid_mapping` (a named column isn't in the header), `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes), `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found` or `too_many_tags`. [Error](#schema-error)
+- `422`: The file can't be imported, and nothing was queued. `code` says why: `no_rows`, `no_email_column` (name the column in `columns.email`), `invalid_mapping` (a named column isn't in the header), `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes), `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found`, `too_many_tags`, `list_source_required` (say where the list came from), `list_source_detail_required` (describe an `other` source) or `invalid_list_source`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -2830,7 +2842,7 @@ Type: string: one of `form`, `import`, `api`, `manual`
 | `tags` | array of object | yes |  |
 | `import` | null or object | yes | The import that added the contact; null when none did. |
 | `skipped_rows` | array of object | yes | Rows of the account's imports with this address that weren't added. |
-| `consents` | array of object | yes | The contact's signups through signup forms, oldest first. |
+| `consents` | array of object | yes | The contact's consent records, oldest first: each signup through a signup form, and for a contact an import added, the list source the import gave and when. |
 
 <a id="schema-tagref"></a>
 
@@ -2944,6 +2956,31 @@ The header of the column each field comes from. Leave a field out to have it fou
 | `columns` | [ImportColumns](#schema-importcolumns) |  |  |
 | `tags` | array of string |  | Tags, by name or id, put on every contact the import adds. They must exist. |
 | `permission_confirmed` | boolean |  | True says the account has these people's permission to mail them, so they're added `subscribed`. Otherwise they're `unconfirmed` and don't receive campaigns. |
+| `list_source` | [ListSource](#schema-listsource) | yes |  |
+| `list_source_detail` | string or null |  | Where the people came from, in a few words. Required when `list_source` is `other`. |
+
+<a id="schema-listsource"></a>
+
+### ListSource
+
+Where an import's people came from. `form`: they signed up on my
+site or form. `customers`: they bought from me. `personal`: people I
+know personally. `export`: exported from another email tool.
+`other`: described in `list_source_detail`.
+
+Type: string: one of `form`, `customers`, `personal`, `export`, `other`
+
+<a id="schema-importchecks"></a>
+
+### ImportChecks
+
+What the checks found in the file when the import was queued.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `invalid_rows` | integer | yes | Rows that aren't an email address, or couldn't be read. |
+| `role_addresses` | integer | yes | Valid rows with a role address, such as info@, sales@ or admin@. |
+| `disposable_addresses` | integer | yes | Valid rows with an address at a disposable (throwaway) mail domain. |
 
 <a id="schema-importstatus"></a>
 
@@ -2982,7 +3019,11 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 | `skipped` | integer | yes |  |
 | `skipped_by_reason` | object | yes |  |
 | `review` | string: one of `none`, `held`, `approved` | yes | A `held` import's contacts aren't mailed until mailgoose approves it. |
-| `hold_reason` | string or null | yes | Why a held import is held: `large_first_import` or `over_contact_limit`. |
+| `hold_reason` | string or null | yes | Why a held import is held: `shared_list` (many of its addresses are on other accounts' lists), `risky_addresses` (many role or disposable addresses), `invalid_addresses` (many rows that aren't addresses), `large_first_import` or `over_contact_limit`. |
+| `hold_message` | string or null | yes | Why the import is held, in plain words, for showing to the account; null when it isn't held. |
+| `list_source` | null or [ListSource](#schema-listsource) | yes | Where the account said the people came from; null for imports made before it was asked. |
+| `list_source_detail` | string or null | yes |  |
+| `checks` | [ImportChecks](#schema-importchecks) | yes |  |
 | `error` | string or null | yes | Why a `failed` import stopped. |
 | `created_at` | string (date-time) | yes |  |
 | `started_at` | string (date-time) or null | yes |  |
@@ -4307,6 +4348,9 @@ Copies sent, and the recipients who hard bounced or complained.
 | `file_name` | string or null | yes |  |
 | `total_rows` | integer | yes |  |
 | `hold_reason` | string | yes |  |
+| `list_source` | string or null | yes |  |
+| `list_source_detail` | string or null | yes |  |
+| `checks` | object | yes | What the import's checks found. `shared_addresses` is how many of its distinct addresses other accounts imported, and `shared_account_id` the account with most of them; no addresses are shown. |
 | `status` | string | yes |  |
 | `created_at` | string (date-time) | yes |  |
 

@@ -100,6 +100,26 @@ type Config struct {
 
 	// Images is where uploaded pictures for image blocks go (DES-5).
 	Images Images
+
+	// ImportHold are the thresholds that hold a CSV import for review
+	// (MG-63).
+	ImportHold ImportHold
+}
+
+// ImportHold are the import checks' thresholds, as whole percentages and a
+// count. They're first guesses, to tune once real imports come in.
+type ImportHold struct {
+	// RiskyPercent (IMPORT_HOLD_RISKY_PERCENT, default 10): role plus
+	// disposable addresses over this share of the valid rows.
+	RiskyPercent int
+	// InvalidPercent (IMPORT_HOLD_INVALID_PERCENT, default 5): rows that
+	// aren't addresses over this share of all rows.
+	InvalidPercent int
+	// SharedPercent (IMPORT_HOLD_SHARED_PERCENT, default 50) and SharedMin
+	// (IMPORT_HOLD_SHARED_MIN, default 200): at least this share, and this
+	// many, of the file's addresses are in other accounts' imports.
+	SharedPercent int
+	SharedMin     int
 }
 
 // Images says where uploaded images are stored and served from. With
@@ -223,6 +243,25 @@ func load(getenv func(string) string) (Config, error) {
 	if sliceWait < time.Minute {
 		errs = append(errs, errors.New("SLICE_WAIT must be a minute or more"))
 	}
+	var hold ImportHold
+	for _, v := range []struct {
+		name string
+		def  int
+		max  int
+		to   *int
+	}{
+		{"IMPORT_HOLD_RISKY_PERCENT", 10, 100, &hold.RiskyPercent},
+		{"IMPORT_HOLD_INVALID_PERCENT", 5, 100, &hold.InvalidPercent},
+		{"IMPORT_HOLD_SHARED_PERCENT", 50, 100, &hold.SharedPercent},
+		{"IMPORT_HOLD_SHARED_MIN", 200, 100_000, &hold.SharedMin},
+	} {
+		n, err := intEnv(getenv, v.name, v.def)
+		errs = append(errs, err)
+		if n < 1 || n > v.max {
+			errs = append(errs, fmt.Errorf("%s must be 1 to %d", v.name, v.max))
+		}
+		*v.to = n
+	}
 
 	secrets, err := parseAppSecrets(getenv("APP_SECRETS_JSON"))
 	errs = append(errs, err)
@@ -259,6 +298,7 @@ func load(getenv func(string) string) (Config, error) {
 		MigrateOnStart:                migrate,
 		RateLimitPerMinute:            rateLimit,
 		AppSecrets:                    secrets,
+		ImportHold:                    hold,
 	}
 
 	secret := func(name string) string {

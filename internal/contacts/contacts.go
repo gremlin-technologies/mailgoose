@@ -84,8 +84,11 @@ type TagRef struct {
 
 // Service reads and changes contacts.
 type Service struct {
-	DB  *pgxpool.Pool
-	Now func() time.Time
+	DB *pgxpool.Pool
+	// Checks are the thresholds that hold an import for review (MG-63);
+	// zero values take DefaultImportChecks.
+	Checks ImportChecks
+	Now    func() time.Time
 }
 
 func (s *Service) now() time.Time {

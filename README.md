@@ -148,6 +148,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `SEND_QUEUE_URL`, `SES_EVENTS_QUEUE_URL` | Queues the worker drains. Without `SEND_QUEUE_URL` the worker batches and sends campaigns itself, through a queue in memory (local). |
 | `SEND_RATE_PER_SECOND` | Campaign emails sent a second, across every worker. Default 10. |
 | `ACCOUNT_DAILY_SEND_LIMIT`, `NEW_ACCOUNT_DAILY_SEND_LIMIT` | The most campaign emails an account may send in any 24 hours (10,000 by default), and its limit in its first 7 days (1,000). In between the limit grows on a schedule (see [Account health](#account-health-and-send-limits)). An account's own `daily_send_limit` overrides both. |
+| `IMPORT_HOLD_RISKY_PERCENT`, `IMPORT_HOLD_INVALID_PERCENT`, `IMPORT_HOLD_SHARED_PERCENT`, `IMPORT_HOLD_SHARED_MIN` | When an import is held for review: role plus disposable addresses over 10% of its valid rows, invalid rows over 5% of all rows, or at least 50% of its addresses, and at least 200, in other accounts' imports. Percentages are 1 to 100. |
 | `OPS_ALERT_EMAIL` | Where to email an alert when an account is paused automatically, or a payment needs refunding or cancelling by hand in Stripe. Unset, these are only logged (as errors). |
 | `ABUSE_EMAIL` | Where a suspended account's owner appeals: the Reply-To of the email that tells them about the suspension, and named in its errors. Defaults to `abuse@` the `SYSTEM_SENDING_DOMAIN`; that mailbox has to exist. |
 | `SYSTEM_SENDING_DOMAIN` | mailgoose's own sending domain; sign-in codes come from `signin@` it. Defaults to `mail.localhost` when mail is captured (`MAIL_SENDER=fake`). Unset with SES, sign-up and sign-in answer 503. |
@@ -410,13 +411,19 @@ mailgoose tags delete vip --yes   # says how many contacts lost it
 
 Import a CSV with `mailgoose import`. Columns are detected from common headers
 or named with `--map`; contacts are `unconfirmed` unless you pass
-`--permission-confirmed`. Imports run in the worker (`contacts.Service.RunImports`), and
-the result lists every skipped row with its reason. A first import over 2,000
-rows, or one that would pass the free limit, is held: its contacts aren't
-campaign recipients until an admin approves it.
+`--permission-confirmed`. `--list-source` (where the people came from) is
+required and is kept as each contact's consent record. Imports run in the
+worker (`contacts.Service.RunImports`), and the result lists every skipped row
+with its reason and counts invalid, role and disposable-domain addresses. An
+import is held when those counts are too high (`IMPORT_HOLD_RISKY_PERCENT`,
+default 10, and `IMPORT_HOLD_INVALID_PERCENT`, default 5), when at least
+`IMPORT_HOLD_SHARED_PERCENT` (50) of its addresses, and at least
+`IMPORT_HOLD_SHARED_MIN` (200), are in other accounts' imports (compared as
+hashes), when it's a first import over 2,000 rows, or when it would pass the
+free limit: its contacts aren't campaign recipients until an admin approves it.
 
 ```sh
-mailgoose import contacts.csv --map email=Email --tag newsletter --permission-confirmed --wait
+mailgoose import contacts.csv --list-source form --map email=Email --tag newsletter --permission-confirmed --wait
 mailgoose import status <id>      # progress, then skipped rows
 mailgoose import list
 ```

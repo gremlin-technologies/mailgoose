@@ -256,14 +256,28 @@ func (s *Service) FindAccounts(ctx context.Context, q string, limit int) ([]Acco
 	})
 }
 
-// HeldImport is an import waiting for approval (CON-6).
+// HeldImport is an import waiting for approval (CON-6), with what its list
+// checks found (MG-63). It shows counts and another account's id, never
+// another account's addresses.
 type HeldImport struct {
-	ID         string    `json:"id"`
-	FileName   *string   `json:"file_name"`
-	TotalRows  int       `json:"total_rows"`
-	HoldReason string    `json:"hold_reason"`
-	Status     string    `json:"status"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID               string      `json:"id"`
+	FileName         *string     `json:"file_name"`
+	TotalRows        int         `json:"total_rows"`
+	HoldReason       string      `json:"hold_reason"`
+	Status           string      `json:"status"`
+	ListSource       *string     `json:"list_source"`
+	ListSourceDetail *string     `json:"list_source_detail"`
+	Checks           ImportCheck `json:"checks"`
+	CreatedAt        time.Time   `json:"created_at"`
+}
+
+// ImportCheck is what a held import's checks found.
+type ImportCheck struct {
+	InvalidRows         int     `json:"invalid_rows"`
+	RoleAddresses       int     `json:"role_addresses"`
+	DisposableAddresses int     `json:"disposable_addresses"`
+	SharedAddresses     int     `json:"shared_addresses"`
+	SharedAccountID     *string `json:"shared_account_id"`
 }
 
 // LiveCampaign is a campaign that's scheduled, sending or paused.
@@ -349,14 +363,17 @@ func (s *Service) GetAccount(ctx context.Context, id string) (*Account, error) {
 	}
 
 	rows, err = s.DB.Query(ctx, `
-		SELECT id, file_name, total_rows, coalesce(hold_reason, ''), status, created_at FROM imports
+		SELECT id, file_name, total_rows, coalesce(hold_reason, ''), status, list_source, list_source_detail,
+			invalid_rows, role_addresses, disposable_addresses, shared_addresses, shared_account_id::text, created_at FROM imports
 		WHERE account_id = $1 AND review = 'held' ORDER BY created_at`, id)
 	if err != nil {
 		return nil, err
 	}
 	if a.HeldImports, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (HeldImport, error) {
 		var h HeldImport
-		err := row.Scan(&h.ID, &h.FileName, &h.TotalRows, &h.HoldReason, &h.Status, &h.CreatedAt)
+		c := &h.Checks
+		err := row.Scan(&h.ID, &h.FileName, &h.TotalRows, &h.HoldReason, &h.Status, &h.ListSource, &h.ListSourceDetail,
+			&c.InvalidRows, &c.RoleAddresses, &c.DisposableAddresses, &c.SharedAddresses, &c.SharedAccountID, &h.CreatedAt)
 		return h, err
 	}); err != nil {
 		return nil, err

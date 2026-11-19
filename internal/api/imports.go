@@ -39,6 +39,8 @@ func (s *Server) importError(w http.ResponseWriter, r *http.Request, err error) 
 			e = e.WithHint("Name the columns with `columns`, or `--map email=<header>` in the CLI.")
 		case "tag_not_found":
 			e = e.WithHint("`mailgoose tags create <name>` makes it.")
+		case "list_source_required", "invalid_list_source", "list_source_detail_required":
+			e = e.WithHint("Send `list_source`, or `--list-source` in the CLI: form, customers, personal, export, or other with `list_source_detail`.")
 		}
 		WriteError(w, e)
 	case errors.Is(err, contacts.ErrImportNotFound):
@@ -64,10 +66,19 @@ func importJSON(im *contacts.Import) apigen.Import {
 		Skipped:       im.Skipped,
 		Review:        apigen.ImportReview(im.Review),
 		HoldReason:    im.HoldReason,
-		Error:         im.Error,
-		CreatedAt:     im.CreatedAt.UTC(),
-		StartedAt:     utcPtr(im.StartedAt),
-		FinishedAt:    utcPtr(im.FinishedAt),
+		ListSource:    (*apigen.ListSource)(im.ListSource),
+		Checks: apigen.ImportChecks{InvalidRows: im.Checks.InvalidRows, RoleAddresses: im.Checks.RoleAddresses,
+			DisposableAddresses: im.Checks.DisposableAddresses},
+		ListSourceDetail: im.ListSourceDetail,
+		Error:            im.Error,
+		CreatedAt:        im.CreatedAt.UTC(),
+		StartedAt:        utcPtr(im.StartedAt),
+		FinishedAt:       utcPtr(im.FinishedAt),
+	}
+	if im.Review == contacts.ReviewHeld && im.HoldReason != nil {
+		if m := contacts.HoldMessage(*im.HoldReason); m != "" {
+			out.HoldMessage = &m
+		}
 	}
 	out.Columns.Email = im.EmailColumn
 	out.Columns.FirstName = im.FirstNameColumn
@@ -103,7 +114,7 @@ func (s *Server) CreateImport(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	in := contacts.ImportInput{CSV: []byte(req.Csv)}
+	in := contacts.ImportInput{CSV: []byte(req.Csv), ListSource: string(req.ListSource), ListSourceDetail: deref(req.ListSourceDetail)}
 	if req.FileName != nil {
 		in.FileName = *req.FileName
 	}

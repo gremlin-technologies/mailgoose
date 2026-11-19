@@ -33,17 +33,25 @@ type importJob struct {
 		Status    *string `json:"status"`
 		Tags      *string `json:"tags"`
 	} `json:"columns"`
-	TotalRows       int            `json:"total_rows"`
-	ProcessedRows   int            `json:"processed_rows"`
-	Imported        int            `json:"imported"`
-	Skipped         int            `json:"skipped"`
-	SkippedByReason map[string]int `json:"skipped_by_reason"`
-	Review          string         `json:"review"`
-	HoldReason      *string        `json:"hold_reason"`
-	Error           *string        `json:"error"`
-	CreatedAt       time.Time      `json:"created_at"`
-	StartedAt       *time.Time     `json:"started_at"`
-	FinishedAt      *time.Time     `json:"finished_at"`
+	TotalRows        int            `json:"total_rows"`
+	ProcessedRows    int            `json:"processed_rows"`
+	Imported         int            `json:"imported"`
+	Skipped          int            `json:"skipped"`
+	SkippedByReason  map[string]int `json:"skipped_by_reason"`
+	Review           string         `json:"review"`
+	HoldReason       *string        `json:"hold_reason"`
+	HoldMessage      *string        `json:"hold_message"`
+	ListSource       *string        `json:"list_source"`
+	ListSourceDetail *string        `json:"list_source_detail"`
+	Checks           struct {
+		InvalidRows         int `json:"invalid_rows"`
+		RoleAddresses       int `json:"role_addresses"`
+		DisposableAddresses int `json:"disposable_addresses"`
+	} `json:"checks"`
+	Error      *string    `json:"error"`
+	CreatedAt  time.Time  `json:"created_at"`
+	StartedAt  *time.Time `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at"`
 }
 
 type importPage struct {
@@ -75,11 +83,31 @@ var skipReasons = []struct{ code, text string }{
 	{"over_limit", "over the free plan's 500 contacts"},
 }
 
-func holdText(reason *string) string {
-	if reason != nil && *reason == "over_contact_limit" {
-		return "it would take the account past its contact limit"
+// listSources are the API's list sources, in the order the CLI shows them.
+var listSources = []struct{ code, text string }{
+	{"form", "signed up on my site or form"},
+	{"customers", "customers who bought from me"},
+	{"personal", "people I know personally"},
+	{"export", "another email tool (an export)"},
+	{"other", "other, described with --list-source-detail"},
+}
+
+func listSourceText(code string) string {
+	for _, s := range listSources {
+		if s.code == code {
+			return s.text
+		}
 	}
-	return "it's the account's first import and has more than 2,000 rows"
+	return code
+}
+
+// listSourceHelp lists the list sources for errors and help.
+func listSourceHelp() string {
+	var b strings.Builder
+	for _, s := range listSources {
+		fmt.Fprintf(&b, "\n  %-10s %s", s.code, s.text)
+	}
+	return b.String()
 }
 
 // skippedRows fetches every skipped row of an import.
@@ -138,8 +166,23 @@ func (a *App) printImport(ctx context.Context, j importJob) error {
 		fmt.Fprintf(a.Stdout, "Import %s%s is done: %d of %d rows added as %s contacts, %d skipped.\n",
 			j.ID, name, j.Imported, j.TotalRows, j.ContactStatus, j.Skipped)
 	}
+	if j.ListSource != nil {
+		src := listSourceText(*j.ListSource)
+		if j.ListSourceDetail != nil {
+			src = "other: " + *j.ListSourceDetail
+		}
+		fmt.Fprintf(a.Stdout, "List source: %s.\n", src)
+	}
+	if c := j.Checks; c.InvalidRows+c.RoleAddresses+c.DisposableAddresses > 0 {
+		fmt.Fprintf(a.Stdout, "Checks: %d invalid rows, %d role addresses (like info@), %d disposable-domain addresses.\n",
+			c.InvalidRows, c.RoleAddresses, c.DisposableAddresses)
+	}
 	if j.Review == "held" {
-		fmt.Fprintf(a.Stdout, "Held for review because %s. Its contacts won't receive campaigns until mailgoose approves it.\n", holdText(j.HoldReason))
+		msg := "mailgoose checks it before these contacts get campaigns."
+		if j.HoldMessage != nil {
+			msg = *j.HoldMessage
+		}
+		fmt.Fprintf(a.Stdout, "Held for review. %s Its contacts won't receive campaigns until mailgoose approves it.\n", msg)
 	}
 	if j.Status == "queued" || j.Status == "running" {
 		fmt.Fprintf(a.Stdout, "Check again with: mailgoose import status %s\n", j.ID)
@@ -198,6 +241,7 @@ var importFields = map[string]string{
 
 func (a *App) importCmd() *cobra.Command {
 	var maps, tags []string
+	var listSource, listSourceDetail string
 	var permission, wait bool
 	cmd := callsAll([]string{"createImport", "getImport", "listImportSkippedRows"}, &cobra.Command{
 		Use:   "import <file.csv>",
@@ -207,6 +251,10 @@ first name and last name columns are found from common headers ("Email",
 "Email Address", "First Name", "Surname" ...); name any others with --map.
 Commas, semicolons and tabs all work. Pass - to read the file from standard
 input. A file from "mailgoose export" imports as the same contacts and tags.
+
+--list-source is required: say where these people came from.` + listSourceHelp() + `
+With other, describe it in --list-source-detail. The source and the time are
+kept as each added contact's consent record.
 
 Contacts are added unconfirmed, and don't receive campaigns, unless you pass
 --permission-confirmed to say you have these people's permission to email
@@ -220,16 +268,29 @@ account, an address that unsubscribed, bounced or complained before, or one
 past the free plan's 500 contacts are skipped and listed by
 "mailgoose import status". Existing contacts aren't changed.
 
-The import runs in the background; --wait waits for it to finish. An
-account's first import of more than 2,000 rows, or one that would take it past
-its contact limit, is held for review: its contacts are added but not mailed
-until mailgoose approves it.`,
-		Example: `  mailgoose import contacts.csv --permission-confirmed --wait
-  mailgoose import export.csv --map email="E-mail" --map first_name=Vorname --tag newsletter
+The file is checked as it's imported: rows that aren't addresses, role
+addresses (info@, sales@ ...) and addresses at disposable domains are counted
+in the report. The import runs in the background; --wait waits for it to
+finish. It's held for review when too many rows are invalid, role or
+disposable, or many of its addresses are on lists other accounts imported; so
+is an account's first import of more than 2,000 rows, or one that would take
+it past its contact limit. A held import's contacts are added but not mailed
+until mailgoose approves it, and "mailgoose import status" says why it's held.`,
+		Example: `  mailgoose import contacts.csv --list-source form --permission-confirmed --wait
+  mailgoose import export.csv --list-source export --map email="E-mail" --map first_name=Vorname --tag newsletter
+  mailgoose import fair.csv --list-source other --list-source-detail "Signed up at our trade show stand"
   mailgoose import status <id>`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body := map[string]any{}
+			if strings.TrimSpace(listSource) == "" {
+				return usageError("--list-source is required: say where these contacts came from.",
+					"Pass one of:"+listSourceHelp())
+			}
+			body["list_source"] = strings.TrimSpace(listSource)
+			if strings.TrimSpace(listSourceDetail) != "" {
+				body["list_source_detail"] = listSourceDetail
+			}
 			columns := map[string]string{}
 			for _, m := range maps {
 				field, header, ok := strings.Cut(m, "=")
@@ -282,6 +343,8 @@ until mailgoose approves it.`,
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "tag (name or id) to put on every added contact; repeatable; it must exist")
 	cmd.Flags().BoolVar(&permission, "permission-confirmed", false, "you have these people's permission to email them: add them subscribed, not unconfirmed")
 	cmd.Flags().BoolVar(&wait, "wait", false, "wait for the import to finish and show the result")
+	cmd.Flags().StringVar(&listSource, "list-source", "", "required: where these contacts came from: form, customers, personal, export or other")
+	cmd.Flags().StringVar(&listSourceDetail, "list-source-detail", "", "with --list-source other, a few words on where these contacts came from")
 
 	status := callsAll([]string{"getImport", "listImportSkippedRows"}, &cobra.Command{
 		Use:     "status <id>",

@@ -164,15 +164,19 @@ are estimates: many mail apps load images on their own, or never.
 
 ```sh
 mailgoose contacts add pat@example.com --first-name Pat --json
-mailgoose import contacts.csv --wait --json
+mailgoose import contacts.csv --list-source form --wait --json
 mailgoose tags add VIP pat@example.com --json
 mailgoose form create --name "Footer" --json
 mailgoose form embed <form-id> > signup.html
 ```
 
-Import only people who agreed to hear from the person you help. Without
-`--permission-confirmed`, imported contacts start unconfirmed and get a
-confirmation email first. Signup forms ask people to confirm by email unless
+Import only people who agreed to hear from the person you help.
+`--list-source` is required and you can't guess it: ask the person where the
+list came from (`form`, `customers`, `personal`, `export`, or `other` with
+`--list-source-detail`). Without `--permission-confirmed`, imported contacts
+start unconfirmed and get a confirmation email first. An import with many bad,
+role or throwaway addresses, or one that looks like a shared list, is held for
+review; `hold_message` says why. Signup forms ask people to confirm by email unless
 the person turns that off.
 
 ## When something fails

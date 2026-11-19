@@ -42,7 +42,8 @@ type contactConsentJSON struct {
 	ID          string          `json:"id"`
 	FormID      *string         `json:"form_id"`
 	Source      string          `json:"source"`
-	IP          string          `json:"ip"`
+	IP          *string         `json:"ip"`
+	ImportID    *string         `json:"import_id"`
 	Wording     json.RawMessage `json:"wording"`
 	CreatedAt   time.Time       `json:"created_at"`
 	ConfirmedAt *time.Time      `json:"confirmed_at"`
@@ -60,6 +61,8 @@ type contactImportJSON struct {
 	CreatedAt           time.Time `json:"created_at"`
 	PermissionConfirmed bool      `json:"permission_confirmed"`
 	Held                bool      `json:"held"`
+	ListSource          *string   `json:"list_source"`
+	ListSourceDetail    *string   `json:"list_source_detail"`
 }
 
 type contactSkippedJSON struct {
@@ -82,13 +85,13 @@ func contactDataBody(d *contacts.ContactData) contactDataJSON {
 			t := k.ConfirmedAt.UTC()
 			confirmed = &t
 		}
-		out.Consents[i] = contactConsentJSON{k.ID, k.FormID, k.Source, k.IP, k.Wording, k.CreatedAt.UTC(), confirmed}
+		out.Consents[i] = contactConsentJSON{k.ID, k.FormID, k.Source, k.IP, k.ImportID, k.Wording, k.CreatedAt.UTC(), confirmed}
 	}
 	for i, t := range d.Tags {
 		out.Tags[i] = contactTagJSON{t.ID, t.Name, t.AddedAt.UTC()}
 	}
 	if im := d.Import; im != nil {
-		out.Import = &contactImportJSON{im.ID, im.FileName, im.CreatedAt.UTC(), im.PermissionConfirmed, im.Held}
+		out.Import = &contactImportJSON{im.ID, im.FileName, im.CreatedAt.UTC(), im.PermissionConfirmed, im.Held, im.ListSource, im.ListSourceDetail}
 	}
 	for i, sr := range d.SkippedRows {
 		out.SkippedRows[i] = contactSkippedJSON{sr.ImportID, sr.FileName, sr.Row, sr.Reason}
