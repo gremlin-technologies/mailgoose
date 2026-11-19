@@ -94,6 +94,7 @@ export function CampaignDetail() {
         />
       ) : (
         <>
+          {c.slice && <SliceNotice campaign={c} />}
           <Facts campaign={c} />
           {c.status !== "scheduled" && c.status !== "cancelled" && (
             <div>
@@ -111,10 +112,68 @@ export function CampaignDetail() {
               }}
             />
           )}
+          {c.status === "sending" && (c.slice?.state === "slice_hold" || c.slice?.state === "held") && (
+            <CancelPanel
+              campaign={c}
+              heading="Cancel the rest"
+              button="Cancel the rest"
+              about={`The rest won't get it, and the credits held for them come back. The first ${plural(c.slice.size, "recipient")} already have it.`}
+              done="Cancelled. The rest won't get it, and the credits held for them came back."
+              changed={(next, message) => {
+                changed(next);
+                setNotice(message);
+              }}
+            />
+          )}
         </>
       )}
     </section>
   );
+}
+
+/**
+ * Where a new account's first slice stands (MG-62): it goes out to a few
+ * recipients first, and the rest waits for their bounces and complaints.
+ */
+export function SliceNotice({ campaign: c }: { campaign: Campaign }) {
+  const s = c.slice;
+  if (!s) return null;
+  const first = `the first ${plural(s.size, "recipient")}`;
+  const until = s.release_at ? formatDate(s.release_at) : "later";
+  switch (s.state) {
+    case "sending_slice":
+      return (
+        <p className="notice" role="status">
+          New accounts send in two steps. It's going to {first} now; the rest waits for their bounces and complaints.
+        </p>
+      );
+    case "slice_hold":
+      return (
+        <p className="notice" role="status">
+          It went to {first}. The rest goes {until} if their bounces and complaints are within the limits.
+        </p>
+      );
+    case "held":
+      return (
+        <p className="notice notice-warn" role="status">
+          Too many of {first} bounced or marked it as spam, so your daily send limit is lowered and the rest is held
+          until {until}. It's checked again then.
+        </p>
+      );
+    case "released":
+      return (
+        <p className="notice muted" role="status">
+          It went to {first}, then to the rest once their bounces and complaints were within the limits.
+        </p>
+      );
+    case "stopped":
+      return (
+        <p className="notice notice-warn" role="status">
+          Too many of {first} bounced or marked it as spam, so the rest wasn't sent and its credits came back. Sending is
+          paused for your account; we'll be in touch by email.
+        </p>
+      );
+  }
 }
 
 /** One line on where the campaign stands. */
@@ -126,6 +185,8 @@ function StatusLine({ campaign: c }: { campaign: Campaign }) {
     case "scheduled":
       return <>Goes out {formatDate(c.send_at)} to {plural(n, "contact")}. You can move or cancel it until then.</>;
     case "sending":
+      if (c.slice?.state === "slice_hold" || c.slice?.state === "held")
+        return <>Sent to the first {plural(c.slice.size, "contact")} of {n.toLocaleString()} so far; the rest waits.</>;
       return <>Sending to {plural(n, "contact")} now. This page updates by itself.</>;
     case "sent":
       return <>Sent to {plural(n, "contact")}.</>;
@@ -289,7 +350,6 @@ function DeleteDraft({ campaign: c }: { campaign: Campaign }) {
 function Scheduled({ campaign: c, changed }: { campaign: Campaign; changed: (c: Campaign, message: string) => void }) {
   const api = useApi();
   const [at, setAt] = useState(toLocalInput(c.send_at));
-  const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure>();
   const [problem, setProblem] = useState<string>();
@@ -309,16 +369,6 @@ function Scheduled({ campaign: c, changed }: { campaign: Campaign; changed: (c: 
     if (res.data) changed(res.data, `Moved. It now goes out ${formatDate(res.data.send_at)}.`);
   }
 
-  async function cancel() {
-    setBusy(true);
-    setFailure(undefined);
-    const res = await attempt(() => api.POST("/v1/campaigns/{campaign_id}/cancel", { params: { path: { campaign_id: c.id } } }));
-    setBusy(false);
-    setConfirm(false);
-    if (!res.ok) return setFailure(res.failure);
-    if (res.data) changed(res.data, "Cancelled. Nobody gets it, and the credits held for it came back.");
-  }
-
   return (
     <>
       <form className="panel row-form" onSubmit={move} aria-label="Move send time">
@@ -335,12 +385,55 @@ function Scheduled({ campaign: c, changed }: { campaign: Campaign; changed: (c: 
           {problem}
         </p>
       )}
+      <CancelPanel
+        campaign={c}
+        heading="Cancel this campaign"
+        button="Cancel campaign"
+        about={`Nobody gets it, and the ${plural(c.launch?.credits_reserved ?? 0, "credit")} held for it come back. A cancelled campaign can't be launched again.`}
+        done="Cancelled. Nobody gets it, and the credits held for it came back."
+        changed={changed}
+      />
+      <FailureNotice failure={failure} />
+    </>
+  );
+}
+
+/** Cancels a scheduled campaign, or the rest of one whose slice is waiting. */
+function CancelPanel({
+  campaign: c,
+  heading,
+  button,
+  about,
+  done,
+  changed,
+}: {
+  campaign: Campaign;
+  heading: string;
+  button: string;
+  about: string;
+  done: string;
+  changed: (c: Campaign, message: string) => void;
+}) {
+  const api = useApi();
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Failure>();
+
+  async function cancel() {
+    setBusy(true);
+    setFailure(undefined);
+    const res = await attempt(() => api.POST("/v1/campaigns/{campaign_id}/cancel", { params: { path: { campaign_id: c.id } } }));
+    setBusy(false);
+    setConfirm(false);
+    if (!res.ok) return setFailure(res.failure);
+    if (res.data) changed(res.data, done);
+  }
+
+  return (
+    <>
       <div className="panel danger-zone">
-        <h2>Cancel this campaign</h2>
-        <p className="muted">
-          Nobody gets it, and the {plural(c.launch?.credits_reserved ?? 0, "credit")} held for it come back. A cancelled
-          campaign can't be launched again.
-        </p>
+        <h2>{heading}</h2>
+        <p className="muted">{about}</p>
         {confirm ? (
           <div className="row">
             <button type="button" className="button danger" onClick={() => void cancel()} disabled={busy}>
@@ -353,7 +446,7 @@ function Scheduled({ campaign: c, changed }: { campaign: Campaign; changed: (c: 
         ) : (
           <div>
             <button type="button" className="button" onClick={() => setConfirm(true)}>
-              Cancel campaign
+              {button}
             </button>
           </div>
         )}

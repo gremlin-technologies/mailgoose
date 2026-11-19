@@ -4,6 +4,35 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-19: Sliced first sends (MG-62, reversible defaults)
+
+Picked while building MG-62; each is easy to change.
+
+- **Who is sliced.** An account in its first 30 days, or before its fourth
+  launched campaign, whichever ends later. Decided at launch, so a scheduled
+  campaign keeps the slice it was launched with.
+- **The slice.** 10% of the recipients, rounded up, at least 200, picked at
+  random so a bad batch of contacts added last can't hide at the end of the
+  list. Lists of 200 or fewer go out whole. `SLICE_PERCENT`, `SLICE_MIN` and
+  `SLICE_WAIT` (default 60m) change them.
+- **The check uses the slice alone, whatever its size.** The usual check
+  needs 500 copies; a slice of 200 would never reach it. So one complaint in
+  a slice of 200 (0.5%) pauses the account. Still open for the owner (see
+  Open questions).
+- **Over the pause limits:** the account is paused through the automatic
+  pause, the rest is skipped and its credits come back, and the campaign
+  ends as cancelled, with its slice marked `stopped`.
+- **Over the early-warning limits only:** the account is throttled (MG-61)
+  and the rest held until the throttle lifts, then checked again against
+  the pause limits and released or stopped. A campaign throttled already
+  waits for the account's current throttle.
+- **The campaign's status stays `sending` while it waits;** where it stands
+  is in a new `slice` object on the campaign (`sending_slice`, `slice_hold`,
+  `held`, `released`, `stopped`, with the release time). This keeps the
+  status list as it is for clients that switch on it.
+- **The account can cancel the rest while it waits,** with the usual cancel.
+  Nobody else gets it, and the credits come back.
+
 ## 2026-11-19: Account suspension (MG-65, reversible defaults)
 
 Picked while building MG-65; easy to change. Suspension leaves credits alone,
@@ -1718,6 +1747,11 @@ Decided by the owner in the PRD scoping call and follow-ups.
   MG-43, for MG-39 and MG-40 to settle.)
 - Early-warning thresholds that throttle an account: 0.1% complaints and 2%
   hard bounces? (Default: those; config values. MG-61, see 2026-11-19.)
+- A new account's first slice is checked against the pause limits however
+  small it is, so one complaint in 200 pauses the account: is that strict
+  enough to keep, or should a slice need a few complaints first? (Default:
+  as the ticket says, the same limits on the slice alone. MG-62, see
+  2026-11-19.)
 - Should pack prices include sales tax, or have it added at checkout?
   (Default: added on top, which is usual for US software. See 2026-11-18,
   MG-39.)

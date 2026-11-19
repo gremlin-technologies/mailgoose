@@ -95,6 +95,13 @@ func campaignJSON(c *campaigns.Campaign) apigen.Campaign {
 		}
 		out.Launch = l
 	}
+	if sl := c.Slice; sl != nil {
+		out.Slice = &apigen.CampaignSlice{State: apigen.CampaignSliceState(sl.State), Size: sl.Size}
+		if sl.ReleaseAt != nil {
+			at := sl.ReleaseAt.UTC()
+			out.Slice.ReleaseAt = &at
+		}
+	}
 	return out
 }
 

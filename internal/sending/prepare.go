@@ -34,6 +34,9 @@ type Service struct {
 	Mail        mail.Sender
 	// Limits are the send limits, for showing an account its own.
 	Limits Limits
+	// Slicing is how a new account's campaigns are sliced (MG-62); zero
+	// values are the defaults.
+	Slicing Slicing
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }

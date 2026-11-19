@@ -3,6 +3,7 @@ package config
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func env(m map[string]string) func(string) string {
@@ -182,6 +183,28 @@ func TestEarlyWarningSettings(t *testing.T) {
 	for name, bads := range map[string][]string{
 		"EARLY_WARNING_COMPLAINT_PERCENT":   {"0", "-1", "0.3", "1", "lots"},
 		"EARLY_WARNING_HARD_BOUNCE_PERCENT": {"0", "5", "12"},
+	} {
+		for _, bad := range bads {
+			if _, err := load(env(map[string]string{name: bad})); err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("%s=%q: %v", name, bad, err)
+			}
+		}
+	}
+}
+
+func TestSliceSettings(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || cfg.SlicePercent != 10 || cfg.SliceMin != 200 || cfg.SliceWait != time.Hour {
+		t.Fatalf("defaults = %d, %d, %s, %v", cfg.SlicePercent, cfg.SliceMin, cfg.SliceWait, err)
+	}
+	cfg, err = load(env(map[string]string{"SLICE_PERCENT": "20", "SLICE_MIN": "50", "SLICE_WAIT": "90m"}))
+	if err != nil || cfg.SlicePercent != 20 || cfg.SliceMin != 50 || cfg.SliceWait != 90*time.Minute {
+		t.Fatalf("set = %d, %d, %s, %v", cfg.SlicePercent, cfg.SliceMin, cfg.SliceWait, err)
+	}
+	for name, bads := range map[string][]string{
+		"SLICE_PERCENT": {"0", "101", "ten"},
+		"SLICE_MIN":     {"0", "-5"},
+		"SLICE_WAIT":    {"30s", "soon", "1"},
 	} {
 		for _, bad := range bads {
 			if _, err := load(env(map[string]string{name: bad})); err == nil || !strings.Contains(err.Error(), name) {

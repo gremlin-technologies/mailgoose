@@ -186,6 +186,33 @@ func (e ButtonBlockType) Valid() bool {
 	}
 }
 
+// Defines values for CampaignSliceState.
+const (
+	CampaignSliceStateHeld         CampaignSliceState = "held"
+	CampaignSliceStateReleased     CampaignSliceState = "released"
+	CampaignSliceStateSendingSlice CampaignSliceState = "sending_slice"
+	CampaignSliceStateSliceHold    CampaignSliceState = "slice_hold"
+	CampaignSliceStateStopped      CampaignSliceState = "stopped"
+)
+
+// Valid indicates whether the value is a known member of the CampaignSliceState enum.
+func (e CampaignSliceState) Valid() bool {
+	switch e {
+	case CampaignSliceStateHeld:
+		return true
+	case CampaignSliceStateReleased:
+		return true
+	case CampaignSliceStateSendingSlice:
+		return true
+	case CampaignSliceStateSliceHold:
+		return true
+	case CampaignSliceStateStopped:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CampaignStatus.
 const (
 	CampaignStatusCancelled CampaignStatus = "cancelled"
@@ -1476,6 +1503,13 @@ type Campaign struct {
 	// SendAt When it goes out; null for when it's launched.
 	SendAt *time.Time `json:"send_at"`
 
+	// Slice A new account's campaign goes out first to a slice of its
+	// recipients, picked at random, then waits for bounces and complaints
+	// before the rest is released (MG-62). An account is new for its
+	// first 30 days or its first 3 launched campaigns, whichever ends
+	// later. Present only on a campaign launched in a slice.
+	Slice *CampaignSlice `json:"slice,omitempty"`
+
 	// Status `draft` is being set up; `scheduled` is launched and waiting for its
 	// send time; `sending`, then `sent`. `cancelled` was stopped by the
 	// account, `paused` by us mid-send, and `failed` couldn't finish.
@@ -1566,6 +1600,39 @@ type CampaignReport struct {
 	// Unsubscribes People who unsubscribed from this campaign's link.
 	Unsubscribes int `json:"unsubscribes"`
 }
+
+// CampaignSlice A new account's campaign goes out first to a slice of its
+// recipients, picked at random, then waits for bounces and complaints
+// before the rest is released (MG-62). An account is new for its
+// first 30 days or its first 3 launched campaigns, whichever ends
+// later. Present only on a campaign launched in a slice.
+type CampaignSlice struct {
+	// ReleaseAt When the rest is checked and released, while it waits; null otherwise.
+	ReleaseAt *time.Time `json:"release_at"`
+
+	// Size How many recipients the slice went to.
+	Size int `json:"size"`
+
+	// State `sending_slice`: the slice is going out. `slice_hold`: the slice
+	// is out and the rest waits until `release_at`. `held`: the slice
+	// went over the early-warning limits for complaints or hard
+	// bounces, so the account's limit is lowered and the rest waits
+	// until `release_at`, when it's checked again. `released`: the
+	// rest was let go. `stopped`: the slice went over the limits that
+	// pause an account, so the rest was never sent and its credits
+	// came back. While the rest waits, the campaign can be cancelled.
+	State CampaignSliceState `json:"state"`
+}
+
+// CampaignSliceState `sending_slice`: the slice is going out. `slice_hold`: the slice
+// is out and the rest waits until `release_at`. `held`: the slice
+// went over the early-warning limits for complaints or hard
+// bounces, so the account's limit is lowered and the rest waits
+// until `release_at`, when it's checked again. `released`: the
+// rest was let go. `stopped`: the slice went over the limits that
+// pause an account, so the rest was never sent and its credits
+// came back. While the rest waits, the campaign can be cancelled.
+type CampaignSliceState string
 
 // CampaignStatus `draft` is being set up; `scheduled` is launched and waiting for its
 // send time; `sending`, then `sent`. `cancelled` was stopped by the
@@ -4311,7 +4378,7 @@ type ServerInterface interface {
 	// UpdateCampaign Change a campaign
 	// (PATCH /v1/campaigns/{campaign_id})
 	UpdateCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
-	// CancelCampaign Cancel a scheduled campaign
+	// CancelCampaign Cancel a scheduled campaign, or a waiting slice's rest
 	// (POST /v1/campaigns/{campaign_id}/cancel)
 	CancelCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
 	// LaunchCampaign Launch a campaign, after confirmation

@@ -402,10 +402,3 @@ func TestThrottleNotices(t *testing.T) {
 		t.Errorf("sent %d", len(fake.Sent()))
 	}
 }
-
-func deref(p *string) string {
-	if p == nil {
-		return ""
-	}
-	return *p
-}
