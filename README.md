@@ -76,6 +76,24 @@ make web-check  # web app: ESLint, type check, Vitest
 make image      # server image for linux/arm64, web app included
 ```
 
+### End-to-end tests
+
+Two tests go from sign-up to a sent campaign against the stack `make dev`
+runs, reading sign-in codes and campaign mail from `.local/mail`. Contacts
+are on Amazon SES's mailbox simulator (`success@`, `bounce@` and
+`complaint@simulator.amazonses.com`); locally the worker makes up the
+delivery, bounce or complaint event SES would send for each, so bounces are
+handled end to end with no AWS. CI runs both on every pull request.
+
+```sh
+make web dev    # in one terminal: build the app, then run the stack
+make e2e-cli    # the CLI, from an API key to a delivered campaign, an unsubscribe and a bounce
+make e2e-web    # the web app in Chromium (Playwright), from sign-up to a launched campaign
+```
+
+`make e2e-web` needs Playwright's Chromium once: `cd web && npx playwright
+install chromium`.
+
 ### Changing the API
 
 `api/openapi.yaml` is the source of truth. After editing it:

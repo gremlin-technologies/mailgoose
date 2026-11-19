@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
+	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 )
 
@@ -500,5 +501,49 @@ func TestComplaintsPauseAccount(t *testing.T) {
 	complain(5)
 	if len(alerts) != 1 {
 		t.Errorf("alerted again for the same campaign: %d", len(alerts))
+	}
+}
+
+// TestSimulatorEvents checks the events the local fake sender makes up for
+// SES's mailbox simulator are read like SES's own, so the end-to-end tests
+// see real bounce and complaint handling.
+func TestSimulatorEvents(t *testing.T) {
+	for _, tc := range []struct{ to, typ, status string }{
+		{"bounce@simulator.amazonses.com", TypeBounce, "bounced"},
+		{"complaint@simulator.amazonses.com", TypeComplaint, "complained"},
+		{"success@simulator.amazonses.com", TypeDelivery, "subscribed"},
+	} {
+		t.Run(tc.typ, func(t *testing.T) {
+			h := newHarness(t)
+			got := make(chan []byte, 1)
+			sim := &mail.Simulator{Sender: &mail.Fake{}, Delay: time.Millisecond,
+				Events: func(_ context.Context, body []byte) { got <- body }}
+			id, err := sim.Send(context.Background(), mail.Message{
+				From: mail.Address{Email: "hello@patsbakery.com"}, To: mail.Address{Email: tc.to},
+				Subject: "Fresh bread", Text: "Hi", Kind: mail.KindCampaign, AccountID: h.acc, CampaignID: h.campaign,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := h.db.Exec(context.Background(), `UPDATE campaign_recipients SET message_id = $1 WHERE id = $2`, id, h.rcpt); err != nil {
+				t.Fatal(err)
+			}
+			var body []byte
+			select {
+			case body = <-got:
+			case <-time.After(5 * time.Second):
+				t.Fatal("no simulated event")
+			}
+			if out := h.handle(t, body); out != Stored {
+				t.Fatalf("outcome = %s", out)
+			}
+			ev := h.events(t)
+			if len(ev) != 1 || ev[0].typ != tc.typ || ev[0].recipient == nil || *ev[0].recipient != h.rcpt {
+				t.Errorf("events = %+v", ev)
+			}
+			if c := h.contactState(t, h.contact); c.status != tc.status {
+				t.Errorf("contact %s, want %s", c.status, tc.status)
+			}
+		})
 	}
 }

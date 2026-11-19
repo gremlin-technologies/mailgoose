@@ -311,14 +311,23 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	p := newPipeline(cfg, pool, sender, log)
-	// One handler takes one batch at a time, at the configured rate.
-	queues[0].Handler = worker.HandlerFunc(p.SQSHandler())
 	// Deliveries, bounces and complaints from SES.
 	alert := &sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
 		To: cfg.OpsAlertEmail, Log: log.With("job", "health")}
 	events := &sesevents.Service{DB: pool, Log: log.With("queue", "ses-events"), Alert: alert.AutoPaused}
 	queues[1].Handler = worker.HandlerFunc(events.SQSHandler())
+	if cfg.MailSender == "fake" && cfg.SESEventsQueueURL == "" {
+		// No SES (local): mail to SES's mailbox simulator gets its events
+		// all the same, so bounces and complaints can be tried end to end.
+		sender = &mail.Simulator{Sender: sender, Events: func(ctx context.Context, body []byte) {
+			if err := events.Handle(ctx, body); err != nil {
+				log.ErrorContext(ctx, "simulated SES event failed", "err", err)
+			}
+		}}
+	}
+	p := newPipeline(cfg, pool, sender, log)
+	// One handler takes one batch at a time, at the configured rate.
+	queues[0].Handler = worker.HandlerFunc(p.SQSHandler())
 
 	var wg sync.WaitGroup
 	run := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }

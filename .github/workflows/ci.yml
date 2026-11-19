@@ -45,6 +45,54 @@ jobs:
           MAILGOOSE_TEST_DATABASE_URL: postgres://mailgoose:mailgoose@localhost:5432/mailgoose_test?sslmode=disable
         run: go test -race -count=1 ./...
 
+  e2e:
+    name: End-to-end
+    # The CLI and the web app, each from sign-up to a sent campaign, against
+    # the local stack: the API and the worker from scripts/dev.sh, with the
+    # fake sender writing mail to .local/mail. Nothing leaves the runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: mailgoose
+          POSTGRES_PASSWORD: mailgoose
+          POSTGRES_DB: mailgoose
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mailgoose -d mailgoose"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DATABASE_URL: postgres://mailgoose:mailgoose@localhost:5432/mailgoose?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build the web app
+        run: make web
+      - name: Install Playwright's Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+      - name: Start the local stack
+        run: |
+          ./scripts/dev.sh > stack.log 2>&1 &
+          for _ in $(seq 120); do
+            curl -sf http://localhost:8080/readyz && exit 0
+            sleep 1
+          done
+          cat stack.log
+          exit 1
+      - name: CLI end to end
+        run: time ./scripts/e2e-cli.sh
+      - name: Web end to end
+        working-directory: web
+        run: time npx playwright test
+      - name: Stack log
+        if: failure()
+        run: tail -n 200 stack.log
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

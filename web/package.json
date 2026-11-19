@@ -12,9 +12,10 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p e2e",
     "generate": "openapi-typescript ../api/openapi.yaml --output src/api/schema.d.ts",
-    "lint:api": "redocly lint ../api/openapi.yaml --config ../api/redocly.yaml"
+    "lint:api": "redocly lint ../api/openapi.yaml --config ../api/redocly.yaml",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@codemirror/lang-html": "6.4.12",
@@ -29,10 +30,12 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.64.1",
     "@redocly/cli": "2.79.0",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.12",
+    "@types/node": "22.20.3",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.3.0",
