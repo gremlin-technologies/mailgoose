@@ -95,6 +95,13 @@ export function CampaignDetail() {
       ) : (
         <>
           <Facts campaign={c} />
+          {c.status !== "scheduled" && c.status !== "cancelled" && (
+            <div>
+              <Link to={`/campaigns/${c.id}/report`} className="button">
+                See the report
+              </Link>
+            </div>
+          )}
           {c.status === "scheduled" && (
             <Scheduled
               campaign={c}

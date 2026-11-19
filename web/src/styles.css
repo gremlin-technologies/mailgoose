@@ -1280,3 +1280,63 @@ progress {
     margin-bottom: 0.5rem;
   }
 }
+
+/* Report page (MG-48) */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.875rem 1rem;
+}
+
+.tile dt {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.tile dd {
+  margin: 0.25rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.link-clicks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.link-clicks li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.link-clicks li:last-child {
+  border-bottom: none;
+}
+
+.link-url {
+  overflow-wrap: anywhere;
+  min-width: 0;
+  flex: 1 1 16rem;
+}
+
+.link-counts {
+  color: var(--muted);
+  white-space: nowrap;
+}

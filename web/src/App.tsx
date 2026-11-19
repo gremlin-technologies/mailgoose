@@ -5,6 +5,7 @@ import { RequireSession, SignedOutOnly } from "./guards";
 import { ApiKeys } from "./pages/ApiKeys";
 import { AppLayout } from "./pages/AppLayout";
 import { CampaignDetail } from "./campaigns/CampaignDetail";
+import { CampaignReport } from "./campaigns/Report";
 import { Campaigns, NewCampaign } from "./pages/Campaigns";
 import { ContactDetail, Contacts } from "./pages/Contacts";
 import { Device } from "./pages/Device";
@@ -79,6 +80,7 @@ export function AppRoutes() {
         <Route path="/emails/:id" element={<Designer />} />
         <Route path="/campaigns/new" element={<NewCampaign />} />
         <Route path="/campaigns/:id" element={<CampaignDetail />} />
+        <Route path="/campaigns/:id/report" element={<CampaignReport />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

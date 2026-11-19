@@ -24,6 +24,21 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: Report page (MG-48, reversible defaults)
+
+Picked while building MG-48; easy to change.
+
+- **The report shows the CLI's numbers in the CLI's words**: each count with
+  its share of the copies sent to one decimal place, opens labeled
+  "(estimated)" with a line on why, and clicks per link in the email's order.
+- **Numbers are tiles and links a list, not tables**, so the page reads on a
+  phone without scrolling sideways.
+- **While a campaign is sending, the report counts again every 5 seconds**,
+  and a "Count again" button does it on demand. An archived report has no
+  button, since its numbers no longer change.
+- **The report is linked from the campaign's page** once it has been
+  launched and not cancelled.
+
 ## 2026-11-19: Campaign pages (MG-47, reversible defaults)
 
 Picked while building MG-47; easy to change.
