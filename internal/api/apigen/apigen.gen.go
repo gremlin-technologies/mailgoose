@@ -530,6 +530,7 @@ func (e HtmlDocumentSchemaVersion) Valid() bool {
 
 // Defines values for HtmlIssueCode.
 const (
+	HtmlIssueCodeDataUrl            HtmlIssueCode = "data_url"
 	HtmlIssueCodeEmbeddedObject     HtmlIssueCode = "embedded_object"
 	HtmlIssueCodeEventHandler       HtmlIssueCode = "event_handler"
 	HtmlIssueCodeExternalStylesheet HtmlIssueCode = "external_stylesheet"
@@ -538,6 +539,7 @@ const (
 	HtmlIssueCodeJavascriptUrl      HtmlIssueCode = "javascript_url"
 	HtmlIssueCodeMalformedMarkup    HtmlIssueCode = "malformed_markup"
 	HtmlIssueCodeMissingUnsubscribe HtmlIssueCode = "missing_unsubscribe"
+	HtmlIssueCodeRedirect           HtmlIssueCode = "redirect"
 	HtmlIssueCodeScript             HtmlIssueCode = "script"
 	HtmlIssueCodeTooLarge           HtmlIssueCode = "too_large"
 	HtmlIssueCodeUnsupportedCss     HtmlIssueCode = "unsupported_css"
@@ -546,6 +548,8 @@ const (
 // Valid indicates whether the value is a known member of the HtmlIssueCode enum.
 func (e HtmlIssueCode) Valid() bool {
 	switch e {
+	case HtmlIssueCodeDataUrl:
+		return true
 	case HtmlIssueCodeEmbeddedObject:
 		return true
 	case HtmlIssueCodeEventHandler:
@@ -561,6 +565,8 @@ func (e HtmlIssueCode) Valid() bool {
 	case HtmlIssueCodeMalformedMarkup:
 		return true
 	case HtmlIssueCodeMissingUnsubscribe:
+		return true
+	case HtmlIssueCodeRedirect:
 		return true
 	case HtmlIssueCodeScript:
 		return true

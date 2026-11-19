@@ -3765,7 +3765,8 @@ components:
         code:
           type: string
           enum: [malformed_markup, script, form, iframe, embedded_object, external_stylesheet,
-            event_handler, javascript_url, missing_unsubscribe, too_large, unsupported_css]
+            event_handler, javascript_url, data_url, redirect, missing_unsubscribe, too_large,
+            unsupported_css]
         message:
           type: string
     DuplicateEmailRequest:

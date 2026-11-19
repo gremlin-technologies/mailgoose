@@ -33,6 +33,16 @@ func CompileHTML(doc *emails.Document, acct Account) (*Template, error) {
 	if strings.TrimSpace(acct.PostalAddress) == "" {
 		return nil, ErrNoPostalAddress
 	}
+	// The same check the html had to pass to be saved, so an email whose
+	// markup was never imported (empty) or has no unsubscribe link can't
+	// be sent.
+	if errs, _ := emails.CheckHTML(*doc.HTML); len(errs) > 0 {
+		probs := make(Problems, len(errs))
+		for i, e := range errs {
+			probs[i] = &TagError{Path: "html", Message: e.String()}
+		}
+		return nil, probs
+	}
 	src := *doc.HTML
 	if !showsAddress(src, acct.PostalAddress) {
 		src = addFooter(src, acct.PostalAddress)

@@ -268,7 +268,7 @@ var contractCases = map[string][]contractCase{
 	},
 	"createEmail": {
 		{name: "every block", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/emails", everyBlockEmail)), status: http.StatusCreated},
-		{name: "html", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/emails", `{"name":"Plain","kind":"html","document":{"html":"<p>Hi</p>{{unsubscribe_url}}"}}`)), status: http.StatusCreated},
+		{name: "html", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/emails", `{"name":"Plain","kind":"html","document":{"html":"<p>Hi</p><a href=\"{{unsubscribe_url}}\">Unsubscribe</a>"}}`)), status: http.StatusCreated},
 		{name: "malformed", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/emails", `{"name":"x","colour":1}`)), status: http.StatusBadRequest},
 		{name: "unknown block", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/emails", `{"name":"x","document":{"blocks":[{"type":"video"}]}}`)), status: http.StatusUnprocessableEntity},
 		{name: "no credentials", server: authServer, req: jsonRequest(http.MethodPost, "/v1/emails", `{"name":"x"}`), status: http.StatusUnauthorized},

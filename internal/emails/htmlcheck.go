@@ -28,6 +28,8 @@ const (
 	HTMLExternalStylesheet = "external_stylesheet"
 	HTMLEventHandler       = "event_handler"
 	HTMLScriptURL          = "javascript_url"
+	HTMLDataURL            = "data_url"
+	HTMLRedirect           = "redirect"
 	HTMLNoUnsubscribe      = "missing_unsubscribe"
 	HTMLTooLarge           = "too_large"
 
@@ -91,8 +93,9 @@ func cssProp(names string) *regexp.Regexp {
 }
 
 var (
-	unsubscribeTag = regexp.MustCompile(`\{\{\s*unsubscribe_url\s*\}\}`)
-	cssImport      = regexp.MustCompile(`(?i)@import\b`)
+	// unsubscribeHref is a link whose whole address is the unsubscribe tag.
+	unsubscribeHref = regexp.MustCompile(`^\s*\{\{\s*unsubscribe_url\s*\}\}\s*$`)
+	cssImport       = regexp.MustCompile(`(?i)@import\b`)
 )
 
 // Elements with no end tag, and elements whose end tag HTML lets you leave
@@ -131,6 +134,9 @@ type htmlChecker struct {
 	open        []openTag
 	warned      map[string]bool
 	bodyLine    int
+	// unsubscribe is set by a link to {{unsubscribe_url}}, as the
+	// tokenizer sees it: not in a comment, and not as plain text.
+	unsubscribe bool
 }
 
 func (c *htmlChecker) fail(line int, code, format string, args ...any) {
@@ -158,12 +164,12 @@ func (c *htmlChecker) run(src string) {
 				c.fail(start, HTMLMalformed, "the markup can't be read: %v", err)
 			}
 			c.end()
-			if !unsubscribeTag.MatchString(src) {
+			if !c.unsubscribe {
 				at := c.bodyLine
 				if at == 0 {
 					at = lineAt(src, len(strings.TrimRight(src, "\n")))
 				}
-				c.fail(at, HTMLNoUnsubscribe, "there's no {{unsubscribe_url}}; every email needs an unsubscribe link, such as <a href=\"{{unsubscribe_url}}\">Unsubscribe</a>")
+				c.fail(at, HTMLNoUnsubscribe, "there's no link to {{unsubscribe_url}}; every email needs an unsubscribe link, such as <a href=\"{{unsubscribe_url}}\">Unsubscribe</a> (one inside a comment, or the tag as plain text, doesn't count)")
 			}
 			return
 		case html.CommentToken:
@@ -208,6 +214,14 @@ func (c *htmlChecker) tag(tok html.Token, line int) {
 		c.fail(line, HTMLFrame, "<%s> isn't allowed; email clients don't show frames", tok.Data)
 	case "object", "embed", "applet":
 		c.fail(line, HTMLEmbed, "<%s> isn't allowed; email clients don't show embedded objects", tok.Data)
+	case "base":
+		c.fail(line, HTMLRedirect, "<base> isn't allowed; it changes where every link in the email goes")
+	case "meta":
+		for _, a := range tok.Attr {
+			if strings.EqualFold(a.Key, "http-equiv") && strings.EqualFold(strings.TrimSpace(a.Val), "refresh") {
+				c.fail(line, HTMLRedirect, "<meta http-equiv=\"refresh\"> isn't allowed; an email can't send the reader to another page by itself")
+			}
+		}
 	case "link":
 		for _, a := range tok.Attr {
 			if a.Key == "rel" && strings.Contains(strings.ToLower(a.Val), "stylesheet") {
@@ -224,6 +238,13 @@ func (c *htmlChecker) tag(tok html.Token, line int) {
 		if scriptURL(a.Val) || (key == "style" && strings.Contains(squash(a.Val), "javascript:")) {
 			c.fail(line, HTMLScriptURL, "the %s attribute on <%s> holds a javascript: address, which isn't allowed", key, tok.Data)
 			continue
+		}
+		if key == "href" && strings.HasPrefix(squash(a.Val), "data:") {
+			c.fail(line, HTMLDataURL, "the href on <%s> holds a data: address, which isn't allowed; link to a web page instead", tok.Data)
+			continue
+		}
+		if key == "href" && (tok.Data == "a" || tok.Data == "area") && unsubscribeHref.MatchString(a.Val) {
+			c.unsubscribe = true
 		}
 		if key == "style" {
 			c.css(a.Val, line, false)
@@ -275,6 +296,9 @@ func (c *htmlChecker) css(css string, line int, element bool) {
 			return line
 		}
 		return line + strings.Count(css[:i], "\n")
+	}
+	if element && strings.Contains(squash(css), "javascript:") {
+		c.fail(line, HTMLScriptURL, "the <style> element holds a javascript: address, which isn't allowed")
 	}
 	for _, m := range cssImport.FindAllStringIndex(css, -1) {
 		c.fail(at(m[0]), HTMLExternalStylesheet, "@import loads an external stylesheet, which isn't allowed; most clients ignore it")

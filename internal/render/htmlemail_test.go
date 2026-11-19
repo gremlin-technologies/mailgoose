@@ -116,7 +116,7 @@ func TestCompileHTMLFragmentAndPreheader(t *testing.T) {
 }
 
 func TestCompileHTMLRefusals(t *testing.T) {
-	_, err := CompileHTML(htmlDoc(t, `<p>{{name}}</p>{{unsubscribe_url}}`, `{"subject":"{{first}}"}`), Account{PostalAddress: postal})
+	_, err := CompileHTML(htmlDoc(t, `<p>{{name}}</p><a href="{{unsubscribe_url}}">Unsubscribe</a>`, `{"subject":"{{first}}"}`), Account{PostalAddress: postal})
 	var p Problems
 	if !errors.As(err, &p) || len(p) != 2 || p[0].Path != "settings.subject" || p[1].Path != "html" {
 		t.Errorf("tags: %v", err)
@@ -126,5 +126,25 @@ func TestCompileHTMLRefusals(t *testing.T) {
 	}
 	if _, err := CompileHTML(emails.NewDocument(emails.KindBlocks), Account{PostalAddress: postal}); !errors.Is(err, ErrNotHTML) {
 		t.Errorf("blocks: %v", err)
+	}
+}
+
+// An html email is refused if its markup wouldn't pass the import check:
+// never imported (empty), or with no working unsubscribe link.
+func TestCompileHTMLRunsTheImportCheck(t *testing.T) {
+	for name, src := range map[string]string{
+		"empty":      "",
+		"comment":    `<p>Hi</p><!-- <a href="{{unsubscribe_url}}">Unsubscribe</a> -->`,
+		"plain text": `<p>Unsubscribe: {{unsubscribe_url}}</p>`,
+		"script":     `<script>x()</script><a href="{{unsubscribe_url}}">Unsubscribe</a>`,
+	} {
+		_, err := CompileHTML(htmlDoc(t, src, ""), Account{PostalAddress: postal})
+		var p Problems
+		if !errors.As(err, &p) || len(p) == 0 || p[0].Path != "html" {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if _, err := CompileHTML(htmlDoc(t, `<p>Hi</p><a href="{{unsubscribe_url}}">Unsubscribe</a>`, ""), Account{PostalAddress: postal}); err != nil {
+		t.Errorf("good markup: %v", err)
 	}
 }

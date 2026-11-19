@@ -20,7 +20,7 @@ func TestEmailImportHTML(t *testing.T) {
 	if code := h.run("email", "import-html", id, bad); code != ExitError {
 		t.Fatalf("bad: exit %d", code)
 	}
-	for _, want := range []string{"The HTML has 3 problems, so nothing was imported:", "\n  line 2: <form>", "\n  line 3: <script>", "\n  line 3: there's no {{unsubscribe_url}}", "Hint: Fix each line"} {
+	for _, want := range []string{"The HTML has 3 problems, so nothing was imported:", "\n  line 2: <form>", "\n  line 3: <script>", "\n  line 3: there's no link to {{unsubscribe_url}}", "Hint: Fix each line"} {
 		if !strings.Contains(h.errOut.String(), want) {
 			t.Errorf("stderr lacks %q:\n%s", want, h.errOut)
 		}

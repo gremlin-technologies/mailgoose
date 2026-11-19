@@ -16,6 +16,12 @@ Picked while building MG-22; easy to change.
 - **More than the ticket's list is refused:** frames (`frame`, `frameset`)
   with iframes, embedded objects (`object`, `embed`, `applet`), and
   `vbscript:` with `javascript:`. Mail clients don't show any of them.
+  After review, also `data:` links, `<base>`, `<meta http-equiv="refresh">`
+  and `javascript:` inside a `<style>` element.
+- **The unsubscribe link must be a real link:** an `a` (or `area`) whose
+  `href` is exactly `{{unsubscribe_url}}`. The tag inside a comment or as
+  plain text doesn't count. `CompileHTML` runs the same check, so markup
+  that was never imported can't be sent.
 - **Malformed markup** means a non-void element that never closes, or an
   end tag that closes nothing or skips an open element. End tags HTML lets
   you leave out (`p`, `li`, `td`, `tr` and the like) aren't required.

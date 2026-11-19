@@ -422,8 +422,11 @@ first and any error stops the import, each with its line:
   `applet`)
 - external stylesheets: `<link rel="stylesheet">` and `@import`
 - inline event handlers such as `onclick`, and `javascript:` or
-  `vbscript:` addresses
-- no `{{unsubscribe_url}}` anywhere
+  `vbscript:` addresses, in attributes or a `<style>` element
+- links to `data:` addresses
+- `<base>` and `<meta http-equiv="refresh">`, which send the reader elsewhere
+- no link whose address is `{{unsubscribe_url}}` (`<a href="{{unsubscribe_url}}">`);
+  one inside a comment, or the tag as plain text, doesn't count
 - more than 102 KB, where Gmail starts clipping
 
 Creating an html email or replacing its document runs the same check; empty
@@ -434,7 +437,8 @@ list is `emails.UnsupportedCSS`: `position`, flexbox and grid, transforms
 and animation, CSS variables, filters and masks, `object-fit`, `@font-face`
 and `@supports`.
 
-`render.CompileHTML` prepares one for sending: it adds the preview text as
+`render.CompileHTML` prepares one for sending. It refuses markup with any
+of these errors, so an email that was never imported can't be sent; then it adds the preview text as
 a hidden line after `<body>` and, when the markup doesn't show every line of
 the account's postal address, a footer with it before `</body>`. The plain
 text part is made from the markup. The corpus in
