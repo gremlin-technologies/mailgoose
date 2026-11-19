@@ -1,0 +1,104 @@
+package cli
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+const testAccountID = "3f1c2b4a-5d6e-4f70-8a9b-0c1d2e3f4a5b"
+
+// adminStub answers the admin endpoints and records each request's body.
+func adminStub(t *testing.T, bodies map[string]map[string]any) *harness {
+	t.Helper()
+	account := `{"id":"` + testAccountID + `","name":"Pat's Bakery","status":"active","plan":"paid","owner_email":"pat@example.com",` +
+		`"sending_paused_at":"2026-11-18T10:00:00Z","sending_paused_reason":"Phishing reports","created_at":"2026-11-01T09:00:00Z",` +
+		`"daily_send_limit":2000,"contacts":1200,"credit_balance":9000,"last_30_days":{"sent":1000,"hard_bounces":12,"complaints":4},` +
+		`"held_imports":[{"id":"imp-1","file_name":null,"total_rows":3000,"hold_reason":"large_first_import","status":"done","created_at":"2026-11-17T09:00:00Z"}],` +
+		`"live_campaigns":[{"id":"camp-1","name":"Bread week","status":"sending","send_at":null,"recipients":1000,"rates":{"sent":1000,"hard_bounces":12,"complaints":4}}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			var b map[string]any
+			raw, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(raw, &b)
+			bodies[r.URL.Path] = b
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/v1/admin/accounts":
+			_, _ = w.Write([]byte(`{"data":[` + strings.SplitN(account, `,"daily_send_limit"`, 2)[0] + `}],"next_cursor":null}`))
+		case strings.HasSuffix(r.URL.Path, "/credits"):
+			_, _ = w.Write([]byte(`{"account_id":"` + testAccountID + `","amount":5000,"expires_at":"2028-11-18T00:00:00Z","credit_balance":14000}`))
+		case strings.HasPrefix(r.URL.Path, "/v1/admin/accounts/"):
+			_, _ = w.Write([]byte(account))
+		case strings.HasPrefix(r.URL.Path, "/v1/admin/campaigns/"):
+			_, _ = w.Write([]byte(`{"id":"` + testAccountID + `","name":"Bread week","status":"cancelled"}`))
+		case strings.HasPrefix(r.URL.Path, "/v1/admin/imports/"):
+			_, _ = w.Write([]byte(`{"id":"` + testAccountID + `","account_id":"a","contacts_released":3000}`))
+		case r.URL.Path == "/v1/admin/actions":
+			_, _ = w.Write([]byte(`{"data":[{"id":7,"actor":"staff@example.com","action":"pause","account_id":"` + testAccountID +
+				`","target_id":null,"reason":"Phishing reports","details":{},"created_at":"2026-11-18T10:00:00Z"}],"next_cursor":"next"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_abc"
+	return h
+}
+
+func TestAdminCommands(t *testing.T) {
+	bodies := map[string]map[string]any{}
+	h := adminStub(t, bodies)
+	cases := []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"admin", "find", "pat"}, []string{testAccountID, "Pat's Bakery", "pat@example.com", "paused"}},
+		{[]string{"admin", "account", testAccountID}, []string{"PAUSED", "Phishing reports", "Daily limit:  2000", "1000 sent, 12 hard bounces (1.20%), 4 complaints (0.40%)", "imp-1", "Bread week"}},
+		{[]string{"admin", "pause", testAccountID, "--reason", "Phishing reports"}, []string{"Paused sending for Pat's Bakery"}},
+		{[]string{"admin", "unpause", testAccountID, "--reason", "Owner fixed the list"}, []string{"can send again"}},
+		{[]string{"admin", "stop-campaign", testAccountID, "--reason", "Phishing", "--yes"}, []string{"Stopped campaign \"Bread week\""}},
+		{[]string{"admin", "approve-import", testAccountID, "--reason", "Signup sheet"}, []string{"3000 contacts can be mailed"}},
+		{[]string{"admin", "grant-credits", testAccountID, "--amount", "5000", "--reason", "Outage"}, []string{"Granted 5000 credits", "now 14000"}},
+		{[]string{"admin", "log", "--account", testAccountID}, []string{"staff@example.com", "pause", "Phishing reports", "--cursor next"}},
+	}
+	for _, c := range cases {
+		if code := h.run(c.args...); code != ExitOK {
+			t.Fatalf("%v: exit %d: %s", c.args, code, h.errOut)
+		}
+		for _, w := range c.want {
+			if !strings.Contains(h.out.String(), w) {
+				t.Errorf("%v: output lacks %q:\n%s", c.args, w, h.out)
+			}
+		}
+	}
+	if b := bodies["/v1/admin/accounts/"+testAccountID+"/credits"]; b["amount"] != float64(5000) || b["reason"] != "Outage" {
+		t.Errorf("grant body = %v", b)
+	}
+	if b := bodies["/v1/admin/accounts/"+testAccountID+"/pause"]; b["reason"] != "Phishing reports" {
+		t.Errorf("pause body = %v", b)
+	}
+}
+
+func TestAdminNeedsReason(t *testing.T) {
+	h := adminStub(t, map[string]map[string]any{})
+	for _, args := range [][]string{
+		{"admin", "pause", testAccountID},
+		{"admin", "unpause", testAccountID, "--reason", "  "},
+		{"admin", "stop-campaign", testAccountID, "--yes"},
+		{"admin", "stop-campaign", testAccountID, "--reason", "x"},
+		{"admin", "approve-import", testAccountID},
+		{"admin", "grant-credits", testAccountID, "--reason", "x"},
+		{"admin", "account", "pats-bakery"},
+	} {
+		if code := h.run(args...); code != ExitUsage {
+			t.Errorf("%v: exit %d", args, code)
+		}
+	}
+}

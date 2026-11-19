@@ -47,6 +47,9 @@ type Config struct {
 	AccountDailySendLimit int
 	// NewAccountDailySendLimit is that limit in an account's first week.
 	NewAccountDailySendLimit int
+	// OpsAlertEmail gets an email when an account is paused automatically
+	// (CMP-6). Empty: the pause is only logged, as an error.
+	OpsAlertEmail string
 	// SESConfigurationSet must be passed on every send so events are recorded.
 	SESConfigurationSet string
 	// SystemSendingDomain is mailgoose's own sending domain (sign-in codes, double opt-in).
@@ -147,6 +150,7 @@ func load(getenv func(string) string) (Config, error) {
 		SendRatePerSecond:        sendRate,
 		AccountDailySendLimit:    dailyLimit,
 		NewAccountDailySendLimit: newDailyLimit,
+		OpsAlertEmail:            strings.TrimSpace(getenv("OPS_ALERT_EMAIL")),
 		SESConfigurationSet:      getenv("SES_CONFIGURATION_SET"),
 		SystemSendingDomain:      getenv("SYSTEM_SENDING_DOMAIN"),
 		SESIdentityTag:           getenv("SES_IDENTITY_TAG"),

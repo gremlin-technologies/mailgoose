@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/gremlin-technologies/mailgoose/internal/admin"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
@@ -64,6 +65,7 @@ func authServer(t *testing.T) *Server {
 	s.Sending = &sending.Service{DB: db, Campaigns: s.Campaigns, Emails: s.Emails, Settings: s.Auth,
 		Domains: s.Domains, Unsubscribe: s.Unsubscribe, Mail: fake}
 	s.Signups = &signups.Service{DB: db, Forms: s.Forms, Settings: s.Auth, Domains: s.Domains, Mail: fake}
+	s.Admin = &admin.Service{DB: db, Sending: s.Sending}
 	return s
 }
 

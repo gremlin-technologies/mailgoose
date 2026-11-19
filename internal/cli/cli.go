@@ -147,7 +147,7 @@ machine-readable output. Set MAILGOOSE_API_KEY to run headless.`,
 
 	root.AddCommand(a.versionCmd(), a.statusCmd(), a.configCmd(), a.commandsCmd(), a.keysCmd(), a.creditsCmd(), a.contactsCmd(), a.tagsCmd(), a.importCmd(), a.exportCmd(),
 		a.emailCmd(), a.campaignCmd(), a.formCmd(), a.domainCmd(), a.accountCmd(),
-		a.signupCmd(), a.loginCmd(), a.logoutCmd(), a.whoamiCmd(), &cobra.Command{
+		a.signupCmd(), a.loginCmd(), a.logoutCmd(), a.whoamiCmd(), a.adminCmd(), &cobra.Command{
 			Use:   "exit-codes",
 			Short: "What each exit code means",
 			Long:  exitCodesHelp,

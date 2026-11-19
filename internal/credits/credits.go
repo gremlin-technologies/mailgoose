@@ -232,7 +232,7 @@ func catchUp(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) (*
 		var granted bool
 		if err := tx.QueryRow(ctx, `
 			SELECT EXISTS (SELECT 1 FROM credit_transactions
-			               WHERE account_id = $1 AND type = 'grant' AND created_at >= $2)`,
+			               WHERE account_id = $1 AND type = 'grant' AND ref = '' AND created_at >= $2)`,
 			accountID, start).Scan(&granted); err != nil {
 			return nil, fmt.Errorf("find grant: %w", err)
 		}
@@ -243,6 +243,23 @@ func catchUp(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) (*
 		}
 	}
 	return &a, nil
+}
+
+// LotMonths is how long purchased and granted credits last (BIL-3).
+const LotMonths = 24
+
+// Grant adds credits an admin gave (OPS-6), inside tx, as a lot that lasts
+// LotMonths. ref names the grant ("admin:<action id>"); it must not be
+// empty, which marks the free monthly grant.
+func Grant(ctx context.Context, tx pgx.Tx, accountID string, amount int64, ref string, now time.Time) (*Transaction, error) {
+	if amount <= 0 || ref == "" {
+		return nil, fmt.Errorf("grant: amount %d, ref %q", amount, ref)
+	}
+	if err := CatchUp(ctx, tx, accountID, now); err != nil {
+		return nil, err
+	}
+	expires := addMonths(now, LotMonths)
+	return insert(ctx, tx, accountID, TypeGrant, amount, &expires, ref, now, nil)
 }
 
 // Debit is Ledger.Debit inside tx.

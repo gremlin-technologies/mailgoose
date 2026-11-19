@@ -23,6 +23,35 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Send limits, account health and admin tools (MG-34, reversible defaults)
+
+Picked while building MG-34; easy to change.
+
+- **Limit schedule:** 1,000 a day for the first 7 days, then doubling each
+  week (2,000, 4,000, 8,000) up to the 10,000 default, while the account's
+  last 30 days are clean. An account that isn't clean is held at 1,000.
+- **Clean** means the account's campaigns over 30 days are under 0.3%
+  complaints and 5% hard bounces (judged on 500 or more sent), and none of
+  them paused it.
+- **Rates count people**, not events: two complaints from one recipient
+  count once.
+- **A campaign pauses its account once.** After an admin lifts the pause,
+  more bounces on the same campaign don't pause it again. An account an
+  admin had already paused keeps that pause and its reason.
+- **Ops alert:** `OPS_ALERT_EMAIL` is optional; unset, an automatic pause is
+  only logged as an error. Setting it on the ECS tasks is an infra change
+  for the owner.
+- **Who is an admin:** a flag on the user, granted only with `mailgoosed
+  admin grant` from the server. Admin endpoints take a person's sign-in (CLI
+  token or web session), never an API key.
+- **Every admin action needs a reason** (500 characters at most), logged
+  with who and when in `admin_actions`, which is kept when the account is
+  deleted.
+- **Credit grants:** at most 1,000,000 at a time, lasting 24 months like
+  bought credits. They don't stand in for the free monthly grant.
+- **Stopping a campaign** ends it `cancelled`, its unsent rows `skipped`
+  ("stopped by mailgoose") with their credits back.
+
 ## 2026-11-18: SES events (MG-33, reversible defaults)
 
 Picked while building MG-33; easy to change.
@@ -36,6 +65,12 @@ Picked while building MG-33; easy to change.
   confirmations (matched to the account's contact by address). Test sends
   and mailgoose's own mail (sign-in codes) are stored but change no
   contact.
+- **A copy with no recorded message id** (sent, but the record failed, or
+  the event came first) is matched by its campaign tag and the bounced or
+  complained address, among that campaign's recipients only.
+- **An unsubscribed contact:** soft bounces leave it unsubscribed, so a
+  form can still bring it back. A hard bounce marks it `bounced`, since
+  the address is gone.
 - **Duplicates:** an event is stored once, keyed by a hash of its body;
   SNS and SQS can deliver the same one more than once.
 - **Kept events:** `send_events` holds no address and goes when the

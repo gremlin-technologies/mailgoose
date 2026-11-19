@@ -934,6 +934,12 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 		}
 	}
 
+	// Whether the import is held is read here, under a share lock, so an
+	// admin's approval (which updates the import first) waits for this
+	// batch and then releases its contacts too.
+	if err := tx.QueryRow(ctx, `SELECT review FROM imports WHERE id = $1 FOR SHARE`, j.id).Scan(&j.review); err != nil {
+		return fmt.Errorf("read import review: %w", err)
+	}
 	var held *string
 	if j.review == ReviewHeld {
 		held = &j.id

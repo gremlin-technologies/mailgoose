@@ -213,7 +213,11 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 	}
 	var batches []Batch
 	if !paused {
-		if batches, err = p.nextBatches(ctx, tx, accountID, campaignID, p.dailyLimit(limit, since, now), now); err != nil {
+		daily, err := p.dailyLimit(ctx, tx, accountID, limit, since, now)
+		if err != nil {
+			return 0, err
+		}
+		if batches, err = p.nextBatches(ctx, tx, accountID, campaignID, daily, now); err != nil {
 			return 0, err
 		}
 	}
@@ -232,18 +236,6 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 		}
 	}
 	return rowID, tx.Commit(ctx)
-}
-
-// dailyLimit is an account's daily limit: its own, or the default for its
-// age.
-func (p *Pipeline) dailyLimit(own *int, since, now time.Time) int {
-	switch {
-	case own != nil:
-		return *own
-	case now.Sub(since) < NewAccountDays*24*time.Hour:
-		return p.Limits.NewDaily
-	}
-	return p.Limits.Daily
 }
 
 // nextBatches marks the campaign's next rows enqueued, as many as the
@@ -383,12 +375,7 @@ func (p *Pipeline) HandleBatch(ctx context.Context, b Batch, attempt int) error 
 		return err
 	}
 	if s.status != campaigns.StatusSending || s.paused {
-		// Paused or stopped: the rows wait, and the dispatcher batches them
-		// again once the campaign is sending.
-		_, err := p.DB.Exec(ctx, `
-			UPDATE campaign_recipients SET enqueued_at = NULL WHERE id = ANY($1) AND campaign_id = $2 AND status = 'queued'`,
-			b.IDs, b.CampaignID)
-		return err
+		return p.handBack(ctx, b)
 	}
 	var lastErr error
 	for _, id := range b.IDs {
@@ -396,6 +383,9 @@ func (p *Pipeline) HandleBatch(ctx context.Context, b Batch, attempt int) error 
 		var se *sendFailed
 		switch {
 		case err == nil:
+		case errors.Is(err, errHalted):
+			// Paused or stopped partway through the batch.
+			return p.handBack(ctx, b)
 		case errors.As(err, &se) && attempt >= MaxAttempts:
 			if err := p.markFailed(ctx, b, id, se.err); err != nil {
 				return err
@@ -409,6 +399,20 @@ func (p *Pipeline) HandleBatch(ctx context.Context, b Batch, attempt int) error 
 		return fmt.Errorf("some copies failed after %d attempts: %w", attempt, lastErr)
 	}
 	return nil
+}
+
+// errHalted is a copy not sent because its campaign or account stopped
+// sending since the batch began.
+var errHalted = errors.New("sending halted")
+
+// handBack returns a batch's unsent rows when its campaign or account is
+// paused or stopped: they wait, and the dispatcher batches them again once
+// the campaign is sending. A stopped campaign's rows are already skipped.
+func (p *Pipeline) handBack(ctx context.Context, b Batch) error {
+	_, err := p.DB.Exec(ctx, `
+		UPDATE campaign_recipients SET enqueued_at = NULL WHERE id = ANY($1) AND campaign_id = $2 AND status = 'queued'`,
+		b.IDs, b.CampaignID)
+	return err
 }
 
 // sendFailed is a copy the mail provider refused: its claim was taken back,
@@ -497,11 +501,25 @@ func (p *Pipeline) claim(ctx context.Context, b Batch, id int64) (claimed, bool,
 	defer func() { _ = tx.Rollback(ctx) }()
 	now := p.now()
 	var contactID *string
+	// Only while the campaign is sending and its account isn't paused, so
+	// a pause or a stop takes effect at the next copy (CMP-8).
 	err = tx.QueryRow(ctx, `
 		UPDATE campaign_recipients SET status = 'sending', claimed_at = $3
 		WHERE id = $1 AND campaign_id = $2 AND status = 'queued'
+			AND EXISTS (SELECT 1 FROM campaigns c JOIN accounts a ON a.id = c.account_id
+				WHERE c.id = $2 AND c.status = 'sending' AND a.sending_paused_at IS NULL)
 		RETURNING contact_id`, id, b.CampaignID, now).Scan(&contactID)
 	if errors.Is(err, pgx.ErrNoRows) {
+		var live bool
+		if err := tx.QueryRow(ctx, `
+			SELECT c.status = 'sending' AND a.sending_paused_at IS NULL
+			FROM campaigns c JOIN accounts a ON a.id = c.account_id WHERE c.id = $1`, b.CampaignID).Scan(&live); err != nil &&
+			!errors.Is(err, pgx.ErrNoRows) {
+			return r, false, err
+		}
+		if !live {
+			return r, false, errHalted
+		}
 		return r, false, nil
 	}
 	if err != nil {

@@ -129,7 +129,8 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `DATABASE_SSLMODE` | Defaults to `require` (RDS forces TLS). |
 | `SEND_QUEUE_URL`, `SES_EVENTS_QUEUE_URL` | Queues the worker drains. Without `SEND_QUEUE_URL` the worker batches and sends campaigns itself, through a queue in memory (local). |
 | `SEND_RATE_PER_SECOND` | Campaign emails sent a second, across every worker. Default 10. |
-| `ACCOUNT_DAILY_SEND_LIMIT`, `NEW_ACCOUNT_DAILY_SEND_LIMIT` | Campaign emails an account may send in any 24 hours: 10,000 by default, and 1,000 in its first 7 days. An account's own `daily_send_limit` overrides both. |
+| `ACCOUNT_DAILY_SEND_LIMIT`, `NEW_ACCOUNT_DAILY_SEND_LIMIT` | The most campaign emails an account may send in any 24 hours (10,000 by default), and its limit in its first 7 days (1,000). In between the limit grows on a schedule (see [Account health](#account-health-and-send-limits)). An account's own `daily_send_limit` overrides both. |
+| `OPS_ALERT_EMAIL` | Where to email an alert when an account is paused automatically. Unset, the pause is only logged (as an error). |
 | `SYSTEM_SENDING_DOMAIN` | mailgoose's own sending domain; sign-in codes come from `signin@` it. Defaults to `mail.localhost` when mail is captured (`MAIL_SENDER=fake`). Unset with SES, sign-up and sign-in answer 503. |
 | `WEB_DIR` | The built web app (`web/dist`) the API serves at `/`. The image sets it to `/srv/web`; unset, the API serves no web app. |
 | `WEB_ORIGINS` | Comma-separated origins, besides the API's own, that may send cookie-authenticated requests that change something, such as `https://app.staging.mailgoose.app`. Empty by default. |
@@ -647,6 +648,53 @@ event isn't counted twice. Open and click events from SES are dropped
 (opens and clicks come only from mailgoose's own tracking), and so are
 events that can't be read, with a warning in the log; only a database
 error leaves a message on the queue to be tried again.
+
+### Account health and send limits
+
+**Send limits.** A new account may send 1,000 campaign emails in any 24
+hours for its first 7 days. After that its limit doubles each week while
+its history is clean (2,000 in week 2, 4,000 in week 3, 8,000 in week 4),
+up to `ACCOUNT_DAILY_SEND_LIMIT` (10,000). History is clean when the
+account's campaigns over the last 30 days are under both thresholds below
+(judged only once they've gone to 500 or more), and none of them paused it.
+An account that isn't clean is held at 1,000 until it is. An account's own
+`daily_send_limit` replaces the schedule.
+
+**Automatic pause.** Once a campaign has gone to 500 or more people, its
+account's sending is paused if more than 0.3% of them complained or more
+than 5% hard bounced. The check runs on each complaint and hard bounce, so a
+campaign is stopped while it's still sending, and one whose complaints come
+days later is still caught. A campaign pauses its account once; after the
+pause is lifted it doesn't pause it again. The account is told why (the
+reason is shown when it tries to launch), the pause is logged, and an alert
+goes to `OPS_ALERT_EMAIL`.
+
+**Pausing mid-send.** A paused account's campaigns stop before their next
+email: the rows not yet sent are handed back and wait, and the campaign
+carries on where it stopped when the account is unpaused.
+
+### Admin tools
+
+mailgoose staff use `mailgoose admin` (the `/v1/admin/*` endpoints). They
+need a person signed in with `mailgoose login` (or the web app) whose user is
+an admin; API keys are refused, even an admin's. Every action takes a
+`--reason` and is logged in `admin_actions` with who, why and when
+(`mailgoose admin log`); the log is kept when the account is deleted.
+
+| Command | Does |
+| --- | --- |
+| `mailgoose admin find <text>` | Finds accounts by id, or part of the owner's address, the name or a sending domain. |
+| `mailgoose admin account <id>` | Status, pause, daily limit, contacts, credits, 30-day rates, held imports and live campaigns. |
+| `mailgoose admin pause <id> --reason` | Pauses sending (campaigns stop before their next email). The reason is shown to the account. |
+| `mailgoose admin unpause <id> --reason` | Lifts a pause; paused campaigns carry on. |
+| `mailgoose admin stop-campaign <id> --reason --yes` | The kill switch: nobody else gets it, unused credits come back, it ends `cancelled`. |
+| `mailgoose admin approve-import <id> --reason` | Lets a held import's contacts be mailed. |
+| `mailgoose admin grant-credits <id> --amount --reason` | Adds up to 1,000,000 credits, lasting 24 months. |
+| `mailgoose admin log [--account <id>]` | The log, newest first. |
+
+The admin role is granted only from the server, by someone who can reach the
+database: `mailgoosed admin grant <email> --reason "..."` (and `revoke`).
+There's no API for it.
 
 ## Unsubscribing
 

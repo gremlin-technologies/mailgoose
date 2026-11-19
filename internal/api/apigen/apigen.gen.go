@@ -69,6 +69,42 @@ func (e AccountSettingsPlan) Valid() bool {
 	}
 }
 
+// Defines values for AdminActionAction.
+const (
+	AdminActionActionApproveImport AdminActionAction = "approve_import"
+	AdminActionActionAutoPause     AdminActionAction = "auto_pause"
+	AdminActionActionGrantAdmin    AdminActionAction = "grant_admin"
+	AdminActionActionGrantCredits  AdminActionAction = "grant_credits"
+	AdminActionActionPause         AdminActionAction = "pause"
+	AdminActionActionRevokeAdmin   AdminActionAction = "revoke_admin"
+	AdminActionActionStopCampaign  AdminActionAction = "stop_campaign"
+	AdminActionActionUnpause       AdminActionAction = "unpause"
+)
+
+// Valid indicates whether the value is a known member of the AdminActionAction enum.
+func (e AdminActionAction) Valid() bool {
+	switch e {
+	case AdminActionActionApproveImport:
+		return true
+	case AdminActionActionAutoPause:
+		return true
+	case AdminActionActionGrantAdmin:
+		return true
+	case AdminActionActionGrantCredits:
+		return true
+	case AdminActionActionPause:
+		return true
+	case AdminActionActionRevokeAdmin:
+		return true
+	case AdminActionActionStopCampaign:
+		return true
+	case AdminActionActionUnpause:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Align.
 const (
 	AlignCenter Align = "center"
@@ -1036,6 +1072,106 @@ type AddEmailBlockRequest struct {
 	Version int `json:"version"`
 }
 
+// AdminAccount defines model for AdminAccount.
+type AdminAccount struct {
+	Contacts      int       `json:"contacts"`
+	CreatedAt     time.Time `json:"created_at"`
+	CreditBalance int64     `json:"credit_balance"`
+
+	// DailySendLimit The account's own daily limit; null follows the schedule.
+	DailySendLimit *int              `json:"daily_send_limit"`
+	HeldImports    []AdminHeldImport `json:"held_imports"`
+	Id             string            `json:"id"`
+
+	// Last30Days Copies sent, and the recipients who hard bounced or complained.
+	Last30Days          AdminRates          `json:"last_30_days"`
+	LiveCampaigns       []AdminLiveCampaign `json:"live_campaigns"`
+	Name                string              `json:"name"`
+	OwnerEmail          *string             `json:"owner_email"`
+	Plan                string              `json:"plan"`
+	SendingPausedAt     *time.Time          `json:"sending_paused_at"`
+	SendingPausedReason *string             `json:"sending_paused_reason"`
+	Status              string              `json:"status"`
+}
+
+// AdminAccountList defines model for AdminAccountList.
+type AdminAccountList struct {
+	Data       []AdminAccountSummary `json:"data"`
+	NextCursor any                   `json:"next_cursor"`
+}
+
+// AdminAccountSummary defines model for AdminAccountSummary.
+type AdminAccountSummary struct {
+	CreatedAt           time.Time  `json:"created_at"`
+	Id                  string     `json:"id"`
+	Name                string     `json:"name"`
+	OwnerEmail          *string    `json:"owner_email"`
+	Plan                string     `json:"plan"`
+	SendingPausedAt     *time.Time `json:"sending_paused_at"`
+	SendingPausedReason *string    `json:"sending_paused_reason"`
+	Status              string     `json:"status"`
+}
+
+// AdminAction defines model for AdminAction.
+type AdminAction struct {
+	AccountId *string           `json:"account_id"`
+	Action    AdminActionAction `json:"action"`
+
+	// Actor The admin's address, `mailgoosed` (the server's command line) or `automatic`.
+	Actor     string                 `json:"actor"`
+	CreatedAt time.Time              `json:"created_at"`
+	Details   map[string]interface{} `json:"details"`
+	Id        int64                  `json:"id"`
+	Reason    string                 `json:"reason"`
+
+	// TargetId The campaign, import or user acted on.
+	TargetId *string `json:"target_id"`
+}
+
+// AdminActionAction defines model for AdminAction.Action.
+type AdminActionAction string
+
+// AdminActionList defines model for AdminActionList.
+type AdminActionList struct {
+	Data       []AdminAction `json:"data"`
+	NextCursor *string       `json:"next_cursor"`
+}
+
+// AdminHeldImport defines model for AdminHeldImport.
+type AdminHeldImport struct {
+	CreatedAt  time.Time `json:"created_at"`
+	FileName   *string   `json:"file_name"`
+	HoldReason string    `json:"hold_reason"`
+	Id         string    `json:"id"`
+	Status     string    `json:"status"`
+	TotalRows  int       `json:"total_rows"`
+}
+
+// AdminLiveCampaign defines model for AdminLiveCampaign.
+type AdminLiveCampaign struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+
+	// Rates Copies sent, and the recipients who hard bounced or complained.
+	Rates      AdminRates `json:"rates"`
+	Recipients int        `json:"recipients"`
+	SendAt     *time.Time `json:"send_at"`
+	Status     string     `json:"status"`
+}
+
+// AdminRates Copies sent, and the recipients who hard bounced or complained.
+type AdminRates struct {
+	Complaints  int `json:"complaints"`
+	HardBounces int `json:"hard_bounces"`
+	Sent        int `json:"sent"`
+}
+
+// AdminReasonRequest defines model for AdminReasonRequest.
+type AdminReasonRequest struct {
+	// Reason Why, for the admin log (and, for a pause, the account). At most 500 characters.
+	Reason string `json:"reason"`
+}
+
 // Align defines model for Align.
 type Align string
 
@@ -1067,6 +1203,15 @@ type ApiKeyList struct {
 // ApiKeyScope `full` can do everything. `draft` can do everything except launch
 // campaigns, change billing and manage keys.
 type ApiKeyScope string
+
+// ApprovedImport defines model for ApprovedImport.
+type ApprovedImport struct {
+	AccountId string `json:"account_id"`
+
+	// ContactsReleased How many of its contacts can now be mailed.
+	ContactsReleased int64  `json:"contacts_released"`
+	Id               string `json:"id"`
+}
 
 // Block One block of a document, by `type` (DES-2).
 type Block struct {
@@ -1480,6 +1625,14 @@ type CreatedApiKey struct {
 	//
 	// Examples: mg_live_9w2k4m1qz7d8c3x5v6b0n1p2r3s4t5u6
 	Secret string `json:"secret"`
+}
+
+// CreditGrant defines model for CreditGrant.
+type CreditGrant struct {
+	AccountId     string    `json:"account_id"`
+	Amount        int64     `json:"amount"`
+	CreditBalance int64     `json:"credit_balance"`
+	ExpiresAt     time.Time `json:"expires_at"`
 }
 
 // CreditSummary defines model for CreditSummary.
@@ -1938,6 +2091,12 @@ type FormProblem struct {
 	Code    string `json:"code"`
 	Hint    string `json:"hint"`
 	Message string `json:"message"`
+}
+
+// GrantCreditsRequest defines model for GrantCreditsRequest.
+type GrantCreditsRequest struct {
+	Amount int64  `json:"amount"`
+	Reason string `json:"reason"`
 }
 
 // HeadingBlock defines model for HeadingBlock.
@@ -2489,6 +2648,9 @@ type Whoami struct {
 // WhoamiAuthMethod defines model for Whoami.AuthMethod.
 type WhoamiAuthMethod string
 
+// AccountId defines model for AccountId.
+type AccountId = string
+
 // CampaignId defines model for CampaignId.
 type CampaignId = string
 
@@ -2552,6 +2714,9 @@ type IdempotencyConflict = Error
 // ImportRefused defines model for ImportRefused.
 type ImportRefused = Error
 
+// InvalidAdminRequest defines model for InvalidAdminRequest.
+type InvalidAdminRequest = Error
+
 // InvalidBlockChange defines model for InvalidBlockChange.
 type InvalidBlockChange = Error
 
@@ -2610,6 +2775,29 @@ type ValidationFailed = Error
 type DeleteAccountParams struct {
 	// Confirm The account's name, exactly. Required; a request without it is a 400. (It's checked after the key's scope, so a draft key always gets a 403.)
 	Confirm *string `form:"confirm,omitempty" json:"confirm,omitempty"`
+}
+
+// FindAdminAccountsParams defines parameters for FindAdminAccounts.
+type FindAdminAccountsParams struct {
+	// Q An account id, or part of an address, name or domain. Required;
+	// the endpoint answers 400 `invalid_parameter` without it (it's
+	// checked after the caller is, so others get 401 or 403 first).
+	Q *string `form:"q,omitempty" json:"q,omitempty"`
+
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListAdminActionsParams defines parameters for ListAdminActions.
+type ListAdminActionsParams struct {
+	// AccountId Only this account's actions.
+	AccountId *string `form:"account_id,omitempty" json:"account_id,omitempty"`
+
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // ListApiKeysParams defines parameters for ListApiKeys.
@@ -2761,6 +2949,21 @@ type ListTagsParams struct {
 
 // UpdateAccountJSONRequestBody defines body for UpdateAccount for application/json ContentType.
 type UpdateAccountJSONRequestBody = UpdateAccountRequest
+
+// GrantCreditsJSONRequestBody defines body for GrantCredits for application/json ContentType.
+type GrantCreditsJSONRequestBody = GrantCreditsRequest
+
+// PauseAccountJSONRequestBody defines body for PauseAccount for application/json ContentType.
+type PauseAccountJSONRequestBody = AdminReasonRequest
+
+// UnpauseAccountJSONRequestBody defines body for UnpauseAccount for application/json ContentType.
+type UnpauseAccountJSONRequestBody = AdminReasonRequest
+
+// StopCampaignJSONRequestBody defines body for StopCampaign for application/json ContentType.
+type StopCampaignJSONRequestBody = AdminReasonRequest
+
+// ApproveImportJSONRequestBody defines body for ApproveImport for application/json ContentType.
+type ApproveImportJSONRequestBody = AdminReasonRequest
 
 // CreateApiKeyJSONRequestBody defines body for CreateApiKey for application/json ContentType.
 type CreateApiKeyJSONRequestBody = CreateApiKeyRequest
@@ -3568,6 +3771,30 @@ type ServerInterface interface {
 	// UpdateAccount Change account settings
 	// (PATCH /v1/account)
 	UpdateAccount(w http.ResponseWriter, r *http.Request)
+	// FindAdminAccounts Find accounts (admin)
+	// (GET /v1/admin/accounts)
+	FindAdminAccounts(w http.ResponseWriter, r *http.Request, params FindAdminAccountsParams)
+	// GetAdminAccount Look at an account (admin)
+	// (GET /v1/admin/accounts/{account_id})
+	GetAdminAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// GrantCredits Grant credits (admin)
+	// (POST /v1/admin/accounts/{account_id}/credits)
+	GrantCredits(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// PauseAccount Pause an account's sending (admin)
+	// (POST /v1/admin/accounts/{account_id}/pause)
+	PauseAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// UnpauseAccount Let an account send again (admin)
+	// (POST /v1/admin/accounts/{account_id}/unpause)
+	UnpauseAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// ListAdminActions The admin log (admin)
+	// (GET /v1/admin/actions)
+	ListAdminActions(w http.ResponseWriter, r *http.Request, params ListAdminActionsParams)
+	// StopCampaign Stop a campaign in flight (admin)
+	// (POST /v1/admin/campaigns/{campaign_id}/stop)
+	StopCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
+	// ApproveImport Approve a held import (admin)
+	// (POST /v1/admin/imports/{import_id}/approve)
+	ApproveImport(w http.ResponseWriter, r *http.Request, importId ImportId)
 	// ListApiKeys List API keys
 	// (GET /v1/api-keys)
 	ListApiKeys(w http.ResponseWriter, r *http.Request, params ListApiKeysParams)
@@ -3875,6 +4102,267 @@ func (siw *ServerInterfaceWrapper) UpdateAccount(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateAccount(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FindAdminAccounts operation middleware
+func (siw *ServerInterfaceWrapper) FindAdminAccounts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params FindAdminAccountsParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FindAdminAccounts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAdminAccount operation middleware
+func (siw *ServerInterfaceWrapper) GetAdminAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAdminAccount(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GrantCredits operation middleware
+func (siw *ServerInterfaceWrapper) GrantCredits(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GrantCredits(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PauseAccount operation middleware
+func (siw *ServerInterfaceWrapper) PauseAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PauseAccount(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnpauseAccount operation middleware
+func (siw *ServerInterfaceWrapper) UnpauseAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnpauseAccount(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAdminActions operation middleware
+func (siw *ServerInterfaceWrapper) ListAdminActions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAdminActionsParams
+
+	// ------------- Optional query parameter "account_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "account_id", r.URL.Query(), &params.AccountId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "account_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAdminActions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StopCampaign operation middleware
+func (siw *ServerInterfaceWrapper) StopCampaign(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "campaign_id" -------------
+	var campaignId CampaignId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "campaign_id", r.PathValue("campaign_id"), &campaignId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "campaign_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StopCampaign(w, r, campaignId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ApproveImport operation middleware
+func (siw *ServerInterfaceWrapper) ApproveImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "import_id" -------------
+	var importId ImportId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "import_id", r.PathValue("import_id"), &importId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "import_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ApproveImport(w, r, importId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6122,6 +6610,14 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/emails/{email_id}/blocks/{block_id}", wrapper.RemoveEmailBlock)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/emails/{email_id}/blocks/{block_id}", wrapper.UpdateEmailBlock)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails/{email_id}/blocks/{block_id}/move", wrapper.MoveEmailBlock)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/accounts", wrapper.FindAdminAccounts)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/accounts/{account_id}", wrapper.GetAdminAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/pause", wrapper.PauseAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/unpause", wrapper.UnpauseAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/credits", wrapper.GrantCredits)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/campaigns/{campaign_id}/stop", wrapper.StopCampaign)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/imports/{import_id}/approve", wrapper.ApproveImport)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/actions", wrapper.ListAdminActions)
 
 	return m
 }

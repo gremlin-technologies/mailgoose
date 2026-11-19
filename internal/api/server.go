@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gremlin-technologies/mailgoose/internal/admin"
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
@@ -75,6 +76,9 @@ type Server struct {
 	// Signups takes posts to signup forms and confirm links; nil without a
 	// database, which makes them answer 503.
 	Signups *signups.Service
+	// Admin backs the mailgoose staff tools (OPS-6); nil without a
+	// database, which makes them answer 503.
+	Admin *admin.Service
 	// TrustedOrigins are other origins (such as the web app's, when it isn't
 	// served from the API's own origin) allowed to send cookie-authenticated
 	// requests that change something. The API's own origin always is.

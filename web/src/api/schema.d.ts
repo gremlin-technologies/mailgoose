@@ -1385,6 +1385,184 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Find accounts (admin)
+         * @description mailgoose staff only (OPS-6): accounts whose id is `q`, or whose
+         *     owner's address, name or sending domain contains it. At most `limit`
+         *     of them, newest first; there's no next page. Admin endpoints need a
+         *     signed-in admin (a CLI token or web session, not an API key) and
+         *     answer 403 `admin_only` to anyone else.
+         */
+        get: operations["findAdminAccounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/{account_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Look at an account (admin)
+         * @description mailgoose staff only: an account's owner, pause, send limit, credits,
+         *     last 30 days' bounces and complaints, held imports and live
+         *     campaigns.
+         */
+        get: operations["getAdminAccount"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/{account_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause an account's sending (admin)
+         * @description mailgoose staff only, the kill switch for an account (CMP-8): nothing
+         *     more is sent from it, from the next copy on. Its campaigns stay as
+         *     they are and carry on when it's unpaused. `reason` is logged and
+         *     shown to the account as why. Pausing a paused account replaces the
+         *     reason.
+         */
+        post: operations["pauseAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/{account_id}/unpause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Let an account send again (admin)
+         * @description mailgoose staff only: lifts a pause, an admin's or an automatic one.
+         *     The account's sending campaigns carry on where they stopped.
+         */
+        post: operations["unpauseAccount"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/{account_id}/credits": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Grant credits (admin)
+         * @description mailgoose staff only: gives the account credits, which last 24
+         *     months like bought ones. They show in its history as a `grant`.
+         */
+        post: operations["grantCredits"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/campaigns/{campaign_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Stop a campaign in flight (admin)
+         * @description mailgoose staff only, the kill switch for a campaign (CMP-8): a
+         *     scheduled, sending or paused campaign is cancelled where it stands.
+         *     Nobody else gets it, from the next copy on, and the credits for who's
+         *     left come back. Stopping a cancelled campaign changes nothing; one
+         *     that's a draft or finished answers 409 `campaign_locked`.
+         */
+        post: operations["stopCampaign"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/imports/{import_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a held import (admin)
+         * @description mailgoose staff only (CON-6): a held import's contacts can be mailed.
+         *     An import that isn't held answers 409 `import_not_held`.
+         */
+        post: operations["approveImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The admin log (admin)
+         * @description mailgoose staff only: every admin action and automatic pause, newest
+         *     first, with who did it and why; for one account with `account_id`.
+         */
+        get: operations["listAdminActions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2652,8 +2830,136 @@ export interface components {
                 };
             };
         };
+        AdminReasonRequest: {
+            /** @description Why, for the admin log (and, for a pause, the account). At most 500 characters. */
+            reason: string;
+        };
+        GrantCreditsRequest: {
+            /** Format: int64 */
+            amount: number;
+            reason: string;
+        };
+        /** @description Copies sent, and the recipients who hard bounced or complained. */
+        AdminRates: {
+            sent: number;
+            hard_bounces: number;
+            complaints: number;
+        };
+        AdminAccountSummary: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            status: string;
+            plan: string;
+            owner_email: string | null;
+            /** Format: date-time */
+            sending_paused_at: string | null;
+            sending_paused_reason: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminAccountList: {
+            data: components["schemas"]["AdminAccountSummary"][];
+            next_cursor: null;
+        };
+        AdminHeldImport: {
+            /** Format: uuid */
+            id: string;
+            file_name: string | null;
+            total_rows: number;
+            hold_reason: string;
+            status: string;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminLiveCampaign: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            status: string;
+            /** Format: date-time */
+            send_at: string | null;
+            recipients: number;
+            rates: components["schemas"]["AdminRates"];
+        };
+        AdminAccount: components["schemas"]["AdminAccountSummary"] & {
+            /** @description The account's own daily limit; null follows the schedule. */
+            daily_send_limit: number | null;
+            contacts: number;
+            /** Format: int64 */
+            credit_balance: number;
+            last_30_days: components["schemas"]["AdminRates"];
+            held_imports: components["schemas"]["AdminHeldImport"][];
+            live_campaigns: components["schemas"]["AdminLiveCampaign"][];
+        };
+        CreditGrant: {
+            /** Format: uuid */
+            account_id: string;
+            /** Format: int64 */
+            amount: number;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: int64 */
+            credit_balance: number;
+        };
+        ApprovedImport: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            account_id: string;
+            /**
+             * Format: int64
+             * @description How many of its contacts can now be mailed.
+             */
+            contacts_released: number;
+        };
+        AdminAction: {
+            /** Format: int64 */
+            id: number;
+            /** @description The admin's address, `mailgoosed` (the server's command line) or `automatic`. */
+            actor: string;
+            /** @enum {string} */
+            action: "grant_admin" | "revoke_admin" | "pause" | "unpause" | "auto_pause" | "stop_campaign" | "approve_import" | "grant_credits";
+            /** Format: uuid */
+            account_id: string | null;
+            /** @description The campaign, import or user acted on. */
+            target_id: string | null;
+            reason: string;
+            details: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminActionList: {
+            data: components["schemas"]["AdminAction"][];
+            next_cursor: string | null;
+        };
     };
     responses: {
+        /** @description The account. */
+        AdminAccount: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["AdminAccount"];
+            };
+        };
+        /**
+         * @description `invalid_admin_request`: `details.field` is `reason` (missing, or over
+         *     500 characters) or `amount` (not 1 to 1,000,000).
+         */
+        InvalidAdminRequest: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description `tag_exists`: the account already has a tag with that name, ignoring case. */
         TagConflict: {
             headers: {
@@ -3002,7 +3308,8 @@ export interface components {
         /**
          * @description `insufficient_scope`: a draft-scope key can't do this; use a full-scope
          *     key or the web app. `cross_origin_request`: a browser sent this from
-         *     another site.
+         *     another site. `admin_only`: only a signed-in mailgoose admin can do
+         *     this.
          */
         Forbidden: {
             headers: {
@@ -3085,6 +3392,8 @@ export interface components {
         ContactId: string;
         /** @description The tag's `id`. */
         TagId: string;
+        /** @description The account's `id`. */
+        AccountId: string;
         /** @description The import's `id`. */
         ImportId: string;
         /** @description The block's `id`. */
@@ -5520,6 +5829,263 @@ export interface operations {
             404: components["responses"]["BlockNotFound"];
             409: components["responses"]["EmailVersionConflict"];
             422: components["responses"]["InvalidBlockChange"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    findAdminAccounts: {
+        parameters: {
+            query?: {
+                /**
+                 * @description An account id, or part of an address, name or domain. Required;
+                 *     the endpoint answers 400 `invalid_parameter` without it (it's
+                 *     checked after the caller is, so others get 401 or 403 first).
+                 */
+                q?: string;
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The accounts found. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAccountList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getAdminAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: components["responses"]["AdminAccount"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    pauseAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AdminAccount"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    unpauseAccount: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AdminAccount"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    grantCredits: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantCreditsRequest"];
+            };
+        };
+        responses: {
+            /** @description Granted. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreditGrant"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    stopCampaign: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The campaign's `id`. */
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description Stopped, now or before. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Campaign"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["CampaignConflict"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    approveImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The import's `id`. */
+                import_id: components["parameters"]["ImportId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            /** @description Approved. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovedImport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            /** @description `import_not_held`: the import isn't waiting for approval. */
+            409: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listAdminActions: {
+        parameters: {
+            query?: {
+                /** @description Only this account's actions. */
+                account_id?: string;
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the log. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminActionList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };
