@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"runtime"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
@@ -687,5 +689,80 @@ func TestPipelineLoad(t *testing.T) {
 		float64(n)/took.Seconds())
 	if took > time.Hour {
 		t.Errorf("took %v, over an hour", took)
+	}
+}
+
+// A redelivered batch whose copies already went out takes no send slots,
+// so it doesn't slow the other campaigns sharing the rate.
+func TestPipelinePacesOnlyRealSends(t *testing.T) {
+	h := launchedHarness(t, 3)
+	ctx := context.Background()
+	q := &recorded{}
+	dispatch(t, h.pipeline(fastLimits), q)
+	batches := q.take()
+	for _, b := range batches {
+		if err := h.pipeline(fastLimits).HandleBatch(ctx, b, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var before time.Time
+	_ = h.db.QueryRow(ctx, `SELECT next_at FROM send_pace WHERE id = 1`).Scan(&before)
+
+	// Again, at one a second: four rows already sent would take 3s if each
+	// took a slot.
+	slow := h.pipeline(Limits{PerSecond: 1, Daily: 10000, NewDaily: 1000})
+	start := time.Now()
+	for _, b := range batches {
+		if err := slow.HandleBatch(ctx, b, 2); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var after time.Time
+	_ = h.db.QueryRow(ctx, `SELECT next_at FROM send_pace WHERE id = 1`).Scan(&after)
+	if took := time.Since(start); took > time.Second || !after.Equal(before) {
+		t.Errorf("redelivery took %v; pace moved from %v to %v", took, before, after)
+	}
+	if n := len(h.fake.Sent()); n != 4 {
+		t.Errorf("%d sent", n)
+	}
+}
+
+// recordFails makes recording a sent copy fail after the send, as a
+// database blip would.
+type recordFails struct {
+	mail.Fake
+	db interface {
+		Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	}
+}
+
+func (r *recordFails) Send(ctx context.Context, m mail.Message) (string, error) {
+	if _, err := r.db.Exec(ctx, `ALTER TABLE campaign_recipients ADD CONSTRAINT not_sent CHECK (status <> 'sent') NOT VALID`); err != nil {
+		return "", err
+	}
+	return r.Fake.Send(ctx, m)
+}
+
+// A copy that went out but couldn't be recorded is logged with its message
+// id, so it can be matched up.
+func TestPipelineLogsUnrecordedSend(t *testing.T) {
+	h := launchedHarness(t, 0)
+	ctx := context.Background()
+	q := &recorded{}
+	p := h.pipeline(fastLimits)
+	var logs strings.Builder
+	p.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	sender := &recordFails{db: h.db}
+	p.Mail = sender
+	dispatch(t, p, q)
+	for _, b := range q.take() {
+		if err := p.HandleBatch(ctx, b, 1); err == nil {
+			t.Error("no error")
+		}
+	}
+	sent, ok := sender.Last()
+	if !ok || !strings.Contains(logs.String(), "a sent copy wasn't recorded") ||
+		!strings.Contains(logs.String(), "message_id="+sent.ID) || !strings.Contains(logs.String(), "level=ERROR") {
+		t.Errorf("sent %v; logs:\n%s", ok, logs.String())
 	}
 }

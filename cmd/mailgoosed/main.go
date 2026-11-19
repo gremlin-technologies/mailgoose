@@ -209,6 +209,10 @@ func newDomains(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, log 
 	return svc, nil
 }
 
+// sendQueueVisibility is the send queue's visibility timeout in
+// infra/modules/stack.
+const sendQueueVisibility = 120 * time.Second
+
 func runWorker(ctx context.Context, log *slog.Logger) error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -218,7 +222,10 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	log.Info("starting worker", "version", version.Get().Version)
 
 	queues := []worker.Queue{
-		{Name: "send", URL: cfg.SendQueueURL, Handler: worker.NotImplemented(), MaxMessages: 1},
+		// A batch shares the global send rate with every other worker, so
+		// it can take longer than the queue's 120-second visibility timeout
+		// (infra/modules/stack); the worker keeps extending it.
+		{Name: "send", URL: cfg.SendQueueURL, Handler: worker.NotImplemented(), MaxMessages: 1, Visibility: sendQueueVisibility},
 		{Name: "ses-events", URL: cfg.SESEventsQueueURL, Handler: worker.NotImplemented()},
 	}
 

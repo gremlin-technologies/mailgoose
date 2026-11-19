@@ -20,6 +20,10 @@ type fakeSQS struct {
 	batch   []types.Message
 	deleted []string
 	asked   []int32
+	// extended are the receipt handles whose visibility was extended, and
+	// the timeouts asked for.
+	extended []string
+	timeouts []int32
 }
 
 func (f *fakeSQS) ReceiveMessage(ctx context.Context, in *sqs.ReceiveMessageInput, _ ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error) {
@@ -40,6 +44,14 @@ func (f *fakeSQS) DeleteMessage(_ context.Context, in *sqs.DeleteMessageInput, _
 	defer f.mu.Unlock()
 	f.deleted = append(f.deleted, aws.ToString(in.ReceiptHandle))
 	return &sqs.DeleteMessageOutput{}, nil
+}
+
+func (f *fakeSQS) ChangeMessageVisibility(_ context.Context, in *sqs.ChangeMessageVisibilityInput, _ ...func(*sqs.Options)) (*sqs.ChangeMessageVisibilityOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.extended = append(f.extended, aws.ToString(in.ReceiptHandle))
+	f.timeouts = append(f.timeouts, in.VisibilityTimeout)
+	return &sqs.ChangeMessageVisibilityOutput{}, nil
 }
 
 func quietLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -114,5 +126,41 @@ func TestMaxMessagesPerReceive(t *testing.T) {
 		if f.asked[0] != tc.want {
 			t.Errorf("MaxMessages %d: asked for %d, want %d", tc.set, f.asked[0], tc.want)
 		}
+	}
+}
+
+// A message that takes longer than half its queue's visibility timeout has
+// its visibility extended until it's handled, and not after.
+func TestKeepsSlowMessagesInvisible(t *testing.T) {
+	f := &fakeSQS{batch: []types.Message{msg("slow")}}
+	handled := make(chan struct{})
+	h := HandlerFunc(func(context.Context, types.Message) error {
+		time.Sleep(3 * time.Second)
+		close(handled)
+		return nil
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	w := &Worker{SQS: f, Log: quietLog(), Queues: []Queue{{Name: "send", URL: "https://sqs/send", Handler: h, Visibility: 2 * time.Second}}}
+	done := make(chan error, 1)
+	go func() { done <- w.Run(ctx) }()
+	<-handled
+	time.Sleep(1500 * time.Millisecond)
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Extended at about 1s and 2s while handled (3s), then no more.
+	if n := len(f.extended); n < 2 || n > 3 {
+		t.Errorf("extended %d times: %v", n, f.extended)
+	}
+	for i, rh := range f.extended {
+		if rh != "rh-slow" || f.timeouts[i] != 2 {
+			t.Errorf("extension %d: %s for %ds", i, rh, f.timeouts[i])
+		}
+	}
+	if len(f.deleted) != 1 {
+		t.Errorf("deleted %v", f.deleted)
 	}
 }

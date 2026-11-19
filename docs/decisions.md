@@ -34,11 +34,20 @@ Picked while building MG-31; easy to change.
   it. The 24 hours are a rolling window, not a calendar day.
 - **The rate is global,** kept by one row in Postgres that every worker
   takes its next slot from, so adding workers never raises it. SES's own
-  account quota stays the outer limit.
+  account quota stays the outer limit. Only a copy that will really go out
+  takes a slot: a row is claimed first, so skipped rows and a redelivered
+  batch's sent rows don't use one (MG-31 review follow-up, 2026-11-19).
+- **A batch stays invisible on the queue while it runs.** The rate is
+  shared, so a batch can outlast the queue's 120-second visibility timeout;
+  the worker extends it every 60 seconds until the batch is done, rather
+  than letting SQS deliver it again and use up a try (MG-31 review
+  follow-up, 2026-11-19).
 - **A send cut off mid-way is not retried.** If a worker dies between
   claiming a row and recording it sent, the copy may have gone out, so
   after 10 minutes the row ends `failed` and its credit comes back. Missing
-  one email is preferred to sending two (CAM-8).
+  one email is preferred to sending two (CAM-8). A copy that went out but
+  couldn't be recorded is logged at error level with its message id, so it
+  can be matched up by hand.
 - **A refused send is retried** with the batch, up to 5 tries (the queue's
   redrive limit); then the row is `failed`, its credit back, and the message
   lands in the dead-letter queue.

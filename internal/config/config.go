@@ -39,8 +39,8 @@ type Config struct {
 	// SESEventsQueueURL is the SQS queue SES events arrive on through SNS.
 	SESEventsQueueURL string
 
-	// SendRatePerSecond is the most campaign emails one worker sends a
-	// second, under the SES account's sending rate (CAM-7).
+	// SendRatePerSecond is the most campaign emails sent a second, across
+	// every worker together, under the SES account's sending rate (CAM-7).
 	SendRatePerSecond int
 	// AccountDailySendLimit is how many campaign recipients an account may
 	// be sent to in 24 hours once it's past its first week (CMP-7).
