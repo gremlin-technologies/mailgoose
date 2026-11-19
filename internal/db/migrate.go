@@ -37,8 +37,20 @@ func NewMigrator(pool *pgxpool.Pool) (*Migrator, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create migration lock: %w", err)
 	}
+	return newMigrator(pool, goose.WithSessionLocker(locker))
+}
+
+// NewUnlockedMigrator returns a Migrator for pool without the advisory lock,
+// for a schema nothing else migrates, such as a test's own. The lock is one
+// for the whole database, so with it every test's schema would wait for
+// every other's migrations.
+func NewUnlockedMigrator(pool *pgxpool.Pool) (*Migrator, error) {
+	return newMigrator(pool)
+}
+
+func newMigrator(pool *pgxpool.Pool, opts ...goose.ProviderOption) (*Migrator, error) {
 	sqlDB := stdlib.OpenDBFromPool(pool)
-	p, err := goose.NewProvider(goose.DialectPostgres, sqlDB, Migrations(), goose.WithSessionLocker(locker))
+	p, err := goose.NewProvider(goose.DialectPostgres, sqlDB, Migrations(), opts...)
 	if err != nil {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("load migrations: %w", err)
