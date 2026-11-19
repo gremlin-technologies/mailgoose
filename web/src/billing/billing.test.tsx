@@ -145,6 +145,13 @@ describe("billing page", () => {
     expect(within(plan).getByText("Ending")).toBeTruthy();
     expect(within(plan).queryByText("Next payment")).toBeNull();
   });
+
+  it("marks a plan whose first payment is still going through as pending, not active", async () => {
+    renderApp("/billing", server({ ...paidPlan, status: "incomplete" }).fetch);
+    const plan = await screen.findByRole("region", { name: "Plan" });
+    expect(within(plan).getByText("Payment pending")).toBeTruthy();
+    expect(within(plan).queryByText("Active")).toBeNull();
+  });
 });
 
 describe("paused banner", () => {

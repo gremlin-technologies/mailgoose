@@ -35,7 +35,9 @@ Picked while building MG-50; easy to change.
 - **The "paused for an unpaid fee" banner shows while the subscription is
   `past_due` or `unpaid`**, on every signed-in page, and links to this page.
   It reads the plan again on each page change, so it goes away once the
-  payment goes through.
+  payment goes through. A plan in any status other than `active` or
+  `trialing` (such as `incomplete`, a first payment waiting on the bank) is
+  marked "Payment pending" rather than "Active".
 - **Payments open Stripe's own pages.** The page only goes to an https
   address on stripe.com, and says so if the API answers with anything else.
 - **The pack buttons list the four decided packs** (BIL-3). A server set up
