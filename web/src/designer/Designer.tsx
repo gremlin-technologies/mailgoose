@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useState, type DragEvent, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 
 import { useApi } from "../api/context";
@@ -26,31 +26,13 @@ import {
 } from "./blocks";
 import { Markdown } from "./markdown";
 import { Preview, type Width } from "./Preview";
-import { base64, BlockProperties, EmailProperties, TextEditor, type Fields, type Settings } from "./properties";
+import { EMAIL, saveSettings, saveText, useAutosave } from "./autosave";
+import { HtmlEditor } from "./HtmlEditor";
+import { base64, BlockProperties, EmailProperties, TextEditor, type Settings } from "./properties";
 
 type Email = components["schemas"]["Email"];
 
-const conflict: Failure = {
-  code: "version_conflict",
-  message: "This email was changed somewhere else, so it has been reloaded.",
-  hint: "Make your change again on the email as it is now.",
-  status: 409,
-};
-
-/** The key autosave files the email's own name and settings under; blocks go by id. */
-const EMAIL = "email";
-/** How long autosave waits after the last edit. */
-export const saveDelay = 800;
-
 type Mode = "design" | Width;
-type SaveState = "saved" | "pending" | "saving" | "failed";
-const saveText: Record<SaveState, string> = {
-  saved: "All changes saved",
-  pending: "Unsaved changes",
-  saving: "Saving…",
-  failed: "Not saved",
-};
-
 /**
  * The email designer: a block palette, a canvas you drag blocks onto, and a
  * properties panel for the selected block or the email's settings. Edits
@@ -64,100 +46,45 @@ export function Designer() {
 
   if (state.status === "loading") return <Loading />;
   if (state.status === "failed") return <LoadFailed failure={state.failure} retry={reload} />;
-  if (state.data.kind !== "blocks") {
-    return (
-      <section className="page">
-        <PageHeader title={state.data.name} about="This email is hand-written HTML, so it's edited as code, not with blocks." />
-        <p className="crumb">
-          <Link to="/emails">All emails</Link>
-        </p>
-      </section>
-    );
-  }
+  if (state.data.kind === "html") return <HtmlEditor email={state.data} replace={replace} reload={reload} />;
   return <BlockDesigner email={state.data} replace={replace} reload={reload} />;
 }
 
 function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: Email) => void; reload: () => void }) {
   const api = useApi();
-  const [failure, setFailure] = useState<Failure>();
-  const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState<Drag>();
   const [pending, setPending] = useState<{ type: "image" | "button" | "social"; zone?: Zone }>();
   const [selected, setSelected] = useState<string>();
   const [mode, setMode] = useState<Mode>("design");
-  // Edits not saved yet, by block id (or EMAIL); the page shows them over the saved email.
-  const [drafts, setDrafts] = useState<Record<string, Fields>>({});
-  const [save, setSave] = useState<SaveState>("saved");
-
-  // Requests run one at a time, each with the version the last one returned.
-  const version = useRef(email.version);
-  const queue = useRef<Promise<unknown>>(Promise.resolve());
-  const unsent = useRef<Record<string, Fields>>({});
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const flushRef = useRef<() => void>(() => {});
-
-  useEffect(() => {
-    version.current = email.version;
-  }, [email]);
-  // Leaving the page saves what's left.
-  useEffect(() => () => flushRef.current(), []);
-  useEffect(() => {
-    if (save !== "pending" && save !== "saving") return;
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [save]);
 
   const path = { email_id: email.id };
   const doc = email.document as BlockDocument;
-
-  function enqueue<T>(f: () => Promise<T>): Promise<T> {
-    const p = queue.current.then(f, f);
-    queue.current = p.catch(() => undefined);
-    return p;
-  }
-
-  /** Someone else saved the email: drop what's unsaved here and show theirs. */
-  function conflicted() {
-    clearTimeout(timer.current);
-    unsent.current = {};
-    setDrafts({});
-    setSave("saved");
-    setFailure(conflict);
-    reload();
-  }
-
-  /** Takes one answer: its email replaces the one shown. */
-  function settle(res: Result<Email | undefined>): boolean {
-    if (res.ok) {
-      if (res.data) {
-        version.current = res.data.version;
-        replace(res.data);
-      }
-      return true;
-    }
-    if (res.failure.code === "version_conflict") conflicted();
-    else setFailure(res.failure);
-    return false;
-  }
-
-  /** Runs one block operation after any unsaved edits. */
-  async function change(call: (v: number) => Promise<Result<Email | undefined>>) {
-    setBusy(true);
-    setFailure(undefined);
-    void flush();
-    const ok = await enqueue(async () => settle(await call(version.current)));
-    setBusy(false);
-    return ok;
-  }
 
   const emailOf = async <T extends { email: Email }>(p: Promise<Result<T | undefined>>): Promise<Result<Email | undefined>> => {
     const res = await p;
     return res.ok ? { ok: true, data: res.data?.email } : res;
   };
 
+  const { failure, setFailure, busy, drafts, save, edit, flush, run } = useAutosave({
+    email,
+    replace,
+    reload,
+    send: (key, fields, v) =>
+      key === EMAIL
+        ? saveSettings(api, email.id, fields, v)
+        : emailOf(
+            attempt(() =>
+              api.PATCH("/v1/emails/{email_id}/blocks/{block_id}", {
+                params: { path: { ...path, block_id: key } },
+                // The spec types fields as any object; each block type takes its own.
+                body: { version: v, fields: fields as Record<string, never> },
+              }),
+            ),
+          ),
+  });
+
   const add = (block: NewBlock, zone?: Zone) =>
-    change((v) =>
+    run((v) =>
       emailOf(
         attempt(() =>
           api.POST("/v1/emails/{email_id}/blocks", {
@@ -169,7 +96,7 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
     );
 
   const move = (blockId: string, zone: Zone) =>
-    change((v) =>
+    run((v) =>
       emailOf(
         attempt(() =>
           api.POST("/v1/emails/{email_id}/blocks/{block_id}/move", {
@@ -181,7 +108,7 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
     );
 
   const remove = async (blockId: string) => {
-    const ok = await change((v) =>
+    const ok = await run((v) =>
       attempt(() =>
         api.DELETE("/v1/emails/{email_id}/blocks/{block_id}", {
           params: { path: { ...path, block_id: blockId }, query: { version: v } },
@@ -191,78 +118,6 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
     if (ok && selected === blockId) setSelected(undefined);
     return ok;
   };
-
-  /** Saves one target's edits: the email's name and settings, or a block's fields. */
-  function saveFields(key: string, fields: Fields, v: number): Promise<Result<Email | undefined>> {
-    if (key === EMAIL) {
-      const { name, ...settings } = fields;
-      return attempt(() =>
-        api.PATCH("/v1/emails/{email_id}", {
-          params: { path },
-          body: {
-            version: v,
-            ...(name !== undefined ? { name: name as string } : {}),
-            ...(Object.keys(settings).length ? { settings } : {}),
-          },
-        }),
-      );
-    }
-    return emailOf(
-      attempt(() =>
-        api.PATCH("/v1/emails/{email_id}/blocks/{block_id}", {
-          params: { path: { ...path, block_id: key } },
-          // The spec types fields as any object; each block type takes its own.
-          body: { version: v, fields: fields as Record<string, never> },
-        }),
-      ),
-    );
-  }
-
-  /** Sends every unsaved edit now. */
-  function flush(): Promise<unknown> {
-    clearTimeout(timer.current);
-    const batch = unsent.current;
-    unsent.current = {};
-    const keys = Object.keys(batch);
-    if (keys.length === 0) return queue.current;
-    setSave("saving");
-    return enqueue(async () => {
-      let ok = true;
-      for (const key of keys) {
-        const fields = batch[key];
-        const res = await saveFields(key, fields, version.current);
-        if (!res.ok && res.failure.code === "version_conflict") return conflicted();
-        if (!settle(res)) {
-          ok = false;
-          continue;
-        }
-        // What was saved is in the email now; keep only edits made since.
-        setDrafts((d) => {
-          const left = { ...d[key] };
-          for (const f of Object.keys(fields)) if (left[f] === fields[f]) delete left[f];
-          const out = { ...d };
-          if (Object.keys(left).length) out[key] = left;
-          else delete out[key];
-          return out;
-        });
-      }
-      if (Object.keys(unsent.current).length) setSave("pending");
-      else setSave(ok ? "saved" : "failed");
-    });
-  }
-  useEffect(() => {
-    flushRef.current = () => void flush();
-  });
-
-  /** Records an edit and saves it once editing pauses. */
-  function edit(key: string, fields: Fields) {
-    setFailure(undefined);
-    setDrafts((d) => ({ ...d, [key]: { ...d[key], ...fields } }));
-    unsent.current = { ...unsent.current, [key]: { ...unsent.current[key], ...fields } };
-    setSave("pending");
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => void flush(), saveDelay);
-  }
 
   function select(blockId?: string) {
     if (blockId === selected) return;
@@ -747,3 +602,4 @@ function Details({
 }
 
 const maxImageBytes = 5 * 1024 * 1024;
+

@@ -17,6 +17,11 @@
     "lint:api": "redocly lint ../api/openapi.yaml --config ../api/redocly.yaml"
   },
   "dependencies": {
+    "@codemirror/lang-html": "6.4.12",
+    "@codemirror/lint": "6.9.8",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
+    "codemirror": "6.0.2",
     "openapi-fetch": "0.17.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
