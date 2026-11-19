@@ -44,6 +44,10 @@ type Queue struct {
 	Name    string
 	URL     string
 	Handler Handler
+	// MaxMessages is the most messages taken per receive, 1 to 10; 0
+	// means 10. Queues whose messages take long to handle take fewer, so
+	// none waits past its visibility timeout.
+	MaxMessages int32
 }
 
 // Worker polls its queues until its context is cancelled.
@@ -98,10 +102,14 @@ func (w *Worker) poll(ctx context.Context, q Queue) {
 		backoff = 5 * time.Second
 	}
 
+	maxMessages := q.MaxMessages
+	if maxMessages <= 0 || maxMessages > 10 {
+		maxMessages = 10
+	}
 	for ctx.Err() == nil {
 		out, err := w.SQS.ReceiveMessage(ctx, &sqs.ReceiveMessageInput{
 			QueueUrl:                    aws.String(q.URL),
-			MaxNumberOfMessages:         10,
+			MaxNumberOfMessages:         maxMessages,
 			WaitTimeSeconds:             wait,
 			MessageSystemAttributeNames: []types.MessageSystemAttributeName{types.MessageSystemAttributeNameApproximateReceiveCount},
 		})

@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -137,6 +138,16 @@ func serve(ctx context.Context, log *slog.Logger) error {
 			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Unsubscribe: srv.Unsubscribe, Mail: sender}
 		srv.Signups = &signups.Service{DB: pool, Forms: srv.Forms, Settings: &auth.Service{DB: pool},
 			Domains: srv.Domains, Mail: sender}
+		// With a send queue, the API puts batches on it, since only the
+		// API's role may send to it. Without one, the worker does it all.
+		if cfg.SendQueueURL != "" {
+			awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.AWSRegion))
+			if err != nil {
+				return fmt.Errorf("load AWS config: %w", err)
+			}
+			p := newPipeline(cfg, pool, sender, log)
+			go p.RunDispatcher(ctx, &sending.SQSQueue{SQS: sqs.NewFromConfig(awsCfg), URL: cfg.SendQueueURL}, dispatchEvery)
+		}
 		if cfg.SystemSendingDomain == "" {
 			log.Warn("SYSTEM_SENDING_DOMAIN is not set; sign-up and sign-in will answer 503")
 		} else {
@@ -207,7 +218,7 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	log.Info("starting worker", "version", version.Get().Version)
 
 	queues := []worker.Queue{
-		{Name: "send", URL: cfg.SendQueueURL, Handler: worker.NotImplemented()},
+		{Name: "send", URL: cfg.SendQueueURL, Handler: worker.NotImplemented(), MaxMessages: 1},
 		{Name: "ses-events", URL: cfg.SESEventsQueueURL, Handler: worker.NotImplemented()},
 	}
 
@@ -222,7 +233,7 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 
 	// CSV imports wait in Postgres, not SQS, so they need no queue.
 	if !cfg.Database.Configured() {
-		log.Warn("no database configured; CSV imports won't run")
+		log.Warn("no database configured; CSV imports and sending won't run")
 		return w.Run(ctx)
 	}
 	pool, err := openDB(ctx, cfg)
@@ -230,15 +241,46 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 		return err
 	}
 	defer pool.Close()
+	sender, err := mail.New(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	p := newPipeline(cfg, pool, sender, log)
+	// One handler takes one batch at a time, at the configured rate.
+	queues[0].Handler = worker.HandlerFunc(p.SQSHandler())
+
+	var wg sync.WaitGroup
+	run := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }
 	imports := &contacts.Service{DB: pool}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		imports.RunImports(ctx, log.With("job", "import"), 2*time.Second)
-	}()
+	run(func() { imports.RunImports(ctx, log.With("job", "import"), 2*time.Second) })
+	if cfg.SendQueueURL == "" {
+		// No SQS (local): the worker dispatches too, into a queue in memory.
+		log.Info("no send queue configured; sending through an in-process queue")
+		local := &sending.LocalQueue{Pipeline: p, Log: log}
+		run(func() { local.Run(ctx) })
+		run(func() { p.RunDispatcher(ctx, local, dispatchEvery) })
+	}
 	err = w.Run(ctx)
-	<-done
+	wg.Wait()
 	return err
+}
+
+// dispatchEvery is how often due campaigns are batched.
+const dispatchEvery = 2 * time.Second
+
+func newPipeline(cfg config.Config, pool *pgxpool.Pool, sender mail.Sender, log *slog.Logger) *sending.Pipeline {
+	return &sending.Pipeline{
+		DB:          pool,
+		Mail:        sender,
+		Unsubscribe: &unsubscribe.Service{DB: pool},
+		BaseURL:     cfg.PublicBaseURL,
+		Limits: sending.Limits{
+			PerSecond: cfg.SendRatePerSecond,
+			Daily:     cfg.AccountDailySendLimit,
+			NewDaily:  cfg.NewAccountDailySendLimit,
+		},
+		Log: log.With("job", "send"),
+	}
 }
 
 func newMigrateCmd(log *slog.Logger) *cobra.Command {

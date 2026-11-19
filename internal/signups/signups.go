@@ -190,10 +190,17 @@ func (s *Service) Submit(ctx context.Context, formID string, sub Submission, bas
 		if err != nil {
 			return err
 		}
+		// The send is stamped here, before it goes out, so a second post
+		// for the address (it waits on the contact's row lock) sees it and
+		// sends nothing. A send that fails clears the stamp.
+		var sentAt *time.Time
+		if tokenHash != nil {
+			sentAt = &now
+		}
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO consents (account_id, contact_id, form_id, ip, wording, created_at, confirm_token_hash, confirm_expires_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-			f.AccountID, su.ContactID, f.ID, sub.IP, wording, now, tokenHash, expires); err != nil {
+			INSERT INTO consents (account_id, contact_id, form_id, ip, wording, created_at, confirm_token_hash, confirm_expires_at, confirm_sent_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+			f.AccountID, su.ContactID, f.ID, sub.IP, wording, now, tokenHash, expires, sentAt); err != nil {
 			return err
 		}
 		_, err = tx.Exec(ctx, `UPDATE forms SET signup_count = signup_count + 1 WHERE id = $1`, f.ID)
@@ -208,11 +215,13 @@ func (s *Service) Submit(ctx context.Context, formID string, sub Submission, bas
 
 	msg := confirmMessage(f, *from, in.Email, strings.TrimRight(baseURL, "/")+ConfirmPrefix+token)
 	if _, err := s.Mail.Send(ctx, msg); err != nil {
+		// Not sent, so a retry may send at once. The link stays valid, but
+		// nobody has it.
+		if _, cerr := s.DB.Exec(ctx, `UPDATE consents SET confirm_sent_at = NULL WHERE confirm_token_hash = $1`,
+			hashToken(token)); cerr != nil {
+			err = errors.Join(err, cerr)
+		}
 		return nil, &SendError{Err: err}
-	}
-	if _, err := s.DB.Exec(ctx, `UPDATE consents SET confirm_sent_at = $2 WHERE confirm_token_hash = $1`,
-		hashToken(token), s.now()); err != nil {
-		return nil, err
 	}
 	res.ConfirmSent = true
 	return res, nil
@@ -390,13 +399,17 @@ func (s *Service) Confirm(ctx context.Context, token string) (*Pending, error) {
 			return err
 		}
 		now := s.now()
-		if _, err := contacts.Confirm(ctx, tx, c.accountID, c.contactID, now); err != nil {
+		status, err := contacts.Confirm(ctx, tx, c.accountID, c.contactID, now)
+		if err != nil {
 			return err
 		}
+		// The consent records the click whatever happens. The form counts
+		// it only when the contact ends up subscribed: a bounced or
+		// complained address stays as it is.
 		if _, err := tx.Exec(ctx, `UPDATE consents SET confirmed_at = $2 WHERE id = $1`, c.id, now); err != nil {
 			return err
 		}
-		if c.formID != nil {
+		if c.formID != nil && status == contacts.StatusSubscribed {
 			if _, err := tx.Exec(ctx, `UPDATE forms SET confirm_count = confirm_count + 1 WHERE id = $1`, *c.formID); err != nil {
 				return err
 			}

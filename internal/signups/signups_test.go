@@ -383,9 +383,88 @@ func TestContactLimit(t *testing.T) {
 	if _, err := h.submit(h.post("ann@example.com")); !errors.As(err, &le) {
 		t.Errorf("over the limit: %v", err)
 	}
-	// An existing contact can still sign up again.
-	if _, err := h.submit(h.post("c1@example.com")); err != nil {
+	// While the list is full an existing contact is refused alike, so the
+	// answer doesn't show who's on the list; its tags are left as they are.
+	if _, err := h.submit(h.post("c1@example.com")); !errors.As(err, &le) {
 		t.Errorf("existing: %v", err)
+	}
+	if _, tags := h.contact(t, "c1@example.com"); tags != 0 {
+		t.Errorf("existing contact got %d tags", tags)
+	}
+}
+
+// Posts for the same new address at once (a double click, or a bot from
+// several IPs) add one contact and send one confirmation email.
+func TestConcurrentSignups(t *testing.T) {
+	h := newHarness(t)
+	const n = 8
+	errs := make(chan error, n)
+	for range n {
+		go func() {
+			_, err := h.submit(h.post("ann@example.com"))
+			errs <- err
+		}()
+	}
+	for range n {
+		if err := <-errs; err != nil {
+			t.Error(err)
+		}
+	}
+	var contactsN, consents int
+	_ = h.db.QueryRow(context.Background(), `SELECT count(*) FROM contacts WHERE account_id = $1`, h.acc).Scan(&contactsN)
+	_ = h.db.QueryRow(context.Background(), `SELECT count(*) FROM consents WHERE account_id = $1`, h.acc).Scan(&consents)
+	if contactsN != 1 || consents != n || len(h.fake.Sent()) != 1 {
+		t.Errorf("%d contacts, %d consents, %d emails", contactsN, consents, len(h.fake.Sent()))
+	}
+}
+
+// A confirmation email that fails to send doesn't hold back the next try
+// for an hour.
+func TestFailedSendCanRetry(t *testing.T) {
+	h := newHarness(t)
+	h.fake.Err = errors.New("ses is down")
+	var se *SendError
+	if _, err := h.submit(h.post("ann@example.com")); !errors.As(err, &se) {
+		t.Fatalf("%v", err)
+	}
+	var stamped int
+	_ = h.db.QueryRow(context.Background(), `SELECT count(*) FROM consents WHERE account_id = $1 AND confirm_sent_at IS NOT NULL`, h.acc).Scan(&stamped)
+	if stamped != 0 {
+		t.Errorf("%d consents stamped as sent", stamped)
+	}
+	h.fake.Err = nil
+	h.now = h.now.Add(time.Minute)
+	res, err := h.submit(h.post("ann@example.com"))
+	if err != nil || !res.ConfirmSent || len(h.fake.Sent()) != 1 {
+		t.Errorf("retry: %+v %v, %d sent", res, err, len(h.fake.Sent()))
+	}
+	// And the hour holds after a send that worked.
+	h.now = h.now.Add(time.Minute)
+	if res, err := h.submit(h.post("ann@example.com")); err != nil || res.ConfirmSent {
+		t.Errorf("third: %+v %v", res, err)
+	}
+}
+
+// A contact that bounced after signing up still has its click recorded,
+// but it stays bounced and the form doesn't count a confirmation.
+func TestConfirmBouncedNotCounted(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if _, err := h.submit(h.post("ann@example.com")); err != nil {
+		t.Fatal(err)
+	}
+	token := h.confirmToken(t)
+	if _, err := h.db.Exec(ctx, `UPDATE contacts SET status = 'bounced' WHERE account_id = $1`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Confirm(ctx, token); err != nil {
+		t.Fatal(err)
+	}
+	status, _ := h.contact(t, "ann@example.com")
+	var clicked int
+	_ = h.db.QueryRow(ctx, `SELECT count(*) FROM consents WHERE account_id = $1 AND confirmed_at IS NOT NULL`, h.acc).Scan(&clicked)
+	if _, confirms := h.counts(t); status != contacts.StatusBounced || confirms != 0 || clicked != 1 {
+		t.Errorf("status %s, %d confirmations counted, %d clicks recorded", status, confirms, clicked)
 	}
 }
 

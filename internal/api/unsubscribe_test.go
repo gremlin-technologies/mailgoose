@@ -266,6 +266,13 @@ func TestUnsubscribePagesLimit(t *testing.T) {
 		t.Errorf("logs:\n%s", f.logs)
 	}
 
+	// A signup form limited here still answers with its CORS header, so
+	// the embed script can read the 429.
+	rec = f.do(t, http.MethodPost, signupPathPrefix+"frm_x", "email=a%40example.com", nil)
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Errorf("form post: %d, CORS %q", rec.Code, rec.Header().Get("Access-Control-Allow-Origin"))
+	}
+
 	// A limited POST reads no more than a recipient form's cap.
 	body := &countingReader{r: strings.NewReader("List-Unsubscribe=One-Click&x=" + strings.Repeat("a", 1<<20))}
 	r := httptest.NewRequest(http.MethodPost, unsubscribe.Path(f.joTok), body)

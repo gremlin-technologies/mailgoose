@@ -23,6 +23,33 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Send pipeline (MG-31, reversible defaults)
+
+Picked while building MG-31; easy to change.
+
+- **Limits:** 10 emails a second across all workers
+  (`SEND_RATE_PER_SECOND`), and per account 10,000 in any 24 hours, 1,000 in
+  its first 7 days (CMP-7's number). An account's own `daily_send_limit`
+  column overrides both; MG-34 (account health) is what will raise or lower
+  it. The 24 hours are a rolling window, not a calendar day.
+- **The rate is global,** kept by one row in Postgres that every worker
+  takes its next slot from, so adding workers never raises it. SES's own
+  account quota stays the outer limit.
+- **A send cut off mid-way is not retried.** If a worker dies between
+  claiming a row and recording it sent, the copy may have gone out, so
+  after 10 minutes the row ends `failed` and its credit comes back. Missing
+  one email is preferred to sending two (CAM-8).
+- **A refused send is retried** with the batch, up to 5 tries (the queue's
+  redrive limit); then the row is `failed`, its credit back, and the message
+  lands in the dead-letter queue.
+- **The dispatcher runs in the API** when there's an SQS queue, because only
+  the API's role may send to it (no infra change), and in the worker when
+  there isn't (local).
+- **MG-31 starts due scheduled campaigns.** MG-32 keeps cancelling and
+  rescheduling.
+- **A campaign where nothing went out ends `failed`;** if any copy went out
+  it ends `sent`, with the failures counted on its rows.
+
 ## 2026-11-18: Form submissions and double opt-in (MG-36, reversible defaults)
 
 Picked while building MG-36; easy to change.
@@ -48,14 +75,23 @@ Picked while building MG-36; easy to change.
   blanks; a signup never overwrites a name.
 - **At most one confirmation email per contact an hour**; a resubmission in
   that hour gets the normal answer and no email. Confirm links last 7 days.
+  The hour is stamped in the signup's transaction, before the email goes,
+  and cleared if the send fails, so posts that arrive together still send
+  one (MG-36 review follow-up, 2026-11-19).
 - **Opening a confirm link changes nothing;** the page's button confirms,
   because mail scanners open links.
 - **Over the free contact limit** a signup or a confirmation is refused
   (409); the person is asked to try later. Nothing tells the account owner
-  yet; MG-51's dashboard can.
+  yet; MG-51's dashboard can. While the account is full, every signup gets
+  that answer, including one from an address already on the list, so the
+  answer still doesn't show who's on it; an existing contact's tags aren't
+  added then (MG-36 review follow-up, 2026-11-19).
 - **Counts are columns on the form** (`signups`: posts taken, a repeat
-  counts again; `confirmations`: links used), not computed from consent
-  records, so deleting contacts doesn't change them.
+  counts again; `confirmations`: links used that left the contact
+  subscribed), not computed from consent records, so deleting contacts
+  doesn't change them. A link used by a contact that has since bounced or
+  complained is recorded on its consent but not counted (MG-36 review
+  follow-up, 2026-11-19).
 - **Consent records** keep the time, IP, form, the form's wording (name,
   field labels, button, and with double opt-in the confirmation subject and
   text) and the confirmation time. Deleting the form keeps them; deleting or
