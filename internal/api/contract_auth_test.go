@@ -18,6 +18,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
 
 const signInBody = `{"email":"pat@example.com"}`
@@ -40,13 +41,14 @@ func authServer(t *testing.T) *Server {
 	testDBs.Store(t, db)
 	t.Cleanup(func() { outboxes.Delete(t); testDBs.Delete(t) })
 	return &Server{
-		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
-		DB:        db,
-		Credits:   &credits.Ledger{DB: db},
-		Contacts:  &contacts.Service{DB: db},
-		Emails:    &emails.Service{DB: db},
-		Forms:     &forms.Service{DB: db},
-		Campaigns: &campaigns.Service{DB: db},
+		Log:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:          db,
+		Credits:     &credits.Ledger{DB: db},
+		Contacts:    &contacts.Service{DB: db},
+		Emails:      &emails.Service{DB: db},
+		Forms:       &forms.Service{DB: db},
+		Campaigns:   &campaigns.Service{DB: db},
+		Unsubscribe: &unsubscribe.Service{DB: db},
 		// Fake SES, and DNS that answers with every record asked for, so
 		// domains verify on their first check.
 		Domains: &domains.Service{DB: db, SES: &domains.FakeSES{}, DNS: domains.LocalDNS{Region: "us-east-2"},

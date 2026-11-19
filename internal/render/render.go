@@ -55,6 +55,29 @@ type Message struct {
 	Subject string
 	HTML    string
 	Text    string
+	// Headers are the extra headers this copy needs: the List-Unsubscribe
+	// pair when the recipient has an unsubscribe URL.
+	Headers []Header
+}
+
+// Header is one email header.
+type Header struct {
+	Name, Value string
+}
+
+// UnsubscribeHeaders are the RFC 8058 one-click headers for an unsubscribe
+// URL: a mail app shows its own unsubscribe button and POSTs
+// "List-Unsubscribe=One-Click" to the URL, with no page to open. Gmail and
+// Yahoo require them for bulk senders. An empty URL has none.
+func UnsubscribeHeaders(url string) []Header {
+	url = strings.TrimSpace(url)
+	if url == "" || strings.ContainsAny(url, "<>\r\n") {
+		return nil
+	}
+	return []Header{
+		{Name: "List-Unsubscribe", Value: "<" + url + ">"},
+		{Name: "List-Unsubscribe-Post", Value: "List-Unsubscribe=One-Click"},
+	}
 }
 
 // Personalize fills in the merge tags for r.
@@ -69,6 +92,7 @@ func (t *Template) Personalize(r Recipient) Message {
 		Subject: strings.Join(strings.Fields(subject.String()), " "),
 		HTML:    htmlOut.String(),
 		Text:    text.String(),
+		Headers: UnsubscribeHeaders(r.UnsubscribeURL),
 	}
 }
 
