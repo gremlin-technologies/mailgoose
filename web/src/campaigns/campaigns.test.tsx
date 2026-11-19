@@ -1,10 +1,10 @@
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { fakeApi, renderApp, signedIn } from "../test/render";
 import { fromLocalInput, recipientsText, toLocalInput, type Campaign } from "./campaign";
-import { pollEvery } from "./CampaignDetail";
+import { polling } from "./CampaignDetail";
 import { confirmationOf, problemsOf } from "./steps";
 
 const emailId = "55555555-5555-4555-8555-555555555555";
@@ -84,7 +84,7 @@ function server(start: Campaign, extra: Record<string, Route> = {}) {
 }
 
 afterEach(() => {
-  vi.useRealTimers();
+  polling.every = 5000;
 });
 
 describe("campaign helpers", () => {
@@ -373,21 +373,17 @@ describe("scheduled campaign", () => {
 
 describe("sending campaign", () => {
   it("looks again until it has finished sending", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    polling.every = 50;
     const launch = { at: "2026-11-19T10:00:00Z", recipient_count: 120, credits_reserved: 120 };
     const api = server(campaign({ status: "sending", launch }));
     renderApp(`/campaigns/${campaignId}`, api.fetch);
-    expect(await screen.findByText("Sending to 120 contacts now. This page updates by itself.")).toBeTruthy();
+    expect(await screen.findByText("Sending to 120 contacts now. This page updates by itself.", {}, slow)).toBeTruthy();
     api.state.campaign = campaign({ status: "sent", launch });
-    await act(async () => {
-      vi.advanceTimersByTime(pollEvery);
-    });
     expect(await screen.findByText("Sent to 120 contacts.", {}, slow)).toBeTruthy();
+    // Once it has finished, it isn't looked at again.
     const gets = () => api.calls.filter((c) => c.method === "GET" && c.path === base).length;
     const seen = gets();
-    await act(async () => {
-      vi.advanceTimersByTime(pollEvery * 2);
-    });
+    await new Promise((r) => setTimeout(r, 200));
     expect(gets()).toBe(seen);
   });
 });
