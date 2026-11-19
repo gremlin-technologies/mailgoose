@@ -554,6 +554,29 @@ Picked while building MG-01; technical and easy to change.
   `Authorization` header, and requests without credentials skip idempotency;
   MG-09 switches the scope to the account.
 
+## 2026-11-18: How prod gets DNS (MG-60): default, still open for the owner
+
+A reversible default, picked while writing the prod Terraform. The owner has not
+confirmed it.
+
+- **Default:** keep mailgoose.app at GoDaddy and delegate only `api`, `app` and
+  `mail` to Route 53, one zone each, the same way `staging` is delegated
+  (`infra/prod-dns`, NS records added at GoDaddy by hand).
+- **Nothing forces the apex into Route 53.** SES domain verification (Easy DKIM
+  CNAMEs), the custom MAIL FROM domain (`bounce.mail`) and DMARC all live under
+  `mail.mailgoose.app`; ACM validation CNAMEs live under `api` and `app`. A
+  delegation changes only the name it is added at, so the Microsoft 365 records
+  at the apex (MX, SPF, autodiscover, verification TXT) are untouched.
+- **Checked against live DNS on Nov 18:** no record exists at or under `api`,
+  `app`, `mail`, `bounce.mail` or `_dmarc.mail`, there is no wildcard record, and
+  there is no CAA record, so the delegations cannot shadow anything and ACM can
+  issue.
+- **Cost of the default:** three zones instead of one (about $1.50/month), and
+  twelve NS records added by hand at GoDaddy. Moving the whole domain would
+  instead mean copying every GoDaddy record exactly, including the live mail
+  ones, and changing the name servers at the registrar, which puts mail at risk
+  if anything is missed.
+
 ## 2026-11-18: No personal names in the repo
 
 Decided by the owner: "as a rule, let's not refer to me ... in the repo. just
@@ -707,8 +730,9 @@ Decided by the owner in the PRD scoping call and follow-ups.
 
 ## Open questions
 
-- How does prod get DNS: move mailgoose.app to Route 53, or delegate only
-  `api`, `app` and `mail`? (See 2026-11-17. Blocks MG-60.)
+- How does prod get DNS? Default is to delegate only `api`, `app` and `mail`
+  (see 2026-11-18); awaiting the owner's confirmation and the GoDaddy step.
+  (Blocks MG-60.)
 - How does CI deploy without AWS keys in GitHub while the AWS project blocks
   the OIDC role? (See 2026-11-17. Blocks MG-52.)
 - Monthly fee: does a partial block of 10,000 contacts round up? (Default: yes,

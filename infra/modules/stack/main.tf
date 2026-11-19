@@ -4,8 +4,32 @@
 data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
-data "aws_route53_zone" "main" {
-  name = var.zone_name
+# Every name that needs DNS records, and the zone each one lives in. In staging
+# they all share one delegated zone; prod delegates api, app and mail separately.
+locals {
+  dns_names     = concat(var.hostnames, [var.sending_domain])
+  zone_name_for = { for n in local.dns_names : n => lookup(var.zone_overrides, n, var.zone_name) }
+}
+
+data "aws_route53_zone" "this" {
+  for_each = toset(values(local.zone_name_for))
+
+  name         = each.key
+  private_zone = false
+
+  lifecycle {
+    precondition {
+      condition     = each.key != ""
+      error_message = "A hostname or the sending domain has no Route 53 zone: set zone_name, or add it to zone_overrides."
+    }
+
+    precondition {
+      condition = alltrue([
+        for n, z in local.zone_name_for : z != each.key || n == each.key || endswith(n, ".${each.key}")
+      ])
+      error_message = "Zone ${each.key} is assigned a name that is not inside it, so its records would never resolve."
+    }
+  }
 }
 
 data "aws_iam_openid_connect_provider" "github" {
@@ -117,7 +141,7 @@ module "email" {
 
   name               = local.name
   sending_domain     = var.sending_domain
-  zone_id            = data.aws_route53_zone.main.zone_id
+  zone_id            = data.aws_route53_zone.this[local.zone_name_for[var.sending_domain]].zone_id
   dmarc_report_email = var.dmarc_report_email
 }
 
@@ -129,7 +153,7 @@ module "edge" {
   name                = local.name
   vpc_id              = module.network.vpc_id
   public_subnet_ids   = module.network.public_subnet_ids
-  zone_id             = data.aws_route53_zone.main.zone_id
+  zone_ids            = { for h in var.hostnames : h => data.aws_route53_zone.this[local.zone_name_for[h]].zone_id }
   hostnames           = var.hostnames
   container_port      = var.container_port
   deletion_protection = var.deletion_protection

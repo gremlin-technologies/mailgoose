@@ -10,8 +10,9 @@ variable "public_subnet_ids" {
   type = list(string)
 }
 
-variable "zone_id" {
-  type = string
+variable "zone_ids" {
+  description = "Route 53 zone ID that holds each hostname, keyed by hostname. Every entry of hostnames needs one. Hostnames can sit in different zones, for example when each is its own delegated subdomain."
+  type        = map(string)
 }
 
 variable "hostnames" {

@@ -2,11 +2,17 @@ module "stack" {
   source = "../../modules/stack"
 
   environment = "prod"
-  # Not applied yet. Needs a Route 53 zone for mailgoose.app, or another
-  # delegation, before the first apply; see infra/README.md, "DNS".
-  zone_name      = var.domain
+  # mailgoose.app's DNS stays at GoDaddy (Microsoft 365 mail). Only api, app and
+  # mail are delegated to Route 53, each as its own zone, created by
+  # infra/prod-dns. Apply that first and add its NS records at GoDaddy before
+  # this root's first apply; see infra/README.md, "DNS".
   hostnames      = ["api.${var.domain}", "app.${var.domain}"]
   sending_domain = "mail.${var.domain}"
+  zone_overrides = {
+    "api.${var.domain}"  = "api.${var.domain}"
+    "app.${var.domain}"  = "app.${var.domain}"
+    "mail.${var.domain}" = "mail.${var.domain}"
+  }
 
   dmarc_report_email = var.dmarc_report_email
   initial_image_tag  = var.initial_image_tag

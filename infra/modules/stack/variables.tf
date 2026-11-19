@@ -9,8 +9,20 @@ variable "environment" {
 }
 
 variable "zone_name" {
-  description = "Existing Route 53 zone (created by infra/global), e.g. example.com."
+  description = "Existing Route 53 zone that holds every hostname and the sending domain, unless zone_overrides says otherwise. Empty when every name has an override."
   type        = string
+  default     = ""
+}
+
+variable "zone_overrides" {
+  description = <<-EOT
+    Names that live in a different Route 53 zone than zone_name: a map of fully
+    qualified name (an entry of hostnames, or sending_domain) to the name of its
+    zone. Used when each name is its own delegated subdomain, e.g.
+    { "api.example.com" = "api.example.com" }. The zones must already exist.
+  EOT
+  type        = map(string)
+  default     = {}
 }
 
 variable "hostnames" {
