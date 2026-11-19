@@ -42,3 +42,12 @@ output "ecs_cluster_name" {
 output "github_deploy_role_arn" {
   value = one(module.deploy_role[*].role_arn)
 }
+
+output "images_bucket" {
+  value = module.images.bucket_name
+}
+
+output "images_base_url" {
+  description = "Where uploaded images are served from (the API's IMAGES_BASE_URL)."
+  value       = module.images.base_url
+}

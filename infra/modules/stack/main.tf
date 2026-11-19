@@ -109,6 +109,15 @@ resource "aws_secretsmanager_secret" "app" {
   recovery_window_in_days = 7
 }
 
+# Uploaded images (DES-5), served through CloudFront. Staging's bucket may be
+# destroyed with images in it; prod's may not.
+module "images" {
+  source = "../images"
+
+  name          = local.name
+  force_destroy = !var.deletion_protection
+}
+
 # --- Queues ---
 
 # API enqueues send jobs (one message per batch of recipients); workers drain it.
@@ -191,6 +200,13 @@ locals {
     PUBLIC_BASE_URL       = "https://${var.hostnames[0]}"
   }
 
+  # The API also serves image uploads, so only it gets the image bucket.
+  api_env = merge(local.common_env, {
+    PORT            = tostring(var.container_port)
+    IMAGES_BUCKET   = module.images.bucket_name
+    IMAGES_BASE_URL = module.images.base_url
+  })
+
   # The whole app secret (JSON) is injected at task start; the app parses it.
   app_secrets = {
     APP_SECRETS_JSON = aws_secretsmanager_secret.app.arn
@@ -246,6 +262,20 @@ data "aws_iam_policy_document" "api" {
       variable = "aws:ResourceTag/Environment"
       values   = [var.environment]
     }
+  }
+
+  # Image uploads, and deleting an account's images when the account is
+  # deleted (internal/images).
+  statement {
+    sid       = "WriteImages"
+    actions   = ["s3:PutObject", "s3:DeleteObject"]
+    resources = ["${module.images.bucket_arn}/*"]
+  }
+
+  statement {
+    sid       = "ListImages"
+    actions   = ["s3:ListBucket"]
+    resources = [module.images.bucket_arn]
   }
 
   # Test sends ("mailgoose send --test") go straight from the API.
@@ -309,7 +339,7 @@ module "api" {
   security_group_ids    = [aws_security_group.app.id]
   container_port        = var.container_port
   target_group_arn      = module.edge.api_target_group_arn
-  environment           = merge(local.common_env, { PORT = tostring(var.container_port) })
+  environment           = local.api_env
   secrets               = local.app_secrets
   task_role_policy_json = data.aws_iam_policy_document.api.json
   log_retention_days    = var.log_retention_days
