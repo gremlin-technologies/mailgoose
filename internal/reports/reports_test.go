@@ -215,6 +215,86 @@ func TestPrune(t *testing.T) {
 	}
 }
 
+// Two pruners at once archive a campaign once, and neither fails.
+func TestPruneTwiceAtOnce(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t, time.Date(2025, 10, 1, 9, 0, 0, 0, time.UTC), true)
+	h.events(t, time.Date(2025, 10, 2, 9, 0, 0, 0, time.UTC))
+
+	// The second archive of the same campaign is a no-op, not an error.
+	if _, ok, err := h.svc.archive(ctx, h.acc, h.campaign); err != nil || !ok {
+		t.Fatalf("first archive %v %v", ok, err)
+	}
+	if n, ok, err := h.svc.archive(ctx, h.acc, h.campaign); err != nil || ok || n != 0 {
+		t.Fatalf("second archive %d %v %v", n, ok, err)
+	}
+
+	// Racing pruners over a fresh old campaign.
+	other := newHarnessIn(t, h, time.Date(2025, 10, 1, 9, 0, 0, 0, time.UTC))
+	other.events(t, time.Date(2025, 10, 2, 9, 0, 0, 0, time.UTC))
+	type result struct {
+		p   Pruned
+		err error
+	}
+	results := make(chan result, 4)
+	for range 4 {
+		go func() {
+			p, err := h.svc.Prune(ctx)
+			results <- result{p, err}
+		}()
+	}
+	archived := 0
+	for range 4 {
+		r := <-results
+		if r.err != nil {
+			t.Fatalf("prune: %v", r.err)
+		}
+		archived += r.p.Archived
+	}
+	if archived != 1 {
+		t.Errorf("archived %d times, want once", archived)
+	}
+	var saved int
+	_ = h.db.QueryRow(ctx, `SELECT count(*) FROM campaign_reports WHERE campaign_id = $1`, other.campaign).Scan(&saved)
+	if saved != 1 {
+		t.Errorf("%d saved reports", saved)
+	}
+}
+
+// A campaign still sending or paused keeps its old events, so its live
+// report doesn't drift.
+func TestPruneKeepsUnfinished(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t, time.Date(2025, 10, 1, 9, 0, 0, 0, time.UTC), true)
+	h.events(t, time.Date(2025, 10, 2, 9, 0, 0, 0, time.UTC))
+	h.exec(t, `UPDATE campaigns SET status = 'paused' WHERE id = $1`, h.campaign)
+	before, err := h.svc.Campaign(ctx, h.acc, h.campaign)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := h.svc.Prune(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p != (Pruned{}) {
+		t.Errorf("pruned %+v", p)
+	}
+	after, err := h.svc.Campaign(ctx, h.acc, h.campaign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Archived || after.Recipients != before.Recipients || after.Delivered != before.Delivered {
+		t.Errorf("report changed: %+v, was %+v", after, before)
+	}
+
+	// Once it's finished, it's archived like any other.
+	h.exec(t, `UPDATE campaigns SET status = 'cancelled' WHERE id = $1`, h.campaign)
+	if p, err := h.svc.Prune(ctx); err != nil || p.Archived != 1 || p.Events != 17 {
+		t.Errorf("prune after finishing %+v %v", p, err)
+	}
+}
+
 // newHarnessIn adds a second campaign, launched at launched, to h's
 // database and account.
 func newHarnessIn(t *testing.T, h *harness, launched time.Time) *harness {

@@ -44,6 +44,10 @@ Picked while building MG-38; easy to change.
   events deleted together, so its numbers don't drift. Other events are
   deleted when they're 12 months old. Unsubscribe and consent records and
   the send records themselves are not raw events and are kept.
+- **A campaign still sending or paused** past 12 months keeps all its raw
+  events, so its live report doesn't drift; it's archived once it's sent,
+  cancelled or failed. Two pruners archiving the same campaign at once save
+  it once; the second skips it.
 
 ## 2026-11-18: Open and click tracking (MG-37, reversible defaults)
 
