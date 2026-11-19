@@ -275,6 +275,59 @@ func TestSubscriptionAppliesStripesCurrentState(t *testing.T) {
 	}
 }
 
+// The Stripe read happens before the webhook's transaction, with no row
+// locked, and a read older than the one already applied changes nothing.
+func TestSubscriptionReadsStripeOutsideTheTransaction(t *testing.T) {
+	h := newHarness(t)
+	f := &fakeStripe{current: map[string][]byte{}}
+	h.svc.Stripe = f
+	f.current["sub_1"] = h.subObject(t, subEvent{status: "active"})
+	h.subscribe(t, "active")
+
+	ctx := context.Background()
+	f.onGet = func(string) {
+		f.onGet = nil
+		// No transaction holds the account row while Stripe is read.
+		tx, err := h.db.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM accounts WHERE id = $1 FOR UPDATE NOWAIT`, h.acc); err != nil {
+			// Sending the later event now would wait on that lock for ever.
+			t.Errorf("account row locked during the Stripe read: %v", err)
+			return
+		}
+		_ = tx.Rollback(ctx)
+		// While this read is in flight the subscription ends, and that event
+		// is read and applied first.
+		f.mu.Lock()
+		f.current["sub_1"] = h.subObject(t, subEvent{status: "canceled"})
+		f.mu.Unlock()
+		h.mu.Lock()
+		h.now = h.now.Add(time.Second)
+		h.mu.Unlock()
+		if got := h.send(t, h.subBody(subEvent{id: "evt_end", typ: "customer.subscription.deleted", status: "canceled"})); got != OutcomeSubscription {
+			t.Errorf("the later event: %s", got)
+		}
+	}
+	if got := h.send(t, h.subBody(subEvent{id: "evt_earlier", status: "active"})); got != OutcomeStale {
+		t.Errorf("the earlier read applied last: %s", got)
+	}
+	if st := h.state(t); st.plan != "free" || st.status != "canceled" {
+		t.Errorf("state %+v", st)
+	}
+
+	// A redelivered event isn't read from Stripe again.
+	reads := f.reads
+	if got := h.send(t, h.subBody(subEvent{id: "evt_end", typ: "customer.subscription.deleted", status: "canceled"})); got != OutcomeDuplicate {
+		t.Errorf("redelivered: %s", got)
+	}
+	if f.reads != reads {
+		t.Errorf("a redelivery read Stripe")
+	}
+}
+
 // Without Stripe's current state, a new subscription's incomplete first
 // event in the same second doesn't undo the live state that followed it.
 func TestSubscriptionSameSecondWithoutStripe(t *testing.T) {

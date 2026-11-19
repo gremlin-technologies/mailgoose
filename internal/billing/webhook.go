@@ -127,6 +127,27 @@ func (s *Service) HandleWebhook(ctx context.Context, payload []byte, signature s
 	if err := json.Unmarshal(payload, &e); err != nil || e.ID == "" || e.Type == "" {
 		return "", ErrBadSignature
 	}
+	c := &webhookCall{}
+	if isSubscriptionEvent(e.Type) {
+		// Read the subscription from Stripe before the transaction, so a slow
+		// Stripe holds no connection or row lock. A redelivery needs no read.
+		var seen bool
+		if err := s.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM stripe_events WHERE id = $1)`, e.ID).Scan(&seen); err != nil {
+			return "", err
+		}
+		if seen {
+			return OutcomeDuplicate, nil
+		}
+		var sub subscription
+		if err := json.Unmarshal(e.Data.Object, &sub); err == nil && sub.ID != "" {
+			c.readAt = s.now()
+			fresh, err := s.currentSubscription(ctx, sub.ID)
+			if err != nil {
+				return "", err
+			}
+			c.fresh = fresh
+		}
+	}
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
 		return "", err
@@ -140,14 +161,45 @@ func (s *Service) HandleWebhook(ctx context.Context, payload []byte, signature s
 	if tag.RowsAffected() == 0 {
 		return OutcomeDuplicate, nil
 	}
-	out, err := s.handle(ctx, tx, &e)
+	out, err := s.handle(ctx, tx, &e, c)
 	if err != nil {
 		return "", err
 	}
-	return out, tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	// Alerts go once the event is recorded: a failed transaction is retried
+	// by Stripe and would otherwise alert twice.
+	for _, a := range c.alerts {
+		s.alert(ctx, a.subject, a.text)
+	}
+	return out, nil
 }
 
-func (s *Service) handle(ctx context.Context, tx pgx.Tx, e *event) (Outcome, error) {
+// webhookCall is what one webhook's handling carries besides the
+// transaction: the subscription as read from Stripe before it began, and
+// the ops alerts to send once it commits.
+type webhookCall struct {
+	fresh  *subscription
+	readAt time.Time
+	alerts []queuedAlert
+}
+
+type queuedAlert struct{ subject, text string }
+
+func (c *webhookCall) alert(subject, text string) {
+	c.alerts = append(c.alerts, queuedAlert{subject, text})
+}
+
+func isSubscriptionEvent(typ string) bool {
+	switch typ {
+	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
+		return true
+	}
+	return false
+}
+
+func (s *Service) handle(ctx context.Context, tx pgx.Tx, e *event, c *webhookCall) (Outcome, error) {
 	switch e.Type {
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
 		var sub subscription
@@ -155,7 +207,7 @@ func (s *Service) handle(ctx context.Context, tx pgx.Tx, e *event) (Outcome, err
 			s.log().ErrorContext(ctx, "a Stripe subscription event has no subscription", "event_id", e.ID)
 			return OutcomeMismatch, nil
 		}
-		return s.applySubscription(ctx, tx, e, &sub)
+		return s.applySubscription(ctx, tx, e, &sub, c)
 	case "checkout.session.completed", "checkout.session.async_payment_succeeded":
 	default:
 		return OutcomeIgnored, nil
@@ -178,7 +230,7 @@ func (s *Service) handle(ctx context.Context, tx pgx.Tx, e *event) (Outcome, err
 		cs.AmountSubtotal != pack.PriceCents || !strings.EqualFold(cs.Currency, "usd") {
 		s.log().ErrorContext(ctx, "a paid Stripe session doesn't match a credit pack; no credits added",
 			"session_id", cs.ID, "event_id", e.ID, "pack", cs.Metadata["pack"], "amount_subtotal", cs.AmountSubtotal)
-		s.alert(ctx, "a credit payment added no credits",
+		c.alert("a credit payment added no credits",
 			fmt.Sprintf("Checkout session %s was paid (%d cents %s, pack %q, account %s) but doesn't match a credit pack, so no credits were added.\n\nCredit the account by hand or refund the payment in Stripe.",
 				cs.ID, cs.AmountSubtotal, cs.Currency, cs.Metadata["pack"], accountID))
 		return OutcomeMismatch, nil
@@ -199,7 +251,7 @@ func (s *Service) handle(ctx context.Context, tx pgx.Tx, e *event) (Outcome, err
 	if !open {
 		s.log().ErrorContext(ctx, "a paid Stripe session is for an account that doesn't exist or is closed; no credits added, refund it",
 			"session_id", cs.ID, "event_id", e.ID, "account_id", accountID, "amount_subtotal", cs.AmountSubtotal)
-		s.alert(ctx, "a credit payment for a closed account",
+		c.alert("a credit payment for a closed account",
 			fmt.Sprintf("Checkout session %s was paid (%d cents) for account %s, which doesn't exist or is closed, so no credits were added.\n\nRefund the payment in Stripe.",
 				cs.ID, cs.AmountSubtotal, accountID))
 		return OutcomeNoAccount, nil

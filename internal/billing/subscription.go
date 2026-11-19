@@ -42,7 +42,7 @@ type subscription struct {
 // again. The account comes from the subscription's metadata, which the
 // plan's checkout sets. An event older than the last one applied changes
 // nothing.
-func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, e *event, sub *subscription) (Outcome, error) {
+func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, e *event, sub *subscription, c *webhookCall) (Outcome, error) {
 	at := time.Unix(e.Created, 0).UTC()
 	now := s.now()
 	accountID := sub.Metadata["account_id"]
@@ -81,14 +81,16 @@ func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, e *event, su
 	}
 	// Stripe doesn't promise to deliver events in order, and an event's
 	// time is in whole seconds, so two changes in one second can arrive
-	// either way round. Applying the subscription as Stripe has it now,
-	// read while the account row is locked, makes the order irrelevant.
-	fresh, err := s.currentSubscription(ctx, sub.ID)
-	if err != nil {
-		return "", err
+	// either way round. Applying the subscription as Stripe had it when
+	// this event was handled (read before the transaction, see
+	// HandleWebhook) makes the order irrelevant; the read's own time orders
+	// it against other reads.
+	fresh := c.fresh
+	if fresh != nil && fresh.ID != sub.ID {
+		fresh = nil
 	}
 	if fresh != nil {
-		sub, at = fresh, now
+		sub, at = fresh, c.readAt.UTC()
 	}
 	live := liveStatuses[sub.Status]
 	if deref(current) != "" && deref(current) != sub.ID {
@@ -99,16 +101,17 @@ func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, e *event, su
 		if liveStatuses[deref(currentStatus)] {
 			s.log().ErrorContext(ctx, "an account has two live subscriptions; cancel one in Stripe",
 				"account_id", accountID, "subscription_id", sub.ID, "current_subscription_id", deref(current))
-			s.alert(ctx, "an account has two paid plan subscriptions",
+			c.alert("an account has two paid plan subscriptions",
 				fmt.Sprintf("Account %s has two live subscriptions: %s (the one mailgoose uses) and %s.\n\nCancel and refund %s in Stripe.",
 					accountID, deref(current), sub.ID, sub.ID))
 			return OutcomeMismatch, nil
 		}
-	} else if fresh == nil && synced != nil &&
-		(at.Before(*synced) || at.Equal(*synced) && sub.Status == "incomplete" && liveStatuses[deref(currentStatus)]) {
-		// Without Stripe's current state: an older event changes nothing, and
-		// in the same second a new subscription's first, incomplete state
-		// doesn't replace the live one its payment led to.
+	} else if synced != nil && (at.Before(*synced) ||
+		fresh == nil && at.Equal(*synced) && sub.Status == "incomplete" && liveStatuses[deref(currentStatus)]) {
+		// An older event, or an older read of Stripe, changes nothing. Without
+		// Stripe's current state, in the same second a new subscription's
+		// first, incomplete state doesn't replace the live one its payment
+		// led to.
 		return OutcomeStale, nil
 	}
 	if status != "active" {
@@ -117,7 +120,7 @@ func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, e *event, su
 		if live {
 			s.log().ErrorContext(ctx, "a closed account has a live subscription; cancel it in Stripe",
 				"account_id", accountID, "subscription_id", sub.ID)
-			s.alert(ctx, "a closed account has a paid plan subscription",
+			c.alert("a closed account has a paid plan subscription",
 				fmt.Sprintf("Account %s is closed, but its subscription %s is %s in Stripe.\n\nCancel it in Stripe.",
 					accountID, sub.ID, sub.Status))
 		}

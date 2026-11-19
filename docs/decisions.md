@@ -93,8 +93,11 @@ Picked while building the subscription; easy to change.
 - **Event order doesn't matter:** on each subscription event the webhook
   reads the subscription from Stripe as it is now and applies that, so two
   events in one second arriving the wrong way round can't leave a paying
-  account free. If Stripe doesn't answer, the webhook answers 503 and
-  Stripe sends the event again. Without a Stripe client (or if Stripe
+  account free. The read happens before the webhook's database
+  transaction, so a slow Stripe holds no connection or account lock; a read
+  older than the one already applied changes nothing, and a redelivered
+  event isn't read again. If Stripe doesn't answer, the webhook answers 503
+  and Stripe sends the event again. Without a Stripe client (or if Stripe
   doesn't know the subscription), the event's own copy is applied: an older
   event changes nothing, and a new subscription's `incomplete` state doesn't
   replace a live one from the same second. An old subscription ending
@@ -109,7 +112,8 @@ Picked while building the subscription; easy to change.
 - **Payments to sort out by hand** (a payment that adds no credits, one for
   a closed account, a second live subscription, a closed account with a
   live subscription) are logged as errors and emailed to `OPS_ALERT_EMAIL`
-  when it's set.
+  when it's set. The email goes once the event is recorded, so a failed
+  attempt that Stripe retries doesn't send it twice.
 - **The worker checks hourly** for unit changes and for credits past their
   expiry.
 
