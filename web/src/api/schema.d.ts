@@ -965,6 +965,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/emails/{email_id}/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check an email before sending it
+         * @description Looks the email over and answers what would stop it going
+         *     (`errors`) and what some readers would trip on (`warnings`). Errors
+         *     block a launch; warnings don't. The answer is 200 either way; `ok`
+         *     is false when there are errors.
+         *
+         *     Error codes: `missing_subject`, `missing_from` (no From on the email
+         *     or the account), `unverified_from` (the From isn't on a verified
+         *     sending domain), `missing_postal_address`, `empty_email`,
+         *     `merge_tag` (a tag that can't be filled), `missing_unsubscribe`,
+         *     `broken_link` (not a full web address, or the page or site doesn't
+         *     exist), `too_large` (over 102 KB as rendered), and `invalid_html`.
+         *
+         *     Warning codes: `insecure_link` (http://), `link_unreachable` (an
+         *     error status or a timeout), `link_not_checked` (a private address,
+         *     or the check ran out of time), `missing_alt`, `near_size_limit`
+         *     (over 90 KB) and `unsupported_css`.
+         *
+         *     Each link is fetched once with a HEAD request (GET if the site
+         *     refuses HEAD), 3 seconds per link and 10 seconds in all, up to 50
+         *     links. Links to private, loopback or link-local addresses aren't
+         *     fetched, whichever way they get there.
+         */
+        post: operations["checkEmail"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/emails/{email_id}/duplicate": {
         parameters: {
             query?: never;
@@ -2000,6 +2040,23 @@ export interface components {
             /** @enum {string} */
             code: "malformed_markup" | "script" | "form" | "iframe" | "embedded_object" | "external_stylesheet" | "event_handler" | "javascript_url" | "data_url" | "redirect" | "missing_unsubscribe" | "too_large" | "unsupported_css";
             message: string;
+        };
+        EmailCheck: {
+            /** @description True when there are no errors, so the email can be sent. */
+            ok: boolean;
+            errors: components["schemas"]["EmailCheckIssue"][];
+            warnings: components["schemas"]["EmailCheckIssue"][];
+        };
+        EmailCheckIssue: {
+            /** @enum {string} */
+            code: "missing_subject" | "missing_from" | "unverified_from" | "missing_postal_address" | "empty_email" | "merge_tag" | "missing_unsubscribe" | "broken_link" | "too_large" | "invalid_html" | "insecure_link" | "link_unreachable" | "link_not_checked" | "missing_alt" | "near_size_limit" | "unsupported_css";
+            message: string;
+            /** @description The block field or setting it's about, such as `blocks[2].alt` or `settings.subject`. */
+            path?: string;
+            /** @description The line of an html email's markup it's on. */
+            line?: number;
+            /** @description The link it's about. */
+            url?: string;
         };
         DuplicateEmailRequest: {
             name?: string;
@@ -4057,6 +4114,36 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["UnrenderableEmail"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    checkEmail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The email's `id`. */
+                email_id: components["parameters"]["EmailId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What the check found. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EmailCheck"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

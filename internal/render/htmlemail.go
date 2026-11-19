@@ -27,21 +27,32 @@ var (
 // doesn't already show it (DES-11, CMP-2). The plain-text part is made
 // from the markup.
 func CompileHTML(doc *emails.Document, acct Account) (*Template, error) {
-	if doc.HTML == nil {
-		return nil, ErrNotHTML
-	}
-	if strings.TrimSpace(acct.PostalAddress) == "" {
-		return nil, ErrNoPostalAddress
+	t, problems, err := compileHTML(doc, acct)
+	if err != nil {
+		return nil, err
 	}
 	// The same check the html had to pass to be saved, so an email whose
 	// markup was never imported (empty) or has no unsubscribe link can't
-	// be sent.
+	// be sent. Draft skips it: the email check reports these itself.
 	if errs, _ := emails.CheckHTML(*doc.HTML); len(errs) > 0 {
-		probs := make(Problems, len(errs))
-		for i, e := range errs {
-			probs[i] = &TagError{Path: "html", Message: e.String()}
+		probs := make(Problems, 0, len(errs)+len(problems))
+		for _, e := range errs {
+			probs = append(probs, &TagError{Path: "html", Message: e.String()})
 		}
-		return nil, probs
+		return nil, append(probs, problems...)
+	}
+	if len(problems) > 0 {
+		return nil, problems
+	}
+	return t, nil
+}
+
+func compileHTML(doc *emails.Document, acct Account) (*Template, Problems, error) {
+	if doc.HTML == nil {
+		return nil, nil, ErrNotHTML
+	}
+	if strings.TrimSpace(acct.PostalAddress) == "" {
+		return nil, nil, ErrNoPostalAddress
 	}
 	src := *doc.HTML
 	if !showsAddress(src, acct.PostalAddress) {
@@ -53,16 +64,13 @@ func CompileHTML(doc *emails.Document, acct Account) (*Template, error) {
 		src = addPreheader(src, p)
 	}
 
-	var errs []*TagError
+	var problems Problems
 	subject, e := findTags(doc.Settings.Subject, "settings.subject")
-	errs = append(errs, e...)
+	problems = append(problems, e...)
 	htmlParts, e := findTags(src, "html")
-	errs = append(errs, e...)
-	if len(errs) > 0 {
-		return nil, Problems(errs)
-	}
+	problems = append(problems, e...)
 	textParts, _ := findTags(text, "html")
-	return &Template{subject: subject, html: htmlParts, text: textParts}, nil
+	return &Template{subject: subject, html: htmlParts, text: textParts}, problems, nil
 }
 
 // showsAddress reports whether every line of the postal address appears in

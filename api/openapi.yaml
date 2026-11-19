@@ -2056,6 +2056,60 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/emails/{email_id}/check:
+    post:
+      operationId: checkEmail
+      summary: Check an email before sending it
+      description: |
+        Looks the email over and answers what would stop it going
+        (`errors`) and what some readers would trip on (`warnings`). Errors
+        block a launch; warnings don't. The answer is 200 either way; `ok`
+        is false when there are errors.
+
+        Error codes: `missing_subject`, `missing_from` (no From on the email
+        or the account), `unverified_from` (the From isn't on a verified
+        sending domain), `missing_postal_address`, `empty_email`,
+        `merge_tag` (a tag that can't be filled), `missing_unsubscribe`,
+        `broken_link` (not a full web address, or the page or site doesn't
+        exist), `too_large` (over 102 KB as rendered), and `invalid_html`.
+
+        Warning codes: `insecure_link` (http://), `link_unreachable` (an
+        error status or a timeout), `link_not_checked` (a private address,
+        or the check ran out of time), `missing_alt`, `near_size_limit`
+        (over 90 KB) and `unsupported_css`.
+
+        Each link is fetched once with a HEAD request (GET if the site
+        refuses HEAD), 3 seconds per link and 10 seconds in all, up to 50
+        links. Links to private, loopback or link-local addresses aren't
+        fetched, whichever way they get there.
+      tags: [emails]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/EmailId"
+      responses:
+        "200":
+          description: What the check found.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailCheck"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/emails/{email_id}/duplicate:
     post:
       operationId: duplicateEmail
@@ -3817,6 +3871,44 @@ components:
             unsupported_css]
         message:
           type: string
+    EmailCheck:
+      type: object
+      additionalProperties: false
+      required: [ok, errors, warnings]
+      properties:
+        ok:
+          type: boolean
+          description: True when there are no errors, so the email can be sent.
+        errors:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailCheckIssue"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/EmailCheckIssue"
+    EmailCheckIssue:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [missing_subject, missing_from, unverified_from, missing_postal_address, empty_email,
+            merge_tag, missing_unsubscribe, broken_link, too_large, invalid_html, insecure_link,
+            link_unreachable, link_not_checked, missing_alt, near_size_limit, unsupported_css]
+        message:
+          type: string
+        path:
+          type: string
+          description: The block field or setting it's about, such as `blocks[2].alt` or `settings.subject`.
+        line:
+          type: integer
+          minimum: 1
+          description: The line of an html email's markup it's on.
+        url:
+          type: string
+          description: The link it's about.
     DuplicateEmailRequest:
       type: object
       additionalProperties: false

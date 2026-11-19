@@ -465,6 +465,29 @@ scripts, forms and requests other than images, styles and fonts.
 `--out file.html`. `--open` opens it in the browser, only at a terminal;
 without `--out` it writes a file in the temporary directory first.
 
+### Email check
+
+`POST /v1/emails/{id}/check` and `mailgoose email check <id>` look an email
+over before it's sent (`internal/emailcheck`). The answer lists `errors`,
+which block a launch, and `warnings`, which don't, each with a code and,
+where it applies, the block path, markup line or link:
+
+- errors: `missing_subject`, `missing_from`, `unverified_from`,
+  `missing_postal_address`, `empty_email`, `merge_tag`,
+  `missing_unsubscribe`, `broken_link`, `too_large`, `invalid_html`
+- warnings: `insecure_link`, `link_unreachable`, `link_not_checked`,
+  `missing_alt`, `near_size_limit`, `unsupported_css`
+
+The CLI exits 1 when there are errors and 0 otherwise.
+
+Links are fetched by `emailcheck.HTTPLinks`: a HEAD request each (GET when
+a site refuses HEAD), 3 seconds per link, 10 seconds in all, 8 at a time,
+at most 50 links and 5 redirects. It dials without a proxy and checks the
+address of every connection, so a link, a hostname or a redirect that leads
+to a private, loopback, link-local or other internal address is never
+fetched. Only `cmd/mailgoosed` wires it; a test server with no `Links` looks
+at the addresses without fetching them.
+
 ## Sending domains
 
 Campaigns go out from an address at a domain the customer owns.

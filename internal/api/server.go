@@ -22,6 +22,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
+	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 )
@@ -66,6 +67,10 @@ type Server struct {
 	// Web serves the web app (internal/web) on every GET or HEAD that no API
 	// route matches. Nil means those get the API's JSON 404.
 	Web http.Handler
+	// Links fetches the links in an email for the email check. Nil means
+	// links are only looked at, never fetched; the server wires
+	// emailcheck.HTTPLinks.
+	Links emailcheck.LinkChecker
 	// Now is the clock for rate limits and idempotency; nil means time.Now.
 	Now func() time.Time
 }

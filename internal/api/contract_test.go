@@ -327,6 +327,16 @@ var contractCases = map[string][]contractCase{
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/emails"))), req: bearer(emailPath(http.MethodGet, "/preview", "")), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(emailPath(http.MethodGet, "/preview", "")), status: http.StatusServiceUnavailable},
 	},
+	"checkEmail": {
+		{name: "blocks", server: draftKey(authServer), before: addedEmail, req: bearer(emailPath(http.MethodPost, "/check", "")), status: http.StatusOK},
+		{name: "html", server: fullKey(authServer), before: addedHTMLEmail, req: bearer(emailPath(http.MethodPost, "/check", "")), status: http.StatusOK},
+		{name: "bad id", server: fullKey(authServer), req: bearer(request(http.MethodPost, "/v1/emails/spring/check")), status: http.StatusBadRequest},
+		{name: "unknown", server: fullKey(authServer), req: bearer(emailPath(http.MethodPost, "/check", "")), status: http.StatusNotFound},
+		{name: "no credentials", server: authServer, req: emailPath(http.MethodPost, "/check", ""), status: http.StatusUnauthorized},
+		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(emailPath(http.MethodPost, "/check", ""))), status: http.StatusForbidden},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/emails"))), req: bearer(emailPath(http.MethodPost, "/check", "")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(emailPath(http.MethodPost, "/check", "")), status: http.StatusServiceUnavailable},
+	},
 	"duplicateEmail": {
 		{name: "copied", server: draftKey(authServer), before: addedEmail, req: bearer(emailPath(http.MethodPost, "/duplicate", "")), status: http.StatusCreated},
 		{name: "malformed", server: fullKey(authServer), before: addedEmail, req: bearer(emailPath(http.MethodPost, "/duplicate", `{"name":1}`)), status: http.StatusBadRequest},
