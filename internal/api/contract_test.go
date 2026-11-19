@@ -253,8 +253,8 @@ var contractCases = map[string][]contractCase{
 	},
 	"createImport": {
 		{name: "queued", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/imports", importBody)), status: http.StatusAccepted},
-		{name: "malformed", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/imports", `{"csv":1}`)), status: http.StatusBadRequest},
-		{name: "no email column", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/imports", `{"csv":"name\nPat\n"}`)), status: http.StatusUnprocessableEntity},
+		{name: "malformed", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/imports", `{"list_source":"form","csv":1}`)), status: http.StatusBadRequest},
+		{name: "no email column", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/imports", `{"list_source":"form","csv":"name\nPat\n"}`)), status: http.StatusUnprocessableEntity},
 		{name: "too large", server: fullKey(authServer), req: bearer(tooLargeImport), status: http.StatusRequestEntityTooLarge},
 		{name: "no credentials", server: authServer, req: jsonRequest(http.MethodPost, "/v1/imports", importBody), status: http.StatusUnauthorized},
 		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(jsonRequest(http.MethodPost, "/v1/imports", importBody))), status: http.StatusForbidden},

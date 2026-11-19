@@ -104,7 +104,7 @@ func TestImportAddsContactsAndReportsSkippedRows(t *testing.T) {
 		",,,\n" + // 8: blank, left out
 		"\"multi\nline@example.com\",M,,g\n" + // 9-10: invalid
 		"kim@example.com,\"Kim\nJo\",,h\n" // 11-12: added, name on one line
-	im := h.importFile(t, ImportInput{CSV: []byte(csv), FileName: "list.csv", Tags: []string{"VIP"}})
+	im := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte(csv), FileName: "list.csv", Tags: []string{"VIP"}})
 
 	if im.Status != ImportDone || im.TotalRows != 8 || im.ProcessedRows != 8 || im.Imported != 2 || im.Skipped != 6 {
 		t.Fatalf("import = %+v", im)
@@ -112,8 +112,12 @@ func TestImportAddsContactsAndReportsSkippedRows(t *testing.T) {
 	if im.EmailColumn != "Email Address" || deref(im.FirstNameColumn) != "First Name" || deref(im.LastNameColumn) != "Surname" {
 		t.Errorf("columns = %q %v %v", im.EmailColumn, im.FirstNameColumn, im.LastNameColumn)
 	}
-	if im.ContactStatus() != StatusUnconfirmed || im.Review != ReviewNone || len(im.Tags) != 1 || im.Tags[0].ID != tag.ID {
+	if im.ContactStatus() != StatusUnconfirmed || len(im.Tags) != 1 || im.Tags[0].ID != tag.ID {
 		t.Errorf("import = %+v", im)
+	}
+	// 3 of 8 rows aren't addresses, over the 5% that holds an import (MG-63).
+	if im.Review != ReviewHeld || deref(im.HoldReason) != HoldInvalidAddresses || im.Checks.InvalidRows != 3 {
+		t.Errorf("review = %s %v, checks = %+v", im.Review, im.HoldReason, im.Checks)
 	}
 	want := map[string]int{SkipInvalidEmail: 2, SkipInvalidRow: 1, SkipDuplicate: 1, SkipExists: 1, SkipSuppressed: 1, SkipOverLimit: 0}
 	for r, n := range want {
@@ -158,7 +162,7 @@ func TestImportWithPermissionAndNamedColumns(t *testing.T) {
 	h := newHarness(t)
 	// A spreadsheet's semicolon CSV with a byte order mark.
 	csv := "\xef\xbb\xbfWho;Given;Family\nana@example.com;Ana;Silva\n"
-	im := h.importFile(t, ImportInput{CSV: []byte(csv), EmailColumn: "who", FirstNameColumn: "Given", LastNameColumn: "family", PermissionConfirmed: true})
+	im := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte(csv), EmailColumn: "who", FirstNameColumn: "Given", LastNameColumn: "family", PermissionConfirmed: true})
 	if im.Imported != 1 || im.ContactStatus() != StatusSubscribed {
 		t.Fatalf("import = %+v", im)
 	}
@@ -174,16 +178,16 @@ func TestImportRefusesFilesItCantRead(t *testing.T) {
 		in   ImportInput
 		code string
 	}{
-		"empty":            {ImportInput{CSV: []byte(" \n")}, "no_rows"},
-		"header only":      {ImportInput{CSV: []byte("email\n,\n")}, "no_rows"},
-		"no email column":  {ImportInput{CSV: []byte("name,phone\nPat,1\n")}, "no_email_column"},
-		"named column":     {ImportInput{CSV: []byte("email\na@example.com\n"), FirstNameColumn: "First"}, "invalid_mapping"},
-		"same column":      {ImportInput{CSV: []byte("email\na@example.com\n"), EmailColumn: "email", FirstNameColumn: "email"}, "invalid_mapping"},
-		"not UTF-8":        {ImportInput{CSV: []byte("email\n\xff@example.com\n")}, "invalid_encoding"},
-		"unclosed quote":   {ImportInput{CSV: []byte("email\n\"a@example.com\nb@example.com\n")}, "invalid_csv"},
-		"unknown tag":      {ImportInput{CSV: []byte("email\na@example.com\n"), Tags: []string{"nope"}}, "tag_not_found"},
-		"too many rows":    {ImportInput{CSV: rows(MaxImportRows + 1)}, "too_many_rows"},
-		"too large a file": {ImportInput{CSV: make([]byte, MaxImportBytes+1)}, "file_too_large"},
+		"empty":            {ImportInput{ListSource: ListSourceForm, CSV: []byte(" \n")}, "no_rows"},
+		"header only":      {ImportInput{ListSource: ListSourceForm, CSV: []byte("email\n,\n")}, "no_rows"},
+		"no email column":  {ImportInput{ListSource: ListSourceForm, CSV: []byte("name,phone\nPat,1\n")}, "no_email_column"},
+		"named column":     {ImportInput{ListSource: ListSourceForm, CSV: []byte("email\na@example.com\n"), FirstNameColumn: "First"}, "invalid_mapping"},
+		"same column":      {ImportInput{ListSource: ListSourceForm, CSV: []byte("email\na@example.com\n"), EmailColumn: "email", FirstNameColumn: "email"}, "invalid_mapping"},
+		"not UTF-8":        {ImportInput{ListSource: ListSourceForm, CSV: []byte("email\n\xff@example.com\n")}, "invalid_encoding"},
+		"unclosed quote":   {ImportInput{ListSource: ListSourceForm, CSV: []byte("email\n\"a@example.com\nb@example.com\n")}, "invalid_csv"},
+		"unknown tag":      {ImportInput{ListSource: ListSourceForm, CSV: []byte("email\na@example.com\n"), Tags: []string{"nope"}}, "tag_not_found"},
+		"too many rows":    {ImportInput{ListSource: ListSourceForm, CSV: rows(MaxImportRows + 1)}, "too_many_rows"},
+		"too large a file": {ImportInput{ListSource: ListSourceForm, CSV: make([]byte, MaxImportBytes+1)}, "file_too_large"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := h.svc.CreateImport(ctx, h.acc, tc.in); code(err) != tc.code {
@@ -200,7 +204,7 @@ func TestLargeFirstImportIsHeld(t *testing.T) {
 	h := newHarness(t)
 	h.setPlan(t, h.acc, "paid")
 	ctx := context.Background()
-	im := h.importFile(t, ImportInput{CSV: rows(LargeFirstImport + 1), PermissionConfirmed: true})
+	im := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: rows(LargeFirstImport + 1), PermissionConfirmed: true})
 	if im.Review != ReviewHeld || deref(im.HoldReason) != HoldLargeFirstImport || im.Imported != LargeFirstImport+1 {
 		t.Fatalf("import = %+v", im)
 	}
@@ -213,14 +217,14 @@ func TestLargeFirstImportIsHeld(t *testing.T) {
 		t.Errorf("recipients = %v", rs)
 	}
 	// Only the first import is held for size.
-	second := h.importFile(t, ImportInput{CSV: rows(LargeFirstImport + 1)})
+	second := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: rows(LargeFirstImport + 1)})
 	if second.Review != ReviewNone {
 		t.Errorf("second import = %+v", second)
 	}
 	// A first import of exactly the threshold isn't held.
 	h2 := newHarness(t)
 	h2.setPlan(t, h2.acc, "paid")
-	if im := h2.importFile(t, ImportInput{CSV: rows(LargeFirstImport)}); im.Review != ReviewNone {
+	if im := h2.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: rows(LargeFirstImport)}); im.Review != ReviewNone {
 		t.Errorf("import at the threshold = %+v", im)
 	}
 }
@@ -230,7 +234,7 @@ func TestImportOverTheFreeLimit(t *testing.T) {
 	ctx := context.Background()
 	h.fill(t, h.acc, FreeContactLimit-10)
 	csv := rows(20, "filler1@example.com")
-	im := h.importFile(t, ImportInput{CSV: csv, PermissionConfirmed: true})
+	im := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: csv, PermissionConfirmed: true})
 	if im.Review != ReviewHeld || deref(im.HoldReason) != HoldOverContactLimit || im.Imported != 10 ||
 		im.SkippedByReason[SkipOverLimit] != 10 || im.SkippedByReason[SkipExists] != 1 {
 		t.Fatalf("import = %+v", im)
@@ -246,7 +250,7 @@ func TestImportOverTheFreeLimit(t *testing.T) {
 	// Addresses already in the account don't count toward the hold.
 	h2 := newHarness(t)
 	h2.fill(t, h2.acc, FreeContactLimit-1)
-	if im := h2.importFile(t, ImportInput{CSV: []byte("email\nfiller1@example.com\nnew@example.com\n")}); im.Review != ReviewNone || im.Imported != 1 {
+	if im := h2.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte("email\nfiller1@example.com\nnew@example.com\n")}); im.Review != ReviewNone || im.Imported != 1 {
 		t.Errorf("import within the limit = %+v", im)
 	}
 
@@ -254,7 +258,7 @@ func TestImportOverTheFreeLimit(t *testing.T) {
 	h3 := newHarness(t)
 	h3.setPlan(t, h3.acc, "paid")
 	h3.fill(t, h3.acc, FreeContactLimit)
-	if im := h3.importFile(t, ImportInput{CSV: rows(20)}); im.Review != ReviewNone || im.Imported != 20 {
+	if im := h3.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: rows(20)}); im.Review != ReviewNone || im.Imported != 20 {
 		t.Errorf("paid import = %+v", im)
 	}
 }
@@ -275,7 +279,7 @@ func TestImportCarriesOnAfterAStop(t *testing.T) {
 
 	// The first batch has n0 ... n999; the second repeats n5.
 	csv := rows(importBatch+500, "N5@example.com")
-	im, err := h.svc.CreateImport(ctx, h.acc, ImportInput{CSV: csv})
+	im, err := h.svc.CreateImport(ctx, h.acc, ImportInput{ListSource: ListSourceForm, CSV: csv})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +308,7 @@ func TestImportFailsAfterRepeatedStops(t *testing.T) {
 	afterImportBatch = func(int) error { return errors.New("worker stopped") }
 	t.Cleanup(func() { afterImportBatch = nil })
 	h.setPlan(t, h.acc, "paid")
-	im, err := h.svc.CreateImport(ctx, h.acc, ImportInput{CSV: rows(importBatch * 4)})
+	im, err := h.svc.CreateImport(ctx, h.acc, ImportInput{ListSource: ListSourceForm, CSV: rows(importBatch * 4)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +330,7 @@ func TestImportFailsAfterRepeatedStops(t *testing.T) {
 func TestImportsAreKeptPerAccount(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	im := h.importFile(t, ImportInput{CSV: rows(3, "x")})
+	im := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: rows(3, "x")})
 	if _, err := h.svc.GetImport(ctx, h.acc2, im.ID); !errors.Is(err, ErrImportNotFound) {
 		t.Errorf("get from another account: %v", err)
 	}
@@ -336,7 +340,7 @@ func TestImportsAreKeptPerAccount(t *testing.T) {
 	if ims, _ := h.svc.ListImports(ctx, h.acc2, nil, 10); len(ims) != 0 {
 		t.Errorf("another account's list = %v", ims)
 	}
-	second := h.importFile(t, ImportInput{CSV: rows(1)})
+	second := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: rows(1)})
 	page, err := h.svc.ListImports(ctx, h.acc, nil, 1)
 	if err != nil || len(page) != 1 || page[0].ID != second.ID {
 		t.Fatalf("first page = %v, %v", page, err)
@@ -366,7 +370,7 @@ func TestImportOf10000RowsWithBadRowsUnderAMinute(t *testing.T) {
 		}
 	}
 	start := time.Now()
-	im := h.importFile(t, ImportInput{CSV: []byte(b.String()), PermissionConfirmed: true})
+	im := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte(b.String()), PermissionConfirmed: true})
 	took := time.Since(start)
 	if took > time.Minute {
 		t.Errorf("took %s", took)

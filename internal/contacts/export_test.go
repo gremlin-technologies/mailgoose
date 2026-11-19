@@ -64,7 +64,7 @@ func TestExportImportsBackAsTheSameContacts(t *testing.T) {
 	h.setStatus(t, una.ID, StatusUnsubscribed)
 	bo := h.add(t, "bo@example.com", StatusSubscribed)
 	h.setStatus(t, bo.ID, StatusBounced)
-	h.importFile(t, ImportInput{CSV: []byte("email,first name\nimp@example.com,Ima\n"), PermissionConfirmed: true})
+	h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte("email,first name\nimp@example.com,Ima\n"), PermissionConfirmed: true})
 	vip, plus := h.tag(t, "VIP"), h.tag(t, "+plus")
 	for _, tc := range []struct {
 		tag string
@@ -96,7 +96,7 @@ func TestExportImportsBackAsTheSameContacts(t *testing.T) {
 	if _, err := h.svc.ExportCSV(ctx, h.acc, Filter{}, &b); err != nil {
 		t.Fatal(err)
 	}
-	im, err := h.svc.CreateImport(ctx, h.acc2, ImportInput{CSV: b.Bytes(), FileName: "contacts.csv", PermissionConfirmed: true})
+	im, err := h.svc.CreateImport(ctx, h.acc2, ImportInput{ListSource: ListSourceForm, CSV: b.Bytes(), FileName: "contacts.csv", PermissionConfirmed: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestExportImportsBackAsTheSameContacts(t *testing.T) {
 
 func TestImportStatusColumnOnlyHoldsContactsBack(t *testing.T) {
 	h := newHarness(t)
-	im := h.importFile(t, ImportInput{CSV: []byte("email,Status\n" +
+	im := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte("email,Status\n" +
 		"a@example.com,subscribed\nb@example.com,Unsubscribed\nc@example.com,complained\nd@example.com,active\ne@example.com,\n")})
 	if im.Imported != 5 || deref(im.StatusColumn) != "Status" {
 		t.Fatalf("import = %+v", im)
@@ -125,7 +125,7 @@ func TestImportStatusColumnOnlyHoldsContactsBack(t *testing.T) {
 	}
 
 	// With permission, an unconfirmed row still stays unconfirmed.
-	h.importFile(t, ImportInput{CSV: []byte("email,state\nf@example.com,unconfirmed\ng@example.com,subscribed\n"),
+	h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte("email,state\nf@example.com,unconfirmed\ng@example.com,subscribed\n"),
 		StatusColumn: "state", PermissionConfirmed: true})
 	if f, g := h.byEmail(t, "f@example.com"), h.byEmail(t, "g@example.com"); f.Status != StatusUnconfirmed || g.Status != StatusSubscribed {
 		t.Errorf("f %s, g %s", f.Status, g.Status)
@@ -137,7 +137,7 @@ func TestImportStatusColumnOnlyHoldsContactsBack(t *testing.T) {
 func TestImportAtTheLimitStillTakesUnsubscribedRows(t *testing.T) {
 	h := newHarness(t)
 	h.fill(t, h.acc, FreeContactLimit)
-	im := h.importFile(t, ImportInput{CSV: []byte("email,status\nnew@example.com,\ngone@example.com,unsubscribed\n"), PermissionConfirmed: true})
+	im := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte("email,status\nnew@example.com,\ngone@example.com,unsubscribed\n"), PermissionConfirmed: true})
 	if im.Imported != 1 || im.SkippedByReason[SkipOverLimit] != 1 || h.byEmail(t, "gone@example.com").Status != StatusUnsubscribed {
 		t.Errorf("import = %+v", im)
 	}
@@ -147,7 +147,7 @@ func TestImportTagsColumn(t *testing.T) {
 	h := newHarness(t)
 	h.tag(t, "VIP")
 	news := h.tag(t, "news")
-	im := h.importFile(t, ImportInput{CSV: []byte("email,tags\n" +
+	im := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte("email,tags\n" +
 		"a@example.com,\"vip, Customers ,customers\"\nb@example.com,\nc@example.com,'=sum\n"), Tags: []string{news.ID}})
 	if im.Imported != 3 || deref(im.TagsColumn) != "tags" {
 		t.Fatalf("import = %+v", im)
@@ -169,7 +169,7 @@ func TestImportTagsColumn(t *testing.T) {
 		fmt.Fprintf(&many, "p%d@example.com,t%d\n", i, i)
 	}
 	for in, want := range map[string]string{"email,tags\na@example.com,ok\nb@example.com," + long + "\n": "invalid_tag_name", many.String(): "too_many_tags"} {
-		if _, err := h.svc.CreateImport(context.Background(), h.acc, ImportInput{CSV: []byte(in)}); code(err) != want {
+		if _, err := h.svc.CreateImport(context.Background(), h.acc, ImportInput{ListSource: ListSourceForm, CSV: []byte(in)}); code(err) != want {
 			t.Errorf("%.40q: %v, want %s", in, err, want)
 		}
 	}
@@ -179,8 +179,8 @@ func TestContactData(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	vip := h.tag(t, "vip")
-	im := h.importFile(t, ImportInput{CSV: []byte("email\npat@example.com\n PAT@example.com\n"), FileName: "list.csv", Tags: []string{"vip"}})
-	h.importFile(t, ImportInput{CSV: []byte("email\npat@example.com\n")})
+	im := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte("email\npat@example.com\n PAT@example.com\n"), FileName: "list.csv", Tags: []string{"vip"}})
+	h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte("email\npat@example.com\n")})
 	pat := h.byEmail(t, "pat@example.com")
 
 	d, err := h.svc.Data(ctx, h.acc, pat.ID)
@@ -210,7 +210,7 @@ func TestEraseLeavesOnlyTheSuppressionHash(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	h.tag(t, "vip")
-	im := h.importFile(t, ImportInput{CSV: []byte("email\npat@example.com\nPat@Example.com\nsam@example.com\n"), Tags: []string{"vip"}})
+	im := h.importFile(t, ImportInput{ListSource: ListSourceForm, CSV: []byte("email\npat@example.com\nPat@Example.com\nsam@example.com\n"), Tags: []string{"vip"}})
 	pat := h.byEmail(t, "pat@example.com")
 
 	if err := h.svc.Erase(ctx, h.acc, pat.ID); err != nil {
@@ -228,7 +228,9 @@ func TestEraseLeavesOnlyTheSuppressionHash(t *testing.T) {
 	var stored int
 	if err := h.svc.DB.QueryRow(ctx, `
 		SELECT (SELECT count(*) FROM contacts WHERE email = 'pat@example.com')
-			+ (SELECT count(*) FROM import_skips WHERE lower(email) LIKE '%pat@%')`).Scan(&stored); err != nil || stored != 0 {
+			+ (SELECT count(*) FROM import_skips WHERE lower(email) LIKE '%pat@%')
+			+ (SELECT count(*) FROM import_address_hashes WHERE hash = $1)
+			+ (SELECT count(*) FROM consents WHERE contact_id = $2)`, importHash("pat@example.com"), pat.ID).Scan(&stored); err != nil || stored != 0 {
 		t.Errorf("address still stored %d times (%v)", stored, err)
 	}
 	// Added again from an old list, it stays unsubscribed.

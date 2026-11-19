@@ -110,10 +110,16 @@ type Import struct {
 	SkippedByReason map[string]int
 	Review          string
 	HoldReason      *string
-	Error           *string
-	CreatedAt       time.Time
-	StartedAt       *time.Time
-	FinishedAt      *time.Time
+	// ListSource is where the customer said the list came from, and
+	// ListSourceDetail their words for "other"; nil before MG-63.
+	ListSource       *string
+	ListSourceDetail *string
+	// Checks is what the import's checks found (MG-63).
+	Checks     CheckCounts
+	Error      *string
+	CreatedAt  time.Time
+	StartedAt  *time.Time
+	FinishedAt *time.Time
 }
 
 // ContactStatus is the status the import gives the contacts it adds.
@@ -154,6 +160,10 @@ type ImportInput struct {
 	// PermissionConfirmed says the account has the people's permission to
 	// mail them: contacts are added subscribed, not unconfirmed.
 	PermissionConfirmed bool
+	// ListSource is where the people came from, one of ListSources;
+	// required. ListSourceDetail describes an "other" source.
+	ListSource       string
+	ListSourceDetail string
 }
 
 func (in ImportInput) named() map[string]string {
@@ -465,6 +475,7 @@ func rowTags(cellValue string) ([]string, bool) {
 const importColumns = `i.id, i.account_id, i.file_name, i.status, i.permission_confirmed, i.email_column, i.first_name_column, i.last_name_column,
 	i.status_column, i.tags_column,
 	i.total_rows, i.processed_rows, i.imported, i.skipped, i.review, i.hold_reason, i.error, i.created_at, i.started_at, i.finished_at,
+	i.list_source, i.list_source_detail, i.invalid_rows, i.role_addresses, i.disposable_addresses, i.shared_addresses, i.shared_account_id::text,
 	ARRAY(SELECT t.id::text FROM tags t WHERE t.id = ANY(i.tag_ids) ORDER BY lower(t.name), t.id),
 	ARRAY(SELECT t.name FROM tags t WHERE t.id = ANY(i.tag_ids) ORDER BY lower(t.name), t.id),
 	ARRAY(SELECT s.reason || ':' || count(*) FROM import_skips s WHERE s.import_id = i.id GROUP BY s.reason)`
@@ -474,6 +485,8 @@ func scanImport(row pgx.Row) (*Import, error) {
 	var tagIDs, tagNames, byReason []string
 	err := row.Scan(&im.ID, &im.AccountID, &im.FileName, &im.Status, &im.PermissionConfirmed, &im.EmailColumn, &im.FirstNameColumn, &im.LastNameColumn,
 		&im.StatusColumn, &im.TagsColumn, &im.TotalRows, &im.ProcessedRows, &im.Imported, &im.Skipped, &im.Review, &im.HoldReason, &im.Error, &im.CreatedAt, &im.StartedAt, &im.FinishedAt,
+		&im.ListSource, &im.ListSourceDetail, &im.Checks.InvalidRows, &im.Checks.RoleAddresses, &im.Checks.DisposableAddresses,
+		&im.Checks.SharedAddresses, &im.Checks.SharedAccountID,
 		&tagIDs, &tagNames, &byReason)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrImportNotFound
@@ -526,8 +539,13 @@ func (s *Service) resolveTags(ctx context.Context, accountID string, refs []stri
 }
 
 // CreateImport checks the file and queues it for the worker. An account's
-// first import of more than LargeFirstImport rows is held for review.
+// first import of more than LargeFirstImport rows is held for review, and
+// so is one the list checks (MG-63) find suspicious.
 func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportInput) (*Import, error) {
+	detail, err := checkListSource(in.ListSource, in.ListSourceDetail)
+	if err != nil {
+		return nil, err
+	}
 	if len(in.CSV) > MaxImportBytes {
 		return nil, invalidImport("file_too_large", "csv", fmt.Sprintf("The file is over %d MB. Split it into smaller files.", MaxImportBytes>>20))
 	}
@@ -537,6 +555,8 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 	}
 	total := 0
 	fileTags := map[string]bool{}
+	scan := &fileScan{}
+	seen := map[string]struct{}{}
 	err = l.eachRow(in.CSV, func(r csvRow) error {
 		total++
 		if total > MaxImportRows {
@@ -554,6 +574,7 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 			return invalidImport("too_many_tags", "csv",
 				fmt.Sprintf("The tags column names more than %d different tags. Import the file in parts, or tag the contacts afterwards.", MaxImportFileTags))
 		}
+		scan.add(r, seen)
 		return nil
 	})
 	if err != nil {
@@ -584,19 +605,32 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 		FROM accounts a WHERE a.id = $1 FOR UPDATE`, accountID).Scan(&first); err != nil {
 		return nil, fmt.Errorf("lock account: %w", err)
 	}
+	if scan.counts.SharedAddresses, scan.counts.SharedAccountID, err = sharedWith(ctx, tx, accountID, scan.hashes); err != nil {
+		return nil, err
+	}
 	review, holdReason := ReviewNone, (*string)(nil)
-	if first && total > LargeFirstImport {
+	if reason := s.Checks.holdFor(scan); reason != "" {
+		review, holdReason = ReviewHeld, ptr(reason)
+	} else if first && total > LargeFirstImport {
 		review, holdReason = ReviewHeld, ptr(HoldLargeFirstImport)
 	}
+	c := scan.counts
 	var id string
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO imports (account_id, file_name, permission_confirmed, email_column, first_name_column, last_name_column,
-			status_column, tags_column, tag_ids, csv, total_rows, review, hold_reason, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING id`,
+			status_column, tags_column, tag_ids, csv, total_rows, review, hold_reason, created_at,
+			list_source, list_source_detail, invalid_rows, role_addresses, disposable_addresses, shared_addresses, shared_account_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id`,
 		accountID, fileName, in.PermissionConfirmed, *l.column(fieldEmail), l.column(fieldFirstName), l.column(fieldLastName),
 		l.column(fieldStatus), l.column(fieldTags),
-		tagIDs, in.CSV, total, review, holdReason, s.now()).Scan(&id); err != nil {
+		tagIDs, in.CSV, total, review, holdReason, s.now(),
+		in.ListSource, detail, c.InvalidRows, c.RoleAddresses, c.DisposableAddresses, c.SharedAddresses, c.SharedAccountID).Scan(&id); err != nil {
 		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO import_address_hashes (import_id, account_id, hash)
+		SELECT $1, $2, h FROM unnest($3::bytea[]) AS h ON CONFLICT DO NOTHING`, id, accountID, scan.hashes); err != nil {
+		return nil, fmt.Errorf("store address hashes: %w", err)
 	}
 	im, err := scanImport(tx.QueryRow(ctx, `SELECT `+importColumns+` FROM imports i WHERE i.id = $1`, id))
 	if err != nil {
@@ -699,6 +733,11 @@ type importJob struct {
 	status               string
 	processed            int
 	review               string
+	// consent is the consent record each added contact gets (MG-63): the
+	// import's list source, as JSON, and when it was given; nil for an
+	// import from before list sources.
+	consent   []byte
+	createdAt time.Time
 }
 
 // RunNextImport claims the oldest waiting import, or one whose worker
@@ -725,9 +764,11 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED)
 		RETURNING id, account_id, lease_token, csv, email_column, first_name_column, last_name_column, status_column, tags_column,
 			tag_ids::text[],
-			permission_confirmed, processed_rows, review`,
+			permission_confirmed, processed_rows, review, created_at,
+			CASE WHEN list_source IS NULL THEN NULL ELSE
+				jsonb_build_object('list_source', list_source, 'list_source_detail', list_source_detail, 'file_name', file_name) END`,
 		now, now.Add(ImportLease)).Scan(&j.id, &j.accountID, &j.token, &j.data, &emailCol, &firstCol, &lastCol, &statusCol, &tagsCol, &j.tagIDs,
-		&permission, &j.processed, &j.review)
+		&permission, &j.processed, &j.review, &j.createdAt, &j.consent)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -1001,6 +1042,16 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 	}
 	if err := s.tagFromCells(ctx, tx, j.accountID, add, added, now); err != nil {
 		return err
+	}
+	if len(ids) > 0 && j.consent != nil {
+		// Each added contact's consent record is the list source the
+		// import gave (MG-63).
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO consents (account_id, contact_id, source, import_id, wording, created_at)
+			SELECT $1, c.id, 'import', $3, $4, $5 FROM unnest($2::uuid[]) AS c(id)`,
+			j.accountID, ids, j.id, j.consent, j.createdAt); err != nil {
+			return err
+		}
 	}
 	if len(skips) > 0 {
 		lines := make([]int, len(skips))

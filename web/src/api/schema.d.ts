@@ -887,9 +887,21 @@ export interface paths {
          *     free account's 500-contact limit are skipped and listed by
          *     `listImportSkippedRows`. Existing contacts aren't changed.
          *
-         *     An account's first import of more than 2,000 rows, or an import that
-         *     would take a free account past its limit, is held for review: its
-         *     contacts are added but not mailed until mailgoose approves it.
+         *     Every import says where its people came from in `list_source`; an
+         *     import carries no proof that they asked for mail, the way a form
+         *     signup does. Each added contact's consent record (`getContactData`)
+         *     keeps the source and when it was given.
+         *
+         *     The file's addresses are checked as it's queued: `checks` counts rows
+         *     that aren't addresses, role addresses (info@, sales@ ...) and
+         *     addresses at disposable (throwaway) mail domains. An import is held
+         *     for review when role and disposable addresses are over 10% of its
+         *     valid rows, rows that aren't addresses are over 5% of all rows, or at
+         *     least half of its addresses (and at least 200) are already on lists
+         *     imported to other mailgoose accounts. So is an account's first import
+         *     of more than 2,000 rows, and an import that would take a free account
+         *     past its limit. A held import's contacts are added but not mailed
+         *     until mailgoose approves it; `hold_message` says why it's held.
          *
          *     The request body can be up to 10 MB.
          */
@@ -1871,6 +1883,9 @@ export interface components {
                 permission_confirmed: boolean;
                 /** @description The contact waits for the import's review before it can be mailed. */
                 held: boolean;
+                /** @description Where the account said the import's people came from; null for imports made before it was asked. */
+                list_source: null | components["schemas"]["ListSource"];
+                list_source_detail: string | null;
             };
             /** @description Rows of the account's imports with this address that weren't added. */
             skipped_rows: {
@@ -1880,17 +1895,26 @@ export interface components {
                 row: number;
                 reason: components["schemas"]["SkipReason"];
             }[];
-            /** @description The contact's signups through signup forms, oldest first. */
+            /**
+             * @description The contact's consent records, oldest first: each signup through
+             *     a signup form, and for a contact an import added, the list source
+             *     the import gave and when.
+             */
             consents: {
                 /** Format: uuid */
                 id: string;
                 /** @description Null once the form is deleted; `wording` still says what it showed. */
                 form_id: string | null;
                 /** @enum {string} */
-                source: "form";
-                /** @description The address the signup was posted from. */
-                ip: string;
-                /** @description What the form showed: `form_name`, `fields` (their labels), `button_text`, `double_opt_in`, and with double opt-in `confirm_subject` and `confirm_text`. */
+                source: "form" | "import";
+                /** @description The address a form signup was posted from; null for an import. */
+                ip: string | null;
+                /**
+                 * Format: uuid
+                 * @description The import, for an import's record.
+                 */
+                import_id: string | null;
+                /** @description For a form, what it showed: `form_name`, `fields` (their labels), `button_text`, `double_opt_in`, and with double opt-in `confirm_subject` and `confirm_text`. For an import, `list_source`, `list_source_detail` and `file_name`. */
                 wording: {
                     [key: string]: unknown;
                 };
@@ -1993,6 +2017,26 @@ export interface components {
              * @default false
              */
             permission_confirmed: boolean;
+            list_source: components["schemas"]["ListSource"];
+            /** @description Where the people came from, in a few words. Required when `list_source` is `other`. */
+            list_source_detail?: string | null;
+        };
+        /**
+         * @description Where an import's people came from. `form`: they signed up on my
+         *     site or form. `customers`: they bought from me. `personal`: people I
+         *     know personally. `export`: exported from another email tool.
+         *     `other`: described in `list_source_detail`.
+         * @enum {string}
+         */
+        ListSource: "form" | "customers" | "personal" | "export" | "other";
+        /** @description What the checks found in the file when the import was queued. */
+        ImportChecks: {
+            /** @description Rows that aren't an email address, or couldn't be read. */
+            invalid_rows: number;
+            /** @description Valid rows with a role address, such as info@, sales@ or admin@. */
+            role_addresses: number;
+            /** @description Valid rows with an address at a disposable (throwaway) mail domain. */
+            disposable_addresses: number;
         };
         /** @enum {string} */
         ImportStatus: "queued" | "running" | "done" | "failed";
@@ -2046,10 +2090,18 @@ export interface components {
              */
             review: "none" | "held" | "approved";
             /**
-             * @description Why a held import is held: `large_first_import` or
-             *     `over_contact_limit`.
+             * @description Why a held import is held: `shared_list` (many of its addresses
+             *     are on other accounts' lists), `risky_addresses` (many role or
+             *     disposable addresses), `invalid_addresses` (many rows that aren't
+             *     addresses), `large_first_import` or `over_contact_limit`.
              */
             hold_reason: string | null;
+            /** @description Why the import is held, in plain words, for showing to the account; null when it isn't held. */
+            hold_message: string | null;
+            /** @description Where the account said the people came from; null for imports made before it was asked. */
+            list_source: null | components["schemas"]["ListSource"];
+            list_source_detail: string | null;
+            checks: components["schemas"]["ImportChecks"];
             /** @description Why a `failed` import stopped. */
             error: string | null;
             /** Format: date-time */
@@ -3367,6 +3419,22 @@ export interface components {
             file_name: string | null;
             total_rows: number;
             hold_reason: string;
+            list_source: string | null;
+            list_source_detail: string | null;
+            /**
+             * @description What the import's checks found. `shared_addresses` is how many of
+             *     its distinct addresses other accounts imported, and
+             *     `shared_account_id` the account with most of them; no addresses
+             *     are shown.
+             */
+            checks: {
+                invalid_rows: number;
+                role_addresses: number;
+                disposable_addresses: number;
+                shared_addresses: number;
+                /** Format: uuid */
+                shared_account_id: string | null;
+            };
             status: string;
             /** Format: date-time */
             created_at: string;
@@ -3543,8 +3611,10 @@ export interface components {
          *     `no_rows`, `no_email_column` (name the column in `columns.email`),
          *     `invalid_mapping` (a named column isn't in the header),
          *     `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes),
-         *     `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found` or
-         *     `too_many_tags`.
+         *     `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found`,
+         *     `too_many_tags`, `list_source_required` (say where the list came
+         *     from), `list_source_detail_required` (describe an `other` source) or
+         *     `invalid_list_source`.
          */
         ImportRefused: {
             headers: {

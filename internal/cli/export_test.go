@@ -139,7 +139,7 @@ func TestContactsDeleteErase(t *testing.T) {
 func TestImportMapsStatusAndTagsColumns(t *testing.T) {
 	h, seen := importsStub(t)
 	path := writeCSV(t, "Mail,State,Labels\npat@example.com,unsubscribed,vip\n")
-	if code := h.run("import", path, "--map", "email=Mail", "--map", "status=State", "--map", "tags=Labels"); code != ExitOK {
+	if code := h.run("import", path, "--list-source", "export", "--map", "email=Mail", "--map", "status=State", "--map", "tags=Labels"); code != ExitOK {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
 	cols, _ := (*seen)[0].body["columns"].(map[string]any)

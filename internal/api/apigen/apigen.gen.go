@@ -281,13 +281,16 @@ func (e ColumnsBlockType) Valid() bool {
 
 // Defines values for ContactDataConsentsSource.
 const (
-	ContactDataConsentsSourceForm ContactDataConsentsSource = "form"
+	ContactDataConsentsSourceForm   ContactDataConsentsSource = "form"
+	ContactDataConsentsSourceImport ContactDataConsentsSource = "import"
 )
 
 // Valid indicates whether the value is a known member of the ContactDataConsentsSource enum.
 func (e ContactDataConsentsSource) Valid() bool {
 	switch e {
 	case ContactDataConsentsSourceForm:
+		return true
+	case ContactDataConsentsSourceImport:
 		return true
 	default:
 		return false
@@ -903,6 +906,33 @@ func (e ImportStatus) Valid() bool {
 	}
 }
 
+// Defines values for ListSource.
+const (
+	ListSourceCustomers ListSource = "customers"
+	ListSourceExport    ListSource = "export"
+	ListSourceForm      ListSource = "form"
+	ListSourceOther     ListSource = "other"
+	ListSourcePersonal  ListSource = "personal"
+)
+
+// Valid indicates whether the value is a known member of the ListSource enum.
+func (e ListSource) Valid() bool {
+	switch e {
+	case ListSourceCustomers:
+		return true
+	case ListSourceExport:
+		return true
+	case ListSourceForm:
+		return true
+	case ListSourceOther:
+		return true
+	case ListSourcePersonal:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PlanPlan.
 const (
 	PlanPlanFree PlanPlan = "free"
@@ -1348,12 +1378,25 @@ type AdminActionList struct {
 
 // AdminHeldImport defines model for AdminHeldImport.
 type AdminHeldImport struct {
-	CreatedAt  time.Time `json:"created_at"`
-	FileName   *string   `json:"file_name"`
-	HoldReason string    `json:"hold_reason"`
-	Id         string    `json:"id"`
-	Status     string    `json:"status"`
-	TotalRows  int       `json:"total_rows"`
+	// Checks What the import's checks found. `shared_addresses` is how many of
+	// its distinct addresses other accounts imported, and
+	// `shared_account_id` the account with most of them; no addresses
+	// are shown.
+	Checks struct {
+		DisposableAddresses int     `json:"disposable_addresses"`
+		InvalidRows         int     `json:"invalid_rows"`
+		RoleAddresses       int     `json:"role_addresses"`
+		SharedAccountId     *string `json:"shared_account_id"`
+		SharedAddresses     int     `json:"shared_addresses"`
+	} `json:"checks"`
+	CreatedAt        time.Time `json:"created_at"`
+	FileName         *string   `json:"file_name"`
+	HoldReason       string    `json:"hold_reason"`
+	Id               string    `json:"id"`
+	ListSource       *string   `json:"list_source"`
+	ListSourceDetail *string   `json:"list_source_detail"`
+	Status           string    `json:"status"`
+	TotalRows        int       `json:"total_rows"`
 }
 
 // AdminLiveCampaign defines model for AdminLiveCampaign.
@@ -1734,7 +1777,9 @@ type Contact struct {
 
 // ContactData defines model for ContactData.
 type ContactData struct {
-	// Consents The contact's signups through signup forms, oldest first.
+	// Consents The contact's consent records, oldest first: each signup through
+	// a signup form, and for a contact an import added, the list source
+	// the import gave and when.
 	Consents []struct {
 		// ConfirmedAt When the person used the confirm link; null until then.
 		ConfirmedAt *time.Time `json:"confirmed_at"`
@@ -1744,11 +1789,14 @@ type ContactData struct {
 		FormId *string `json:"form_id"`
 		Id     string  `json:"id"`
 
-		// Ip The address the signup was posted from.
-		Ip     string                    `json:"ip"`
+		// ImportId The import, for an import's record.
+		ImportId *string `json:"import_id"`
+
+		// Ip The address a form signup was posted from; null for an import.
+		Ip     *string                   `json:"ip"`
 		Source ContactDataConsentsSource `json:"source"`
 
-		// Wording What the form showed: `form_name`, `fields` (their labels), `button_text`, `double_opt_in`, and with double opt-in `confirm_subject` and `confirm_text`.
+		// Wording For a form, what it showed: `form_name`, `fields` (their labels), `button_text`, `double_opt_in`, and with double opt-in `confirm_subject` and `confirm_text`. For an import, `list_source`, `list_source_detail` and `file_name`.
 		Wording map[string]interface{} `json:"wording"`
 	} `json:"consents"`
 	Contact Contact `json:"contact"`
@@ -1761,6 +1809,10 @@ type ContactData struct {
 		// Held The contact waits for the import's review before it can be mailed.
 		Held bool   `json:"held"`
 		Id   string `json:"id"`
+
+		// ListSource Where the account said the import's people came from; null for imports made before it was asked.
+		ListSource       *ListSource `json:"list_source"`
+		ListSourceDetail *string     `json:"list_source_detail"`
 
 		// PermissionConfirmed Whether the account confirmed it had permission to mail the people in the file.
 		PermissionConfirmed bool `json:"permission_confirmed"`
@@ -1924,6 +1976,15 @@ type CreateImportRequest struct {
 
 	// FileName The file's name, to tell imports apart later.
 	FileName *string `json:"file_name,omitempty"`
+
+	// ListSource Where an import's people came from. `form`: they signed up on my
+	// site or form. `customers`: they bought from me. `personal`: people I
+	// know personally. `export`: exported from another email tool.
+	// `other`: described in `list_source_detail`.
+	ListSource ListSource `json:"list_source"`
+
+	// ListSourceDetail Where the people came from, in a few words. Required when `list_source` is `other`.
+	ListSourceDetail *string `json:"list_source_detail,omitempty"`
 
 	// PermissionConfirmed True says the account has these people's permission to mail them,
 	// so they're added `subscribed`. Otherwise they're `unconfirmed` and
@@ -2560,6 +2621,9 @@ type ImageList struct {
 
 // Import defines model for Import.
 type Import struct {
+	// Checks What the checks found in the file when the import was queued.
+	Checks ImportChecks `json:"checks"`
+
 	// Columns The header of the column each field came from; null when the file has none.
 	Columns struct {
 		Email     string  `json:"email"`
@@ -2578,14 +2642,23 @@ type Import struct {
 	FileName   *string    `json:"file_name"`
 	FinishedAt *time.Time `json:"finished_at"`
 
-	// HoldReason Why a held import is held: `large_first_import` or
-	// `over_contact_limit`.
+	// HoldMessage Why the import is held, in plain words, for showing to the account; null when it isn't held.
+	HoldMessage *string `json:"hold_message"`
+
+	// HoldReason Why a held import is held: `shared_list` (many of its addresses
+	// are on other accounts' lists), `risky_addresses` (many role or
+	// disposable addresses), `invalid_addresses` (many rows that aren't
+	// addresses), `large_first_import` or `over_contact_limit`.
 	HoldReason *string `json:"hold_reason"`
 	Id         string  `json:"id"`
 
 	// Imported Contacts added.
-	Imported      int `json:"imported"`
-	ProcessedRows int `json:"processed_rows"`
+	Imported int `json:"imported"`
+
+	// ListSource Where the account said the people came from; null for imports made before it was asked.
+	ListSource       *ListSource `json:"list_source"`
+	ListSourceDetail *string     `json:"list_source_detail"`
+	ProcessedRows    int         `json:"processed_rows"`
 
 	// Review A `held` import's contacts aren't mailed until mailgoose approves it.
 	Review          ImportReview `json:"review"`
@@ -2613,6 +2686,18 @@ type ImportContactStatus string
 
 // ImportReview A `held` import's contacts aren't mailed until mailgoose approves it.
 type ImportReview string
+
+// ImportChecks What the checks found in the file when the import was queued.
+type ImportChecks struct {
+	// DisposableAddresses Valid rows with an address at a disposable (throwaway) mail domain.
+	DisposableAddresses int `json:"disposable_addresses"`
+
+	// InvalidRows Rows that aren't an email address, or couldn't be read.
+	InvalidRows int `json:"invalid_rows"`
+
+	// RoleAddresses Valid rows with a role address, such as info@, sales@ or admin@.
+	RoleAddresses int `json:"role_addresses"`
+}
 
 // ImportColumns The header of the column each field comes from. Leave a field out to have it found from common headers.
 type ImportColumns struct {
@@ -2676,6 +2761,12 @@ type LaunchResult struct {
 	// RecipientCount Who the campaign goes to, fixed at launch.
 	RecipientCount int `json:"recipient_count"`
 }
+
+// ListSource Where an import's people came from. `form`: they signed up on my
+// site or form. `customers`: they bought from me. `personal`: people I
+// know personally. `export`: exported from another email tool.
+// `other`: described in `list_source_detail`.
+type ListSource string
 
 // MoveEmailBlockRequest The new place, as in BlockPlace.
 type MoveEmailBlockRequest struct {

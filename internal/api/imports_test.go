@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -16,7 +17,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 )
 
-const importBody = `{"csv":"Email,First Name\npat@example.com,Pat\nnope,Nope\n","file_name":"list.csv"}`
+const importBody = `{"list_source":"form","csv":"Email,First Name\npat@example.com,Pat\nnope,Nope\n","file_name":"list.csv"}`
 
 var addedImports sync.Map // *testing.T -> import id
 
@@ -72,12 +73,12 @@ func importPath(suffix string) func(*testing.T) *http.Request {
 
 // tooLargeImport is a createImport request over MaxImportBodyBytes.
 func tooLargeImport(t *testing.T) *http.Request {
-	return jsonRequest(http.MethodPost, "/v1/imports", `{"csv":"`+strings.Repeat("x", MaxImportBodyBytes)+`"}`)(t)
+	return jsonRequest(http.MethodPost, "/v1/imports", `{"list_source":"form","csv":"`+strings.Repeat("x", MaxImportBodyBytes)+`"}`)(t)
 }
 
 // csvBody is a createImport body for csv.
 func csvBody(csv string) string {
-	b, _ := json.Marshal(map[string]string{"csv": csv})
+	b, _ := json.Marshal(map[string]string{"list_source": "form", "csv": csv})
 	return string(b)
 }
 
@@ -97,6 +98,9 @@ type importBodyJSON struct {
 	TotalRows       int            `json:"total_rows"`
 	Review          string         `json:"review"`
 	HoldReason      *string        `json:"hold_reason"`
+	HoldMessage     *string        `json:"hold_message"`
+	ListSource      *string        `json:"list_source"`
+	Checks          map[string]int `json:"checks"`
 	SkippedByReason map[string]int `json:"skipped_by_reason"`
 	Tags            []struct {
 		Name string `json:"name"`
@@ -114,7 +118,7 @@ func TestImportThroughTheAPI(t *testing.T) {
 	addedTag(t, h)
 	addedContact(t, h)
 
-	body := `{"csv":"E-mail;Vorname;Nachname\nana@example.com;Ana;Silva\npat@example.com;Pat;Lee\nbroken;X;Y\nana@example.com;Ana;Again\n",` +
+	body := `{"list_source":"form","csv":"E-mail;Vorname;Nachname\nana@example.com;Ana;Silva\npat@example.com;Pat;Lee\nbroken;X;Y\nana@example.com;Ana;Again\n",` +
 		`"columns":{"first_name":"Vorname","last_name":"Nachname"},"tags":["VIP"],"permission_confirmed":true}`
 	rec := do(t, s.Handler(), bearer(jsonRequest(http.MethodPost, "/v1/imports", body))(t))
 	if rec.Code != http.StatusAccepted {
@@ -173,11 +177,15 @@ func TestImportRefusals(t *testing.T) {
 	for _, tc := range []struct {
 		body, code string
 	}{
-		{`{"csv":"name\nPat\n"}`, "no_email_column"},
-		{`{"csv":"email\na@example.com\n","columns":{"email":"Mail"}}`, "invalid_mapping"},
-		{`{"csv":"email\n"}`, "no_rows"},
-		{`{"csv":"email\na@example.com\n","tags":["nope"]}`, "tag_not_found"},
-		{`{"csv":"email\na@example.com\n","tags":[` + strings.Repeat(`"t",`, contacts.MaxImportTags) + `"t"]}`, "too_many_tags"},
+		{`{"csv":"email\na@example.com\n"}`, "list_source_required"},
+		{`{"list_source":"","csv":"email\na@example.com\n"}`, "list_source_required"},
+		{`{"list_source":"other","csv":"email\na@example.com\n"}`, "list_source_detail_required"},
+		{`{"list_source":"bought","csv":"email\na@example.com\n"}`, "invalid_list_source"},
+		{`{"list_source":"form","csv":"name\nPat\n"}`, "no_email_column"},
+		{`{"list_source":"form","csv":"email\na@example.com\n","columns":{"email":"Mail"}}`, "invalid_mapping"},
+		{`{"list_source":"form","csv":"email\n"}`, "no_rows"},
+		{`{"list_source":"form","csv":"email\na@example.com\n","tags":["nope"]}`, "tag_not_found"},
+		{`{"list_source":"form","csv":"email\na@example.com\n","tags":[` + strings.Repeat(`"t",`, contacts.MaxImportTags) + `"t"]}`, "too_many_tags"},
 	} {
 		rec := do(t, h, bearer(jsonRequest(http.MethodPost, "/v1/imports", tc.body))(t))
 		var e struct {
@@ -225,8 +233,28 @@ func TestImportHeldForReview(t *testing.T) {
 	rec := do(t, s.Handler(), bearer(jsonRequest(http.MethodPost, "/v1/imports", csvBody(b.String())))(t))
 	var im importBodyJSON
 	decodeInto(t, rec, &im)
-	if rec.Code != http.StatusAccepted || im.Review != "held" || im.HoldReason == nil || *im.HoldReason != "large_first_import" {
+	if rec.Code != http.StatusAccepted || im.Review != "held" || im.HoldReason == nil || *im.HoldReason != "large_first_import" ||
+		im.HoldMessage == nil || !strings.Contains(*im.HoldMessage, "first import") {
 		t.Errorf("import = %d %+v", rec.Code, im)
+	}
+}
+
+// An import with many role and throwaway addresses is held, says why, and
+// shows the customer its checks but nothing about other accounts (MG-63).
+func TestImportHeldByItsChecks(t *testing.T) {
+	s := fullKey(authServer)(t)
+	csv := "email\npat@example.com\nsam@example.com\ninfo@shop.example\nx@mailinator.com\nnope\n"
+	rec := do(t, s.Handler(), bearer(jsonRequest(http.MethodPost, "/v1/imports",
+		`{"list_source":"customers","csv":`+strconv.Quote(csv)+`}`))(t))
+	var im importBodyJSON
+	decodeInto(t, rec, &im)
+	if rec.Code != http.StatusAccepted || im.Review != "held" || deref(im.HoldReason) != contacts.HoldRiskyAddresses ||
+		deref(im.HoldMessage) != contacts.HoldMessage(contacts.HoldRiskyAddresses) || deref(im.ListSource) != "customers" ||
+		im.Checks["invalid_rows"] != 1 || im.Checks["role_addresses"] != 1 || im.Checks["disposable_addresses"] != 1 {
+		t.Errorf("import = %d %+v", rec.Code, im)
+	}
+	if strings.Contains(rec.Body.String(), "shared") {
+		t.Errorf("the customer sees the shared-list count: %s", rec.Body)
 	}
 }
 
@@ -234,7 +262,7 @@ func TestImportHeldForReview(t *testing.T) {
 func TestImportAtTheFreeLimit(t *testing.T) {
 	s := atContactLimit(fullKey(authServer))(t)
 	h := importRunner{s.Handler(), s.Contacts}
-	rec := do(t, h, bearer(jsonRequest(http.MethodPost, "/v1/imports", `{"csv":"email\nover@example.com\n"}`))(t))
+	rec := do(t, h, bearer(jsonRequest(http.MethodPost, "/v1/imports", `{"list_source":"form","csv":"email\nover@example.com\n"}`))(t))
 	var im importBodyJSON
 	decodeInto(t, rec, &im)
 	rec = do(t, h, bearer(request(http.MethodGet, "/v1/imports/"+im.ID))(t))

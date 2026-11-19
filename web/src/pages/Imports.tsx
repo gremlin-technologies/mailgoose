@@ -11,6 +11,7 @@ import { useTags } from "./Tags";
 type Import = components["schemas"]["Import"];
 type SkipReason = components["schemas"]["SkipReason"];
 type SkippedRow = components["schemas"]["SkippedRow"];
+type ListSource = components["schemas"]["ListSource"];
 
 /** The largest file an import takes (10 MB, as the API). */
 export const maxImportBytes = 10 << 20;
@@ -33,6 +34,17 @@ const fields: { field: ImportField; label: string; about: string }[] = [
 
 type File_ = { name: string; text: string; headers: string[]; rows: number };
 
+/** Where an import's people came from, in the order the page offers them. */
+export const listSources: { source: ListSource; label: string }[] = [
+  { source: "form", label: "They signed up on my site or form" },
+  { source: "customers", label: "They're customers who bought from me" },
+  { source: "personal", label: "I know them personally" },
+  { source: "export", label: "An export from another email tool" },
+  { source: "other", label: "Somewhere else" },
+];
+/** The longest description of an "other" list source, as the API. */
+const maxListSourceDetail = 200;
+
 /** Uploading a CSV file: pick it, match its columns, confirm permission, start the import. */
 export function ImportContacts() {
   const api = useApi();
@@ -42,6 +54,8 @@ export function ImportContacts() {
   const [columns, setColumns] = useState<Partial<Record<ImportField, string>>>({});
   const [tagIDs, setTagIDs] = useState<string[]>([]);
   const [permission, setPermission] = useState(false);
+  const [listSource, setListSource] = useState<ListSource>();
+  const [listSourceDetail, setListSourceDetail] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure>();
 
@@ -76,13 +90,21 @@ export function ImportContacts() {
 
   async function start(e: FormEvent) {
     e.preventDefault();
-    if (!file) return;
+    if (!file || !listSource) return;
     setBusy(true);
     setFailure(undefined);
     const picked = Object.fromEntries(Object.entries(columns).filter(([, header]) => header));
     const res = await attempt(() =>
       api.POST("/v1/imports", {
-        body: { csv: file.text, file_name: file.name, columns: picked, tags: tagIDs, permission_confirmed: permission },
+        body: {
+          csv: file.text,
+          file_name: file.name,
+          columns: picked,
+          tags: tagIDs,
+          permission_confirmed: permission,
+          list_source: listSource,
+          list_source_detail: listSource === "other" ? listSourceDetail : undefined,
+        },
       }),
     );
     setBusy(false);
@@ -163,6 +185,41 @@ export function ImportContacts() {
               </fieldset>
             )}
 
+            <fieldset className="panel stack">
+              <legend>Where did these contacts come from?</legend>
+              <div className="choices">
+                {listSources.map(({ source, label }) => (
+                  <label key={source} className="check">
+                    <input
+                      type="radio"
+                      name="list_source"
+                      value={source}
+                      checked={listSource === source}
+                      onChange={() => setListSource(source)}
+                      required
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+              {listSource === "other" && (
+                <label className="field">
+                  <span>Where, in a few words</span>
+                  <input
+                    type="text"
+                    value={listSourceDetail}
+                    onChange={(e) => setListSourceDetail(e.target.value)}
+                    maxLength={maxListSourceDetail}
+                    required
+                  />
+                </label>
+              )}
+              <p className="muted small">
+                It's kept with each contact as where they came from. Files are also checked for bad, role (like info@)
+                and throwaway addresses.
+              </p>
+            </fieldset>
+
             <div className="panel stack">
               <label className="check">
                 <input type="checkbox" checked={permission} onChange={(e) => setPermission(e.target.checked)} />
@@ -178,7 +235,11 @@ export function ImportContacts() {
         <FailureNotice failure={failure} />
         {file && (
           <div>
-            <button type="submit" className="button primary" disabled={busy || !columns.email}>
+            <button
+              type="submit"
+              className="button primary"
+              disabled={busy || !columns.email || !listSource || (listSource === "other" && !listSourceDetail.trim())}
+            >
               {busy ? "Starting…" : "Import contacts"}
             </button>
           </div>
@@ -202,11 +263,6 @@ export const skipReasons: Record<SkipReason, string> = {
   exists: "Already a contact",
   suppressed: "Unsubscribed, bounced or complained before",
   over_limit: "Over the free plan's contact limit",
-};
-
-const holdReasons: Record<string, string> = {
-  large_first_import: "It's a large first import",
-  over_contact_limit: "It goes over the contact limit",
 };
 
 /** One import: progress while it runs, then what was added and what was skipped. */
@@ -268,10 +324,7 @@ export function ImportDetail() {
       )}
       {im.review === "held" && (
         <div className="notice notice-warn" role="status">
-          <p>
-            {holdReasons[im.hold_reason ?? ""] ?? "It needs a look"}, so mailgoose checks it before these contacts get
-            campaigns.
-          </p>
+          <p>{im.hold_message ?? "mailgoose checks this import before these contacts get campaigns."}</p>
           <p className="hint">They're on your list in the meantime, and the rest of your list sends as usual.</p>
         </div>
       )}
@@ -291,6 +344,24 @@ export function ImportDetail() {
         </div>
       </dl>
 
+      {im.list_source && (
+        <p className="muted">
+          Where they came from:{" "}
+          {im.list_source === "other"
+            ? (im.list_source_detail ?? "somewhere else")
+            : listSources.find((l) => l.source === im.list_source)?.label}
+        </p>
+      )}
+      {(im.checks.invalid_rows > 0 || im.checks.role_addresses > 0 || im.checks.disposable_addresses > 0) && (
+        <>
+          <h2>What the checks found</h2>
+          <ul className="plain">
+            <li>Rows that aren't email addresses: {im.checks.invalid_rows.toLocaleString()}</li>
+            <li>Role addresses (like info@ or sales@): {im.checks.role_addresses.toLocaleString()}</li>
+            <li>Addresses at throwaway email domains: {im.checks.disposable_addresses.toLocaleString()}</li>
+          </ul>
+        </>
+      )}
       {reasons.length > 0 && (
         <>
           <h2>Why rows were skipped</h2>

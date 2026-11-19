@@ -65,10 +65,19 @@ type adminAccount struct {
 	CreditBalance int64      `json:"credit_balance"`
 	Last30Days    adminRates `json:"last_30_days"`
 	HeldImports   []struct {
-		ID         string    `json:"id"`
-		TotalRows  int64     `json:"total_rows"`
-		HoldReason string    `json:"hold_reason"`
-		CreatedAt  time.Time `json:"created_at"`
+		ID               string  `json:"id"`
+		TotalRows        int64   `json:"total_rows"`
+		HoldReason       string  `json:"hold_reason"`
+		ListSource       *string `json:"list_source"`
+		ListSourceDetail *string `json:"list_source_detail"`
+		Checks           struct {
+			InvalidRows         int     `json:"invalid_rows"`
+			RoleAddresses       int     `json:"role_addresses"`
+			DisposableAddresses int     `json:"disposable_addresses"`
+			SharedAddresses     int     `json:"shared_addresses"`
+			SharedAccountID     *string `json:"shared_account_id"`
+		} `json:"checks"`
+		CreatedAt time.Time `json:"created_at"`
 	} `json:"held_imports"`
 	LiveCampaigns []struct {
 		ID     string     `json:"id"`
@@ -208,6 +217,19 @@ func (a *App) printAdminAccount(acc adminAccount) {
 	}
 	for _, i := range acc.HeldImports {
 		fmt.Fprintf(w, "Held import:  %s, %d rows (%s), from %s\n", i.ID, i.TotalRows, i.HoldReason, i.CreatedAt.Local().Format("2006-01-02"))
+		src := "none given"
+		if i.ListSource != nil {
+			src = *i.ListSource
+			if i.ListSourceDetail != nil {
+				src += ": " + *i.ListSourceDetail
+			}
+		}
+		c := i.Checks
+		fmt.Fprintf(w, "              list source %s; %d invalid, %d role, %d disposable", src, c.InvalidRows, c.RoleAddresses, c.DisposableAddresses)
+		if c.SharedAddresses > 0 && c.SharedAccountID != nil {
+			fmt.Fprintf(w, "; %d in other accounts' imports, most in account %s", c.SharedAddresses, *c.SharedAccountID)
+		}
+		fmt.Fprintln(w)
 	}
 	for _, c := range acc.LiveCampaigns {
 		fmt.Fprintf(w, "Campaign:     %s %q, %s: %s\n", c.ID, c.Name, c.Status, c.Rates)

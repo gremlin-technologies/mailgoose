@@ -1813,9 +1813,21 @@ paths:
         free account's 500-contact limit are skipped and listed by
         `listImportSkippedRows`. Existing contacts aren't changed.
 
-        An account's first import of more than 2,000 rows, or an import that
-        would take a free account past its limit, is held for review: its
-        contacts are added but not mailed until mailgoose approves it.
+        Every import says where its people came from in `list_source`; an
+        import carries no proof that they asked for mail, the way a form
+        signup does. Each added contact's consent record (`getContactData`)
+        keeps the source and when it was given.
+
+        The file's addresses are checked as it's queued: `checks` counts rows
+        that aren't addresses, role addresses (info@, sales@ ...) and
+        addresses at disposable (throwaway) mail domains. An import is held
+        for review when role and disposable addresses are over 10% of its
+        valid rows, rows that aren't addresses are over 5% of all rows, or at
+        least half of its addresses (and at least 200) are already on lists
+        imported to other mailgoose accounts. So is an account's first import
+        of more than 2,000 rows, and an import that would take a free account
+        past its limit. A held import's contacts are added but not mailed
+        until mailgoose approves it; `hold_message` says why it's held.
 
         The request body can be up to 10 MB.
       tags: [imports]
@@ -3882,7 +3894,7 @@ components:
           oneOf:
             - type: "null"
             - type: object
-              required: [id, file_name, created_at, permission_confirmed, held]
+              required: [id, file_name, created_at, permission_confirmed, held, list_source, list_source_detail]
               properties:
                 id:
                   type: string
@@ -3898,6 +3910,13 @@ components:
                 held:
                   type: boolean
                   description: The contact waits for the import's review before it can be mailed.
+                list_source:
+                  description: Where the account said the import's people came from; null for imports made before it was asked.
+                  oneOf:
+                    - type: "null"
+                    - $ref: "#/components/schemas/ListSource"
+                list_source_detail:
+                  type: [string, "null"]
         skipped_rows:
           type: array
           description: Rows of the account's imports with this address that weren't added.
@@ -3916,10 +3935,13 @@ components:
                 $ref: "#/components/schemas/SkipReason"
         consents:
           type: array
-          description: The contact's signups through signup forms, oldest first.
+          description: |
+            The contact's consent records, oldest first: each signup through
+            a signup form, and for a contact an import added, the list source
+            the import gave and when.
           items:
             type: object
-            required: [id, form_id, source, ip, wording, created_at, confirmed_at]
+            required: [id, form_id, source, ip, import_id, wording, created_at, confirmed_at]
             properties:
               id:
                 type: string
@@ -3929,17 +3951,22 @@ components:
                 description: Null once the form is deleted; `wording` still says what it showed.
               source:
                 type: string
-                enum: [form]
+                enum: [form, import]
               ip:
-                type: string
-                description: The address the signup was posted from.
+                type: [string, "null"]
+                description: The address a form signup was posted from; null for an import.
+              import_id:
+                type: [string, "null"]
+                format: uuid
+                description: The import, for an import's record.
               wording:
                 type: object
                 additionalProperties: true
                 description: >-
-                  What the form showed: `form_name`, `fields` (their labels),
-                  `button_text`, `double_opt_in`, and with double opt-in
-                  `confirm_subject` and `confirm_text`.
+                  For a form, what it showed: `form_name`, `fields` (their
+                  labels), `button_text`, `double_opt_in`, and with double
+                  opt-in `confirm_subject` and `confirm_text`. For an import,
+                  `list_source`, `list_source_detail` and `file_name`.
               created_at:
                 type: string
                 format: date-time
@@ -4083,7 +4110,7 @@ components:
             name at most 200 different tags. Found under the header `tags`.
     CreateImportRequest:
       type: object
-      required: [csv]
+      required: [csv, list_source]
       additionalProperties: false
       properties:
         csv:
@@ -4109,6 +4136,34 @@ components:
             True says the account has these people's permission to mail them,
             so they're added `subscribed`. Otherwise they're `unconfirmed` and
             don't receive campaigns.
+        list_source:
+          $ref: "#/components/schemas/ListSource"
+        list_source_detail:
+          type: [string, "null"]
+          maxLength: 200
+          description: Where the people came from, in a few words. Required when `list_source` is `other`.
+    ListSource:
+      type: string
+      enum: [form, customers, personal, export, other]
+      description: |
+        Where an import's people came from. `form`: they signed up on my
+        site or form. `customers`: they bought from me. `personal`: people I
+        know personally. `export`: exported from another email tool.
+        `other`: described in `list_source_detail`.
+    ImportChecks:
+      type: object
+      required: [invalid_rows, role_addresses, disposable_addresses]
+      description: What the checks found in the file when the import was queued.
+      properties:
+        invalid_rows:
+          type: integer
+          description: Rows that aren't an email address, or couldn't be read.
+        role_addresses:
+          type: integer
+          description: Valid rows with a role address, such as info@, sales@ or admin@.
+        disposable_addresses:
+          type: integer
+          description: Valid rows with an address at a disposable (throwaway) mail domain.
     ImportStatus:
       type: string
       enum: [queued, running, done, failed]
@@ -4125,7 +4180,8 @@ components:
     Import:
       type: object
       required: [id, file_name, status, contact_status, columns, tags, total_rows, processed_rows, imported, skipped,
-        skipped_by_reason, review, hold_reason, error, created_at, started_at, finished_at]
+        skipped_by_reason, review, hold_reason, hold_message, list_source, list_source_detail, checks, error, created_at,
+        started_at, finished_at]
       properties:
         id:
           type: string
@@ -4191,8 +4247,22 @@ components:
         hold_reason:
           type: [string, "null"]
           description: |
-            Why a held import is held: `large_first_import` or
-            `over_contact_limit`.
+            Why a held import is held: `shared_list` (many of its addresses
+            are on other accounts' lists), `risky_addresses` (many role or
+            disposable addresses), `invalid_addresses` (many rows that aren't
+            addresses), `large_first_import` or `over_contact_limit`.
+        hold_message:
+          type: [string, "null"]
+          description: Why the import is held, in plain words, for showing to the account; null when it isn't held.
+        list_source:
+          description: Where the account said the people came from; null for imports made before it was asked.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/ListSource"
+        list_source_detail:
+          type: [string, "null"]
+        checks:
+          $ref: "#/components/schemas/ImportChecks"
         error:
           type: [string, "null"]
           description: Why a `failed` import stopped.
@@ -6297,7 +6367,7 @@ components:
           type: "null"
     AdminHeldImport:
       type: object
-      required: [id, file_name, total_rows, hold_reason, status, created_at]
+      required: [id, file_name, total_rows, hold_reason, status, list_source, list_source_detail, checks, created_at]
       properties:
         id:
           type: string
@@ -6308,6 +6378,30 @@ components:
           type: integer
         hold_reason:
           type: string
+        list_source:
+          type: [string, "null"]
+        list_source_detail:
+          type: [string, "null"]
+        checks:
+          type: object
+          required: [invalid_rows, role_addresses, disposable_addresses, shared_addresses, shared_account_id]
+          description: |
+            What the import's checks found. `shared_addresses` is how many of
+            its distinct addresses other accounts imported, and
+            `shared_account_id` the account with most of them; no addresses
+            are shown.
+          properties:
+            invalid_rows:
+              type: integer
+            role_addresses:
+              type: integer
+            disposable_addresses:
+              type: integer
+            shared_addresses:
+              type: integer
+            shared_account_id:
+              type: [string, "null"]
+              format: uuid
         status:
           type: string
         created_at:
@@ -6645,8 +6739,10 @@ components:
         `no_rows`, `no_email_column` (name the column in `columns.email`),
         `invalid_mapping` (a named column isn't in the header),
         `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes),
-        `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found` or
-        `too_many_tags`.
+        `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found`,
+        `too_many_tags`, `list_source_required` (say where the list came
+        from), `list_source_detail_required` (describe an `other` source) or
+        `invalid_list_source`.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

@@ -20,7 +20,8 @@ func testImport(status string, processed, imported, skipped int) string {
 		`"columns":{"email":"Email","first_name":null,"last_name":null},"total_rows":4,"processed_rows":` + itoa(processed) +
 		`,"imported":` + itoa(imported) + `,"skipped":` + itoa(skipped) +
 		`,"skipped_by_reason":{"invalid_email":1,"invalid_row":0,"duplicate":0,"exists":1,"suppressed":0,"over_limit":0},` +
-		`"review":"held","hold_reason":"over_contact_limit","error":null,"created_at":"2026-11-18T12:00:00Z","started_at":null,"finished_at":null}`
+		`"review":"held","hold_reason":"over_contact_limit","hold_message":"It would take the account past its contact limit, so mailgoose checks it.",` +
+		`"list_source":"other","list_source_detail":"Trade show","checks":{"invalid_rows":1,"role_addresses":2,"disposable_addresses":0},"error":null,"created_at":"2026-11-18T12:00:00Z","started_at":null,"finished_at":null}`
 }
 
 func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
@@ -84,7 +85,7 @@ func writeCSV(t *testing.T, content string) string {
 func TestImportWaitsAndShowsSkippedRows(t *testing.T) {
 	h, seen := importsStub(t)
 	path := writeCSV(t, "E-mail,Vorname\npat@example.com,Pat\n")
-	code := h.run("import", path, "--map", "email=E-mail", "--map", "first-name=Vorname", "--tag", "vip", "--tag", "news", "--wait")
+	code := h.run("import", path, "--list-source", "other", "--list-source-detail", "Trade show", "--map", "email=E-mail", "--map", "first-name=Vorname", "--tag", "vip", "--tag", "news", "--wait")
 	if code != ExitOK {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
@@ -92,6 +93,7 @@ func TestImportWaitsAndShowsSkippedRows(t *testing.T) {
 	cols, _ := post.body["columns"].(map[string]any)
 	if post.method != http.MethodPost || post.body["csv"] != "E-mail,Vorname\npat@example.com,Pat\n" || post.body["file_name"] != "list.csv" ||
 		cols["email"] != "E-mail" || cols["first_name"] != "Vorname" || post.body["permission_confirmed"] != false ||
+		post.body["list_source"] != "other" || post.body["list_source_detail"] != "Trade show" ||
 		len(post.body["tags"].([]any)) != 2 {
 		t.Errorf("request = %+v", post)
 	}
@@ -100,7 +102,8 @@ func TestImportWaitsAndShowsSkippedRows(t *testing.T) {
 		t.Errorf("%d requests: %+v", len(*seen), *seen)
 	}
 	out := h.out.String()
-	for _, want := range []string{"is done: 2 of 4 rows added as unconfirmed contacts, 2 skipped", "Held for review because it would take the account past its contact limit",
+	for _, want := range []string{"is done: 2 of 4 rows added as unconfirmed contacts, 2 skipped", "Held for review. It would take the account past its contact limit",
+		"List source: other: Trade show.", "Checks: 1 invalid rows, 2 role addresses (like info@), 0 disposable-domain addresses.",
 		"1 not an email address (invalid_email)", "3    nope", "5    pat@example.com  exists", "--permission-confirmed"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
@@ -110,11 +113,12 @@ func TestImportWaitsAndShowsSkippedRows(t *testing.T) {
 
 func TestImportWithoutWait(t *testing.T) {
 	h, seen := importsStub(t)
-	if code := h.run("import", "-", "--permission-confirmed"); code != ExitOK {
+	if code := h.run("import", "-", "--list-source", "form", "--permission-confirmed"); code != ExitOK {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
 	post := (*seen)[0]
-	if post.body["csv"] != "email\nfrom@stdin.example\n" || post.body["permission_confirmed"] != true || post.body["file_name"] != nil {
+	if post.body["csv"] != "email\nfrom@stdin.example\n" || post.body["permission_confirmed"] != true || post.body["file_name"] != nil ||
+		post.body["list_source"] != "form" || post.body["list_source_detail"] != nil {
 		t.Errorf("request = %+v", post)
 	}
 	if len(*seen) != 1 || !strings.Contains(h.out.String(), "mailgoose import status "+testImportID) || strings.Contains(h.out.String(), "unconfirmed, so") {
@@ -152,9 +156,11 @@ func TestImportErrors(t *testing.T) {
 	path := writeCSV(t, "email\na@example.com\n")
 	for _, args := range [][]string{
 		{"import"},
-		{"import", path, "--map", "phone=Phone"},
-		{"import", path, "--map", "email"},
-		{"import", filepath.Join(t.TempDir(), "missing.csv")},
+		{"import", path},
+		{"import", path, "--list-source", " "},
+		{"import", path, "--list-source", "form", "--map", "phone=Phone"},
+		{"import", path, "--list-source", "form", "--map", "email"},
+		{"import", filepath.Join(t.TempDir(), "missing.csv"), "--list-source", "form"},
 	} {
 		if code := h.run(args...); code != ExitUsage {
 			t.Errorf("%v: exit %d, want %d (%s)", args, code, ExitUsage, h.errOut)
@@ -163,7 +169,11 @@ func TestImportErrors(t *testing.T) {
 	if len(*seen) != 0 {
 		t.Errorf("usage errors reached the API: %+v", *seen)
 	}
-	if code := h.run("import", writeCSV(t, "name\nPat\n"), "--json"); code != ExitError || !strings.Contains(h.errOut.String(), "no_email_column") {
+	if code := h.run("import", path); !strings.Contains(h.errOut.String(), "--list-source is required") ||
+		!strings.Contains(h.errOut.String(), "customers who bought from me") {
+		t.Errorf("no list source: exit %d: %s", code, h.errOut)
+	}
+	if code := h.run("import", writeCSV(t, "name\nPat\n"), "--list-source", "form", "--json"); code != ExitError || !strings.Contains(h.errOut.String(), "no_email_column") {
 		t.Errorf("refused file: exit %d: %s", code, h.errOut)
 	}
 	if code := h.run("import", "status", "nope"); code != ExitNotFound {

@@ -136,7 +136,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		srv.DB = pool
 		srv.Idempotency = api.PGIdempotencyStore{DB: pool}
 		srv.Credits = &credits.Ledger{DB: pool}
-		srv.Contacts = &contacts.Service{DB: pool}
+		srv.Contacts = &contacts.Service{DB: pool, Checks: contacts.ImportChecks(cfg.ImportHold)}
 		srv.Emails = &emails.Service{DB: pool}
 		srv.Forms = &forms.Service{DB: pool}
 		srv.Campaigns = &campaigns.Service{DB: pool}
