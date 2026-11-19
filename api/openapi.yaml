@@ -5675,7 +5675,7 @@ components:
       properties:
         state:
           type: string
-          enum: [sending_slice, slice_hold, held, released, stopped]
+          enum: [sending_slice, slice_hold, held, released, stopped, cancelled]
           description: |
             `sending_slice`: the slice is going out. `slice_hold`: the slice
             is out and the rest waits until `release_at`. `held`: the slice
@@ -5684,7 +5684,10 @@ components:
             until `release_at`, when it's checked again. `released`: the
             rest was let go. `stopped`: the slice went over the limits that
             pause an account, so the rest was never sent and its credits
-            came back. While the rest waits, the campaign can be cancelled.
+            came back. `cancelled`: the campaign was cancelled, stopped or
+            its account suspended before the rest went, so the rest was
+            never sent and its credits came back. While the rest waits, the
+            campaign can be cancelled.
         size:
           type: integer
           description: How many recipients the slice went to.

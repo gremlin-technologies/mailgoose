@@ -119,8 +119,10 @@ func cancelLaunched(ctx context.Context, tx pgx.Tx, accountID, campaignID, note 
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE campaigns SET status = 'cancelled', status_changed_at = $3, updated_at = $3,
+			slice_state = CASE WHEN slice_state IN ($4, $5, $6) THEN $7 ELSE slice_state END,
 			slice_release_at = NULL
-		WHERE account_id = $1 AND id = $2`, accountID, campaignID, now); err != nil {
+		WHERE account_id = $1 AND id = $2`, accountID, campaignID, now,
+		SliceSending, SliceHold, SliceHeld, SliceCancelled); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `UPDATE send_queue SET done_at = $2 WHERE campaign_id = $1 AND done_at IS NULL`, campaignID, now)

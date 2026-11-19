@@ -284,7 +284,8 @@ func TestSliceCancelWhileWaiting(t *testing.T) {
 	dispatch(t, p, q)
 	before := h.balance(t)
 	c, err := h.svc.Cancel(ctx, h.acc, h.campaign.ID)
-	if err != nil || c.Status != campaigns.StatusCancelled || c.Slice == nil || c.Slice.ReleaseAt != nil {
+	if err != nil || c.Status != campaigns.StatusCancelled || c.Slice == nil || c.Slice.ReleaseAt != nil ||
+		c.Slice.State != SliceCancelled {
 		t.Fatalf("cancel while waiting: %+v, %v", c, err)
 	}
 	if after := h.balance(t); after != before+800 {
@@ -294,6 +295,60 @@ func TestSliceCancelWhileWaiting(t *testing.T) {
 	if n := sendSlice(t, h, p, q); n != 0 {
 		t.Errorf("sent %d after the cancel", n)
 	}
+}
+
+// TestSliceStoppedWhileSending checks a campaign stopped while its slice
+// goes out ends with its slice cancelled, not still waiting.
+func TestSliceStoppedWhileSending(t *testing.T) {
+	h := slicedHarness(t, 999, time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC), 0)
+	ctx := context.Background()
+	p := h.pipeline(fastLimits)
+	q := &recorded{}
+	dispatch(t, p, q)
+	if got := h.sliceState(t); got != SliceSending {
+		t.Fatalf("slice state %q before the stop", got)
+	}
+	c, err := h.svc.Stop(ctx, h.acc, h.campaign.ID)
+	if err != nil || c.Status != campaigns.StatusCancelled || c.Slice == nil || c.Slice.State != SliceCancelled || c.Slice.ReleaseAt != nil {
+		t.Fatalf("stop while sending the slice: %+v, %v", c, err)
+	}
+	// Batches already handed to the sender finish, as with any stop.
+	for _, b := range q.take() {
+		if err := p.HandleBatch(ctx, b, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.now = h.now.Add(2 * time.Hour)
+	if n := sendSlice(t, h, p, q); n != 0 {
+		t.Errorf("sent %d after the stop", n)
+	}
+	if got := h.sliceState(t); got != SliceCancelled {
+		t.Errorf("slice state %q after the stop", got)
+	}
+}
+
+// TestSliceReleasedKeepsStateOnStop checks a stop only marks a slice that was
+// still waiting: one already released keeps saying so.
+func TestSliceReleasedKeepsStateOnStop(t *testing.T) {
+	h := slicedHarness(t, 999, time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC), 0)
+	ctx := context.Background()
+	if _, err := h.db.Exec(ctx, `UPDATE campaigns SET slice_state = $2 WHERE id = $1`, h.campaign.ID, SliceReleased); err != nil {
+		t.Fatal(err)
+	}
+	c, err := h.svc.Stop(ctx, h.acc, h.campaign.ID)
+	if err != nil || c.Slice == nil || c.Slice.State != SliceReleased {
+		t.Fatalf("stop after the rest was released: %+v, %v", c, err)
+	}
+}
+
+// sliceState is the campaign's slice_state, or "" if it has none.
+func (h *harness) sliceState(t *testing.T) string {
+	t.Helper()
+	var s *string
+	if err := h.db.QueryRow(context.Background(), `SELECT slice_state FROM campaigns WHERE id = $1`, h.campaign.ID).Scan(&s); err != nil {
+		t.Fatal(err)
+	}
+	return deref(s)
 }
 
 func TestSliceScheduled(t *testing.T) {

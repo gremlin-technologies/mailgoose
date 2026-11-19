@@ -11,10 +11,12 @@
 --                  waits until slice_release_at, when the throttle lifts
 --   released       the rest was let go
 --   stopped        the slice went over the pause limits: the rest never sent
+--   cancelled      the campaign was cancelled, stopped or its account
+--                  suspended before the rest went: the rest never sent
 -- It's null for a campaign launched without a slice.
 ALTER TABLE campaigns
     ADD COLUMN slice_size integer CHECK (slice_size > 0),
-    ADD COLUMN slice_state text CHECK (slice_state IN ('sending_slice', 'slice_hold', 'held', 'released', 'stopped')),
+    ADD COLUMN slice_state text CHECK (slice_state IN ('sending_slice', 'slice_hold', 'held', 'released', 'stopped', 'cancelled')),
     ADD COLUMN slice_release_at timestamptz,
     ADD CONSTRAINT campaigns_slice_check CHECK ((slice_size IS NULL) = (slice_state IS NULL));
 

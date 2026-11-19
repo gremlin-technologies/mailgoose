@@ -188,6 +188,7 @@ func (e ButtonBlockType) Valid() bool {
 
 // Defines values for CampaignSliceState.
 const (
+	CampaignSliceStateCancelled    CampaignSliceState = "cancelled"
 	CampaignSliceStateHeld         CampaignSliceState = "held"
 	CampaignSliceStateReleased     CampaignSliceState = "released"
 	CampaignSliceStateSendingSlice CampaignSliceState = "sending_slice"
@@ -198,6 +199,8 @@ const (
 // Valid indicates whether the value is a known member of the CampaignSliceState enum.
 func (e CampaignSliceState) Valid() bool {
 	switch e {
+	case CampaignSliceStateCancelled:
+		return true
 	case CampaignSliceStateHeld:
 		return true
 	case CampaignSliceStateReleased:
@@ -1620,7 +1623,10 @@ type CampaignSlice struct {
 	// until `release_at`, when it's checked again. `released`: the
 	// rest was let go. `stopped`: the slice went over the limits that
 	// pause an account, so the rest was never sent and its credits
-	// came back. While the rest waits, the campaign can be cancelled.
+	// came back. `cancelled`: the campaign was cancelled, stopped or
+	// its account suspended before the rest went, so the rest was
+	// never sent and its credits came back. While the rest waits, the
+	// campaign can be cancelled.
 	State CampaignSliceState `json:"state"`
 }
 
@@ -1631,7 +1637,10 @@ type CampaignSlice struct {
 // until `release_at`, when it's checked again. `released`: the
 // rest was let go. `stopped`: the slice went over the limits that
 // pause an account, so the rest was never sent and its credits
-// came back. While the rest waits, the campaign can be cancelled.
+// came back. `cancelled`: the campaign was cancelled, stopped or
+// its account suspended before the rest went, so the rest was
+// never sent and its credits came back. While the rest waits, the
+// campaign can be cancelled.
 type CampaignSliceState string
 
 // CampaignStatus `draft` is being set up; `scheduled` is launched and waiting for its

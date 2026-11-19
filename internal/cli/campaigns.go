@@ -73,6 +73,8 @@ func (s *campaignSlice) describe(loc *time.Location) string {
 		return "first " + n + " were within limits; the rest was released"
 	case "stopped":
 		return "first " + n + " went over the bounce or complaint limits; the rest wasn't sent and its credits are back"
+	case "cancelled":
+		return "first " + n + " sent; the campaign was cancelled, so the rest wasn't sent and its credits are back"
 	}
 	return s.State + ", " + n
 }

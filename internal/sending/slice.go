@@ -42,6 +42,9 @@ const (
 	SliceHeld     = "held"
 	SliceReleased = "released"
 	SliceStopped  = "stopped"
+	// SliceCancelled is a slice whose campaign was cancelled, stopped or
+	// suspended before the rest went.
+	SliceCancelled = "cancelled"
 )
 
 // Slicing is how a new account's campaigns are sliced: Percent of the

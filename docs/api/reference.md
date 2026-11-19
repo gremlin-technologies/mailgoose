@@ -3899,7 +3899,7 @@ later. Present only on a campaign launched in a slice.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `state` | string: one of `sending_slice`, `slice_hold`, `held`, `released`, `stopped` | yes | `sending_slice`: the slice is going out. `slice_hold`: the slice is out and the rest waits until `release_at`. `held`: the slice went over the early-warning limits for complaints or hard bounces, so the account's limit is lowered and the rest waits until `release_at`, when it's checked again. `released`: the rest was let go. `stopped`: the slice went over the limits that pause an account, so the rest was never sent and its credits came back. While the rest waits, the campaign can be cancelled. |
+| `state` | string: one of `sending_slice`, `slice_hold`, `held`, `released`, `stopped`, `cancelled` | yes | `sending_slice`: the slice is going out. `slice_hold`: the slice is out and the rest waits until `release_at`. `held`: the slice went over the early-warning limits for complaints or hard bounces, so the account's limit is lowered and the rest waits until `release_at`, when it's checked again. `released`: the rest was let go. `stopped`: the slice went over the limits that pause an account, so the rest was never sent and its credits came back. `cancelled`: the campaign was cancelled, stopped or its account suspended before the rest went, so the rest was never sent and its credits came back. While the rest waits, the campaign can be cancelled. |
 | `size` | integer | yes | How many recipients the slice went to. |
 | `release_at` | string (date-time) or null | yes | When the rest is checked and released, while it waits; null otherwise. |
 

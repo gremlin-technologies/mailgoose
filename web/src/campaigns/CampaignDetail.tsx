@@ -173,6 +173,12 @@ export function SliceNotice({ campaign: c }: { campaign: Campaign }) {
           paused for your account; we'll be in touch by email.
         </p>
       );
+    case "cancelled":
+      return (
+        <p className="notice muted" role="status">
+          It went to {first}, then was cancelled, so the rest wasn't sent and its credits came back.
+        </p>
+      );
   }
 }
 

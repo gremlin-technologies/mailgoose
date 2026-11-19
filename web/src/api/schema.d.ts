@@ -3008,10 +3008,13 @@ export interface components {
              *     until `release_at`, when it's checked again. `released`: the
              *     rest was let go. `stopped`: the slice went over the limits that
              *     pause an account, so the rest was never sent and its credits
-             *     came back. While the rest waits, the campaign can be cancelled.
+             *     came back. `cancelled`: the campaign was cancelled, stopped or
+             *     its account suspended before the rest went, so the rest was
+             *     never sent and its credits came back. While the rest waits, the
+             *     campaign can be cancelled.
              * @enum {string}
              */
-            state: "sending_slice" | "slice_hold" | "held" | "released" | "stopped";
+            state: "sending_slice" | "slice_hold" | "held" | "released" | "stopped" | "cancelled";
             /** @description How many recipients the slice went to. */
             size: number;
             /**

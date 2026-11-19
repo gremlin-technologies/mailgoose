@@ -397,7 +397,7 @@ describe("sliced campaign", () => {
     const api = server(waiting(), {
       [`POST ${base}/cancel`]: () => ({
         status: 200,
-        body: { ...waiting(), status: "cancelled", slice: { state: "slice_hold", size: 300, release_at: null } },
+        body: { ...waiting(), status: "cancelled", slice: { state: "cancelled", size: 300, release_at: null } },
       }),
     });
     const user = userEvent.setup();
@@ -408,6 +408,10 @@ describe("sliced campaign", () => {
     expect(api.calls.some((c) => c.path === `${base}/cancel`)).toBe(false);
     await user.click(screen.getByRole("button", { name: "Yes, cancel it" }));
     expect(await screen.findByText("Cancelled. The rest won't get it, and the credits held for them came back.")).toBeTruthy();
+    expect(
+      screen.getByText("It went to the first 300 recipients, then was cancelled, so the rest wasn't sent and its credits came back."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/The rest goes .* if their bounces and complaints are within the limits/)).toBeNull();
   });
 
   it("says when a bad slice stopped the rest", async () => {

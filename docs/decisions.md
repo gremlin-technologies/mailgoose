@@ -28,10 +28,12 @@ Picked while building MG-62; each is easy to change.
   waits for the account's current throttle.
 - **The campaign's status stays `sending` while it waits;** where it stands
   is in a new `slice` object on the campaign (`sending_slice`, `slice_hold`,
-  `held`, `released`, `stopped`, with the release time). This keeps the
-  status list as it is for clients that switch on it.
+  `held`, `released`, `stopped` or `cancelled`, with the release time).
+  This keeps the status list as it is for clients that switch on it.
 - **The account can cancel the rest while it waits,** with the usual cancel.
-  Nobody else gets it, and the credits come back.
+  Nobody else gets it, and the credits come back. A campaign cancelled,
+  stopped or suspended before the rest went has its slice marked
+  `cancelled`, so the page and the CLI don't still say the rest is coming.
 
 ## 2026-11-19: Account suspension (MG-65, reversible defaults)
 
