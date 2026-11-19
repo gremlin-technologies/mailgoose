@@ -18,7 +18,8 @@ func accountStub(t *testing.T) (*harness, *[]map[string]any) {
 	var bodies []map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		acct := map[string]any{"id": "a1", "name": "Pat's Bakery", "plan": "free", "from_name": nil, "from_email": nil,
-			"postal_address": nil, "time_zone": "UTC", "missing_for_send": []string{"postal_address"}, "created_at": "2026-11-18T12:00:00Z"}
+			"postal_address": nil, "time_zone": "UTC", "missing_for_send": []string{"postal_address"}, "created_at": "2026-11-18T12:00:00Z",
+			"send_limit": map[string]any{"daily": 1000, "usual": 10000, "reason": "New accounts start at 1,000 a day.", "lowered_until": nil}}
 		if r.Method == http.MethodPatch {
 			var b map[string]any
 			raw, _ := io.ReadAll(r.Body)
@@ -46,7 +47,8 @@ func TestAccountGet(t *testing.T) {
 	if code := h.run("account", "get"); code != ExitOK {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
-	for _, want := range []string{"Pat's Bakery (free plan)", "From email:  (not set)", "can't launch until you set: postal_address"} {
+	for _, want := range []string{"Pat's Bakery (free plan)", "From email:  (not set)", "can't launch until you set: postal_address",
+		"Send limit:  1,000 a day\n             New accounts start at 1,000 a day."} {
 		if !strings.Contains(h.out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, h.out)
 		}

@@ -61,6 +61,10 @@ type Service struct {
 	// Alert is told when a campaign's bounces or complaints pause its
 	// account; nil tells no one.
 	Alert func(ctx context.Context, p sending.AutoPause)
+	// Throttled is told when they throttle it (MG-61); nil tells no one.
+	Throttled func(ctx context.Context, t sending.Throttle)
+	// Warning is the early-warning thresholds; zero means the defaults.
+	Warning sending.Warning
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }
@@ -317,12 +321,12 @@ func (s *Service) store(ctx context.Context, e *event, p *parsed, key string) (O
 	}
 
 	// A campaign's hard bounces and complaints can pause its account
-	// (CMP-6). This comes before the contact changes so locks are taken
+	// (CMP-6), or throttle it (MG-61). This comes before the contact changes so locks are taken
 	// campaign, then account, then contact: the order launch (campaign,
 	// account) and signups (account, contact) use.
-	var paused *sending.AutoPause
+	var health sending.Health
 	if campaignID != nil && (p.typ == TypeComplaint || p.typ == TypeBounce && p.hard) {
-		if paused, err = sending.CheckCampaign(ctx, tx, *campaignID, s.now()); err != nil {
+		if health, err = sending.CheckCampaign(ctx, tx, *campaignID, s.now(), s.Warning); err != nil {
 			return "", err
 		}
 	}
@@ -336,8 +340,11 @@ func (s *Service) store(ctx context.Context, e *event, p *parsed, key string) (O
 	if err := tx.Commit(ctx); err != nil {
 		return "", err
 	}
-	if paused != nil && s.Alert != nil {
-		s.Alert(ctx, *paused)
+	if health.Pause != nil && s.Alert != nil {
+		s.Alert(ctx, *health.Pause)
+	}
+	if health.Throttle != nil && s.Throttled != nil {
+		s.Throttled(ctx, *health.Throttle)
 	}
 	return Stored, nil
 }

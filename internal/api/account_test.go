@@ -1,12 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
 )
@@ -18,6 +22,12 @@ type accountBody struct {
 	PostalAddress  *string  `json:"postal_address"`
 	TimeZone       string   `json:"time_zone"`
 	MissingForSend []string `json:"missing_for_send"`
+	SendLimit      struct {
+		Daily        int        `json:"daily"`
+		Usual        int        `json:"usual"`
+		Reason       *string    `json:"reason"`
+		LoweredUntil *time.Time `json:"lowered_until"`
+	} `json:"send_limit"`
 }
 
 func TestAccountThroughTheAPI(t *testing.T) {
@@ -38,6 +48,10 @@ func TestAccountThroughTheAPI(t *testing.T) {
 	if a.TimeZone != "UTC" || len(a.MissingForSend) != 1 || a.MissingForSend[0] != "postal_address" {
 		t.Errorf("new account = %+v", a)
 	}
+	if l := a.SendLimit; l.Daily != 1000 || l.Usual != 10000 || l.Reason == nil ||
+		!strings.Contains(*l.Reason, "New accounts start at 1,000 a day") || l.LoweredUntil != nil {
+		t.Errorf("new account's limit = %+v", l)
+	}
 
 	a = read(jsonRequest(http.MethodPatch, "/v1/account", accountUpdate), http.StatusOK)
 	if a.Name != "Pat's Bakery" || a.PostalAddress == nil || *a.PostalAddress != "Pat's Bakery\n12 Main St\nSpringfield, IL 62701" ||
@@ -54,6 +68,36 @@ func TestAccountThroughTheAPI(t *testing.T) {
 	read(jsonRequest(http.MethodPatch, "/v1/account", `{"time_zone":"EST5EDT "}`), http.StatusUnprocessableEntity)
 	read(jsonRequest(http.MethodPatch, "/v1/account", `{"plan":"paid"}`), http.StatusBadRequest)
 	read(jsonRequest(http.MethodPatch, "/v1/account", `{"name":5}`), http.StatusBadRequest)
+}
+
+// A throttled account sees its lower limit, why, and until when (MG-61).
+func TestAccountThrottledLimit(t *testing.T) {
+	srv := authServer(t)
+	h := srv.Handler()
+	signedIn(t, h)
+	rec := do(t, h, withSession(request(http.MethodGet, "/v1/account"))(t))
+	var acct struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &acct)
+	until := time.Now().Add(72 * time.Hour).UTC().Truncate(time.Second)
+	if _, err := srv.DB.(*pgxpool.Pool).Exec(context.Background(), `
+		UPDATE accounts SET daily_send_limit = 50000 WHERE id = $1;`, acct.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.DB.(*pgxpool.Pool).Exec(context.Background(), `
+		INSERT INTO account_throttles (account_id, reason, created_at, until) VALUES ($1, 'Lowered automatically: too many complaints.', now(), $2)`,
+		acct.ID, until); err != nil {
+		t.Fatal(err)
+	}
+	rec = do(t, h, withSession(request(http.MethodGet, "/v1/account"))(t))
+	var a accountBody
+	_ = json.Unmarshal(rec.Body.Bytes(), &a)
+	l := a.SendLimit
+	if rec.Code != http.StatusOK || l.Daily != 1000 || l.LoweredUntil == nil || !l.LoweredUntil.Equal(until) || l.Reason == nil ||
+		!strings.HasPrefix(*l.Reason, "Lowered automatically: too many complaints. It's 1,000 a day until") {
+		t.Errorf("%d %s", rec.Code, rec.Body)
+	}
 }
 
 func TestDeleteAccountThroughTheAPI(t *testing.T) {

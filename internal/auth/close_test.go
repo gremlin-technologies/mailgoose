@@ -38,6 +38,7 @@ func TestDeleteAccount(t *testing.T) {
 			`INSERT INTO campaign_launch_codes (campaign_id, account_id, code_hash, campaign_version, email_version, expires_at) SELECT id, $1, '\x00', 1, 1, now() FROM campaigns WHERE account_id = $1`,
 			`INSERT INTO domains (account_id, name, mail_from, created_at, check_until) VALUES ($1, 'd` + string(rune('0'+i)) + `.example', 'bounce', now(), now())`,
 			`INSERT INTO images (account_id, key, content_type, bytes) SELECT id, id::text || '/a.png', 'image/png', 1 FROM accounts WHERE id = $1`,
+			`INSERT INTO account_throttles (account_id, campaign_id, reason, until) SELECT $1, id, 'Early warning', now() + interval '7 days' FROM campaigns WHERE account_id = $1`,
 			`INSERT INTO credit_transactions (account_id, type, amount, expires_at) VALUES ($1, 'grant', 1000, now() + interval '1 month')`,
 			`INSERT INTO idempotency_keys (scope, key, request_hash) VALUES ('account:' || $1 || ':user:x', 'k', 'h')`,
 		} {

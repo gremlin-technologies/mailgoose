@@ -424,7 +424,8 @@ Responses:
 
 The account's name, plan, default From name and address, postal
 address and time zone. `missing_for_send` lists the settings a
-campaign can't launch without.
+campaign can't launch without. `send_limit` is its daily send limit
+now, and why it's lower than usual.
 
 Responses:
 
@@ -3015,7 +3016,25 @@ Type: string: one of `pending`, `verified`, `failed`
 | `postal_address` | string or null | yes | The mailing address in every email's footer, one line per `\n`. |
 | `time_zone` | string | yes | An IANA time zone name. |
 | `missing_for_send` | array of string | yes | Settings a campaign can't launch without, such as `postal_address`. Empty when none are missing. |
+| `send_limit` | [SendLimit](#schema-sendlimit) | yes |  |
 | `created_at` | string (date-time) | yes |  |
+
+<a id="schema-sendlimit"></a>
+
+### SendLimit
+
+How many campaign recipients the account may send to in 24 hours.
+New accounts start low and double each week of clean sending up to
+the usual limit. A campaign whose spam complaints or hard bounces
+pass the early-warning limits (0.1% and 2% by default) lowers it to
+the new-account limit for 7 days.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `daily` | integer | yes |  |
+| `usual` | integer | yes | The limit for an established account in good standing. |
+| `reason` | string or null | yes | Why `daily` is under `usual` (or set by mailgoose); null at the usual limit. |
+| `lowered_until` | string (date-time) or null | yes | When a lowered limit lifts; null when it isn't lowered. |
 
 <a id="schema-updateaccountrequest"></a>
 
@@ -4190,6 +4209,18 @@ Copies sent, and the recipients who hard bounced or complained.
 
 Type: [AdminAccountSummary](#schema-adminaccountsummary) and object
 
+<a id="schema-adminthrottle"></a>
+
+### AdminThrottle
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `campaign_id` | string (uuid) or null | yes |  |
+| `reason` | string | yes |  |
+| `created_at` | string (date-time) | yes |  |
+| `until` | string (date-time) | yes | When it lifts, or lifted. |
+
 <a id="schema-creditgrant"></a>
 
 ### CreditGrant
@@ -4219,7 +4250,7 @@ Type: [AdminAccountSummary](#schema-adminaccountsummary) and object
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
 | `actor` | string | yes | The admin's address, `mailgoosed` (the server's command line) or `automatic`. |
-| `action` | string: one of `grant_admin`, `revoke_admin`, `pause`, `unpause`, `auto_pause`, `stop_campaign`, `approve_import`, `grant_credits` | yes |  |
+| `action` | string: one of `grant_admin`, `revoke_admin`, `pause`, `unpause`, `auto_pause`, `stop_campaign`, `approve_import`, `grant_credits`, `throttle` | yes |  |
 | `account_id` | string (uuid) or null | yes |  |
 | `target_id` | string or null | yes | The campaign, import or user acted on. |
 | `reason` | string | yes |  |

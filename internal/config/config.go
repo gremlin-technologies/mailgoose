@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -47,6 +48,12 @@ type Config struct {
 	AccountDailySendLimit int
 	// NewAccountDailySendLimit is that limit in an account's first week.
 	NewAccountDailySendLimit int
+	// EarlyWarningComplaintsPer10k and EarlyWarningHardBouncesPer10k are
+	// the early-warning thresholds that throttle an account (MG-61), in
+	// hundredths of a percent, from EARLY_WARNING_COMPLAINT_PERCENT
+	// (default 0.1) and EARLY_WARNING_HARD_BOUNCE_PERCENT (default 2).
+	EarlyWarningComplaintsPer10k  int
+	EarlyWarningHardBouncesPer10k int
 	// OpsAlertEmail gets an email when an account is paused automatically
 	// (CMP-6). Empty: the pause is only logged, as an error.
 	OpsAlertEmail string
@@ -182,6 +189,13 @@ func load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	// The early-warning thresholds must sit under the 0.3% and 5% that
+	// pause an account, or they'd never fire first.
+	warnComplaints, err := percentEnv(getenv, "EARLY_WARNING_COMPLAINT_PERCENT", 10, 30)
+	errs = append(errs, err)
+	warnBounces, err := percentEnv(getenv, "EARLY_WARNING_HARD_BOUNCE_PERCENT", 200, 500)
+	errs = append(errs, err)
+
 	secrets, err := parseAppSecrets(getenv("APP_SECRETS_JSON"))
 	errs = append(errs, err)
 
@@ -204,13 +218,16 @@ func load(getenv func(string) string) (Config, error) {
 		AccountDailySendLimit:    dailyLimit,
 		NewAccountDailySendLimit: newDailyLimit,
 		OpsAlertEmail:            strings.TrimSpace(getenv("OPS_ALERT_EMAIL")),
-		SESConfigurationSet:      getenv("SES_CONFIGURATION_SET"),
-		SystemSendingDomain:      getenv("SYSTEM_SENDING_DOMAIN"),
-		SESIdentityTag:           getenv("SES_IDENTITY_TAG"),
-		WebDir:                   getenv("WEB_DIR"),
-		MigrateOnStart:           migrate,
-		RateLimitPerMinute:       rateLimit,
-		AppSecrets:               secrets,
+
+		EarlyWarningComplaintsPer10k:  warnComplaints,
+		EarlyWarningHardBouncesPer10k: warnBounces,
+		SESConfigurationSet:           getenv("SES_CONFIGURATION_SET"),
+		SystemSendingDomain:           getenv("SYSTEM_SENDING_DOMAIN"),
+		SESIdentityTag:                getenv("SES_IDENTITY_TAG"),
+		WebDir:                        getenv("WEB_DIR"),
+		MigrateOnStart:                migrate,
+		RateLimitPerMinute:            rateLimit,
+		AppSecrets:                    secrets,
 	}
 
 	secret := func(name string) string {
@@ -323,6 +340,22 @@ func intEnv(getenv func(string) string, key string, def int) (int, error) {
 	n, err := strconv.Atoi(v)
 	if err != nil {
 		return def, fmt.Errorf("%s must be a number, got %q", key, v)
+	}
+	return n, nil
+}
+
+// percentEnv reads a percentage such as "0.1" as hundredths of a percent
+// (10). It must be over 0 and under below, also in hundredths.
+func percentEnv(getenv func(string) string, key string, def, below int) (int, error) {
+	v := strings.TrimSuffix(strings.TrimSpace(getenv(key)), "%")
+	if v == "" {
+		return def, nil
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	n := int(math.Round(f * 100))
+	if err != nil || n < 1 || n >= below {
+		return def, fmt.Errorf("%s must be a percentage from 0.01 to under %s, got %q", key,
+			strings.TrimSuffix(strings.TrimRight(strconv.FormatFloat(float64(below)/100, 'f', 2, 64), "0"), "."), getenv(key))
 	}
 	return n, nil
 }

@@ -85,6 +85,9 @@ func adminAccountJSON(a *admin.Account) *admin.Account {
 	if a.LiveCampaigns == nil {
 		a.LiveCampaigns = []admin.LiveCampaign{}
 	}
+	if a.Throttles == nil {
+		a.Throttles = []admin.Throttle{}
+	}
 	return a
 }
 

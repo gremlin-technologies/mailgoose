@@ -4,6 +4,28 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-19: Early-warning throttle (MG-61, reversible defaults)
+
+Picked while building MG-61; each is easy to change.
+
+- **Thresholds.** 0.1% spam complaints or 2% hard bounces on a campaign of
+  500 or more, set by `EARLY_WARNING_COMPLAINT_PERCENT` and
+  `EARLY_WARNING_HARD_BOUNCE_PERCENT`. Each must sit under the 0.3% and 5%
+  that pause. Still open for the owner (see Open questions).
+- **When it's checked.** On every bounce and complaint SES reports, like the
+  pause check, so a campaign is throttled once it's past 500 copies and over
+  the line, while it's still sending, and one whose complaints come in days
+  later is still caught. Each campaign throttles its account at most once.
+- **How long.** Seven days from the last campaign over the line; another one
+  meanwhile starts the seven days again (and counts towards the pause). The
+  ramp then starts over at the new-account limit and doubles weekly.
+- **Staff-set limits.** A throttle lowers an account's own daily limit to the
+  new-account limit too, unless its own is lower already.
+- **Third throttle.** The third within 30 days pauses the account through the
+  automatic pause, with a reason that says so, instead of throttling it.
+- **Notices.** The owner is emailed from `notices@` the system sending domain;
+  the ops address gets the same alert as a pause, marked as a throttle.
+
 ## 2026-11-19: The image CDN can be turned off; off on staging for now (owner decision)
 
 AWS refused staging's CloudFront distribution ("Your account must be verified
@@ -1669,6 +1691,8 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - Deleting an account that still has bought credits: are they refunded or
   forfeited? (Default: forfeited; the ledger keeps them as billing records.
   MG-43, for MG-39 and MG-40 to settle.)
+- Early-warning thresholds that throttle an account: 0.1% complaints and 2%
+  hard bounces? (Default: those; config values. MG-61, see 2026-11-19.)
 - Should pack prices include sales tax, or have it added at checkout?
   (Default: added on top, which is usual for US software. See 2026-11-18,
   MG-39.)

@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 )
 
 // GetAccount is GET /v1/account.
@@ -20,7 +22,24 @@ func (s *Server) GetAccount(w http.ResponseWriter, r *http.Request) {
 	if s.accountError(w, r, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, accountJSON(st))
+	s.writeAccount(w, r, st)
+}
+
+// writeAccount writes the account's settings with its send limit.
+func (s *Server) writeAccount(w http.ResponseWriter, r *http.Request, st *auth.Settings) {
+	var limit sending.SendLimit
+	if s.Sending != nil {
+		now := time.Now()
+		if s.Now != nil {
+			now = s.Now()
+		}
+		var err error
+		if limit, err = s.Sending.Limits.Account(r.Context(), s.Sending.DB, st.ID, now); err != nil {
+			WriteError(w, err)
+			return
+		}
+	}
+	writeJSON(w, http.StatusOK, accountJSON(st, limit))
 }
 
 // nullable is a JSON field that tells "absent" (Set false) from null (Set
@@ -83,7 +102,7 @@ func (s *Server) UpdateAccount(w http.ResponseWriter, r *http.Request) {
 	if s.accountError(w, r, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, accountJSON(st))
+	s.writeAccount(w, r, st)
 }
 
 func (s *Server) accountError(w http.ResponseWriter, r *http.Request, err error) bool {
@@ -100,7 +119,7 @@ func (s *Server) accountError(w http.ResponseWriter, r *http.Request, err error)
 	return s.authError(w, r, err)
 }
 
-func accountJSON(st *auth.Settings) apigen.AccountSettings {
+func accountJSON(st *auth.Settings, limit sending.SendLimit) apigen.AccountSettings {
 	return apigen.AccountSettings{
 		Id:             st.ID,
 		Name:           st.Name,
@@ -110,7 +129,9 @@ func accountJSON(st *auth.Settings) apigen.AccountSettings {
 		PostalAddress:  st.PostalAddress,
 		TimeZone:       st.TimeZone,
 		MissingForSend: append([]string{}, st.MissingForSend()...),
-		CreatedAt:      st.CreatedAt.UTC(),
+		SendLimit: apigen.SendLimit{Daily: limit.Daily, Usual: limit.Usual, Reason: limit.Reason,
+			LoweredUntil: limit.LoweredUntil},
+		CreatedAt: st.CreatedAt.UTC(),
 	}
 }
 

@@ -113,6 +113,7 @@ function SettingsForm({
   }
 
   const missing = account.missing_for_send.map((f) => fieldLabels[f] ?? f);
+  const limit = account.send_limit;
 
   return (
     <form onSubmit={save} className="panel stack">
@@ -120,6 +121,17 @@ function SettingsForm({
         <div className="notice notice-warn">
           <p>Campaigns can't launch until you add {missing.join(" and ")}. Every marketing email needs one by law.</p>
         </div>
+      )}
+      {limit.lowered_until ? (
+        <div className="notice notice-warn" role="status">
+          <p>
+            <strong>Your daily send limit is lowered to {limit.daily.toLocaleString("en-US")}.</strong> {limit.reason}
+          </p>
+        </div>
+      ) : (
+        <p className="muted small">
+          Daily send limit: {limit.daily.toLocaleString("en-US")} recipients.{limit.reason ? ` ${limit.reason}` : ""}
+        </p>
       )}
       <label className="field">
         <span>Account name</span>

@@ -158,10 +158,11 @@ func serve(ctx context.Context, log *slog.Logger) error {
 			return err
 		}
 		srv.Sending = &sending.Service{DB: pool, Campaigns: srv.Campaigns, Emails: srv.Emails,
-			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Unsubscribe: srv.Unsubscribe, Mail: sender}
+			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Unsubscribe: srv.Unsubscribe, Mail: sender,
+			Limits: sendLimits(cfg)}
 		srv.Signups = &signups.Service{DB: pool, Forms: srv.Forms, Settings: &auth.Service{DB: pool},
 			Domains: srv.Domains, Mail: sender}
-		srv.Admin = &admin.Service{DB: pool, Sending: srv.Sending, Log: log.With("component", "admin")}
+		srv.Admin = &admin.Service{DB: pool, Sending: srv.Sending, Limits: sendLimits(cfg), Log: log.With("component", "admin")}
 		// Payments someone has to refund or cancel by hand go to OPS_ALERT_EMAIL.
 		srv.Billing.Alert = (&sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
 			To: cfg.OpsAlertEmail, Log: log.With("component", "billing")}).Notify
@@ -314,7 +315,12 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	// Deliveries, bounces and complaints from SES.
 	alert := &sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
 		To: cfg.OpsAlertEmail, Log: log.With("job", "health")}
-	events := &sesevents.Service{DB: pool, Log: log.With("queue", "ses-events"), Alert: alert.AutoPaused}
+	// Owners hear about throttles from notices@ (MG-61).
+	notices := &sending.Notices{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "notices@" + cfg.SystemSendingDomain},
+		NewDaily: cfg.NewAccountDailySendLimit, Ops: alert, Log: log.With("job", "health")}
+	events := &sesevents.Service{DB: pool, Log: log.With("queue", "ses-events"), Alert: alert.AutoPaused,
+		Throttled: notices.Throttled, Warning: sending.Warning{
+			ComplaintsPer10k: cfg.EarlyWarningComplaintsPer10k, HardBouncesPer10k: cfg.EarlyWarningHardBouncesPer10k}}
 	queues[1].Handler = worker.HandlerFunc(events.SQSHandler())
 	if cfg.MailSender == "fake" && cfg.SESEventsQueueURL == "" {
 		// No SES (local): mail to SES's mailbox simulator gets its events
@@ -366,12 +372,16 @@ func newPipeline(cfg config.Config, pool *pgxpool.Pool, sender mail.Sender, log 
 		Mail:        sender,
 		Unsubscribe: &unsubscribe.Service{DB: pool},
 		BaseURL:     cfg.PublicBaseURL,
-		Limits: sending.Limits{
-			PerSecond: cfg.SendRatePerSecond,
-			Daily:     cfg.AccountDailySendLimit,
-			NewDaily:  cfg.NewAccountDailySendLimit,
-		},
-		Log: log.With("job", "send"),
+		Limits:      sendLimits(cfg),
+		Log:         log.With("job", "send"),
+	}
+}
+
+func sendLimits(cfg config.Config) sending.Limits {
+	return sending.Limits{
+		PerSecond: cfg.SendRatePerSecond,
+		Daily:     cfg.AccountDailySendLimit,
+		NewDaily:  cfg.NewAccountDailySendLimit,
 	}
 }
 
