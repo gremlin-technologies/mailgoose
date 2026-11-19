@@ -23,6 +23,26 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Scheduled campaigns (MG-32, reversible defaults)
+
+Picked while building MG-32; easy to change.
+
+- **Cancel and reschedule need a full-scope key,** like launch, since they
+  act on a launched campaign. Cancel asks for `--yes` in the CLI.
+- **Only before sending starts.** A campaign already `sending` can't be
+  cancelled or moved here; stopping one in flight is the kill switch
+  (MG-34).
+- **Cancelling can't be undone.** The recipients are marked skipped and
+  every reserved credit comes back; to send it after all, make a new
+  campaign.
+- **Starting due campaigns:** the worker checks every 15 seconds, and the
+  send dispatcher (which runs in the API when there's an SQS queue) also
+  starts one it reaches first. Either way a conditional update starts it
+  once.
+- **Time zones:** times are stored and returned in UTC. The CLI shows them
+  in the account's time zone and reads a time without an offset in it. The
+  web app has no campaign pages yet; they'll do the same.
+
 ## 2026-11-18: Send pipeline (MG-31, reversible defaults)
 
 Picked while building MG-31; easy to change.
@@ -34,11 +54,20 @@ Picked while building MG-31; easy to change.
   it. The 24 hours are a rolling window, not a calendar day.
 - **The rate is global,** kept by one row in Postgres that every worker
   takes its next slot from, so adding workers never raises it. SES's own
-  account quota stays the outer limit.
+  account quota stays the outer limit. Only a copy that will really go out
+  takes a slot: a row is claimed first, so skipped rows and a redelivered
+  batch's sent rows don't use one (MG-31 review follow-up, 2026-11-19).
+- **A batch stays invisible on the queue while it runs.** The rate is
+  shared, so a batch can outlast the queue's 120-second visibility timeout;
+  the worker extends it every 60 seconds until the batch is done, rather
+  than letting SQS deliver it again and use up a try (MG-31 review
+  follow-up, 2026-11-19).
 - **A send cut off mid-way is not retried.** If a worker dies between
   claiming a row and recording it sent, the copy may have gone out, so
   after 10 minutes the row ends `failed` and its credit comes back. Missing
-  one email is preferred to sending two (CAM-8).
+  one email is preferred to sending two (CAM-8). A copy that went out but
+  couldn't be recorded is logged at error level with its message id, so it
+  can be matched up by hand.
 - **A refused send is retried** with the batch, up to 5 tries (the queue's
   redrive limit); then the row is `failed`, its credit back, and the message
   lands in the dead-letter queue.

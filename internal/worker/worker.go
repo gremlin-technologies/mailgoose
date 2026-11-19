@@ -22,6 +22,7 @@ import (
 type SQSAPI interface {
 	ReceiveMessage(ctx context.Context, in *sqs.ReceiveMessageInput, opts ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error)
 	DeleteMessage(ctx context.Context, in *sqs.DeleteMessageInput, opts ...func(*sqs.Options)) (*sqs.DeleteMessageOutput, error)
+	ChangeMessageVisibility(ctx context.Context, in *sqs.ChangeMessageVisibilityInput, opts ...func(*sqs.Options)) (*sqs.ChangeMessageVisibilityOutput, error)
 }
 
 // Handler processes one message. Returning nil deletes it from the queue;
@@ -48,6 +49,10 @@ type Queue struct {
 	// means 10. Queues whose messages take long to handle take fewer, so
 	// none waits past its visibility timeout.
 	MaxMessages int32
+	// Visibility, when set, is the queue's visibility timeout. While a
+	// message is handled, the worker extends its visibility by that much
+	// every half of it, so a slow handler isn't delivered again mid-way.
+	Visibility time.Duration
 }
 
 // Worker polls its queues until its context is cancelled.
@@ -133,7 +138,10 @@ func (w *Worker) poll(ctx context.Context, q Queue) {
 
 func (w *Worker) handle(ctx context.Context, q Queue, msg types.Message) {
 	id := aws.ToString(msg.MessageId)
-	if err := q.Handler.Handle(ctx, msg); err != nil {
+	stop := w.keepInvisible(ctx, q, msg)
+	err := q.Handler.Handle(ctx, msg)
+	stop()
+	if err != nil {
 		w.Log.Warn("message left on queue",
 			"queue", q.Name,
 			"message_id", id,
@@ -151,6 +159,46 @@ func (w *Worker) handle(ctx context.Context, q Queue, msg types.Message) {
 		ReceiptHandle: msg.ReceiptHandle,
 	}); err != nil {
 		w.Log.Error("delete failed; message will be redelivered", "queue", q.Name, "message_id", id, "err", err)
+	}
+}
+
+// keepInvisible extends msg's visibility every half of q.Visibility until
+// the returned stop is called. A failed extension is logged; the message
+// may then be delivered again, which the handlers allow for.
+func (w *Worker) keepInvisible(ctx context.Context, q Queue, msg types.Message) (stop func()) {
+	if q.Visibility <= 0 {
+		return func() {}
+	}
+	// SQS allows at most 12 hours.
+	secs := int32(min(q.Visibility, 12*time.Hour) / time.Second) //nolint:gosec // capped above
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		t := time.NewTicker(q.Visibility / 2)
+		defer t.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			if _, err := w.SQS.ChangeMessageVisibility(ctx, &sqs.ChangeMessageVisibilityInput{
+				QueueUrl:          aws.String(q.URL),
+				ReceiptHandle:     msg.ReceiptHandle,
+				VisibilityTimeout: secs,
+			}); err != nil && ctx.Err() == nil {
+				w.Log.Warn("couldn't extend a message's visibility", "queue", q.Name,
+					"message_id", aws.ToString(msg.MessageId), "err", err)
+			}
+		}
+	}()
+	return func() {
+		close(done)
+		wg.Wait()
 	}
 }
 

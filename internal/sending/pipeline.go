@@ -76,7 +76,8 @@ type Queue interface {
 
 // Limits are the send limits (CAM-7, CMP-7).
 type Limits struct {
-	// PerSecond is the most emails one worker sends a second.
+	// PerSecond is the most campaign emails sent a second, across every
+	// worker and campaign together (one send_pace row keeps it).
 	PerSecond int
 	// Daily is an account's daily limit once it's past its first week, and
 	// NewDaily its limit in that week. An account's own daily_send_limit
@@ -112,8 +113,9 @@ func (p *Pipeline) log() *slog.Logger {
 }
 
 // BatchSize is how many recipients go in a batch: about ten seconds of
-// sending at the configured rate, so a batch finishes well inside the
-// queue's visibility timeout.
+// sending at the configured rate when one batch runs at a time. The rate
+// is shared, so with several batches running each takes longer; the worker
+// extends a batch's visibility on the queue while it runs.
 func (p *Pipeline) BatchSize() int {
 	return min(MaxBatch, max(10, p.Limits.PerSecond*10))
 }
@@ -183,13 +185,15 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 
 	switch status {
 	case campaigns.StatusScheduled:
-		if _, err := tx.Exec(ctx, `
-			UPDATE campaigns SET status = 'sending', status_changed_at = $2, updated_at = $2 WHERE id = $1`,
-			campaignID, now); err != nil {
+		// Due: start it, unless it was cancelled or moved meanwhile.
+		tag, err := tx.Exec(ctx, `
+			UPDATE campaigns SET status = 'sending', status_changed_at = $2, updated_at = $2 WHERE id = $1 AND status = 'scheduled'`,
+			campaignID, now)
+		if err != nil {
 			return 0, err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE send_queue SET claimed_at = $2 WHERE id = $1`, rowID, now); err != nil {
-			return 0, err
+		if tag.RowsAffected() == 0 {
+			return rowID, tx.Commit(ctx)
 		}
 	case campaigns.StatusSending:
 	case campaigns.StatusPaused:
@@ -388,9 +392,6 @@ func (p *Pipeline) HandleBatch(ctx context.Context, b Batch, attempt int) error 
 	}
 	var lastErr error
 	for _, id := range b.IDs {
-		if err := p.paceWait(ctx); err != nil {
-			return err
-		}
 		err := p.sendOne(ctx, b, s, id)
 		var se *sendFailed
 		switch {
@@ -421,6 +422,16 @@ func (e *sendFailed) Unwrap() error { return e.err }
 func (p *Pipeline) sendOne(ctx context.Context, b Batch, s *sendable, id int64) error {
 	r, ok, err := p.claim(ctx, b, id)
 	if err != nil || !ok {
+		return err
+	}
+	// Only a copy that will really go out waits for a send slot, so
+	// skipped rows and rows already sent (a redelivery) don't use one.
+	if err := p.paceWait(ctx); err != nil {
+		// Nothing was sent: the claim goes back for a later attempt.
+		if _, rerr := p.DB.Exec(context.WithoutCancel(ctx), `
+			UPDATE campaign_recipients SET status = 'queued', claimed_at = NULL WHERE id = $1 AND status = 'sending'`, id); rerr != nil {
+			return errors.Join(err, rerr)
+		}
 		return err
 	}
 	url, err := s.signer.URL(strings.TrimRight(p.BaseURL, "/"), r.contactID, b.CampaignID)
@@ -461,6 +472,12 @@ func (p *Pipeline) sendOne(ctx context.Context, b Batch, s *sendable, id int64) 
 	_, err = p.DB.Exec(context.WithoutCancel(ctx), `
 		UPDATE campaign_recipients SET status = 'sent', sent_at = $2, message_id = $3, error = NULL
 		WHERE id = $1 AND status = 'sending'`, id, p.now(), messageID)
+	if err != nil {
+		// The copy went out but isn't recorded: the row will end failed
+		// and refunded. The message id lets it be matched up by hand.
+		p.log().ErrorContext(ctx, "a sent copy wasn't recorded", "campaign_id", b.CampaignID,
+			"recipient_row", id, "message_id", messageID, "err", err)
+	}
 	return err
 }
 

@@ -47,6 +47,8 @@ type App struct {
 
 	jsonOut bool
 	apiURL  string
+	// zone is the account's time zone, once read (accountZone).
+	zone *time.Location
 	// extra commands, for tests.
 	extra []*cobra.Command
 }

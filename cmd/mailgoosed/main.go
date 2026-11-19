@@ -209,6 +209,10 @@ func newDomains(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, log 
 	return svc, nil
 }
 
+// sendQueueVisibility is the send queue's visibility timeout in
+// infra/modules/stack.
+const sendQueueVisibility = 120 * time.Second
+
 func runWorker(ctx context.Context, log *slog.Logger) error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -218,7 +222,10 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	log.Info("starting worker", "version", version.Get().Version)
 
 	queues := []worker.Queue{
-		{Name: "send", URL: cfg.SendQueueURL, Handler: worker.NotImplemented(), MaxMessages: 1},
+		// A batch shares the global send rate with every other worker, so
+		// it can take longer than the queue's 120-second visibility timeout
+		// (infra/modules/stack); the worker keeps extending it.
+		{Name: "send", URL: cfg.SendQueueURL, Handler: worker.NotImplemented(), MaxMessages: 1, Visibility: sendQueueVisibility},
 		{Name: "ses-events", URL: cfg.SESEventsQueueURL, Handler: worker.NotImplemented()},
 	}
 
@@ -253,6 +260,8 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	run := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }
 	imports := &contacts.Service{DB: pool}
 	run(func() { imports.RunImports(ctx, log.With("job", "import"), 2*time.Second) })
+	// Scheduled campaigns start within 15 seconds of their time.
+	run(func() { sending.RunScheduler(ctx, pool, 15*time.Second, log.With("job", "schedule")) })
 	if cfg.SendQueueURL == "" {
 		// No SQS (local): the worker dispatches too, into a queue in memory.
 		log.Info("no send queue configured; sending through an in-process queue")
