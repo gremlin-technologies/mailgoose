@@ -261,6 +261,67 @@ func TestLaunchCodes(t *testing.T) {
 		}
 	})
 
+	// The person agreed to the summary's count. A few more who join before
+	// the confirm still launch; more than a tenth more needs a new summary.
+	t.Run("audience grew", func(t *testing.T) {
+		h := readyHarness(t)
+		cr := h.summary(t)
+		if cr.Summary.RecipientCount != 1 || AllowedGrowth(1) != 1 {
+			t.Fatalf("summary of %d, allowance %d", cr.Summary.RecipientCount, AllowedGrowth(1))
+		}
+		for _, email := range []string{"lee@patsbakery.com", "kim@patsbakery.com"} {
+			if _, err := h.db.Exec(ctx, `
+				INSERT INTO contacts (account_id, email, status, source) VALUES ($1, $2, 'subscribed', 'api')`, h.acc, email); err != nil {
+				t.Fatal(err)
+			}
+		}
+		_, err := h.launch(cr.Code)
+		var ce *CodeError
+		if !errors.As(err, &ce) || ce.Reason != CodeGrew || ce.Summarized != 1 || ce.Recipients != 3 {
+			t.Fatalf("%v", err)
+		}
+		if !strings.Contains(err.Error(), "now reaches 3 contacts, more than the 1 in the summary") {
+			t.Errorf("message %q", err.Error())
+		}
+		var rows int
+		_ = h.db.QueryRow(ctx, `SELECT count(*) FROM campaign_recipients WHERE campaign_id = $1`, h.campaign.ID).Scan(&rows)
+		if rows != 0 || h.balance(t) != 10 {
+			t.Errorf("refused launch left %d recipients, balance %d", rows, h.balance(t))
+		}
+		// A new summary counts everyone, and its code launches.
+		cr = h.summary(t)
+		if cr.Summary.RecipientCount != 3 {
+			t.Errorf("new summary of %d", cr.Summary.RecipientCount)
+		}
+		if l, err := h.launch(cr.Code); err != nil || l.RecipientCount != 3 {
+			t.Errorf("%+v %v", l, err)
+		}
+	})
+
+	t.Run("audience grew a little", func(t *testing.T) {
+		h := readyHarness(t)
+		cr := h.summary(t)
+		if _, err := h.db.Exec(ctx, `
+			INSERT INTO contacts (account_id, email, status, source) VALUES ($1, 'lee@patsbakery.com', 'subscribed', 'api')`, h.acc); err != nil {
+			t.Fatal(err)
+		}
+		if l, err := h.launch(cr.Code); err != nil || l.RecipientCount != 2 || l.CreditsReserved != 2 {
+			t.Errorf("%+v %v", l, err)
+		}
+	})
+
+	t.Run("audience shrank", func(t *testing.T) {
+		h := readyHarness(t)
+		cr := h.summary(t)
+		if _, err := h.db.Exec(ctx, `UPDATE contacts SET status = 'unsubscribed' WHERE account_id = $1`, h.acc); err != nil {
+			t.Fatal(err)
+		}
+		// Fewer is never refused by the code; reaching nobody still is.
+		if _, err := h.launch(cr.Code); isCode(err, CodeGrew) || problemCodes(err) != NoRecipients {
+			t.Errorf("%v", err)
+		}
+	})
+
 	t.Run("expired", func(t *testing.T) {
 		h := readyHarness(t)
 		cr := h.summary(t)

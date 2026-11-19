@@ -2785,7 +2785,10 @@ export interface components {
          *     `no_recipients`, and `credits_short` with `details.needed`,
          *     `details.balance` and `details.short`. `invalid_confirmation`: the
          *     code can't be used; `details.reason` is `no_code`, `expired`,
-         *     `wrong`, `too_many_attempts` or `changed`. Ask for a new summary.
+         *     `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the
+         *     campaign now reaches more than a tenth more contacts than the
+         *     summary counted, with `details.summarized_count` and
+         *     `details.recipient_count`). Ask for a new summary.
          */
         LaunchRefused: {
             headers: {

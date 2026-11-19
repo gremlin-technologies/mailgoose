@@ -73,12 +73,24 @@ const (
 	CodeWrong    = "wrong"
 	CodeUsedUp   = "too_many_attempts"
 	CodeOutdated = "changed"
+	CodeGrew     = "audience_grew"
 )
+
+// AllowedGrowth is how many more recipients than its summary counted a
+// launch code still launches to: a tenth of the summary's count, rounded
+// up. Past that the person agreed to a smaller send than the one that
+// would go out, so the code is refused and a new summary is needed.
+// Fewer recipients than summarized always launch. A reversible default
+// (docs/decisions.md); the owner may want no allowance, or a larger one.
+func AllowedGrowth(summarized int) int { return (summarized + 9) / 10 }
 
 // CodeError is a launch code that can't be used. Each reason means: run
 // the launch again without a code for a fresh summary.
 type CodeError struct {
 	Reason string
+	// Summarized and Recipients are set for CodeGrew: the summary's count
+	// and the count at confirm.
+	Summarized, Recipients int
 }
 
 func (e *CodeError) Error() string {
@@ -91,6 +103,8 @@ func (e *CodeError) Error() string {
 		return "the confirmation code had too many wrong tries"
 	case CodeOutdated:
 		return "the campaign or its email changed after the confirmation code was issued"
+	case CodeGrew:
+		return fmt.Sprintf("the campaign now reaches %d contacts, more than the %d in the summary", e.Recipients, e.Summarized)
 	}
 	return "there's no confirmation code for this campaign"
 }
@@ -194,11 +208,11 @@ func (s *Service) summarize(ctx context.Context, accountID string, c *campaigns.
 	}
 	expires := s.now().Add(CodeTTL)
 	if _, err := s.DB.Exec(ctx, `
-		INSERT INTO campaign_launch_codes (campaign_id, account_id, code_hash, campaign_version, email_version, expires_at, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		INSERT INTO campaign_launch_codes (campaign_id, account_id, code_hash, campaign_version, email_version, recipient_count, expires_at, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (campaign_id) DO UPDATE SET code_hash = $3, campaign_version = $4, email_version = $5,
-			expires_at = $6, attempts = 0, created_at = $7`,
-		c.ID, accountID, hashCode(c.ID, code), sum.CampaignVersion, sum.EmailVersion, expires, s.now()); err != nil {
+			recipient_count = $6, expires_at = $7, attempts = 0, created_at = $8`,
+		c.ID, accountID, hashCode(c.ID, code), sum.CampaignVersion, sum.EmailVersion, sum.RecipientCount, expires, s.now()); err != nil {
 		return err
 	}
 	return &ConfirmationRequired{Summary: sum, Code: code, ExpiresAt: expires}
@@ -302,12 +316,12 @@ func (s *Service) confirm(ctx context.Context, accountID, campaignID, code strin
 		}
 
 		var hash []byte
-		var campaignVersion, emailVersion, attempts int
+		var campaignVersion, emailVersion, summarized, attempts int
 		var expires time.Time
 		err = tx.QueryRow(ctx, `
-			SELECT code_hash, campaign_version, email_version, expires_at, attempts
+			SELECT code_hash, campaign_version, email_version, recipient_count, expires_at, attempts
 			FROM campaign_launch_codes WHERE campaign_id = $1 FOR UPDATE`, campaignID).
-			Scan(&hash, &campaignVersion, &emailVersion, &expires, &attempts)
+			Scan(&hash, &campaignVersion, &emailVersion, &summarized, &expires, &attempts)
 		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			return &CodeError{Reason: CodeMissing}
@@ -343,6 +357,10 @@ func (s *Service) confirm(ctx context.Context, accountID, campaignID, code strin
 		n, err := contacts.SnapshotRecipients(ctx, tx, accountID, campaignID, c.Audience())
 		if err != nil {
 			return err
+		}
+		// The snapshot is rolled back with the rest of the transaction.
+		if n > summarized+AllowedGrowth(summarized) {
+			return &CodeError{Reason: CodeGrew, Summarized: summarized, Recipients: n}
 		}
 		bal, err := credits.Balance(ctx, tx, accountID, now)
 		if err != nil {

@@ -47,8 +47,16 @@ Picked while building MG-30; easy to change.
   doesn't wait on other sites. Link problems are warnings anyway.
 - **The recipient count may change between summary and confirm** (a new
   signup, say). The confirm reserves for the count at that moment and
-  answers with it; the code isn't made stale by contact changes, only by
-  edits to the campaign or its email.
+  answers with it. Contact changes don't make the code stale, unless the
+  audience grew by more than a tenth (next bullet).
+- **A code is refused when the audience grew by more than a tenth** of the
+  summary's count, rounded up (MG-30 review follow-up, added 2026-11-19).
+  The code remembers the summary's count; past the allowance the confirm
+  answers `invalid_confirmation` with reason `audience_grew`, the count
+  summarized and the count now, and nothing is launched. Fewer recipients
+  than summarized always launch. The allowance lets a few signups during
+  the 15 minutes through without a new summary. Open for the owner (see
+  Open questions).
 - **A campaign that reaches nobody, or whose send time has passed, is
   refused** rather than launched to nothing or sent late.
 - **Accounts get `sending_paused_at` and `sending_paused_reason`** now, so
@@ -1012,6 +1020,10 @@ Decided by the owner in the PRD scoping call and follow-ups.
   2026-11-17 and 2026-11-18. Blocks MG-52.)
 - Monthly fee: does a partial block of 10,000 contacts round up? (Default: yes,
   2,501 to 12,500 counted contacts is one extra block. MG-40.)
+- Launch confirm: how far may the audience grow between the summary and
+  the confirm before the code is refused? (Default: a tenth of the
+  summary's count, rounded up. Other options: refuse any growth, or allow
+  any growth the credits cover. MG-30 review follow-up.)
 - Anything in the earlier mailgoose repo worth reusing? (Default: no, fresh
   start.)
 - Sending domains: can an account hold a domain it never verifies? Today an
