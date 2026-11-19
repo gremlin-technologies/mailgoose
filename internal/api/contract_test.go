@@ -650,6 +650,18 @@ var contractCases = map[string][]contractCase{
 			req: bearer(request(http.MethodGet, "/v1/credits")), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodGet, "/v1/credits")), status: http.StatusServiceUnavailable},
 	},
+	"createCreditCheckout": {
+		{name: "full key", server: fullKey(authServer), req: bearer(checkoutRequest(`{"pack":"10k"}`)), status: http.StatusCreated},
+		{name: "malformed", server: fullKey(authServer), req: bearer(checkoutRequest(`{"pack":10}`)), status: http.StatusBadRequest},
+		{name: "no credentials", server: authServer, req: checkoutRequest(`{"pack":"10k"}`), status: http.StatusUnauthorized},
+		{name: "draft key", server: draftKey(authServer), req: bearer(checkoutRequest(`{"pack":"10k"}`)), status: http.StatusForbidden},
+		{name: "unknown pack", server: fullKey(authServer), req: bearer(checkoutRequest(`{"pack":"5k"}`)), status: http.StatusUnprocessableEntity},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(checkoutRequest(`{"pack":"10k"}`))),
+			req: bearer(checkoutRequest(`{"pack":"10k"}`)), status: http.StatusTooManyRequests},
+		{name: "stripe refuses", server: fullKey(stripeRefuses(authServer)), req: bearer(checkoutRequest(`{"pack":"10k"}`)), status: http.StatusBadGateway},
+		{name: "not set up", server: fullKey(noStripe(authServer)), req: bearer(checkoutRequest(`{"pack":"10k"}`)), status: http.StatusServiceUnavailable},
+		{name: "no database", server: serverWith(nil), req: bearer(checkoutRequest(`{"pack":"10k"}`)), status: http.StatusServiceUnavailable},
+	},
 	"listCreditTransactions": {
 		{name: "web session", server: authServer, before: signedIn, req: withSession(request(http.MethodGet, "/v1/credits/transactions?limit=10")), status: http.StatusOK},
 		{name: "bad cursor", server: draftKey(authServer), req: bearer(request(http.MethodGet, "/v1/credits/transactions?cursor="+EncodeCursor("x"))), status: http.StatusBadRequest},

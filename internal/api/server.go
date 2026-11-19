@@ -20,6 +20,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/admin"
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/billing"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
@@ -82,6 +83,9 @@ type Server struct {
 	// database, which makes tracked links answer 503 (the pixel still
 	// loads).
 	Tracking *tracking.Service
+	// Billing sells credit packs through Stripe; nil (no database) makes
+	// checkout and the Stripe webhook answer 503.
+	Billing *billing.Service
 	// Reports counts campaign results; nil answers 503.
 	Reports *reports.Service
 	// Admin backs the mailgoose staff tools (OPS-6); nil without a
@@ -142,6 +146,9 @@ func (s *Server) Handler() http.Handler {
 		(&RateLimiter{PerMinute: recipientPagesPerMinute, Now: now, Key: ClientIPKey, Limited: s.recipientPageLimited}).Middleware(s.recipientPages(now)))))
 	tracked := requestIDs(s.recoverer(s.logRequests(
 		(&RateLimiter{PerMinute: trackingPerMinute, Now: now, Key: ClientIPKey}).Middleware(s.trackingRoutes()))))
+	// Stripe's webhook is signed by Stripe, so it skips the API's sign-in,
+	// cross-origin check and rate limit.
+	stripeHook := requestIDs(s.recoverer(s.logRequests(http.HandlerFunc(s.stripeWebhook))))
 	// The web app skips the API's middleware: its files need no rate limit,
 	// session lookup or idempotency.
 	var web http.Handler
@@ -150,6 +157,8 @@ func (s *Server) Handler() http.Handler {
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == StripeWebhookPath:
+			stripeHook.ServeHTTP(w, r)
 		case isTrackingPath(r.URL.Path):
 			tracked.ServeHTTP(w, r)
 		case isRecipientPage(r.URL.Path):

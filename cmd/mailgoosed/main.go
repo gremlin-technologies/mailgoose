@@ -27,6 +27,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/admin"
 	"github.com/gremlin-technologies/mailgoose/internal/api"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/billing"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/config"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
@@ -133,6 +134,9 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		srv.Unsubscribe = &unsubscribe.Service{DB: pool}
 		srv.Tracking = &tracking.Service{DB: pool, Unsubscribe: srv.Unsubscribe}
 		srv.Reports = &reports.Service{DB: pool}
+		if srv.Billing, err = newBilling(cfg, pool, log); err != nil {
+			return err
+		}
 		if srv.Domains, err = newDomains(ctx, cfg, pool, log); err != nil {
 			return err
 		}
@@ -451,4 +455,25 @@ func migrateUp(ctx context.Context, log *slog.Logger, pool *pgxpool.Pool) error 
 		log.Info("migrations applied", "versions", applied)
 	}
 	return nil
+}
+
+// newBilling sells credit packs (BIL-3). Without Stripe keys, or with keys
+// this environment mustn't use, buying credits answers 503 and the log says
+// why; the rest of the API runs as usual.
+func newBilling(cfg config.Config, pool *pgxpool.Pool, log *slog.Logger) (*billing.Service, error) {
+	packs, err := billing.ParsePacks(cfg.Stripe.Packs)
+	if err != nil {
+		return nil, err
+	}
+	b := &billing.Service{DB: pool, Packs: packs, BaseURL: cfg.PublicBaseURL, Log: log}
+	switch {
+	case cfg.Stripe.Enabled():
+		b.Stripe = &billing.Client{SecretKey: cfg.Stripe.SecretKey}
+		b.WebhookSecret = cfg.Stripe.WebhookSecret
+	case cfg.Stripe.Problem != "":
+		log.Warn("buying credits is off", "reason", cfg.Stripe.Problem)
+	default:
+		log.Info("buying credits is off: no STRIPE_SECRET_KEY")
+	}
+	return b, nil
 }

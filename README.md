@@ -140,6 +140,8 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `RATE_LIMIT_PER_MINUTE` | Requests per minute per API key (or per IP without one), with bursts up to the same number. Default 600; `0` turns limiting off. Counted per API task. |
 | `MAIL_SENDER` | `ses` or `fake`. Defaults to `fake` when `APP_ENV=local` and `ses` otherwise; prod refuses `fake`. The fake records mail and never calls AWS. |
 | `MAIL_CAPTURE_DIR` | With the fake sender, write each message as an `.eml` file here. |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Stripe's secret key and the webhook endpoint's signing secret, from the `<env>/app` secret (or the environment, locally). Only prod may use a live key, and prod only a live one; a wrong key, or a key without the webhook secret, turns buying credits off and says why in the log, rather than stopping the server. |
+| `CREDIT_PACKS` | The credit packs as `name=credits:cents,...`. Empty means the decided packs: `10k=10000:2000,50k=50000:7500,200k=200000:24000,1m=1000000:90000`. |
 
 ## Sign up and sessions
 
@@ -279,6 +281,34 @@ account is next read or debited.
 curl -s localhost:8080/v1/credits -H "Authorization: Bearer $MAILGOOSE_API_KEY"
 mailgoose credits
 mailgoose credits history --limit 20
+```
+
+### Buying credits
+
+Credits are sold in packs through Stripe Checkout (`internal/billing`): 10k
+for $20, 50k for $75, 200k for $240 and 1m for $900, plus any sales tax,
+which Stripe Tax works out at checkout. `POST /v1/credits/checkout` (full
+scope) makes a Checkout page for a pack and returns its link; the person pays
+in the browser, and Stripe emails the receipt to the account's address.
+
+```sh
+mailgoose credits buy 10k
+```
+
+Stripe then calls `POST /hooks/stripe`. The server checks the signature
+(5 minutes' tolerance), handles each event id once, and for a paid
+`checkout.session.completed` (or `async_payment_succeeded`) adds the pack's
+credits as a purchase lasting 24 months and makes the account paid. A paid
+session whose amount, currency or credits don't match its pack adds nothing
+and is logged as an error. Nothing else in Stripe needs setting up: each
+session carries its pack's price.
+
+To try it locally with Stripe's test mode, put a test key and the CLI's
+webhook secret in the environment and forward events:
+
+```sh
+stripe listen --forward-to localhost:8080/hooks/stripe   # prints whsec_...
+STRIPE_SECRET_KEY=sk_test_... STRIPE_WEBHOOK_SECRET=whsec_... go run ./cmd/mailgoosed serve
 ```
 
 ## Contacts

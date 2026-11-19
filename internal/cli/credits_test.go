@@ -47,3 +47,38 @@ func TestCreditsHistory(t *testing.T) {
 		}
 	}
 }
+
+func TestCreditsBuy(t *testing.T) {
+	srv := apiStub(t, map[string]func(http.ResponseWriter){
+		"/v1/credits/checkout": func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"url":"https://checkout.stripe.com/c/pay/cs_1","pack":"50k","credits":50000,"price_cents":7500,"currency":"usd","expires_at":"2026-11-19T12:00:00Z"}`))
+		},
+	})
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_fullkey"
+	if code := h.run("credits", "buy", "50k"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	out := h.out.String()
+	for _, want := range []string{"50,000 credits for $75", "https://checkout.stripe.com/c/pay/cs_1"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if code := h.run("credits", "buy", "50k", "--json"); code != ExitOK || !strings.Contains(h.out.String(), `"price_cents": 7500`) {
+		t.Errorf("--json: exit %d, %q", code, h.out)
+	}
+	if code := h.run("credits", "buy"); code == ExitOK {
+		t.Error("no pack: exit 0")
+	}
+}
+
+func TestDollars(t *testing.T) {
+	for cents, want := range map[int64]string{2000: "$20", 7500: "$75", 90000: "$900", 1999: "$19.99", 120000: "$1,200", 5: "$0.05"} {
+		if got := dollars(cents); got != want {
+			t.Errorf("%d: %q", cents, got)
+		}
+	}
+}

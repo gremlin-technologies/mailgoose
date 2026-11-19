@@ -342,6 +342,21 @@ func (e CreateContactRequestStatus) Valid() bool {
 	}
 }
 
+// Defines values for CreditCheckoutCurrency.
+const (
+	CreditCheckoutCurrencyUsd CreditCheckoutCurrency = "usd"
+)
+
+// Valid indicates whether the value is a known member of the CreditCheckoutCurrency enum.
+func (e CreditCheckoutCurrency) Valid() bool {
+	switch e {
+	case CreditCheckoutCurrencyUsd:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreditSummaryPlan.
 const (
 	CreditSummaryPlanFree CreditSummaryPlan = "free"
@@ -1684,6 +1699,31 @@ type CreatedApiKey struct {
 	Secret string `json:"secret"`
 }
 
+// CreditCheckout defines model for CreditCheckout.
+type CreditCheckout struct {
+	Credits  int                    `json:"credits"`
+	Currency CreditCheckoutCurrency `json:"currency"`
+
+	// ExpiresAt When the page stops working.
+	ExpiresAt time.Time `json:"expires_at"`
+	Pack      string    `json:"pack"`
+
+	// PriceCents The pack's price before any sales tax, in cents.
+	PriceCents int `json:"price_cents"`
+
+	// Url Stripe's Checkout page; open it in a browser to pay.
+	Url string `json:"url"`
+}
+
+// CreditCheckoutCurrency defines model for CreditCheckout.Currency.
+type CreditCheckoutCurrency string
+
+// CreditCheckoutRequest defines model for CreditCheckoutRequest.
+type CreditCheckoutRequest struct {
+	// Pack The pack's name, such as `10k`; case doesn't matter.
+	Pack string `json:"pack"`
+}
+
 // CreditGrant defines model for CreditGrant.
 type CreditGrant struct {
 	AccountId     string    `json:"account_id"`
@@ -2835,6 +2875,9 @@ type LaunchRefused = Error
 // NotFound defines model for NotFound.
 type NotFound = Error
 
+// PaymentProviderError defines model for PaymentProviderError.
+type PaymentProviderError = Error
+
 // RequestTooLarge defines model for RequestTooLarge.
 type RequestTooLarge = Error
 
@@ -2858,6 +2901,9 @@ type TooManyRequests = Error
 
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
+
+// UnknownPack defines model for UnknownPack.
+type UnknownPack = Error
 
 // UnrenderableEmail defines model for UnrenderableEmail.
 type UnrenderableEmail = Error
@@ -3088,6 +3134,9 @@ type CreateContactJSONRequestBody = CreateContactRequest
 
 // UpdateContactJSONRequestBody defines body for UpdateContact for application/json ContentType.
 type UpdateContactJSONRequestBody = UpdateContactRequest
+
+// CreateCreditCheckoutJSONRequestBody defines body for CreateCreditCheckout for application/json ContentType.
+type CreateCreditCheckoutJSONRequestBody = CreditCheckoutRequest
 
 // CreateDeviceLoginJSONRequestBody defines body for CreateDeviceLogin for application/json ContentType.
 type CreateDeviceLoginJSONRequestBody = CreateDeviceLoginRequest
@@ -3961,6 +4010,9 @@ type ServerInterface interface {
 	// GetCredits Show the credit balance
 	// (GET /v1/credits)
 	GetCredits(w http.ResponseWriter, r *http.Request)
+	// CreateCreditCheckout Start buying a credit pack
+	// (POST /v1/credits/checkout)
+	CreateCreditCheckout(w http.ResponseWriter, r *http.Request)
 	// ListCreditTransactions List credit transactions
 	// (GET /v1/credits/transactions)
 	ListCreditTransactions(w http.ResponseWriter, r *http.Request, params ListCreditTransactionsParams)
@@ -5187,6 +5239,20 @@ func (siw *ServerInterfaceWrapper) GetCredits(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetCredits(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateCreditCheckout operation middleware
+func (siw *ServerInterfaceWrapper) CreateCreditCheckout(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateCreditCheckout(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6665,6 +6731,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/api-keys", wrapper.CreateApiKey)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/api-keys/{key_id}", wrapper.RevokeApiKey)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/credits", wrapper.GetCredits)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/credits/checkout", wrapper.CreateCreditCheckout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/credits/transactions", wrapper.ListCreditTransactions)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/device-logins", wrapper.CreateDeviceLogin)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/device-logins/token", wrapper.PollDeviceLogin)

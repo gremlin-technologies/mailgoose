@@ -331,6 +331,55 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/credits/checkout:
+    post:
+      operationId: createCreditCheckout
+      summary: Start buying a credit pack
+      description: |
+        Makes a Stripe Checkout page for a credit pack and returns its URL;
+        the person pays there, in a browser (BIL-3, BIL-6). Nothing is
+        charged until they do. Once Stripe says the payment went through,
+        the pack's credits are added, lasting 24 months, and the account
+        becomes paid: it stops getting the free monthly credits (BIL-5).
+        Sales tax is worked out at checkout and Stripe emails the receipt.
+        The page expires after 24 hours. Packs: `10k` ($20), `50k` ($75),
+        `200k` ($240) and `1m` ($900), unless the server's configured
+        otherwise.
+      tags: [credits]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreditCheckoutRequest"
+      responses:
+        "201":
+          description: The Checkout page to pay at.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreditCheckout"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnknownPack"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/PaymentProviderError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/credits/transactions:
     get:
       operationId: listCreditTransactions
@@ -4115,6 +4164,37 @@ components:
             $ref: "#/components/schemas/ApiKey"
         next_cursor:
           type: [string, "null"]
+    CreditCheckoutRequest:
+      type: object
+      additionalProperties: false
+      required: [pack]
+      properties:
+        pack:
+          type: string
+          maxLength: 20
+          description: The pack's name, such as `10k`; case doesn't matter.
+    CreditCheckout:
+      type: object
+      required: [url, pack, credits, price_cents, currency, expires_at]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Stripe's Checkout page; open it in a browser to pay.
+        pack:
+          type: string
+        credits:
+          type: integer
+        price_cents:
+          type: integer
+          description: The pack's price before any sales tax, in cents.
+        currency:
+          type: string
+          enum: [usd]
+        expires_at:
+          type: string
+          format: date-time
+          description: When the page stops working.
     CreditSummary:
       type: object
       required: [balance, plan, next_grant_at]
@@ -5944,6 +6024,26 @@ components:
       description: |
         `invalid_admin_request`: `details.field` is `reason` (missing, or over
         500 characters) or `amount` (not 1 to 1,000,000).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnknownPack:
+      description: |
+        `unknown_pack`: there's no pack by that name; `details.packs` lists
+        the packs with their credits and prices.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PaymentProviderError:
+      description: "`payment_provider_error`: Stripe couldn't make the Checkout page; try again shortly."
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

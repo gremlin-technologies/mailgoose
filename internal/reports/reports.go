@@ -214,17 +214,24 @@ func (s *Service) Prune(ctx context.Context) (Pruned, error) {
 		if err != nil {
 			return p, err
 		}
-		n, err := s.archive(ctx, accountID, campaignID)
+		n, archived, err := s.archive(ctx, accountID, campaignID)
 		if err != nil {
 			return p, fmt.Errorf("archive campaign %s: %w", campaignID, err)
 		}
-		p.Archived++
-		p.Events += n
+		if archived {
+			p.Archived++
+			p.Events += n
+		}
 	}
+	// A campaign still sending or paused keeps all its events, so its live
+	// report doesn't drift; it's archived once it finishes.
 	for _, table := range []string{"engagement_events", "send_events"} {
 		for {
 			tag, err := s.DB.Exec(ctx, `DELETE FROM `+table+` WHERE id IN (
-				SELECT id FROM `+table+` WHERE occurred_at < $1 LIMIT $2)`, cutoff, pruneBatch)
+				SELECT e.id FROM `+table+` e WHERE e.occurred_at < $1
+					AND NOT EXISTS (SELECT 1 FROM campaigns c
+						WHERE c.id = e.campaign_id AND c.status IN ('sending', 'paused'))
+				LIMIT $2)`, cutoff, pruneBatch)
 			if err != nil {
 				return p, fmt.Errorf("prune %s: %w", table, err)
 			}
@@ -238,34 +245,42 @@ func (s *Service) Prune(ctx context.Context) (Pruned, error) {
 }
 
 // archive saves a campaign's report and deletes its raw events, in one
-// transaction.
-func (s *Service) archive(ctx context.Context, accountID, campaignID string) (int64, error) {
+// transaction. If another pruner saved the report first, it does nothing and
+// returns false.
+func (s *Service) archive(ctx context.Context, accountID, campaignID string) (int64, bool, error) {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	r, err := s.campaign(ctx, tx, accountID, campaignID, false)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	body, err := json.Marshal(r)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO campaign_reports (campaign_id, account_id, report, frozen_at) VALUES ($1, $2, $3, $4)`,
-		campaignID, accountID, body, s.now()); err != nil {
-		return 0, err
+	// A second pruner waits here for the first to commit, then inserts
+	// nothing.
+	tag, err := tx.Exec(ctx, `INSERT INTO campaign_reports (campaign_id, account_id, report, frozen_at) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (campaign_id) DO NOTHING`,
+		campaignID, accountID, body, s.now())
+	if err != nil {
+		return 0, false, err
+	}
+	if tag.RowsAffected() == 0 {
+		return 0, false, nil
 	}
 	var n int64
 	for _, table := range []string{"engagement_events", "send_events"} {
 		tag, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE campaign_id = $1`, campaignID)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		n += tag.RowsAffected()
 	}
-	return n, tx.Commit(ctx)
+	return n, true, tx.Commit(ctx)
 }
 
 // RunPruner prunes every interval until ctx ends.

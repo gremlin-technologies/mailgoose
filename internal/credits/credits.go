@@ -262,6 +262,19 @@ func Grant(ctx context.Context, tx pgx.Tx, accountID string, amount int64, ref s
 	return insert(ctx, tx, accountID, TypeGrant, amount, &expires, ref, now, nil)
 }
 
+// Purchase adds bought credits (BIL-3), inside tx, as a lot that lasts
+// LotMonths. ref names the payment ("stripe:<session id>").
+func Purchase(ctx context.Context, tx pgx.Tx, accountID string, amount int64, ref string, now time.Time) (*Transaction, error) {
+	if amount <= 0 || ref == "" {
+		return nil, fmt.Errorf("purchase: amount %d, ref %q", amount, ref)
+	}
+	if err := CatchUp(ctx, tx, accountID, now); err != nil {
+		return nil, err
+	}
+	expires := addMonths(now, LotMonths)
+	return insert(ctx, tx, accountID, TypePurchase, amount, &expires, ref, now, nil)
+}
+
 // Debit is Ledger.Debit inside tx.
 func Debit(ctx context.Context, tx pgx.Tx, accountID, typ string, amount int64, ref string, now time.Time) (*Transaction, error) {
 	if typ != TypeReserve && typ != TypeSpend && typ != TypeFee {
