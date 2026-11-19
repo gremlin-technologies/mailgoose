@@ -70,6 +70,8 @@ func authServerTB(t testing.TB) *Server {
 			DB:   db,
 			Mail: fake,
 			From: mail.Address{Name: "mailgoose", Email: "signin@mail.test.example"},
+			// Tests of the sign-up review turn it on (MG-66).
+			SignupReview: auth.ReviewOff,
 		},
 	}
 	s.Sending = &sending.Service{DB: db, Campaigns: s.Campaigns, Emails: s.Emails, Settings: s.Auth,

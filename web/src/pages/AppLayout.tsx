@@ -6,6 +6,7 @@ import { PausedBanner } from "../billing/PausedBanner";
 import { FailureNotice } from "../components";
 import { useSession } from "../session";
 import { navPages } from "./nav";
+import { ReviewBanner } from "./ReviewBanner";
 import { TermsGate } from "./TermsGate";
 
 /** The signed-in app: navigation on the side, the page beside it. */
@@ -52,6 +53,7 @@ export function AppLayout() {
       </aside>
       <main className="content">
         <PausedBanner />
+        <ReviewBanner />
         <TermsGate>
           <Outlet />
         </TermsGate>

@@ -48,6 +48,18 @@ func suspendedTarget(t *testing.T, h http.Handler) {
 	}
 }
 
+// waitingTarget is targetAccount, waiting for its sign-up review (MG-66).
+func waitingTarget(t *testing.T, h http.Handler) {
+	t.Helper()
+	targetAccount(t, h)
+	id, _ := targetAccounts.Load(t)
+	db, _ := testDBs.Load(t)
+	if _, err := db.(*pgxpool.Pool).Exec(t.Context(), `UPDATE accounts SET review = 'waiting', review_at = now(),
+		review_flags = '{ip_burst}' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // suspendedSignup is signedUp for an account that is then suspended.
 func suspendedSignup(t *testing.T, h http.Handler) {
 	t.Helper()
@@ -200,5 +212,58 @@ func TestSuspendedAccount(t *testing.T) {
 	}
 	if rec := do(t, h, session(request(http.MethodGet, "/v1/sessions/current"))); strings.Contains(rec.Body.String(), "export_until") {
 		t.Errorf("still shows a suspension: %s", rec.Body)
+	}
+}
+
+// TestWaitingForReview: with SIGNUP_REVIEW=all a new account says it's
+// waiting, can build but not launch, and stops waiting once approved;
+// rejecting suspends it (MG-66).
+func TestWaitingForReview(t *testing.T) {
+	srv := authServer(t)
+	srv.Auth.SignupReview = auth.ReviewAll
+	h := srv.Handler()
+	signedIn(t, h)
+	inReview := func() bool {
+		t.Helper()
+		rec := do(t, h, withSession(request(http.MethodGet, "/v1/sessions/current"))(t))
+		var cur struct {
+			Account struct {
+				InReview *bool `json:"in_review"`
+			} `json:"account"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &cur); err != nil || cur.Account.InReview == nil {
+			t.Fatalf("current session: %d %s", rec.Code, rec.Body)
+		}
+		return *cur.Account.InReview
+	}
+	if !inReview() {
+		t.Fatal("a new account isn't waiting with SIGNUP_REVIEW=all")
+	}
+	if rec := do(t, h, withSession(jsonRequest(http.MethodPost, "/v1/contacts", `{"email":"ann@example.com"}`))(t)); rec.Code != http.StatusCreated {
+		t.Errorf("add a contact while waiting: %d %s", rec.Code, rec.Body)
+	}
+
+	ctx := context.Background()
+	pool := srv.DB.(*pgxpool.Pool)
+	var accountID string
+	if err := pool.QueryRow(ctx, `SELECT account_id FROM users WHERE email = 'pat@example.com'`).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.Admin.ApproveSignup(ctx, admin.Server, accountID, "Looks real."); err != nil {
+		t.Fatal(err)
+	}
+	if inReview() {
+		t.Error("still waiting once approved")
+	}
+
+	// Rejecting another suspends it.
+	var other string
+	if err := pool.QueryRow(ctx, `INSERT INTO accounts (name, status, review, review_at) VALUES ('Spam', 'active', 'waiting', now()) RETURNING id`).
+		Scan(&other); err != nil {
+		t.Fatal(err)
+	}
+	acc, err := srv.Admin.RejectSignup(ctx, admin.Server, other, "Throwaway address.")
+	if err != nil || acc.SuspendedAt == nil {
+		t.Fatalf("reject: %+v %v", acc, err)
 	}
 }

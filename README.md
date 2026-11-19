@@ -151,6 +151,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `IMPORT_HOLD_RISKY_PERCENT`, `IMPORT_HOLD_INVALID_PERCENT`, `IMPORT_HOLD_SHARED_PERCENT`, `IMPORT_HOLD_SHARED_MIN` | When an import is held for review: role plus disposable addresses over 10% of its valid rows, invalid rows over 5% of all rows, or at least 50% of its addresses, and at least 200, in other accounts' imports. Percentages are 1 to 100. |
 | `OPS_ALERT_EMAIL` | Where to email an alert when an account is paused automatically, or a payment needs refunding or cancelling by hand in Stripe. Unset, these are only logged (as errors). |
 | `ABUSE_EMAIL` | Where a suspended account's owner appeals: the Reply-To of the email that tells them about the suspension, and named in its errors. Defaults to `abuse@` the `SYSTEM_SENDING_DOMAIN`; that mailbox has to exist. |
+| `SIGNUP_REVIEW` | Which new accounts wait for an admin to approve them before they can launch campaigns or take form signups (see [Sign-up review](#account-health-and-send-limits)): `all` (the default, for the beta and launch month), `flagged` or `off`. |
 | `SYSTEM_SENDING_DOMAIN` | mailgoose's own sending domain; sign-in codes come from `signin@` it. Defaults to `mail.localhost` when mail is captured (`MAIL_SENDER=fake`). Unset with SES, sign-up and sign-in answer 503. |
 | `WEB_DIR` | The built web app (`web/dist`) the API serves at `/`. The image sets it to `/srv/web`; unset, the API serves no web app. |
 | `WEB_ORIGINS` | Comma-separated origins, besides the API's own, that may send cookie-authenticated requests that change something, such as `https://app.staging.mailgoose.app`. Empty by default. |
@@ -910,6 +911,19 @@ for 30 days, downloads their contacts and campaigns; every other request is
 Reply-To for appeals, and an alert goes to `OPS_ALERT_EMAIL`. Unsuspending
 restores sign-in and sending; old keys stay revoked.
 
+**Sign-up review.** New accounts can wait for an admin to approve them:
+every one (`SIGNUP_REVIEW=all`, the default), only flagged ones (`flagged`),
+or none (`off`). A sign-up is flagged when its address is on the vendored
+disposable-domain list (`internal/emaillists`), when its IP made more than 3
+accounts in 24 hours, or when its IP or company domain (not a free-mail one
+like gmail.com) belongs to a suspended account. Sign-up IPs are kept only for
+this and deleted after 90 days. A waiting account can sign in, build emails,
+import contacts and send tests to its own addresses, and sees a note that
+it's being reviewed; it can't launch (`account_in_review`) or take form
+signups. When it confirms its address, `OPS_ALERT_EMAIL` gets an email.
+`mailgoose admin signups` lists waiting accounts with their flags;
+`approve-signup` lets one go, and `reject-signup` suspends it.
+
 ### Admin tools
 
 mailgoose staff use `mailgoose admin` (the `/v1/admin/*` endpoints). They
@@ -926,6 +940,9 @@ an admin; API keys are refused, even an admin's. Every action takes a
 | `mailgoose admin unpause <id> --reason` | Lifts a pause; paused campaigns carry on. |
 | `mailgoose admin suspend <id> --reason` | Suspends the account (see [Suspension](#account-health-and-send-limits)) and emails the owner why and how to appeal. |
 | `mailgoose admin unsuspend <id> --reason` | Lifts a suspension; API keys stay revoked and a pause stays. |
+| `mailgoose admin signups` | New accounts waiting for their sign-up review, oldest first, with what flagged them. |
+| `mailgoose admin approve-signup <id> [--reason]` | Approves one: it can launch campaigns and take form signups. |
+| `mailgoose admin reject-signup <id> --reason` | Rejects one and suspends it, emailing the owner why and how to appeal. |
 | `mailgoose admin stop-campaign <id> --reason --yes` | The kill switch: nobody else gets it, unused credits come back, it ends `cancelled`. |
 | `mailgoose admin approve-import <id> --reason` | Lets a held import's contacts be mailed. |
 | `mailgoose admin grant-credits <id> --amount --reason` | Adds up to 1,000,000 credits, lasting 24 months. |

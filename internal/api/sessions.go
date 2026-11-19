@@ -117,6 +117,7 @@ func accountSummaryJSON(a auth.Account) apigen.Account {
 		Plan:       apigen.AccountPlan(a.Plan),
 		CreatedAt:  a.CreatedAt.UTC(),
 		Suspension: suspensionJSON(a.Suspension),
+		InReview:   a.InReview,
 	}
 }
 

@@ -36,6 +36,9 @@ const (
 	AccountPaused = "account_paused"
 	// AccountSuspended is an account suspended (MG-65).
 	AccountSuspended = "account_suspended"
+	// AccountInReview is a new account waiting for its sign-up review
+	// (MG-66).
+	AccountInReview = "account_in_review"
 	// SubscriptionPastDue is a pause while the paid plan's payment is past
 	// due, lifted once it goes through.
 	SubscriptionPastDue = "subscription_past_due"
@@ -286,10 +289,12 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 	}
 	var pausedAt, suspendedAt *time.Time
 	var reason, code, suspendedReason, terms *string
+	var inReview bool
 	if err := s.DB.QueryRow(ctx, `
-		SELECT sending_paused_at, sending_paused_reason, sending_paused_code, suspended_at, suspended_reason, terms_version
+		SELECT sending_paused_at, sending_paused_reason, sending_paused_code, suspended_at, suspended_reason, terms_version,
+		       coalesce(review = 'waiting', false)
 		FROM accounts WHERE id = $1`,
-		accountID).Scan(&pausedAt, &reason, &code, &suspendedAt, &suspendedReason, &terms); err != nil {
+		accountID).Scan(&pausedAt, &reason, &code, &suspendedAt, &suspendedReason, &terms, &inReview); err != nil {
 		return nil, nil, err
 	}
 	if p := termsProblem(trimmed(terms)); p != nil {
@@ -309,6 +314,11 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 		}
 		problems = append(problems, Problem{Code: AccountPaused, Message: msg,
 			Hint: "Reply to the email about the pause, or write to support, to get it lifted."})
+	}
+	if inReview && suspendedAt == nil {
+		problems = append(problems, Problem{Code: AccountInReview,
+			Message: "New accounts are reviewed before their first campaign, and this one's review isn't done yet.",
+			Hint:    "Keep building and sending tests meanwhile; launching opens once the account is approved."})
 	}
 	return out, problems, nil
 }

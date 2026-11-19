@@ -61,6 +61,12 @@ type Service struct {
 	// LiveKeys makes new API keys start mg_live_ (production) instead of
 	// mg_test_.
 	LiveKeys bool
+	// SignupReview is ReviewAll (the default when empty), ReviewFlagged or
+	// ReviewOff (MG-66).
+	SignupReview string
+	// OnWaiting, if set, hears of each account that starts waiting for
+	// review, after it's activated; the server emails the operators.
+	OnWaiting func(context.Context, Waiting)
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 	Log *slog.Logger
@@ -89,7 +95,8 @@ type SignUpInput struct {
 	Email         string
 	AccountName   string
 	AcceptedTerms bool
-	// IP is the client's address, for the per-IP limit on code requests.
+	// IP is the client's address, for the per-IP limit on code requests
+	// and the sign-up review's checks.
 	IP string
 	// Via is how the terms were accepted: TermsViaWeb or TermsViaCLI.
 	Via string
@@ -103,7 +110,9 @@ type Account struct {
 	Plan   string
 	// Suspension is set while the account is suspended (MG-65).
 	Suspension *Suspension
-	CreatedAt  time.Time
+	// InReview is a new account waiting for a person to approve it (MG-66).
+	InReview  bool
+	CreatedAt time.Time
 }
 
 // Suspension is why and since when an account is suspended.
@@ -247,6 +256,9 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 				return nil
 			}
 			return fmt.Errorf("create user: %w", err)
+		}
+		if err := s.startReview(ctx, tx, accountID, email, in.IP, now); err != nil {
+			return err
 		}
 	case err != nil:
 		return fmt.Errorf("find user: %w", err)
@@ -409,11 +421,12 @@ func (s *Service) verify(ctx context.Context, rawEmail, code string, finish func
 		sess            Session
 		suspendedAt     *time.Time
 		suspendedReason *string
+		waiting         *Waiting
 	)
 	err = tx.QueryRow(ctx, `
 		SELECT c.id, c.code_salt, c.code_hash, c.attempts,
 		       u.id, u.email, u.created_at,
-		       a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason
+		       a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason, coalesce(a.review = 'waiting', false)
 		FROM auth_codes c
 		JOIN users u ON u.id = c.user_id
 		JOIN accounts a ON a.id = u.account_id
@@ -423,7 +436,7 @@ func (s *Service) verify(ctx context.Context, rawEmail, code string, finish func
 		FOR UPDATE OF c`, email, now).Scan(&codeID, &salt, &hash, &attempts,
 		&sess.User.ID, &sess.User.Email, &sess.User.CreatedAt,
 		&sess.Account.ID, &sess.Account.Name, &sess.Account.Status, &sess.Account.Plan, &sess.Account.CreatedAt,
-		&suspendedAt, &suspendedReason)
+		&suspendedAt, &suspendedReason, &sess.Account.InReview)
 	sess.Account.Suspension = suspension(suspendedAt, suspendedReason)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Spend the same time as a real check so the answer's timing doesn't
@@ -458,6 +471,13 @@ func (s *Service) verify(ctx context.Context, rawEmail, code string, finish func
 			return nil, fmt.Errorf("first credit grant: %w", err)
 		}
 		sess.Account.Status = "active"
+		if sess.Account.InReview {
+			waiting = &Waiting{AccountID: sess.Account.ID, AccountName: sess.Account.Name, Email: sess.User.Email}
+			if err := tx.QueryRow(ctx, `SELECT review_flags FROM accounts WHERE id = $1`, sess.Account.ID).
+				Scan(&waiting.Flags); err != nil {
+				return nil, fmt.Errorf("read review flags: %w", err)
+			}
+		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE users SET last_login_at = $2, updated_at = $2 WHERE id = $1`, sess.User.ID, now); err != nil {
 		return nil, fmt.Errorf("record sign-in: %w", err)
@@ -468,6 +488,9 @@ func (s *Service) verify(ctx context.Context, rawEmail, code string, finish func
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
+	}
+	if waiting != nil && s.OnWaiting != nil {
+		s.OnWaiting(ctx, *waiting)
 	}
 	return &sess, nil
 }

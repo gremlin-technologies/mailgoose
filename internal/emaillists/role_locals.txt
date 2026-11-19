@@ -54,6 +54,7 @@ root
 sales
 security
 service
+spam
 staff
 subscribe
 support

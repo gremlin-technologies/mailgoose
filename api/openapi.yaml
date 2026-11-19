@@ -3631,6 +3631,123 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/signups:
+    get:
+      operationId: listSignupReviews
+      summary: List sign-ups waiting for review (admin)
+      description: |
+        mailgoose staff only (MG-66): accounts waiting for their sign-up
+        review, oldest first, with what flagged them (`review_flags`). At
+        most `limit` of them; there's no next page. Which new accounts wait
+        depends on the server's `SIGNUP_REVIEW` setting: all of them, only
+        flagged ones, or none.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The accounts waiting.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAccountList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/accounts/{account_id}/approve-signup:
+    post:
+      operationId: approveSignup
+      summary: Approve a sign-up (admin)
+      description: |
+        mailgoose staff only (MG-66): the account stops waiting for review
+        and can launch campaigns and take form signups. An account that
+        isn't waiting answers 409 `signup_not_waiting`.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReasonRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AdminAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/SignupReviewConflict"
+        "422":
+          $ref: "#/components/responses/InvalidAdminRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/accounts/{account_id}/reject-signup:
+    post:
+      operationId: rejectSignup
+      summary: Reject a sign-up (admin)
+      description: |
+        mailgoose staff only (MG-66): the account is rejected and suspended,
+        exactly as `suspendAccount` does, with the reason shown to its owner.
+        An account that isn't waiting answers 409 `signup_not_waiting`.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/AccountId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminReasonRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/AdminAccount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/SignupReviewConflict"
+        "422":
+          $ref: "#/components/responses/InvalidAdminRequest"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/admin/accounts/{account_id}/credits:
     post:
       operationId: grantCredits
@@ -5025,7 +5142,7 @@ components:
           format: date-time
     Account:
       type: object
-      required: [id, name, status, plan, suspension, created_at]
+      required: [id, name, status, plan, suspension, in_review, created_at]
       properties:
         id:
           type: string
@@ -5043,6 +5160,12 @@ components:
             - $ref: "#/components/schemas/AccountSuspension"
             - type: "null"
           description: Set while the account is suspended; null otherwise.
+        in_review:
+          type: boolean
+          description: |
+            True while a new account waits for its sign-up review (MG-66).
+            Until it's approved it can build emails, import contacts and send
+            tests, but can't launch campaigns or take form signups.
         created_at:
           type: string
           format: date-time
@@ -6432,7 +6555,7 @@ components:
     AdminAccountSummary:
       type: object
       required: [id, name, status, plan, owner_email, sending_paused_at, sending_paused_reason,
-        suspended_at, suspended_reason, suspended_by, created_at]
+        suspended_at, suspended_reason, suspended_by, review, review_flags, review_at, created_at]
       properties:
         id:
           type: string
@@ -6459,6 +6582,23 @@ components:
         suspended_by:
           type: [string, "null"]
           description: The admin's address, `mailgoosed`, or `automatic`.
+        review:
+          type: [string, "null"]
+          enum: [waiting, approved, rejected, null]
+          description: The sign-up review (MG-66); null for an account that never needed one.
+        review_flags:
+          type: array
+          items:
+            type: string
+            enum: [disposable_domain, ip_burst, suspended_ip, suspended_domain]
+          description: |
+            What looked risky at sign-up: a disposable address, more than 3
+            accounts from its IP in 24 hours, or an IP or company domain
+            shared with a suspended account. Empty when nothing did.
+        review_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the account started waiting for review.
         created_at:
           type: string
           format: date-time
@@ -6632,7 +6772,7 @@ components:
         action:
           type: string
           enum: [grant_admin, revoke_admin, pause, unpause, auto_pause, stop_campaign, approve_import, grant_credits, throttle,
-            suspend, unsuspend, auto_suspend]
+            suspend, unsuspend, auto_suspend, approve_signup, reject_signup]
         account_id:
           type: [string, "null"]
           format: uuid
@@ -6984,6 +7124,17 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    SignupReviewConflict:
+      description: |
+        `signup_not_waiting`: the account isn't waiting for its sign-up
+        review.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     CampaignConflict:
       description: |
         `campaign_locked`: only drafts can be changed, tested, launched or
@@ -7043,7 +7194,8 @@ components:
         (a link on Google Web Risk's malware, phishing or unwanted software
         lists, named in `url`; it also pauses the account's sending),
         `untested` (no test since the last change), `send_at_passed`,
-        `account_paused`, `account_suspended`, `new_terms_not_accepted` (the terms changed and
+        `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up
+        review), `new_terms_not_accepted` (the terms changed and
         the account hasn't accepted the new version; `details.current_version`
         and `details.accepted_version`, then `acceptTerms`),
         `subscription_past_due` (sending is paused until the paid plan's

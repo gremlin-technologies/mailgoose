@@ -54,7 +54,8 @@ func liveAPI(t *testing.T) *harness {
 		Forms:       &forms.Service{DB: db},
 		Campaigns:   &campaigns.Service{DB: db},
 		Unsubscribe: &unsubscribe.Service{DB: db},
-		Auth:        &auth.Service{DB: db, Mail: &mail.Fake{}, From: mail.Address{Email: "signin@mail.test.example"}},
+		Auth: &auth.Service{DB: db, Mail: &mail.Fake{}, From: mail.Address{Email: "signin@mail.test.example"},
+			SignupReview: auth.ReviewOff},
 	}
 	srv.Sending = &sending.Service{DB: db, Campaigns: srv.Campaigns, Emails: srv.Emails, Settings: srv.Auth,
 		Domains: &domains.Service{DB: db}, Unsubscribe: srv.Unsubscribe, Mail: outbox}

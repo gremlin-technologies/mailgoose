@@ -69,6 +69,10 @@ type Config struct {
 	// suspension email's Reply-To. Default: abuse@ the system sending
 	// domain.
 	AbuseEmail string
+	// SignupReview says which new accounts wait for an operator to approve
+	// them (MG-66): all (the default, for the beta and launch month),
+	// flagged or off.
+	SignupReview string
 	// SESConfigurationSet must be passed on every send so events are recorded.
 	SESConfigurationSet string
 	// SystemSendingDomain is mailgoose's own sending domain (sign-in codes, double opt-in).
@@ -373,6 +377,11 @@ func load(getenv func(string) string) (Config, error) {
 		errs = append(errs, errors.New("ABUSE_EMAIL must be an email address"))
 	case cfg.AbuseEmail == "" && cfg.SystemSendingDomain != "":
 		cfg.AbuseEmail = "abuse@" + cfg.SystemSendingDomain
+	}
+
+	cfg.SignupReview = orDefault(strings.TrimSpace(getenv("SIGNUP_REVIEW")), "all")
+	if r := cfg.SignupReview; r != "all" && r != "flagged" && r != "off" {
+		errs = append(errs, fmt.Errorf("SIGNUP_REVIEW must be all, flagged or off, got %q", r))
 	}
 
 	cfg.MailCaptureDir = getenv("MAIL_CAPTURE_DIR")

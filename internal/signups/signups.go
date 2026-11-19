@@ -52,7 +52,7 @@ var (
 	// verified sending domain, so no confirmation email can go.
 	ErrNotReady = errors.New("the form can't send confirmation emails yet")
 	// ErrFormClosed means a form whose account can't take signups now: it's
-	// suspended (MG-65).
+	// suspended (MG-65), or waiting for its sign-up review (MG-66).
 	ErrFormClosed = errors.New("the form isn't taking signups")
 	// ErrBadToken means a confirm link that isn't one, or was cut short.
 	ErrBadToken = errors.New("confirm link not valid")
@@ -489,12 +489,12 @@ func (s *Service) inTx(ctx context.Context, f func(pgx.Tx) error) error {
 
 // accepting returns ErrFormClosed when the account can't take signups now.
 func (s *Service) accepting(ctx context.Context, accountID string) error {
-	var suspended bool
-	if err := s.DB.QueryRow(ctx, `SELECT suspended_at IS NOT NULL FROM accounts WHERE id = $1`,
-		accountID).Scan(&suspended); err != nil {
+	var closed bool
+	if err := s.DB.QueryRow(ctx, `SELECT suspended_at IS NOT NULL OR coalesce(review = 'waiting', false) FROM accounts WHERE id = $1`,
+		accountID).Scan(&closed); err != nil {
 		return err
 	}
-	if suspended {
+	if closed {
 		return ErrFormClosed
 	}
 	return nil

@@ -16,7 +16,8 @@ func adminStub(t *testing.T, bodies map[string]map[string]any) *harness {
 	t.Helper()
 	account := `{"id":"` + testAccountID + `","name":"Pat's Bakery","status":"active","plan":"paid","owner_email":"pat@example.com",` +
 		`"sending_paused_at":"2026-11-18T10:00:00Z","sending_paused_reason":"Phishing reports",` +
-		`"suspended_at":"2026-11-19T08:00:00Z","suspended_reason":"Bought list","suspended_by":"staff@example.com","created_at":"2026-11-01T09:00:00Z",` +
+		`"suspended_at":"2026-11-19T08:00:00Z","suspended_reason":"Bought list","suspended_by":"staff@example.com",` +
+		`"review":"waiting","review_flags":["disposable_domain","ip_burst"],"review_at":"2026-11-01T09:05:00Z","created_at":"2026-11-01T09:00:00Z",` +
 		`"daily_send_limit":2000,"send_limit":{"daily":1000,"usual":10000,"reason":"Lowered automatically.","lowered_until":"2026-11-25T10:00:00Z"},` +
 		`"throttles":[{"id":3,"campaign_id":"camp-1","reason":"Lowered automatically: 0.2% marked it as spam.","created_at":"2026-11-18T10:00:00Z","until":"2026-11-25T10:00:00Z"}],` +
 		`"contacts":1200,"credit_balance":9000,"last_30_days":{"sent":1000,"hard_bounces":12,"complaints":4},` +
@@ -33,7 +34,7 @@ func adminStub(t *testing.T, bodies map[string]map[string]any) *harness {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.URL.Path == "/v1/admin/accounts":
+		case r.URL.Path == "/v1/admin/accounts" || r.URL.Path == "/v1/admin/signups":
 			_, _ = w.Write([]byte(`{"data":[` + strings.SplitN(account, `,"daily_send_limit"`, 2)[0] + `}],"next_cursor":null}`))
 		case strings.HasSuffix(r.URL.Path, "/credits"):
 			_, _ = w.Write([]byte(`{"account_id":"` + testAccountID + `","amount":5000,"expires_at":"2028-11-18T00:00:00Z","credit_balance":14000}`))
@@ -71,6 +72,12 @@ func TestAdminCommands(t *testing.T) {
 		{[]string{"admin", "suspend", testAccountID, "--reason", "Bought list"}, []string{"Suspended Pat's Bakery", "owner has been emailed"}},
 		{[]string{"admin", "unsuspend", testAccountID, "--reason", "Appeal accepted"}, []string{"no longer suspended", "still paused"}},
 		{[]string{"admin", "suspend", testAccountID, "--reason", "Bought list", "--json"}, []string{`"suspended_reason": "Bought list"`}},
+		{[]string{"admin", "signups"}, []string{"WAITING SINCE", testAccountID, "pat@example.com", "disposable_domain, ip_burst"}},
+		{[]string{"admin", "signups", "--json"}, []string{`"review_flags": [`, `"next_cursor": null`}},
+		{[]string{"admin", "account", testAccountID}, []string{"Sign-up:      waiting, flagged disposable_domain, ip_burst"}},
+		{[]string{"admin", "approve-signup", testAccountID}, []string{"Approved Pat's Bakery", "launch campaigns"}},
+		{[]string{"admin", "reject-signup", testAccountID, "--reason", "Throwaway address"}, []string{"Rejected Pat's Bakery", "suspended"}},
+		{[]string{"admin", "reject-signup", testAccountID, "--reason", "Throwaway address", "--json"}, []string{`"review": "waiting"`}},
 		{[]string{"admin", "stop-campaign", testAccountID, "--reason", "Phishing", "--yes"}, []string{"Stopped campaign \"Bread week\""}},
 		{[]string{"admin", "approve-import", testAccountID, "--reason", "Signup sheet"}, []string{"3000 contacts can be mailed"}},
 		{[]string{"admin", "grant-credits", testAccountID, "--amount", "5000", "--reason", "Outage"}, []string{"Granted 5000 credits", "now 14000"}},
@@ -95,6 +102,12 @@ func TestAdminCommands(t *testing.T) {
 	if b := bodies["/v1/admin/accounts/"+testAccountID+"/unsuspend"]; b["reason"] != "Appeal accepted" {
 		t.Errorf("unsuspend body = %v", b)
 	}
+	if b := bodies["/v1/admin/accounts/"+testAccountID+"/approve-signup"]; b["reason"] != "Sign-up approved." {
+		t.Errorf("approve body = %v, want the default reason", b)
+	}
+	if b := bodies["/v1/admin/accounts/"+testAccountID+"/reject-signup"]; b["reason"] != "Throwaway address" {
+		t.Errorf("reject body = %v", b)
+	}
 }
 
 func TestAdminNeedsReason(t *testing.T) {
@@ -104,6 +117,9 @@ func TestAdminNeedsReason(t *testing.T) {
 		{"admin", "unpause", testAccountID, "--reason", "  "},
 		{"admin", "suspend", testAccountID},
 		{"admin", "unsuspend", "pats-bakery", "--reason", "x"},
+		{"admin", "reject-signup", testAccountID},
+		{"admin", "approve-signup", testAccountID, "--reason", " "},
+		{"admin", "signups", "extra"},
 		{"admin", "stop-campaign", testAccountID, "--yes"},
 		{"admin", "stop-campaign", testAccountID, "--reason", "x"},
 		{"admin", "approve-import", testAccountID},

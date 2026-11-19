@@ -1,17 +1,24 @@
 // Package emaillists holds the address lists the abuse checks use (MG-63,
-// MG-66): disposable email domains and role addresses.
+// MG-66): disposable email domains, common free-mail providers and role
+// addresses.
 //
 // disposable_domains.txt is the community list from
 // https://github.com/disposable-email-domains/disposable-email-domains,
 // released under CC0 1.0 (public domain), as packaged on npm by
-// disposable-email-domains-js 2.2.0 (published 2026-11-17), vendored on
-// 2026-11-19 with 10,299 domains. Refresh it from the same source; keep one
-// lower-case domain per line.
+// disposable-email-domains-js 2.2.0 (published 2026-11-17), merged with the
+// project's own disposable_email_blocklist.conf at commit
+// f4cad16eb9fa2cd9ceb352ff5a8c213a25a10083, vendored on 2026-11-19 with
+// 10,400 domains. Refresh it from the same source; keep one lower-case
+// domain per line, sorted, and none that's in freemail.txt.
 //
 // role_locals.txt is mailgoose's own list of local parts that name a role or
 // a mailbox rather than a person (info@, sales@, admin@ ...), from the
 // mailbox names RFC 2142 reserves plus the usual business ones. Lists of
 // these are a sign of a scraped list: nobody signs up as info@.
+//
+// freemail.txt is mailgoose's own list of the largest free-mail providers,
+// where many unrelated people share a domain (MG-66), taken 2026-11-19. A
+// free-mail provider is never treated as disposable (TestListsDontOverlap).
 package emaillists
 
 import (
@@ -25,9 +32,13 @@ var disposableText string
 //go:embed role_locals.txt
 var roleText string
 
+//go:embed freemail.txt
+var freeMailText string
+
 var (
 	disposable = lines(disposableText)
 	role       = lines(roleText)
+	freeMail   = lines(freeMailText)
 )
 
 func lines(s string) map[string]struct{} {
@@ -52,6 +63,13 @@ func Disposable(domain string) bool {
 		_, d, _ = strings.Cut(d, ".")
 	}
 	return false
+}
+
+// FreeMail reports whether domain is a common free-mail provider, which
+// many unrelated people share.
+func FreeMail(domain string) bool {
+	_, ok := freeMail[strings.TrimSuffix(strings.ToLower(strings.TrimSpace(domain)), ".")]
+	return ok
 }
 
 // Role reports whether local, the part of an address before the @, names a

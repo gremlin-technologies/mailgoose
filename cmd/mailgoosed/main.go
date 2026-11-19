@@ -194,7 +194,11 @@ func serve(ctx context.Context, log *slog.Logger) error {
 				From: mail.Address{Name: "mailgoose", Email: "signin@" + cfg.SystemSendingDomain},
 				// Production keys start mg_live_; staging and local ones mg_test_.
 				LiveKeys: cfg.AppEnv == "prod",
-				Log:      log,
+				// New accounts wait for review per SIGNUP_REVIEW, and
+				// OPS_ALERT_EMAIL hears of each (MG-66).
+				SignupReview: cfg.SignupReview,
+				OnWaiting:    srv.Admin.Alert.SignupWaiting,
+				Log:          log,
 			}
 		}
 
@@ -377,6 +381,9 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 		return err
 	}
 	run(func() { jobs.RunJobs(ctx, time.Hour, log.With("job", "billing")) })
+	// Sign-up IPs are kept 90 days, for the sign-up review (MG-66); checked
+	// hourly.
+	run(func() { auth.RunSignupIPPruner(ctx, pool, time.Hour, log.With("job", "signup-ips")) })
 	if cfg.SendQueueURL == "" {
 		// No SQS (local): the worker dispatches too, into a queue in memory.
 		log.Info("no send queue configured; sending through an in-process queue")

@@ -42,6 +42,8 @@ const (
 	ActionSuspend       = sending.ActionSuspend
 	ActionUnsuspend     = sending.ActionUnsuspend
 	ActionAutoSuspend   = sending.ActionAutoSuspend
+	ActionApproveSignup = "approve_signup"
+	ActionRejectSignup  = "reject_signup"
 )
 
 // Limits on what an admin sends.
@@ -63,6 +65,9 @@ var (
 	ErrSuspended = errors.New("the account is suspended already")
 	// ErrNotSuspended is unsuspending an account that isn't suspended.
 	ErrNotSuspended = errors.New("the account isn't suspended")
+	// ErrNotWaiting is approving or rejecting an account that isn't waiting
+	// for its sign-up review (MG-66).
+	ErrNotWaiting = errors.New("the account isn't waiting for review")
 )
 
 // InputError is a reason or amount that can't be used.
@@ -216,15 +221,26 @@ type AccountSummary struct {
 	SuspendedAt     *time.Time `json:"suspended_at"`
 	SuspendedReason *string    `json:"suspended_reason"`
 	SuspendedBy     *string    `json:"suspended_by"`
-	CreatedAt       time.Time  `json:"created_at"`
+	// Sign-up review (MG-66): waiting, approved, rejected or nil; what
+	// flagged it; and since when it waited.
+	Review      *string    `json:"review"`
+	ReviewFlags []string   `json:"review_flags"`
+	ReviewAt    *time.Time `json:"review_at"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 const summaryColumns = `a.id, a.name, a.status, a.plan, u.email, a.sending_paused_at, a.sending_paused_reason,
-	a.suspended_at, a.suspended_reason, a.suspended_by, a.created_at`
+	a.suspended_at, a.suspended_reason, a.suspended_by, a.review, a.review_flags, a.review_at, a.created_at`
 
 func scanSummary(row pgx.Row, a *AccountSummary) error {
-	return row.Scan(&a.ID, &a.Name, &a.Status, &a.Plan, &a.OwnerEmail, &a.PausedAt, &a.PauseReason,
-		&a.SuspendedAt, &a.SuspendedReason, &a.SuspendedBy, &a.CreatedAt)
+	if err := row.Scan(&a.ID, &a.Name, &a.Status, &a.Plan, &a.OwnerEmail, &a.PausedAt, &a.PauseReason,
+		&a.SuspendedAt, &a.SuspendedReason, &a.SuspendedBy, &a.Review, &a.ReviewFlags, &a.ReviewAt, &a.CreatedAt); err != nil {
+		return err
+	}
+	if a.ReviewFlags == nil {
+		a.ReviewFlags = []string{}
+	}
+	return nil
 }
 
 // FindAccounts finds accounts by id, the owner's address, the account's
@@ -532,6 +548,93 @@ func (s *Service) Unsuspend(ctx context.Context, actor Actor, accountID, reason 
 	})
 	if err != nil {
 		return nil, err
+	}
+	return s.GetAccount(ctx, accountID)
+}
+
+// ListSignups is the accounts waiting for their sign-up review (MG-66),
+// oldest first.
+func (s *Service) ListSignups(ctx context.Context, limit int) ([]AccountSummary, error) {
+	limit = min(max(limit, 1), MaxFindResults)
+	rows, err := s.DB.Query(ctx, `
+		SELECT `+summaryColumns+`
+		FROM accounts a LEFT JOIN users u ON u.account_id = a.id
+		WHERE a.review = 'waiting'
+		ORDER BY a.review_at, a.id
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (AccountSummary, error) {
+		var a AccountSummary
+		err := scanSummary(row, &a)
+		return a, err
+	})
+}
+
+// endReview moves a waiting account's review to outcome and logs it as
+// action, inside tx.
+func (s *Service) endReview(ctx context.Context, tx pgx.Tx, actor Actor, accountID, outcome, action, reason string, now time.Time) error {
+	var review *string
+	var flags []string
+	err := tx.QueryRow(ctx, `SELECT review, review_flags FROM accounts WHERE id = $1 FOR UPDATE`, accountID).Scan(&review, &flags)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if deref(review) != "waiting" {
+		return ErrNotWaiting
+	}
+	if _, err := tx.Exec(ctx, `UPDATE accounts SET review = $2, updated_at = $3 WHERE id = $1`, accountID, outcome, now); err != nil {
+		return err
+	}
+	_, err = s.record(ctx, tx, actor, action, &accountID, nil, reason, map[string]any{"review_flags": flags}, now)
+	return err
+}
+
+// ApproveSignup ends a waiting account's review (MG-66): it can launch
+// campaigns and take form signups.
+func (s *Service) ApproveSignup(ctx context.Context, actor Actor, accountID, reason string) (*Account, error) {
+	reason, err := cleanReason(reason)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.inTx(ctx, func(tx pgx.Tx) error {
+		return s.endReview(ctx, tx, actor, accountID, "approved", ActionApproveSignup, reason, s.now())
+	}); err != nil {
+		return nil, err
+	}
+	return s.GetAccount(ctx, accountID)
+}
+
+// RejectSignup rejects a waiting account (MG-66) and suspends it, as
+// Suspend does, with reason as why. An account suspended already stays as
+// it is, and is marked rejected.
+func (s *Service) RejectSignup(ctx context.Context, actor Actor, accountID, reason string) (*Account, error) {
+	reason, err := cleanReason(reason)
+	if err != nil {
+		return nil, err
+	}
+	var sus *sending.Suspension
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		now := s.now()
+		if err := s.endReview(ctx, tx, actor, accountID, "rejected", ActionRejectSignup, reason, now); err != nil {
+			return err
+		}
+		sus, err = sending.Suspend(ctx, tx, accountID, sending.Suspender{UserID: actor.UserID, Email: actor.Email}, reason,
+			map[string]any{"signup_review": "rejected"}, now)
+		if errors.Is(err, sending.ErrAlreadySuspended) {
+			sus, err = nil, nil
+		}
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if sus != nil && s.Alert != nil {
+		s.Alert.Suspended(ctx, *sus)
 	}
 	return s.GetAccount(ctx, accountID)
 }
