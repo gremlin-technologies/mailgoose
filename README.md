@@ -1119,5 +1119,6 @@ images by hand from a machine signed in to AWS.
 
 Later images get their own tags (`make push-ecr` defaults to the commit). With
 deploys off, rolling one out means registering a new task definition revision
-with that image and updating the service, which the deploy workflow will do
-once OIDC is allowed.
+with that image and updating the service. `scripts/ci/deploy-ecs.sh` does
+both, with migrations first (see `infra/README.md`, "How deploys work"), and
+the deploy workflow will run it once OIDC is allowed.
