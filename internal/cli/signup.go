@@ -23,7 +23,7 @@ func (a *App) signupCmd() *cobra.Command {
 1. mailgoose signup --email you@example.com --account-name "Your shop" --accept-terms
    creates a pending account on the free plan and emails a code. --accept-terms
    says the person who owns the address accepts the terms of service and the
-   anti-spam policy.
+   anti-spam policy, at /terms and /anti-spam on the mailgoose web app.
 2. mailgoose signup --email you@example.com --code 123456
    uses the code, activates the account and stores a full-scope token for the
    API URL in use, like mailgoose login.

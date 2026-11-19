@@ -19,6 +19,7 @@ import { Forms } from "./pages/Forms";
 import { ImportContacts, ImportDetail } from "./pages/Imports";
 import { navPages } from "./pages/nav";
 import { NotFound, Placeholder } from "./pages/Placeholder";
+import { PolicyPage, policies } from "./pages/Policies";
 import { Settings } from "./pages/Settings";
 import { SignIn } from "./pages/SignIn";
 import { SignUp } from "./pages/SignUp";
@@ -42,6 +43,9 @@ const built: Record<string, ReactNode> = {
 export function AppRoutes() {
   return (
     <Routes>
+      {policies.map((p) => (
+        <Route key={p.path} path={p.path} element={<PolicyPage policy={p} />} />
+      ))}
       <Route
         path="/sign-in"
         element={
