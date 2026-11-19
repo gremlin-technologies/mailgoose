@@ -102,6 +102,18 @@ type Campaign struct {
 	LaunchedAt      *time.Time
 	RecipientTotal  *int
 	CreditsReserved *int
+	// Slice is the first slice a new account's campaign went out in
+	// (MG-62); nil when it went out whole, or isn't launched.
+	Slice *Slice
+}
+
+// Slice is a launched campaign's first slice: how many it went to, where
+// the campaign stands (sending.SliceSending and the rest), and when the
+// rest is due to be checked and released while it waits.
+type Slice struct {
+	State     string
+	Size      int
+	ReleaseAt *time.Time
 }
 
 // Test is when a campaign's last test send went out, and the versions of
@@ -169,15 +181,19 @@ func (s *Service) now() time.Time {
 }
 
 const columns = `id, account_id, name, email_id, all_contacts, send_at, tracking, status, version, status_changed_at, created_at, updated_at,
-	last_test_at, last_test_version, last_test_email_version, launched_at, recipient_total, credits_reserved`
+	last_test_at, last_test_version, last_test_email_version, launched_at, recipient_total, credits_reserved,
+	slice_state, slice_size, slice_release_at`
 
 func scan(row pgx.Row) (*Campaign, error) {
 	var c Campaign
 	var testAt *time.Time
 	var testVersion, testEmailVersion *int
+	var sliceState *string
+	var sliceSize *int
+	var sliceAt *time.Time
 	err := row.Scan(&c.ID, &c.AccountID, &c.Name, &c.EmailID, &c.AllContacts, &c.SendAt, &c.Tracking, &c.Status, &c.Version,
 		&c.StatusChangedAt, &c.CreatedAt, &c.UpdatedAt, &testAt, &testVersion, &testEmailVersion,
-		&c.LaunchedAt, &c.RecipientTotal, &c.CreditsReserved)
+		&c.LaunchedAt, &c.RecipientTotal, &c.CreditsReserved, &sliceState, &sliceSize, &sliceAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -186,6 +202,9 @@ func scan(row pgx.Row) (*Campaign, error) {
 	}
 	if testAt != nil && testVersion != nil && testEmailVersion != nil {
 		c.LastTest = &Test{At: *testAt, Version: *testVersion, EmailVersion: *testEmailVersion}
+	}
+	if sliceState != nil && sliceSize != nil {
+		c.Slice = &Slice{State: *sliceState, Size: *sliceSize, ReleaseAt: sliceAt}
 	}
 	return &c, nil
 }

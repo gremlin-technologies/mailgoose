@@ -387,3 +387,38 @@ describe("sending campaign", () => {
     expect(gets()).toBe(seen);
   });
 });
+
+describe("sliced campaign", () => {
+  const launch = { at: "2026-11-19T10:00:00Z", recipient_count: 3000, credits_reserved: 3000 };
+  const waiting = () =>
+    campaign({ status: "sending", launch, slice: { state: "slice_hold", size: 300, release_at: "2026-11-19T11:05:00Z" } });
+
+  it("says the rest waits for the slice, and cancels the rest after a second press", async () => {
+    const api = server(waiting(), {
+      [`POST ${base}/cancel`]: () => ({
+        status: 200,
+        body: { ...waiting(), status: "cancelled", slice: { state: "cancelled", size: 300, release_at: null } },
+      }),
+    });
+    const user = userEvent.setup();
+    renderApp(`/campaigns/${campaignId}`, api.fetch);
+    expect(await screen.findByText("Sent to the first 300 contacts of 3,000 so far; the rest waits.")).toBeTruthy();
+    expect(screen.getByText(/^It went to the first 300 recipients\. The rest goes .* if their bounces and complaints are within the limits\.$/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Cancel the rest" }));
+    expect(api.calls.some((c) => c.path === `${base}/cancel`)).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Yes, cancel it" }));
+    expect(await screen.findByText("Cancelled. The rest won't get it, and the credits held for them came back.")).toBeTruthy();
+    expect(
+      screen.getByText("It went to the first 300 recipients, then was cancelled, so the rest wasn't sent and its credits came back."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/The rest goes .* if their bounces and complaints are within the limits/)).toBeNull();
+  });
+
+  it("says when a bad slice stopped the rest", async () => {
+    const api = server(campaign({ status: "cancelled", launch, slice: { state: "stopped", size: 300, release_at: null } }));
+    renderApp(`/campaigns/${campaignId}`, api.fetch);
+    expect(await screen.findByText(/the rest wasn't sent and its credits came back/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Cancel the rest" })).toBeNull();
+  });
+});
+

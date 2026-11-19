@@ -41,8 +41,42 @@ type campaign struct {
 		RecipientCount  int       `json:"recipient_count"`
 		CreditsReserved int       `json:"credits_reserved"`
 	} `json:"launch"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Slice     *campaignSlice `json:"slice,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+}
+
+// campaignSlice is a new account's first slice (MG-62).
+type campaignSlice struct {
+	State     string     `json:"state"`
+	Size      int        `json:"size"`
+	ReleaseAt *time.Time `json:"release_at"`
+}
+
+// describe says where the slice stands, in loc.
+func (s *campaignSlice) describe(loc *time.Location) string {
+	when := func() string {
+		if s.ReleaseAt == nil {
+			return ""
+		}
+		return " until " + s.ReleaseAt.In(loc).Format(timeLayout)
+	}
+	n := fmt.Sprintf("%d %s", s.Size, plural(s.Size, "recipient", "recipients"))
+	switch s.State {
+	case "sending_slice":
+		return "sending the first " + n + "; the rest waits for their bounces and complaints"
+	case "slice_hold":
+		return "first " + n + " sent; the rest waits" + when() + ", then goes if they're within limits"
+	case "held":
+		return "first " + n + " went over the early-warning limits; the rest is held" + when() + ", then checked again"
+	case "released":
+		return "first " + n + " were within limits; the rest was released"
+	case "stopped":
+		return "first " + n + " went over the bounce or complaint limits; the rest wasn't sent and its credits are back"
+	case "cancelled":
+		return "first " + n + " sent; the campaign was cancelled, so the rest wasn't sent and its credits are back"
+	}
+	return s.State + ", " + n
 }
 
 type campaignPage struct {
@@ -210,6 +244,9 @@ func (a *App) printCampaign(ctx context.Context, c campaign, verb string) {
 			fmt.Fprintf(tw, "Launched:\t%s, to %d %s, %d %s reserved\n", c.Launch.At.In(a.loc()).Format(timeLayout),
 				c.Launch.RecipientCount, plural(c.Launch.RecipientCount, "contact", "contacts"),
 				c.Launch.CreditsReserved, plural(c.Launch.CreditsReserved, "credit", "credits"))
+		}
+		if c.Slice != nil {
+			fmt.Fprintf(tw, "First slice:\t%s\n", c.Slice.describe(a.loc()))
 		}
 	}
 	_ = tw.Flush()
@@ -531,9 +568,11 @@ func (a *App) campaignCancelCmd() *cobra.Command {
 		Use:   "cancel <campaign-id>",
 		Short: "Cancel a scheduled campaign before it sends",
 		Long: `Cancels a scheduled campaign before its send time. Nobody gets it, and
-the credits reserved at launch come back. Once it has started sending it
-can't be cancelled. Cancelling can't be undone: to send it after all, make
-a new campaign.`,
+the credits reserved at launch come back. A new account's campaign whose
+first slice is out and whose rest is waiting can be cancelled the same way:
+the rest never goes, and its credits come back. Once it is sending it can't
+be cancelled. Cancelling can't be undone: to send it after all, make a new
+campaign.`,
 		Example: `  mailgoose campaign cancel 3f1c... --yes`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -550,6 +589,10 @@ a new campaign.`,
 			}
 			if a.jsonOut {
 				a.printJSON(c)
+				return nil
+			}
+			if c.Slice != nil {
+				fmt.Fprintf(a.Stdout, "Cancelled campaign %q (%s). The rest won't get it, and its reserved credits are back.\n", c.Name, c.ID)
 				return nil
 			}
 			fmt.Fprintf(a.Stdout, "Cancelled campaign %q (%s). Nobody gets it, and its reserved credits are back.\n", c.Name, c.ID)

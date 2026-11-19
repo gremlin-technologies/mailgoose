@@ -76,8 +76,13 @@ type Rates struct {
 
 // Unhealthy says whether the rates are over a threshold, on enough copies.
 func (r Rates) Unhealthy() bool {
-	return r.Sent >= HealthMinRecipients &&
-		(over(r.Complaints, r.Sent, ComplaintsPer10k) || over(r.HardBounces, r.Sent, HardBouncesPer10k))
+	return r.Sent >= HealthMinRecipients && r.overPause()
+}
+
+// overPause says whether the rates are over a pause threshold, on any
+// number of copies.
+func (r Rates) overPause() bool {
+	return over(r.Complaints, r.Sent, ComplaintsPer10k) || over(r.HardBounces, r.Sent, HardBouncesPer10k)
 }
 
 // accountClean says whether an account's last 30 days let its limit grow.
@@ -156,22 +161,28 @@ func CheckCampaign(ctx context.Context, tx pgx.Tx, campaignID string, now time.T
 	}
 	switch {
 	case r.Unhealthy():
-		ap := &AutoPause{CampaignID: campaignID, Rates: r, At: now}
-		err := tx.QueryRow(ctx, `
-			UPDATE campaigns SET auto_paused_at = $2 WHERE id = $1 AND auto_paused_at IS NULL
-			RETURNING account_id, name`, campaignID, now).Scan(&ap.AccountID, &ap.CampaignName)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return Health{}, nil
-		}
-		if err != nil {
-			return Health{}, err
-		}
-		ap.Reason = pauseReason(ap)
-		return Health{Pause: ap}, pauseAccount(ctx, tx, ap)
+		return autoPause(ctx, tx, campaignID, r, now)
 	case r.OverWarning(warn):
 		return throttle(ctx, tx, campaignID, r, now, warn)
 	}
 	return Health{}, nil
+}
+
+// autoPause marks the campaign as having paused its account, once, and
+// pauses the account with its rates r, inside tx.
+func autoPause(ctx context.Context, tx pgx.Tx, campaignID string, r Rates, now time.Time) (Health, error) {
+	ap := &AutoPause{CampaignID: campaignID, Rates: r, At: now}
+	err := tx.QueryRow(ctx, `
+		UPDATE campaigns SET auto_paused_at = $2 WHERE id = $1 AND auto_paused_at IS NULL
+		RETURNING account_id, name`, campaignID, now).Scan(&ap.AccountID, &ap.CampaignName)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Health{}, nil
+	}
+	if err != nil {
+		return Health{}, err
+	}
+	ap.Reason = pauseReason(ap)
+	return Health{Pause: ap}, pauseAccount(ctx, tx, ap)
 }
 
 // pauseAccount pauses ap's account for its campaign and logs it, inside tx.

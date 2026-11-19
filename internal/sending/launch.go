@@ -388,6 +388,9 @@ func (s *Service) confirm(ctx context.Context, accountID, campaignID, code strin
 		if _, err := credits.Debit(ctx, tx, accountID, credits.TypeReserve, int64(n), creditsRef(campaignID), now); err != nil {
 			return err
 		}
+		if _, err := s.sliceLaunch(ctx, tx, accountID, campaignID, n, now); err != nil {
+			return err
+		}
 
 		cp, err := json.Marshal(launchCopy{EmailID: p.Email.ID, EmailVersion: p.Email.Version, From: p.From,
 			ReplyTo: p.ReplyTo, PostalAddress: p.PostalAddress, Template: p.Template, Tracking: c.Tracking})

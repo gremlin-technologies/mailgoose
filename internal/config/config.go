@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Config is everything the API and worker read at start.
@@ -54,6 +55,13 @@ type Config struct {
 	// (default 0.1) and EARLY_WARNING_HARD_BOUNCE_PERCENT (default 2).
 	EarlyWarningComplaintsPer10k  int
 	EarlyWarningHardBouncesPer10k int
+	// SlicePercent, SliceMin and SliceWait shape a new account's sliced
+	// first sends (MG-62): a slice of SLICE_PERCENT of the recipients
+	// (default 10), at least SLICE_MIN (default 200), then a wait of
+	// SLICE_WAIT (default 60m) before the rest is checked and released.
+	SlicePercent int
+	SliceMin     int
+	SliceWait    time.Duration
 	// OpsAlertEmail gets an email when an account is paused automatically
 	// (CMP-6). Empty: the pause is only logged, as an error.
 	OpsAlertEmail string
@@ -200,6 +208,22 @@ func load(getenv func(string) string) (Config, error) {
 	warnBounces, err := percentEnv(getenv, "EARLY_WARNING_HARD_BOUNCE_PERCENT", 200, 500)
 	errs = append(errs, err)
 
+	slicePercent, err := intEnv(getenv, "SLICE_PERCENT", 10)
+	errs = append(errs, err)
+	if slicePercent < 1 || slicePercent > 100 {
+		errs = append(errs, errors.New("SLICE_PERCENT must be from 1 to 100"))
+	}
+	sliceMin, err := intEnv(getenv, "SLICE_MIN", 200)
+	errs = append(errs, err)
+	if sliceMin < 1 {
+		errs = append(errs, errors.New("SLICE_MIN must be 1 or more"))
+	}
+	sliceWait, err := durationEnv(getenv, "SLICE_WAIT", time.Hour)
+	errs = append(errs, err)
+	if sliceWait < time.Minute {
+		errs = append(errs, errors.New("SLICE_WAIT must be a minute or more"))
+	}
+
 	secrets, err := parseAppSecrets(getenv("APP_SECRETS_JSON"))
 	errs = append(errs, err)
 
@@ -225,6 +249,9 @@ func load(getenv func(string) string) (Config, error) {
 
 		EarlyWarningComplaintsPer10k:  warnComplaints,
 		EarlyWarningHardBouncesPer10k: warnBounces,
+		SlicePercent:                  slicePercent,
+		SliceMin:                      sliceMin,
+		SliceWait:                     sliceWait,
 		SESConfigurationSet:           getenv("SES_CONFIGURATION_SET"),
 		SystemSendingDomain:           getenv("SYSTEM_SENDING_DOMAIN"),
 		SESIdentityTag:                getenv("SES_IDENTITY_TAG"),
@@ -370,6 +397,19 @@ func percentEnv(getenv func(string) string, key string, def, below int) (int, er
 			strings.TrimSuffix(strings.TrimRight(strconv.FormatFloat(float64(below)/100, 'f', 2, 64), "0"), "."), getenv(key))
 	}
 	return n, nil
+}
+
+// durationEnv reads a duration such as "60m" or "1h".
+func durationEnv(getenv func(string) string, key string, def time.Duration) (time.Duration, error) {
+	v := strings.TrimSpace(getenv(key))
+	if v == "" {
+		return def, nil
+	}
+	d, err := time.ParseDuration(v)
+	if err != nil {
+		return def, fmt.Errorf("%s must be a duration such as 60m or 1h, got %q", key, v)
+	}
+	return d, nil
 }
 
 func boolEnv(getenv func(string) string, key string, def bool) (bool, error) {

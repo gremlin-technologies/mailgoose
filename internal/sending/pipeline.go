@@ -94,7 +94,15 @@ type Pipeline struct {
 	// BaseURL is the app's public URL, for unsubscribe links.
 	BaseURL string
 	Limits  Limits
-	Log     *slog.Logger
+	// Slicing is how a new account's campaigns are sliced (MG-62), and
+	// Warning the early-warning thresholds a slice is checked against;
+	// zero values are the defaults.
+	Slicing Slicing
+	Warning Warning
+	// Health is told when a slice pauses or throttles its account; nil
+	// tells no one.
+	Health func(ctx context.Context, h Health)
+	Log    *slog.Logger
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }
@@ -166,18 +174,19 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 	now := p.now()
 	var rowID int64
 	var accountID, campaignID, status string
+	var slice *string
 	var paused bool
 	var limit *int
 	var since time.Time
 	err = tx.QueryRow(ctx, `
-		SELECT q.id, q.account_id, q.campaign_id, c.status,
+		SELECT q.id, q.account_id, q.campaign_id, c.status, c.slice_state,
 			a.sending_paused_at IS NOT NULL OR a.suspended_at IS NOT NULL, a.daily_send_limit,
 			coalesce(a.activated_at, a.created_at)
 		FROM send_queue q JOIN campaigns c ON c.id = q.campaign_id JOIN accounts a ON a.id = q.account_id
 		WHERE q.done_at IS NULL AND q.run_at <= $1 AND q.id > $2
 		ORDER BY q.id LIMIT 1
 		FOR UPDATE OF q SKIP LOCKED`, now, after).
-		Scan(&rowID, &accountID, &campaignID, &status, &paused, &limit, &since)
+		Scan(&rowID, &accountID, &campaignID, &status, &slice, &paused, &limit, &since)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, nil
 	}
@@ -213,17 +222,41 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 	if err := p.failStaleClaims(ctx, tx, accountID, campaignID, now); err != nil {
 		return 0, err
 	}
+	// A sliced campaign (MG-62) whose wait is over is checked, and the
+	// rest released, held or stopped.
+	state := deref(slice)
+	if state == SliceHold || state == SliceHeld {
+		released, h, err := p.releaseSlice(ctx, tx, rowID, accountID, campaignID, state, now)
+		if err != nil {
+			return 0, err
+		}
+		if !released {
+			if err := tx.Commit(ctx); err != nil {
+				return 0, err
+			}
+			p.reportHealth(ctx, h)
+			return rowID, nil
+		}
+		state = SliceReleased
+	}
 	var batches []Batch
 	if !paused {
 		daily, err := p.dailyLimit(ctx, tx, accountID, limit, since, now)
 		if err != nil {
 			return 0, err
 		}
-		if batches, err = p.nextBatches(ctx, tx, accountID, campaignID, daily, now); err != nil {
+		if batches, err = p.nextBatches(ctx, tx, accountID, campaignID, daily, state == SliceSending, now); err != nil {
 			return 0, err
 		}
 	}
 	if len(batches) == 0 {
+		if state == SliceSending {
+			// The rest waits while the slice is out, and after.
+			if _, err := p.sliceSent(ctx, tx, rowID, campaignID, now); err != nil {
+				return 0, err
+			}
+			return rowID, tx.Commit(ctx)
+		}
 		if err := p.finishIfDone(ctx, tx, rowID, accountID, campaignID, now); err != nil {
 			return 0, err
 		}
@@ -241,9 +274,10 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 }
 
 // nextBatches marks the campaign's next rows enqueued, as many as the
-// account's daily limit allows, and returns them in batches. Rows enqueued
-// long ago whose batch never came are taken again.
-func (p *Pipeline) nextBatches(ctx context.Context, tx pgx.Tx, accountID, campaignID string, limit int, now time.Time) ([]Batch, error) {
+// account's daily limit allows, and returns them in batches; only rows in
+// its slice when sliceOnly. Rows enqueued long ago whose batch never came
+// are taken again.
+func (p *Pipeline) nextBatches(ctx context.Context, tx pgx.Tx, accountID, campaignID string, limit int, sliceOnly bool, now time.Time) ([]Batch, error) {
 	var used int
 	if err := tx.QueryRow(ctx, `
 		SELECT (SELECT count(*) FROM campaign_recipients WHERE account_id = $1 AND sent_at > $2)
@@ -261,8 +295,9 @@ func (p *Pipeline) nextBatches(ctx context.Context, tx pgx.Tx, accountID, campai
 		WHERE id IN (
 			SELECT id FROM campaign_recipients
 			WHERE campaign_id = $1 AND status = 'queued' AND (enqueued_at IS NULL OR enqueued_at <= $4)
+				AND (in_slice OR NOT $5)
 			ORDER BY id LIMIT $2 FOR UPDATE SKIP LOCKED)
-		RETURNING id`, campaignID, room, now, now.Add(-RequeueAfter))
+		RETURNING id`, campaignID, room, now, now.Add(-RequeueAfter), sliceOnly)
 	if err != nil {
 		return nil, err
 	}

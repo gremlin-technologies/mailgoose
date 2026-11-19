@@ -48,13 +48,28 @@ func (r *recorded) take() []Batch {
 }
 
 // launchedHarness is a harness whose campaign has gone out to Sam and n more
-// subscribers, with an account past its first week.
+// subscribers, with an established account: past its first month and its
+// first campaigns, so it isn't sliced (MG-62).
 func launchedHarness(t *testing.T, n int) *harness {
 	t.Helper()
 	ctx := context.Background()
 	h := newHarness(t)
+	if _, err := h.db.Exec(ctx, `
+		INSERT INTO campaigns (account_id, name, all_contacts, status, launched_at)
+		SELECT $1, 'Earlier ' || i, true, 'sent', $2 FROM generate_series(1, $3) i`,
+		h.acc, h.now.AddDate(0, 0, -20), SliceCampaigns); err != nil {
+		t.Fatal(err)
+	}
+	return launchTo(t, h, n, h.now.AddDate(0, -1, 0))
+}
+
+// launchTo launches h's campaign to Sam and n more subscribers, with the
+// account made at created.
+func launchTo(t *testing.T, h *harness, n int, created time.Time) *harness {
+	t.Helper()
+	ctx := context.Background()
 	h.buy(t, n+10)
-	if _, err := h.db.Exec(ctx, `UPDATE accounts SET created_at = $2 WHERE id = $1`, h.acc, h.now.AddDate(0, -1, 0)); err != nil {
+	if _, err := h.db.Exec(ctx, `UPDATE accounts SET created_at = $2 WHERE id = $1`, h.acc, created); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.db.Exec(ctx, `

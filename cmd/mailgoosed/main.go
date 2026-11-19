@@ -159,7 +159,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		}
 		srv.Sending = &sending.Service{DB: pool, Campaigns: srv.Campaigns, Emails: srv.Emails,
 			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Unsubscribe: srv.Unsubscribe, Mail: sender,
-			Limits: sendLimits(cfg)}
+			Limits: sendLimits(cfg), Slicing: slicing(cfg)}
 		srv.Signups = &signups.Service{DB: pool, Forms: srv.Forms, Settings: &auth.Service{DB: pool},
 			Domains: srv.Domains, Mail: sender}
 		// A suspension emails the owner, with ABUSE_EMAIL for appeals, and
@@ -317,14 +317,9 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 		return err
 	}
 	// Deliveries, bounces and complaints from SES.
-	alert := &sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
-		To: cfg.OpsAlertEmail, Abuse: cfg.AbuseEmail, AppURL: cfg.PublicBaseURL, Log: log.With("job", "health")}
-	// Owners hear about throttles from notices@ (MG-61).
-	notices := &sending.Notices{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "notices@" + cfg.SystemSendingDomain},
-		NewDaily: cfg.NewAccountDailySendLimit, Ops: alert, Log: log.With("job", "health")}
+	alert, notices := healthAlerts(cfg, sender, log)
 	events := &sesevents.Service{DB: pool, Log: log.With("queue", "ses-events"), Alert: alert.AutoPaused,
-		Throttled: notices.Throttled, Warning: sending.Warning{
-			ComplaintsPer10k: cfg.EarlyWarningComplaintsPer10k, HardBouncesPer10k: cfg.EarlyWarningHardBouncesPer10k}}
+		Throttled: notices.Throttled, Warning: warning(cfg)}
 	queues[1].Handler = worker.HandlerFunc(events.SQSHandler())
 	if cfg.MailSender == "fake" && cfg.SESEventsQueueURL == "" {
 		// No SES (local): mail to SES's mailbox simulator gets its events
@@ -371,14 +366,45 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 const dispatchEvery = 2 * time.Second
 
 func newPipeline(cfg config.Config, pool *pgxpool.Pool, sender mail.Sender, log *slog.Logger) *sending.Pipeline {
+	// A new account's slice that goes over the limits is reported like a
+	// campaign's bounces and complaints (MG-62).
+	alert, notices := healthAlerts(cfg, sender, log)
 	return &sending.Pipeline{
 		DB:          pool,
 		Mail:        sender,
 		Unsubscribe: &unsubscribe.Service{DB: pool},
 		BaseURL:     cfg.PublicBaseURL,
 		Limits:      sendLimits(cfg),
-		Log:         log.With("job", "send"),
+		Slicing:     slicing(cfg),
+		Warning:     warning(cfg),
+		Health: func(ctx context.Context, h sending.Health) {
+			if h.Pause != nil {
+				alert.AutoPaused(ctx, *h.Pause)
+			}
+			if h.Throttle != nil {
+				notices.Throttled(ctx, *h.Throttle)
+			}
+		},
+		Log: log.With("job", "send"),
 	}
+}
+
+// healthAlerts tell the ops address about automatic pauses and throttles
+// (CMP-6, MG-61), and owners about throttles, from notices@.
+func healthAlerts(cfg config.Config, sender mail.Sender, log *slog.Logger) (*sending.OpsAlert, *sending.Notices) {
+	alert := &sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
+		To: cfg.OpsAlertEmail, Abuse: cfg.AbuseEmail, AppURL: cfg.PublicBaseURL, Log: log.With("job", "health")}
+	notices := &sending.Notices{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "notices@" + cfg.SystemSendingDomain},
+		NewDaily: cfg.NewAccountDailySendLimit, Ops: alert, Log: log.With("job", "health")}
+	return alert, notices
+}
+
+func warning(cfg config.Config) sending.Warning {
+	return sending.Warning{ComplaintsPer10k: cfg.EarlyWarningComplaintsPer10k, HardBouncesPer10k: cfg.EarlyWarningHardBouncesPer10k}
+}
+
+func slicing(cfg config.Config) sending.Slicing {
+	return sending.Slicing{Percent: cfg.SlicePercent, Min: cfg.SliceMin, Wait: cfg.SliceWait}
 }
 
 func sendLimits(cfg config.Config) sending.Limits {

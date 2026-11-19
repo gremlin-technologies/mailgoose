@@ -2169,7 +2169,7 @@ Responses:
 
 <a id="op-cancelcampaign"></a>
 
-### Cancel a scheduled campaign
+### Cancel a scheduled campaign, or a waiting slice's rest
 
 `POST /v1/campaigns/{campaign_id}/cancel`
 
@@ -2178,9 +2178,12 @@ Responses:
 - Needs a `full`-scope key
 
 Stops a scheduled campaign before its send time (CAM-6). Nobody gets
-it, and the credits reserved at launch come back. Cancelling a
-cancelled campaign changes nothing. Once it has started sending it
-can't be cancelled (409 `campaign_locked`).
+it, and the credits reserved at launch come back. A campaign whose
+first slice is out and whose rest is waiting (`slice.state`
+`slice_hold` or `held`) can be cancelled the same way: the rest
+never goes and its credits come back. Cancelling a cancelled
+campaign changes nothing. Once it is sending it can't be cancelled
+(409 `campaign_locked`).
 
 | Parameter | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
@@ -3880,8 +3883,25 @@ Type: string: one of `draft`, `scheduled`, `sending`, `sent`, `cancelled`, `paus
 | `version` | integer | yes | Goes up with every change. |
 | `last_test` | [CampaignTest](#schema-campaigntest) or null | yes | The campaign's last test send; null before the first. |
 | `launch` | [CampaignLaunch](#schema-campaignlaunch) or null | yes | When the campaign was launched, to how many and for how many credits; null for a draft. |
+| `slice` | [CampaignSlice](#schema-campaignslice) |  |  |
 | `created_at` | string (date-time) | yes |  |
 | `updated_at` | string (date-time) | yes |  |
+
+<a id="schema-campaignslice"></a>
+
+### CampaignSlice
+
+A new account's campaign goes out first to a slice of its
+recipients, picked at random, then waits for bounces and complaints
+before the rest is released (MG-62). An account is new for its
+first 30 days or its first 3 launched campaigns, whichever ends
+later. Present only on a campaign launched in a slice.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `state` | string: one of `sending_slice`, `slice_hold`, `held`, `released`, `stopped`, `cancelled` | yes | `sending_slice`: the slice is going out. `slice_hold`: the slice is out and the rest waits until `release_at`. `held`: the slice went over the early-warning limits for complaints or hard bounces, so the account's limit is lowered and the rest waits until `release_at`, when it's checked again. `released`: the rest was let go. `stopped`: the slice went over the limits that pause an account, so the rest was never sent and its credits came back. `cancelled`: the campaign was cancelled, stopped or its account suspended before the rest went, so the rest was never sent and its credits came back. While the rest waits, the campaign can be cancelled. |
+| `size` | integer | yes | How many recipients the slice went to. |
+| `release_at` | string (date-time) or null | yes | When the rest is checked and released, while it waits; null otherwise. |
 
 <a id="schema-campaignreport"></a>
 

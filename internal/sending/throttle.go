@@ -54,9 +54,14 @@ func (w Warning) orDefault() Warning {
 // OverWarning says whether the rates are over an early-warning threshold,
 // on enough copies.
 func (r Rates) OverWarning(w Warning) bool {
+	return r.Sent >= HealthMinRecipients && r.overWarning(w)
+}
+
+// overWarning says whether the rates are over an early-warning threshold,
+// on any number of copies.
+func (r Rates) overWarning(w Warning) bool {
 	w = w.orDefault()
-	return r.Sent >= HealthMinRecipients &&
-		(over(r.Complaints, r.Sent, w.ComplaintsPer10k) || over(r.HardBounces, r.Sent, w.HardBouncesPer10k))
+	return over(r.Complaints, r.Sent, w.ComplaintsPer10k) || over(r.HardBounces, r.Sent, w.HardBouncesPer10k)
 }
 
 // Throttle is an account throttled by a campaign's bounces or complaints.

@@ -41,11 +41,19 @@ func (s *Service) lockScheduled(ctx context.Context, tx pgx.Tx, accountID, campa
 }
 
 // Cancel stops a scheduled campaign before it starts: its recipients are
-// skipped and their reserved credits given back. Cancelling a cancelled
-// campaign changes nothing. One that has started sending can't be
-// cancelled this way (a StatusError).
+// skipped and their reserved credits given back. A campaign whose first
+// slice is out and whose rest is waiting (MG-62) can be cancelled the same
+// way, for the rest. Cancelling a cancelled campaign changes nothing. One
+// that is sending can't be cancelled this way (a StatusError).
 func (s *Service) Cancel(ctx context.Context, accountID, campaignID string) (*campaigns.Campaign, error) {
-	return s.end(ctx, accountID, campaignID, "cancelled before sending", nil, campaigns.StatusScheduled)
+	return s.end(ctx, accountID, campaignID, "cancelled before sending", nil, func(c *campaigns.Campaign) bool {
+		return c.Status == campaigns.StatusScheduled || (c.Status == campaigns.StatusSending && sliceWaiting(c))
+	})
+}
+
+// sliceWaiting says whether a campaign's slice is out and the rest waits.
+func sliceWaiting(c *campaigns.Campaign) bool {
+	return c.Slice != nil && (c.Slice.State == SliceHold || c.Slice.State == SliceHeld)
 }
 
 // Stop is the kill switch for one campaign (CMP-8): a scheduled, sending or
@@ -61,13 +69,14 @@ func (s *Service) Stop(ctx context.Context, accountID, campaignID string) (*camp
 // was stopped, with the status it had. A campaign cancelled already isn't
 // stopped again and then isn't called. An error from then undoes the stop.
 func (s *Service) StopAnd(ctx context.Context, accountID, campaignID string, then func(tx pgx.Tx, before string) error) (*campaigns.Campaign, error) {
-	return s.end(ctx, accountID, campaignID, "stopped by mailgoose", then,
-		campaigns.StatusScheduled, campaigns.StatusSending, campaigns.StatusPaused)
+	return s.end(ctx, accountID, campaignID, "stopped by mailgoose", then, func(c *campaigns.Campaign) bool {
+		return slices.Contains([]string{campaigns.StatusScheduled, campaigns.StatusSending, campaigns.StatusPaused}, c.Status)
+	})
 }
 
-// end cancels a campaign in one of the allowed statuses, then calls then,
-// if any, in the same transaction.
-func (s *Service) end(ctx context.Context, accountID, campaignID, note string, then func(tx pgx.Tx, before string) error, allowed ...string) (*campaigns.Campaign, error) {
+// end cancels a campaign that allowed accepts, then calls then, if any, in
+// the same transaction.
+func (s *Service) end(ctx context.Context, accountID, campaignID, note string, then func(tx pgx.Tx, before string) error, allowed func(*campaigns.Campaign) bool) (*campaigns.Campaign, error) {
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		c, err := s.lockScheduled(ctx, tx, accountID, campaignID)
 		if err != nil {
@@ -76,7 +85,7 @@ func (s *Service) end(ctx context.Context, accountID, campaignID, note string, t
 		if c.Status == campaigns.StatusCancelled {
 			return nil
 		}
-		if !slices.Contains(allowed, c.Status) {
+		if !allowed(c) {
 			return &campaigns.StatusError{Status: c.Status, To: campaigns.StatusCancelled}
 		}
 		if err := cancelLaunched(ctx, tx, accountID, campaignID, note, s.now()); err != nil {
@@ -109,8 +118,11 @@ func cancelLaunched(ctx context.Context, tx pgx.Tx, accountID, campaignID, note 
 		}
 	}
 	if _, err := tx.Exec(ctx, `
-		UPDATE campaigns SET status = 'cancelled', status_changed_at = $3, updated_at = $3
-		WHERE account_id = $1 AND id = $2`, accountID, campaignID, now); err != nil {
+		UPDATE campaigns SET status = 'cancelled', status_changed_at = $3, updated_at = $3,
+			slice_state = CASE WHEN slice_state IN ($4, $5, $6) THEN $7 ELSE slice_state END,
+			slice_release_at = NULL
+		WHERE account_id = $1 AND id = $2`, accountID, campaignID, now,
+		SliceSending, SliceHold, SliceHeld, SliceCancelled); err != nil {
 		return err
 	}
 	_, err = tx.Exec(ctx, `UPDATE send_queue SET done_at = $2 WHERE campaign_id = $1 AND done_at IS NULL`, campaignID, now)
