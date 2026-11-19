@@ -923,6 +923,8 @@ it's being reviewed; it can't launch (`account_in_review`) or take form
 signups. When it confirms its address, `OPS_ALERT_EMAIL` gets an email.
 `mailgoose admin signups` lists waiting accounts with their flags;
 `approve-signup` lets one go, and `reject-signup` suspends it.
+The local stack (`make dev`) sets `SIGNUP_REVIEW=off` unless you set it, so
+local sign-ups can launch at once.
 
 ### Admin tools
 

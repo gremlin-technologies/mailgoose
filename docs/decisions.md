@@ -12,6 +12,10 @@ Picked while building MG-66; easy to change.
   launch month; `flagged` and `off` are the other values. The setting applies
   at sign-up: changing it doesn't release or hold accounts already made.
   Accounts made before this change have no review and aren't held.
+- **The local stack (`make dev`) runs with `SIGNUP_REVIEW=off`** unless it's
+  set, so a local sign-up can launch straight away. The end-to-end tests in
+  CI use that stack and launch campaigns; the review itself is covered by the
+  Go tests.
 - **Flags.** A disposable address (the vendored list, parent domains
   included), the 4th or later account from one IP in 24 hours, or an IP or
   company domain shared with a suspended account. Free-mail domains (a short
