@@ -24,6 +24,28 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: Campaign pages (MG-47, reversible defaults)
+
+Picked while building MG-47; easy to change.
+
+- **A campaign is made as a draft first**, on its own page (name, email,
+  recipients, send time, tracking), then opened to check, test and launch.
+  Nothing is sent until the launch summary is confirmed.
+- **The recipient count is live**: 0.3 seconds after the recipients change,
+  the page asks the API how many subscribed contacts they reach now.
+- **Send times are picked in the viewer's own time zone** and sent to the API
+  in UTC.
+- **The email picker lists the 100 newest emails.** An account with more can
+  rename or duplicate one to bring it to the top; a search can come later.
+- **Launch uses the same two calls as the CLI and agents**: the first answers
+  with the summary and a code, the page shows the summary, and its confirm
+  button sends the code back. The code itself is never shown, since the
+  button is the person's yes.
+- **Cancelling a scheduled campaign takes a second press**, because it can't
+  be undone; moving its send time doesn't.
+- **A sending campaign's page looks again every 5 seconds** until it has
+  finished. Its numbers are the report page's job (MG-48).
+
 ## 2026-11-19: HTML code editor (MG-46, reversible defaults)
 
 Picked while building MG-46; easy to change.
