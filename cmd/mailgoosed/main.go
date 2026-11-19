@@ -37,6 +37,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
+	"github.com/gremlin-technologies/mailgoose/internal/sesevents"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
@@ -255,6 +256,9 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	p := newPipeline(cfg, pool, sender, log)
 	// One handler takes one batch at a time, at the configured rate.
 	queues[0].Handler = worker.HandlerFunc(p.SQSHandler())
+	// Deliveries, bounces and complaints from SES.
+	events := &sesevents.Service{DB: pool, Log: log.With("queue", "ses-events")}
+	queues[1].Handler = worker.HandlerFunc(events.SQSHandler())
 
 	var wg sync.WaitGroup
 	run := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }

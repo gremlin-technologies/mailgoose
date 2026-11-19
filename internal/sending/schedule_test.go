@@ -179,12 +179,76 @@ func TestStartDueOnce(t *testing.T) {
 	}
 }
 
+// A reschedule that commits while StartDue waits on the campaign wins: the
+// campaign stays scheduled for its new time (from the MG-32 review).
+func TestStartDueWaitsOutReschedule(t *testing.T) {
+	h, at := scheduledHarness(t)
+	ctx := context.Background()
+	later := at.Add(24 * time.Hour)
+	// A reschedule in flight: it holds the queue row and the campaign, the
+	// order Reschedule takes them, and hasn't committed yet.
+	tx, err := h.db.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var pid int
+	if err := tx.QueryRow(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE send_queue SET run_at = $2 WHERE campaign_id = $1`, h.campaign.ID, later); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE campaigns SET send_at = $2 WHERE id = $1`, h.campaign.ID, later); err != nil {
+		t.Fatal(err)
+	}
+	// The scheduler comes round at the old time and waits on the campaign.
+	type result struct {
+		ids []string
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		ids, err := StartDue(ctx, h.db, at)
+		done <- result{ids, err}
+	}()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var waiting int
+		if err := h.db.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))`, pid).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("StartDue never waited on the reschedule")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	r := <-done
+	if r.err != nil || len(r.ids) != 0 || h.status(t) != campaigns.StatusScheduled {
+		t.Errorf("started %v (%v); status %s", r.ids, r.err, h.status(t))
+	}
+	if ids, _ := StartDue(ctx, h.db, later); len(ids) != 1 {
+		t.Errorf("not started at the new time")
+	}
+}
+
 func TestRunScheduler(t *testing.T) {
 	h, _ := scheduledHarness(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	// Due already, by the real clock.
-	if _, err := h.db.Exec(ctx, `UPDATE send_queue SET run_at = now() - interval '1 second' WHERE campaign_id = $1`, h.campaign.ID); err != nil {
-		t.Fatal(err)
+	for _, q := range []string{
+		`UPDATE send_queue SET run_at = now() - interval '1 second' WHERE campaign_id = $1`,
+		`UPDATE campaigns SET send_at = now() - interval '1 second' WHERE id = $1`,
+	} {
+		if _, err := h.db.Exec(ctx, q, h.campaign.ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 	done := make(chan struct{})
 	go func() { defer close(done); RunScheduler(ctx, h.db, 10*time.Millisecond, quietLog()) }()

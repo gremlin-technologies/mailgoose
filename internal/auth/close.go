@@ -20,6 +20,7 @@ const ClosedAccountName = "Deleted account"
 // codes, contact tags, form and campaign tags, import skips) go with them by ON DELETE
 // CASCADE.
 var AccountTables = []string{
+	"send_events",
 	"unsubscribes",
 	"unsubscribe_keys",
 	"test_sends",

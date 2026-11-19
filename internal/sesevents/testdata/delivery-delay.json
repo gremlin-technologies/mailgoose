@@ -1,0 +1,43 @@
+{
+  "eventType": "DeliveryDelay",
+  "mail": {
+    "timestamp": "2026-11-18T12:00:00.000Z",
+    "source": "Pat's Bakery <hello@patsbakery.com>",
+    "sendingAccountId": "123456789012",
+    "messageId": "{{MESSAGE_ID}}",
+    "destination": ["{{ADDRESS}}"],
+    "headersTruncated": false,
+    "headers": [
+      {"name": "From", "value": "Pat's Bakery <hello@patsbakery.com>"},
+      {"name": "To", "value": "{{ADDRESS}}"},
+      {"name": "Subject", "value": "Fresh bread"}
+    ],
+    "commonHeaders": {
+      "from": ["Pat's Bakery <hello@patsbakery.com>"],
+      "to": ["{{ADDRESS}}"],
+      "messageId": "{{MESSAGE_ID}}",
+      "subject": "Fresh bread"
+    },
+    "tags": {
+      "ses:configuration-set": ["mailgoose-staging"],
+      "ses:source-ip": ["192.0.2.0"],
+      "ses:from-domain": ["patsbakery.com"],
+      "ses:caller-identity": ["mailgoose-worker"],
+      "mg_kind": ["{{KIND}}"],
+      "mg_account": ["{{ACCOUNT_ID}}"],
+      "mg_campaign": ["{{CAMPAIGN_ID}}"]
+    }
+  },
+  "deliveryDelay": {
+    "timestamp": "2026-11-18T12:10:00.000Z",
+    "delayType": "TransientCommunicationFailure",
+    "expirationTime": "2026-11-18T23:59:59.000Z",
+    "delayedRecipients": [
+      {
+        "emailAddress": "{{ADDRESS}}",
+        "status": "4.4.1",
+        "diagnosticCode": "smtp; 421 4.4.1 Unable to connect to remote host"
+      }
+    ]
+  }
+}

@@ -623,6 +623,31 @@ and returned in UTC. The CLI shows them in the account's time zone
 (`mailgoose account update --time-zone`), and reads a `--send-at` or `--at`
 without an offset (`"2026-12-01 09:00"`) in that zone.
 
+### Bounces and complaints
+
+SES publishes each message's events to SNS, which delivers them raw to the
+`ses-events` queue. The worker (`internal/sesevents`) stores deliveries,
+bounces, complaints, rejects and delivery delays in `send_events`, against
+the send record (`campaign_recipients`, matched by SES's message id), and
+acts on them in the same transaction, as soon as the worker receives the
+event:
+
+- **Hard bounce** (`Permanent`): the contact becomes `bounced` at once.
+- **Complaint:** the contact becomes `complained` at once. A complained
+  contact stays so, whatever bounces later.
+- **Soft bounce** (`Transient` or `Undetermined`): counted in
+  `contacts.soft_bounces`; the third in a row makes the contact `bounced`.
+  A delivery sets the count back to 0.
+- **Rejects and delivery delays** are stored and change no contact.
+
+Only a campaign copy or a double opt-in confirmation changes a contact;
+bounces of test sends and of mailgoose's own mail are stored and nothing
+more. Each event is stored once, by a hash of its body, so a redelivered
+event isn't counted twice. Open and click events from SES are dropped
+(opens and clicks come only from mailgoose's own tracking), and so are
+events that can't be read, with a warning in the log; only a database
+error leaves a message on the queue to be tried again.
+
 ## Unsubscribing
 
 Every campaign email's `{{unsubscribe_url}}` is `<app URL>/u/<token>`, and

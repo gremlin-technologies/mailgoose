@@ -23,6 +23,24 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: SES events (MG-33, reversible defaults)
+
+Picked while building MG-33; easy to change.
+
+- **Soft bounces "in a row"** are counted per contact, across campaigns,
+  and a delivery to that contact clears the count. `Undetermined` bounces
+  count as soft.
+- **A complaint outranks a bounce:** a complained contact never becomes
+  `bounced`. Both stop all sending to the address.
+- **Which mail changes a contact:** campaign copies, and double opt-in
+  confirmations (matched to the account's contact by address). Test sends
+  and mailgoose's own mail (sign-in codes) are stored but change no
+  contact.
+- **Duplicates:** an event is stored once, keyed by a hash of its body;
+  SNS and SQS can deliver the same one more than once.
+- **Kept events:** `send_events` holds no address and goes when the
+  account is deleted. Reports (MG-38) and account health (MG-34) read it.
+
 ## 2026-11-18: Scheduled campaigns (MG-32, reversible defaults)
 
 Picked while building MG-32; easy to change.
