@@ -284,9 +284,10 @@ until mailgoose approves it.`,
 	cmd.Flags().BoolVar(&wait, "wait", false, "wait for the import to finish and show the result")
 
 	status := callsAll([]string{"getImport", "listImportSkippedRows"}, &cobra.Command{
-		Use:   "status <id>",
-		Short: "Show how an import is going, and every row it skipped",
-		Args:  cobra.ExactArgs(1),
+		Use:     "status <id>",
+		Example: `  mailgoose import status 3f1c... --json`,
+		Short:   "Show how an import is going, and every row it skipped",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var j importJob
 			if err := a.call(cmd.Context(), http.MethodGet, "/v1/imports/"+url.PathEscape(args[0]), nil, &j, true); err != nil {
@@ -299,9 +300,10 @@ until mailgoose approves it.`,
 	var cursor string
 	var limit int
 	list := calls("listImports", &cobra.Command{
-		Use:   "list",
-		Short: "List imports, newest first",
-		Args:  cobra.NoArgs,
+		Use:     "list",
+		Example: `  mailgoose import list`,
+		Short:   "List imports, newest first",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			q := url.Values{}
 			if cursor != "" {

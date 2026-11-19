@@ -234,7 +234,9 @@ as it is.`,
 	var limit int
 	var cursor, status string
 	list := calls("listCampaigns", &cobra.Command{
-		Use:   "list",
+		Use: "list",
+		Example: `  mailgoose campaign list
+  mailgoose campaign list --status scheduled --json`,
 		Short: "List campaigns, newest first",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -333,9 +335,10 @@ Nothing is sent until it's launched.`,
 	cr.register(create)
 
 	get := calls("getCampaign", &cobra.Command{
-		Use:   "get <campaign-id>",
-		Short: "Show a campaign and how many it would reach now",
-		Args:  cobra.ExactArgs(1),
+		Use:     "get <campaign-id>",
+		Example: `  mailgoose campaign get 3f1c... --json`,
+		Short:   "Show a campaign and how many it would reach now",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := campaignIDArg(args[0])
 			if err != nil {

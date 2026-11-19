@@ -1,0 +1,149 @@
+# mailgoose
+
+> Small email marketing service: design emails (blocks or HTML), send them to a list of contacts, and collect subscribers with signup forms. One REST API, and a `mailgoose` CLI with a command for every endpoint, so an AI agent can do everything a person can in the web app.
+
+<!-- Generated from api/openapi.yaml by `make docs`. Don't edit it by hand. -->
+
+Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOSE_API_KEY` for the CLI. Add `--json` to any CLI command for machine-readable output. Errors are `{"error": {"code", "message", "hint"}}` with a stable `code`. A campaign launch needs a confirmation code that a person says yes to first; see the agent guide.
+
+## Guides
+
+- [Agent guide](agent-guide.md): signing in with an API key, building an email from blocks, checks, test sends, and the launch confirmation. Also printed by `mailgoose docs`.
+- [API reference](reference.md): every operation, its parameters, responses and schemas.
+
+## Health
+
+- [Liveness check](reference.md#op-gethealth): `GET /healthz`, CLI `mailgoose status`. Says the process is up.
+- [Readiness check](reference.md#op-getreadiness): `GET /readyz`. Like /healthz, and also checks that the database answers.
+
+## Signing in
+
+- [Start a CLI login](reference.md#op-createdevicelogin): `POST /v1/device-logins`, CLI `mailgoose login`. Starts the device login that `mailgoose login` uses.
+- [Collect a CLI login token](reference.md#op-polldevicelogin): `POST /v1/device-logins/token`, CLI `mailgoose login`. Polled by `mailgoose login`.
+- [Show a CLI login awaiting approval](reference.md#op-getdevicelogin): `GET /v1/device-logins/{user_code}`. For the approval page: the request under this code, if it's still awaiting approval.
+- [Approve a CLI login](reference.md#op-approvedevicelogin): `POST /v1/device-logins/{user_code}/approve`. Lets the CLI that started this request sign in as the signed-in person, with a full-scope token.
+- [Deny a CLI login](reference.md#op-denydevicelogin): `POST /v1/device-logins/{user_code}/deny`. The CLI that started this request stops waiting and signs nothing in.
+- [Sign out the CLI](reference.md#op-revokecurrentclitoken): `DELETE /v1/cli-tokens/current`, CLI `mailgoose logout`. Revokes the CLI token this request is made with, for `mailgoose logout`.
+- [Who is calling](reference.md#op-getwhoami): `GET /v1/whoami`, CLI `mailgoose whoami`. The account, the person and the kind of credential behind this request.
+- [Sign up](reference.md#op-createsignup): `POST /v1/signup`, CLI `mailgoose signup`. Creates a pending account on the free plan and emails a six-digit code to the address; using the code with `createSession` activates the account.
+- [Email a sign-in code](reference.md#op-createsignin): `POST /v1/sign-in`. Emails a six-digit code to an address with an account; use it with `createSession`.
+- [Get a CLI token with an emailed code](reference.md#op-createclitoken): `POST /v1/cli-tokens`, CLI `mailgoose signup`. Uses a code from `createSignup` or `createSignIn`, like `createSession`, but answers with a full-scope CLI token instead of setting a session cookie.
+- [Start a web session with an emailed code](reference.md#op-createsession): `POST /v1/sessions`. Uses a code from `createSignup` or `createSignIn`.
+- [Sign out everywhere](reference.md#op-deleteallsessions): `DELETE /v1/sessions`. Ends every web session of the signed-in person, this one included, and clears the session cookie.
+- [Who is signed in](reference.md#op-getcurrentsession): `GET /v1/sessions/current`. The account and person behind the session cookie.
+- [Sign out](reference.md#op-deletecurrentsession): `DELETE /v1/sessions/current`. Ends this session and clears the session cookie.
+
+## Account
+
+- [Show account settings](reference.md#op-getaccount): `GET /v1/account`, CLI `mailgoose account get`. The account's name, plan, default From name and address, postal address and time zone.
+- [Change account settings](reference.md#op-updateaccount): `PATCH /v1/account`, CLI `mailgoose account update`. Changes only the fields sent.
+- [Delete the account](reference.md#op-deleteaccount): `DELETE /v1/account`, CLI `mailgoose account delete`. Deletes the account and everything in it, now: contacts, emails, sending domains (and their Amazon SES identities), API keys, CLI logins and web sessions, and the person's sign-in.
+
+## API keys
+
+- [List API keys](reference.md#op-listapikeys): `GET /v1/api-keys`, CLI `mailgoose keys list`. The account's active API keys, oldest first.
+- [Create an API key](reference.md#op-createapikey): `POST /v1/api-keys`, CLI `mailgoose keys create`. Makes a key and answers with its secret, which is shown only this once; store it somewhere safe.
+- [Revoke an API key](reference.md#op-revokeapikey): `DELETE /v1/api-keys/{key_id}`, CLI `mailgoose keys revoke`. The key stops working on its next request.
+
+## Plan and billing
+
+- [Show the account's plan](reference.md#op-getplan): `GET /v1/plan`, CLI `mailgoose plan`. The account's plan (BIL-4): free, or paid by a Stripe subscription at $5 a month or $50 a year for each plan unit.
+- [Start the paid plan](reference.md#op-createplancheckout): `POST /v1/plan/checkout`, CLI `mailgoose plan upgrade`. Makes a Stripe Checkout page that starts the paid plan's card subscription, billed monthly ($5 a unit) or yearly ($50 a unit), and returns its URL; the person pays there, in a browser.
+- [Manage the paid plan](reference.md#op-createplanportal): `POST /v1/plan/portal`, CLI `mailgoose plan manage`. Makes a Stripe customer portal page for the account's subscription and returns its URL: change the card, see invoices, or cancel.
+
+## Credits
+
+- [Show the credit balance](reference.md#op-getcredits): `GET /v1/credits`, CLI `mailgoose credits`. The account's balance, its plan, and when its next free grant comes.
+- [Start buying a credit pack](reference.md#op-createcreditcheckout): `POST /v1/credits/checkout`, CLI `mailgoose credits buy`. Makes a Stripe Checkout page for a credit pack and returns its URL; the person pays there, in a browser (BIL-3, BIL-6).
+- [List credit transactions](reference.md#op-listcredittransactions): `GET /v1/credits/transactions`, CLI `mailgoose credits history`. Every change to the balance, newest first: grants, purchases, reservations for a send and their release, spends, fees and expiries.
+
+## Sending domains
+
+- [List sending domains](reference.md#op-listdomains): `GET /v1/domains`, CLI `mailgoose domain delete`, `mailgoose domain get`, `mailgoose domain list`, `mailgoose domain verify`. The account's sending domains, oldest first, each with its DNS records and the result of its last check.
+- [Add a sending domain](reference.md#op-createdomain): `POST /v1/domains`, CLI `mailgoose domain add`. Sets the domain up in Amazon SES, with DKIM signing and a MAIL FROM subdomain (`bounce.<domain>`), and answers with the DNS records to add: three DKIM CNAMEs, the MAIL FROM MX and SPF TXT, and a suggested DMARC TXT when the domain has no DMARC policy.
+- [Show a sending domain](reference.md#op-getdomain): `GET /v1/domains/{domain_id}`, CLI `mailgoose domain get`. The domain, its DNS records and the result of its last check.
+- [Remove a sending domain](reference.md#op-deletedomain): `DELETE /v1/domains/{domain_id}`, CLI `mailgoose domain delete`. Removes the domain and its Amazon SES identity.
+- [Check a sending domain now](reference.md#op-verifydomain): `POST /v1/domains/{domain_id}/verify`, CLI `mailgoose domain verify`. Looks up each DNS record and reports it as `found`, `missing` or `wrong`, and asks Amazon SES whether it has verified the domain.
+
+## Contacts
+
+- [List contacts](reference.md#op-listcontacts): `GET /v1/contacts`, CLI `mailgoose contacts delete`, `mailgoose contacts export-data`, `mailgoose contacts get`, `mailgoose contacts list`, `mailgoose contacts update`, `mailgoose tags add`, `mailgoose tags remove`. The account's contacts, newest first.
+- [Add a contact](reference.md#op-createcontact): `POST /v1/contacts`, CLI `mailgoose contacts add`. Adds one contact.
+- [Export contacts as CSV](reference.md#op-exportcontacts): `GET /v1/contacts/export`, CLI `mailgoose export`. The account's contacts as a CSV file, oldest first, with the same filters as listing them; with none, every contact.
+- [Show a contact](reference.md#op-getcontact): `GET /v1/contacts/{contact_id}`, CLI `mailgoose contacts get`
+- [Change a contact](reference.md#op-updatecontact): `PATCH /v1/contacts/{contact_id}`, CLI `mailgoose contacts update`. Changes only the fields sent; `null` removes a first or last name.
+- [Delete a contact](reference.md#op-deletecontact): `DELETE /v1/contacts/{contact_id}`, CLI `mailgoose contacts delete`. Deletes the contact and everything about it.
+- [Everything stored about a contact](reference.md#op-getcontactdata): `GET /v1/contacts/{contact_id}/data`, CLI `mailgoose contacts export-data`. For a person's data request: the contact, when each tag was put on it, the import that added it and whether the account confirmed permission for it, and import rows with its address that weren't added.
+
+## Tags
+
+- [List tags](reference.md#op-listtags): `GET /v1/tags`, CLI `mailgoose contacts list`, `mailgoose export`, `mailgoose tags add`, `mailgoose tags delete`, `mailgoose tags list`, `mailgoose tags remove`, `mailgoose tags rename`. The account's tags by name, each with how many contacts have it.
+- [Create a tag](reference.md#op-createtag): `POST /v1/tags`, CLI `mailgoose tags create`
+- [Rename a tag](reference.md#op-renametag): `PATCH /v1/tags/{tag_id}`, CLI `mailgoose tags rename`. Contacts keep the tag under its new name.
+- [Delete a tag](reference.md#op-deletetag): `DELETE /v1/tags/{tag_id}`, CLI `mailgoose tags delete`. Takes the tag off every contact and off the recipients of draft and scheduled campaigns, then deletes it.
+- [Tag contacts](reference.md#op-tagcontacts): `POST /v1/tags/{tag_id}/contacts`, CLI `mailgoose tags add`. Puts the tag on the contacts listed in `contact_ids` (up to 1,000), or on every contact matching `filter`; an empty filter is every contact.
+- [Untag contacts](reference.md#op-untagcontacts): `POST /v1/tags/{tag_id}/contacts/remove`, CLI `mailgoose tags remove`. Takes the tag off the selected contacts, chosen as in `tagContacts`.
+
+## Imports and exports
+
+- [List CSV imports](reference.md#op-listimports): `GET /v1/imports`, CLI `mailgoose import list`. The account's imports, newest first.
+- [Import contacts from a CSV file](reference.md#op-createimport): `POST /v1/imports`, CLI `mailgoose import`. Checks the file and queues it; the import runs in the background, so poll `getImport` until `status` is `done` or `failed`.
+- [Get an import](reference.md#op-getimport): `GET /v1/imports/{import_id}`, CLI `mailgoose import`, `mailgoose import status`. How far the import got, what it added and how many rows it skipped, by reason.
+- [List an import's skipped rows](reference.md#op-listimportskippedrows): `GET /v1/imports/{import_id}/skipped-rows`, CLI `mailgoose import`, `mailgoose import status`. Every row the import didn't add and why, in file order.
+
+## Images
+
+- [List uploaded images](reference.md#op-listimages): `GET /v1/images`, CLI `mailgoose image list`. The account's uploaded images, newest first.
+- [Upload an image](reference.md#op-uploadimage): `POST /v1/images`, CLI `mailgoose image upload`. Stores a picture for image blocks and answers with its `url`, which goes in an image block's `src`.
+
+## Emails
+
+- [List emails](reference.md#op-listemails): `GET /v1/emails`, CLI `mailgoose email list`. The account's emails, newest first, without their content.
+- [Create an email](reference.md#op-createemail): `POST /v1/emails`, CLI `mailgoose email create`. Makes an email of kind `blocks` (the default) or `html`.
+- [Get an email](reference.md#op-getemail): `GET /v1/emails/{email_id}`, CLI `mailgoose email blocks add`, `mailgoose email blocks move`, `mailgoose email blocks remove`, `mailgoose email blocks update`, `mailgoose email get`, `mailgoose email import-html`, `mailgoose email replace`, `mailgoose email update`. The email with its whole document.
+- [Rename an email or change its settings](reference.md#op-updateemail): `PATCH /v1/emails/{email_id}`, CLI `mailgoose email update`. Changes the name, some settings, or both.
+- [Delete an email](reference.md#op-deleteemail): `DELETE /v1/emails/{email_id}`, CLI `mailgoose email delete`
+- [Replace an email's whole document](reference.md#op-replaceemaildocument): `PUT /v1/emails/{email_id}/document`, CLI `mailgoose email replace`. Swaps the settings and content for the `document` given, checked whole.
+- [Replace an html email's markup](reference.md#op-importemailhtml): `PUT /v1/emails/{email_id}/html`, CLI `mailgoose email import-html`. Swaps an html email's markup for `html`, whole, after checking it.
+- [Preview an email as it will look](reference.md#op-previewemail): `GET /v1/emails/{email_id}/preview`, CLI `mailgoose email preview`. Renders the email as it will be sent, filled in with sample data: first name Alex, last name Rivera, email alex@example.com, and an unsubscribe link that goes nowhere.
+- [Check an email before sending it](reference.md#op-checkemail): `POST /v1/emails/{email_id}/check`, CLI `mailgoose email check`. Looks the email over and answers what would stop it going (`errors`) and what some readers would trip on (`warnings`).
+- [Duplicate an email](reference.md#op-duplicateemail): `POST /v1/emails/{email_id}/duplicate`, CLI `mailgoose email duplicate`. Copies the email's settings and content into a new email, named "Copy of" the original unless a `name` is given.
+- [List an email's blocks](reference.md#op-listemailblocks): `GET /v1/emails/{email_id}/blocks`, CLI `mailgoose email blocks list`. Every block of a blocks email in document order, a columns block's contents right after it, each with where it is.
+- [Add a block](reference.md#op-addemailblock): `POST /v1/emails/{email_id}/blocks`, CLI `mailgoose email blocks add`. Adds one block to a blocks email.
+- [Change a block's fields](reference.md#op-updateemailblock): `PATCH /v1/emails/{email_id}/blocks/{block_id}`, CLI `mailgoose email blocks update`. Sets the `fields` given on one block, wherever it is.
+- [Remove a block](reference.md#op-removeemailblock): `DELETE /v1/emails/{email_id}/blocks/{block_id}`, CLI `mailgoose email blocks remove`. Removes one block, and a columns block's contents with it.
+- [Move a block](reference.md#op-moveemailblock): `POST /v1/emails/{email_id}/blocks/{block_id}/move`, CLI `mailgoose email blocks move`. Moves one block, and a columns block's contents with it, to a new place, given as in addEmailBlock.
+
+## Campaigns
+
+- [List campaigns](reference.md#op-listcampaigns): `GET /v1/campaigns`, CLI `mailgoose campaign list`. The account's campaigns, newest first.
+- [Create a campaign](reference.md#op-createcampaign): `POST /v1/campaigns`, CLI `mailgoose campaign create`. Makes a draft campaign: an email, who it goes to and when.
+- [Count recipients](reference.md#op-countcampaignrecipients): `POST /v1/campaigns/recipient-count`, CLI `mailgoose campaign count`. Counts who a choice of recipients would reach now: subscribed contacts only, the same way a campaign picks them.
+- [Get a campaign](reference.md#op-getcampaign): `GET /v1/campaigns/{campaign_id}`, CLI `mailgoose campaign get`. The campaign, with `recipient_count` counted now.
+- [Change a campaign](reference.md#op-updatecampaign): `PATCH /v1/campaigns/{campaign_id}`, CLI `mailgoose campaign update`. Changes the parts given; the rest stay.
+- [Delete a draft campaign](reference.md#op-deletecampaign): `DELETE /v1/campaigns/{campaign_id}`, CLI `mailgoose campaign delete`. Deletes a draft.
+- [Send a test of a campaign](reference.md#op-testcampaign): `POST /v1/campaigns/{campaign_id}/test`, CLI `mailgoose campaign test`. Sends the campaign's email, rendered as recipients will get it, to the account owner, or to up to 5 addresses (`to`) that are the owner's or on one of the account's verified sending domains.
+- [Launch a campaign, after confirmation](reference.md#op-launchcampaign): `POST /v1/campaigns/{campaign_id}/launch`, CLI `mailgoose campaign launch`. Launching takes two calls (CAM-3, CAM-4).
+- [Cancel a scheduled campaign](reference.md#op-cancelcampaign): `POST /v1/campaigns/{campaign_id}/cancel`, CLI `mailgoose campaign cancel`. Stops a scheduled campaign before its send time (CAM-6).
+- [Get a campaign's report](reference.md#op-getcampaignreport): `GET /v1/campaigns/{campaign_id}/report`, CLI `mailgoose campaign report`. What happened to a campaign (REP-1, REP-2): copies sent, delivered, hard bounced, complaints, unsubscribes, unique opens (always an estimate), unique and total clicks, credits used, and clicks per link.
+- [Move a scheduled campaign's send time](reference.md#op-reschedulecampaign): `POST /v1/campaigns/{campaign_id}/reschedule`, CLI `mailgoose campaign reschedule`. Moves a scheduled campaign to a new send time (CAM-6), in the future and at most a year ahead.
+
+## Signup forms
+
+- [List signup forms](reference.md#op-listforms): `GET /v1/forms`, CLI `mailgoose form list`. The account's signup forms, newest first.
+- [Create a signup form](reference.md#op-createform): `POST /v1/forms`, CLI `mailgoose form create`. Makes a signup form.
+- [Get a signup form](reference.md#op-getform): `GET /v1/forms/{form_id}`, CLI `mailgoose form get`, `mailgoose form update`
+- [Change a signup form](reference.md#op-updateform): `PATCH /v1/forms/{form_id}`, CLI `mailgoose form update`. Changes the parts given; the rest stay.
+- [Delete a signup form](reference.md#op-deleteform): `DELETE /v1/forms/{form_id}`, CLI `mailgoose form delete`. Deletes the form.
+- [Get a signup form's embed code](reference.md#op-getformembed): `GET /v1/forms/{form_id}/embed`, CLI `mailgoose form embed`. The code to paste into a site.
+
+## Operator tools (mailgoose staff only)
+
+- [Find accounts (admin)](reference.md#op-findadminaccounts): `GET /v1/admin/accounts`, CLI `mailgoose admin find`. mailgoose staff only (OPS-6): accounts whose id is `q`, or whose owner's address, name or sending domain contains it.
+- [Look at an account (admin)](reference.md#op-getadminaccount): `GET /v1/admin/accounts/{account_id}`, CLI `mailgoose admin account`. mailgoose staff only: an account's owner, pause, send limit, credits, last 30 days' bounces and complaints, held imports and live campaigns.
+- [Pause an account's sending (admin)](reference.md#op-pauseaccount): `POST /v1/admin/accounts/{account_id}/pause`, CLI `mailgoose admin pause`. mailgoose staff only, the kill switch for an account (CMP-8): nothing more is sent from it, from the next copy on.
+- [Let an account send again (admin)](reference.md#op-unpauseaccount): `POST /v1/admin/accounts/{account_id}/unpause`, CLI `mailgoose admin unpause`. mailgoose staff only: lifts a pause, an admin's or an automatic one.
+- [Grant credits (admin)](reference.md#op-grantcredits): `POST /v1/admin/accounts/{account_id}/credits`, CLI `mailgoose admin grant-credits`. mailgoose staff only: gives the account credits, which last 24 months like bought ones.
+- [Stop a campaign in flight (admin)](reference.md#op-stopcampaign): `POST /v1/admin/campaigns/{campaign_id}/stop`, CLI `mailgoose admin stop-campaign`. mailgoose staff only, the kill switch for a campaign (CMP-8): a scheduled, sending or paused campaign is cancelled where it stands.
+- [Approve a held import (admin)](reference.md#op-approveimport): `POST /v1/admin/imports/{import_id}/approve`, CLI `mailgoose admin approve-import`. mailgoose staff only (CON-6): a held import's contacts can be mailed.
+- [The admin log (admin)](reference.md#op-listadminactions): `GET /v1/admin/actions`, CLI `mailgoose admin log`. mailgoose staff only: every admin action and automatic pause, newest first, with who did it and why; for one account with `account_id`.

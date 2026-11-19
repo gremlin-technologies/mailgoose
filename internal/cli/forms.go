@@ -294,7 +294,9 @@ the result in the page.`,
 	var limit int
 	var cursor string
 	list := calls("listForms", &cobra.Command{
-		Use:   "list",
+		Use: "list",
+		Example: `  mailgoose form list
+  mailgoose form list --json`,
 		Short: "List signup forms, newest first",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

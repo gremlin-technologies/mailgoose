@@ -71,7 +71,9 @@ These commands need a full-scope key.`,
 	var limit int
 	var cursor string
 	list := calls("listApiKeys", &cobra.Command{
-		Use:   "list",
+		Use: "list",
+		Example: `  mailgoose keys list
+  mailgoose keys list --json`,
 		Short: "List the account's active API keys",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

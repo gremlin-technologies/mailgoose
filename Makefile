@@ -20,7 +20,7 @@ ECR_REPO    ?= mailgoose
 
 TEST_DB_URL ?= postgres://mailgoose:mailgoose@localhost:5432/mailgoose_test?sslmode=disable
 
-.PHONY: help dev web web-dev web-check mail build test test-db vet lint lint-api generate fmt tidy run-api run-worker migrate up down image push-ecr clean
+.PHONY: help dev web web-dev web-check mail build test test-db vet lint lint-api generate docs fmt tidy run-api run-worker migrate up down image push-ecr clean
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -70,6 +70,9 @@ generate: web/node_modules ## Regenerate the Go API types and the TypeScript cli
 web/node_modules: web/package.json web/package-lock.json
 	cd web && npm ci --no-audit --no-fund
 	@touch web/node_modules
+
+docs: ## Regenerate docs/api (API reference, llms.txt, agent guide) from api/openapi.yaml and the CLI
+	$(GO) run ./internal/apidocs/gen
 
 fmt: ## Format code
 	golangci-lint fmt ./...

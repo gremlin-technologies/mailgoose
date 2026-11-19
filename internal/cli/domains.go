@@ -139,7 +139,9 @@ every 5 minutes for 72 hours. A domain or its id works wherever one is asked for
 	var name, cursor string
 	var limit int
 	list := calls("listDomains", &cobra.Command{
-		Use:   "list",
+		Use: "list",
+		Example: `  mailgoose domain list
+  mailgoose domain list --name example.com --json`,
 		Short: "List the account's sending domains",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

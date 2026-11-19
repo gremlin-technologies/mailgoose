@@ -31,7 +31,9 @@ type creditTransaction struct {
 
 func (a *App) creditsCmd() *cobra.Command {
 	cmd := calls("getCredits", &cobra.Command{
-		Use:   "credits",
+		Use: "credits",
+		Example: `  mailgoose credits
+  mailgoose credits --json`,
 		Short: "Show the credit balance",
 		Long: `One credit sends one email to one recipient. Free accounts get 1,000
 credits a month, on the anniversary of signing up, and unused free credits
@@ -58,7 +60,9 @@ buy credits in packs instead, which last 24 months. ` + "`mailgoose credits hist
 	var limit int
 	var cursor string
 	history := calls("listCreditTransactions", &cobra.Command{
-		Use:   "history",
+		Use: "history",
+		Example: `  mailgoose credits history --limit 20
+  mailgoose credits history --json`,
 		Short: "List credit transactions, newest first",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

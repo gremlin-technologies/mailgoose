@@ -70,7 +70,9 @@ const maxClientName = 100
 
 func (a *App) loginCmd() *cobra.Command {
 	return callsAll([]string{"createDeviceLogin", "pollDeviceLogin"}, &cobra.Command{
-		Use:   "login",
+		Use: "login",
+		Example: `  mailgoose login
+  mailgoose login --api-url https://api.staging.mailgoose.app`,
 		Short: "Sign in through your browser and keep a token for this API",
 		Long: `Starts a sign-in that you approve in the browser: the CLI prints a short code
 and a link, you open the link while signed in to the web app and confirm the
@@ -273,8 +275,9 @@ func (a *App) loginToken(apiURL string, l Login) string {
 
 func (a *App) logoutCmd() *cobra.Command {
 	return calls("revokeCurrentCliToken", &cobra.Command{
-		Use:   "logout",
-		Short: "Revoke this API's login token and remove it from this computer",
+		Use:     "logout",
+		Example: `  mailgoose logout`,
+		Short:   "Revoke this API's login token and remove it from this computer",
 		Long: `Revokes the token that mailgoose login stored for the API URL in use, and
 removes it from the keychain or config file. API keys, including one in
 MAILGOOSE_API_KEY or saved with config set api-key, are not touched; revoke
@@ -343,7 +346,9 @@ those with mailgoose keys revoke.`,
 
 func (a *App) whoamiCmd() *cobra.Command {
 	return calls("getWhoami", &cobra.Command{
-		Use:   "whoami",
+		Use: "whoami",
+		Example: `  mailgoose whoami
+  mailgoose whoami --json`,
 		Short: "Show the account, user and sign-in method in use",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

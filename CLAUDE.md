@@ -14,6 +14,8 @@ already use.
 - `docs/mvp-tickets.md`: the proposed MVP ticket breakdown, in order.
 - `docs/decisions.md`: dated log of decisions and open questions. **Read this
   first; it wins over anything older.**
+- `docs/api/`: the API reference, `llms.txt` and the agent guide, generated
+  by `make docs` from `api/openapi.yaml` and the CLI. Don't edit them by hand.
 - `docs/brand.md`: the goose mascot, the UI's direction and its starting color
   palette. UI tickets build their design tokens from it.
 
