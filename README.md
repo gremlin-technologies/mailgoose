@@ -511,7 +511,30 @@ Statuses are draft, scheduled, sending, sent, cancelled, paused and failed.
 `campaigns.CanMove` holds the allowed moves and `campaigns.SetStatus`
 enforces them; only draft and scheduled campaigns can be edited, and only
 drafts deleted. Every edit moves `version` on. Launching and sending come
-with MG-29 to MG-32.
+with MG-30 to MG-32.
+
+### Test sends
+
+`POST /v1/campaigns/{id}/test` and `mailgoose campaign test <campaign-id>`
+send one copy of the campaign's email to the account owner, or with `to` /
+`--to` to up to 5 addresses that are the owner's or on a verified sending
+domain of the account (subdomains count). The subject starts `[Test] `,
+merge tags are filled from the contact with that address when there is one,
+and no credits are used. An account can send 50 test emails in any rolling
+24 hours (`test_sends`); past that it's a 429 with `Retry-After`.
+
+`internal/sending` does the work. `sending.Prepare` is the step tests share
+with launch and the send workers: it works out the From (the email's own,
+else the account's), checks it's on a verified domain, checks the subject,
+postal address and merge tags, and compiles the email. When anything's
+wrong it lists every problem with its fix (`422 not_ready`,
+`details.problems`), and the CLI prints them all. Only draft and scheduled
+campaigns can be tested (409 otherwise).
+
+A test's unsubscribe link and `List-Unsubscribe` header point at `/u/test`,
+a page that says it was a test and changes nothing. After a test the
+campaign's `last_test` holds when it went out and the campaign and email
+versions it was made from, for MG-30's "tested since the last edit" check.
 
 ## Unsubscribing
 

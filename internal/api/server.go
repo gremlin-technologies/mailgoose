@@ -26,6 +26,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 )
@@ -64,6 +65,9 @@ type Server struct {
 	Forms *forms.Service
 	// Campaigns stores the account's campaigns; nil without a database.
 	Campaigns *campaigns.Service
+	// Sending sends test emails; nil without a database, which makes test
+	// sends answer 503.
+	Sending *sending.Service
 	// Unsubscribe checks recipients' unsubscribe links; nil without a
 	// database, which makes the unsubscribe pages answer 503.
 	Unsubscribe *unsubscribe.Service
@@ -119,7 +123,7 @@ func (s *Server) Handler() http.Handler {
 	// Recipient pages (unsubscribing) have their own, higher limit and none
 	// of the API's sign-in layers.
 	pages := requestIDs(s.recoverer(s.logRequests(
-		(&RateLimiter{PerMinute: recipientPagesPerMinute, Now: now}).Middleware(s.recipientPages()))))
+		(&RateLimiter{PerMinute: recipientPagesPerMinute, Now: now, Key: ClientIPKey, Limited: s.recipientPageLimited}).Middleware(s.recipientPages()))))
 	// The web app skips the API's middleware: its files need no rate limit,
 	// session lookup or idempotency.
 	var web http.Handler

@@ -314,6 +314,18 @@ var contractCases = map[string][]contractCase{
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/campaigns"))), req: bearer(campaignPath(http.MethodDelete, "")), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(campaignPath(http.MethodDelete, "")), status: http.StatusServiceUnavailable},
 	},
+	"testCampaign": {
+		{name: "sent", server: draftKey(authServer), before: readyCampaign, req: bearer(campaignTest("")), status: http.StatusOK},
+		{name: "malformed", server: fullKey(authServer), before: readyCampaign, req: bearer(campaignTest(`{"to":"pat@example.com"}`)), status: http.StatusBadRequest},
+		{name: "unknown", server: fullKey(authServer), req: bearer(campaignTest("")), status: http.StatusNotFound},
+		{name: "past scheduled", server: fullKey(authServer), before: sendingCampaign, req: bearer(campaignTest("")), status: http.StatusConflict},
+		{name: "not ready", server: fullKey(authServer), before: addedCampaign, req: bearer(campaignTest("")), status: http.StatusUnprocessableEntity},
+		{name: "over the day's tests", server: fullKey(authServer), before: testsUsedUp, req: bearer(campaignTest("")), status: http.StatusTooManyRequests},
+		{name: "provider down", server: fullKey(authServer), before: failingMail, req: bearer(campaignTest("")), status: http.StatusBadGateway},
+		{name: "no credentials", server: authServer, req: campaignTest(""), status: http.StatusUnauthorized},
+		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(campaignTest(""))), status: http.StatusForbidden},
+		{name: "no database", server: serverWith(nil), req: bearer(campaignTest("")), status: http.StatusServiceUnavailable},
+	},
 	"listForms": {
 		{name: "listed", server: draftKey(authServer), before: addedForm, req: bearer(request(http.MethodGet, "/v1/forms")), status: http.StatusOK},
 		{name: "bad cursor", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/forms?cursor=nope")), status: http.StatusBadRequest},

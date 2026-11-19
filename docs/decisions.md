@@ -23,6 +23,34 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: Test sends (MG-29, reversible defaults)
+
+Picked while building MG-29; easy to change.
+
+- **Who a test can go to:** the account owner's address, or any address on
+  a verified sending domain of the account, subdomains included, up to 5
+  per test. Anything else is refused, so a test can't be used to mail
+  strangers.
+- **50 a day is a rolling 24 hours**, counted per message, not per request.
+  A test that's counted and then fails at the mail provider still counts,
+  so retries can't get round the limit.
+- **Only draft and scheduled campaigns can be tested.** A campaign that's
+  sending or done gets a 409, before any readiness check.
+- **A test must pass the same checks as a launch** (verified From, subject,
+  postal address, merge tags), with every problem listed at once, so what's
+  tested is what will send.
+- **Merge tags come from the contact with the test address** when there is
+  one; otherwise only the address is known and fallbacks show.
+- **A test's unsubscribe link goes to `/u/test`**, which explains it was a
+  test and changes nothing, rather than unsubscribing the tester.
+- **The campaign records its last test's time and the campaign and email
+  versions it was made from** (`last_test`), so MG-30 can tell whether
+  anything changed since.
+- **The API server now builds its mail sender whenever it has a database**,
+  not only when it signs people in with its own sending domain, because
+  test sends need it. Locally it's still the fake sender, which keeps mail
+  in a folder.
+
 ## 2026-11-18: Unsubscribe links (MG-28, reversible defaults)
 
 Picked while building MG-28; easy to change.
@@ -48,6 +76,12 @@ Picked while building MG-28; easy to change.
   open.
 - **The pages show the address and the account's name**, so a person with
   more than one address knows which one left.
+- **The recipient pages are limited per IP only** (1,200 a minute), whatever
+  Authorization header a request carries, so a client can't get a fresh
+  bucket per header. A recipient over the limit gets a page with
+  Retry-After, not the API's JSON, and a limited POST is logged as a
+  warning so blocked one-click unsubscribes show up. (Added after the MG-28
+  review.)
 
 ## 2026-11-18: Campaigns (MG-27, reversible defaults)
 

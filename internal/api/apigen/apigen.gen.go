@@ -1111,7 +1111,10 @@ type Campaign struct {
 	// EmailId The email it sends. Null when a draft's email was deleted.
 	EmailId *string `json:"email_id"`
 	Id      string  `json:"id"`
-	Name    string  `json:"name"`
+
+	// LastTest The campaign's last test send; null before the first.
+	LastTest *CampaignTest `json:"last_test"`
+	Name     string        `json:"name"`
 
 	// RecipientCount How many contacts the recipients reach now. Single-campaign responses only.
 	RecipientCount *int               `json:"recipient_count,omitempty"`
@@ -1149,6 +1152,18 @@ type CampaignRecipients struct {
 // send time; `sending`, then `sent`. `cancelled` was stopped by the
 // account, `paused` by us mid-send, and `failed` couldn't finish.
 type CampaignStatus string
+
+// CampaignTest defines model for CampaignTest.
+type CampaignTest struct {
+	// At When the test went out.
+	At time.Time `json:"at"`
+
+	// EmailVersion The email's version it was made from.
+	EmailVersion int `json:"email_version"`
+
+	// Version The campaign's version it was made from.
+	Version int `json:"version"`
+}
 
 // CliTokenRequest defines model for CliTokenRequest.
 type CliTokenRequest struct {
@@ -2244,6 +2259,26 @@ type TagRef struct {
 	Name string `json:"name"`
 }
 
+// TestCampaignRequest defines model for TestCampaignRequest.
+type TestCampaignRequest struct {
+	// To Who gets the test. Left out or empty, the account owner.
+	To *[]string `json:"to,omitempty"`
+}
+
+// TestSendResult defines model for TestSendResult.
+type TestSendResult struct {
+	Campaign Campaign `json:"campaign"`
+
+	// DailyLimit Test emails an account can send in any 24 hours.
+	DailyLimit int `json:"daily_limit"`
+
+	// SentToday Test emails the account sent in the last 24 hours, these included.
+	SentToday int `json:"sent_today"`
+
+	// To Who each copy went to.
+	To []string `json:"to"`
+}
+
 // TextBlock defines model for TextBlock.
 type TextBlock struct {
 	Align Align `json:"align"`
@@ -2454,6 +2489,15 @@ type ServiceUnavailable = Error
 // TagConflict defines model for TagConflict.
 type TagConflict = Error
 
+// TestLimited defines model for TestLimited.
+type TestLimited = Error
+
+// TestNotSendable defines model for TestNotSendable.
+type TestNotSendable = Error
+
+// TestSendFailed defines model for TestSendFailed.
+type TestSendFailed = Error
+
 // TooManyRequests defines model for TooManyRequests.
 type TooManyRequests = Error
 
@@ -2633,6 +2677,9 @@ type CountCampaignRecipientsJSONRequestBody = RecipientCountRequest
 
 // UpdateCampaignJSONRequestBody defines body for UpdateCampaign for application/json ContentType.
 type UpdateCampaignJSONRequestBody = UpdateCampaignRequest
+
+// TestCampaignJSONRequestBody defines body for TestCampaign for application/json ContentType.
+type TestCampaignJSONRequestBody = TestCampaignRequest
 
 // CreateCliTokenJSONRequestBody defines body for CreateCliToken for application/json ContentType.
 type CreateCliTokenJSONRequestBody = CliTokenRequest
@@ -3446,6 +3493,9 @@ type ServerInterface interface {
 	// UpdateCampaign Change a campaign
 	// (PATCH /v1/campaigns/{campaign_id})
 	UpdateCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
+	// TestCampaign Send a test of a campaign
+	// (POST /v1/campaigns/{campaign_id}/test)
+	TestCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
 	// CreateCliToken Get a CLI token with an emailed code
 	// (POST /v1/cli-tokens)
 	CreateCliToken(w http.ResponseWriter, r *http.Request)
@@ -3965,6 +4015,32 @@ func (siw *ServerInterfaceWrapper) UpdateCampaign(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateCampaign(w, r, campaignId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestCampaign operation middleware
+func (siw *ServerInterfaceWrapper) TestCampaign(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "campaign_id" -------------
+	var campaignId CampaignId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "campaign_id", r.PathValue("campaign_id"), &campaignId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "campaign_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestCampaign(w, r, campaignId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5838,6 +5914,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/campaigns/{campaign_id}", wrapper.DeleteCampaign)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/campaigns/{campaign_id}", wrapper.GetCampaign)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/campaigns/{campaign_id}", wrapper.UpdateCampaign)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/test", wrapper.TestCampaign)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails", wrapper.ListEmails)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails", wrapper.CreateEmail)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/emails/{email_id}", wrapper.DeleteEmail)

@@ -22,6 +22,7 @@ const ClosedAccountName = "Deleted account"
 var AccountTables = []string{
 	"unsubscribes",
 	"unsubscribe_keys",
+	"test_sends",
 	"campaigns",
 	"forms",
 	"emails",

@@ -52,7 +52,23 @@ func logPath(path string) string {
 	return path
 }
 
+// testToken is the token in a test send's unsubscribe link
+// (sending.TestUnsubscribePath). Real tokens start "u1".
+const testToken = "test"
+
+var testSendPage = page{
+	Title: "This was a test email",
+	Body: []string{
+		"In the campaign itself, this link unsubscribes the person it's sent to, with one click.",
+		"Nothing has been changed.",
+	},
+}
+
 func (s *Server) unsubscribePage(w http.ResponseWriter, r *http.Request) {
+	if r.PathValue("token") == testToken {
+		writePage(w, http.StatusOK, testSendPage)
+		return
+	}
 	if s.Unsubscribe == nil {
 		writePage(w, http.StatusServiceUnavailable, unavailablePage)
 		return
@@ -86,6 +102,10 @@ func (s *Server) unsubscribePost(w http.ResponseWriter, r *http.Request) {
 	source := unsubscribe.SourceLink
 	if oneClick {
 		source = unsubscribe.SourceOneClick
+	}
+	if r.PathValue("token") == testToken {
+		writePage(w, http.StatusOK, testSendPage)
+		return
 	}
 	if s.Unsubscribe == nil {
 		writePage(w, http.StatusServiceUnavailable, unavailablePage)
@@ -131,6 +151,22 @@ var badLinkPage = page{
 		"It may have been cut short or changed on the way. Open the link straight from the email, or reply to the email and ask to be taken off the list.",
 		"Nothing has been changed.",
 	},
+}
+
+// recipientPageLimited answers a recipient who hit the limit with a page,
+// not the API's JSON. A limited one-click POST is logged, because a mail
+// provider's unsubscribe that never lands is a compliance problem.
+func (s *Server) recipientPageLimited(w http.ResponseWriter, r *http.Request, retryAfter int) {
+	if r.Method == http.MethodPost {
+		s.Log.WarnContext(r.Context(), "unsubscribe post rate limited",
+			"ip", ClientIP(r), "retry_after", retryAfter, "one_click", r.PostFormValue("List-Unsubscribe") == "One-Click")
+	}
+	writePage(w, http.StatusTooManyRequests, busyPage)
+}
+
+var busyPage = page{
+	Title: "Too many tries just now",
+	Body:  []string{"Please wait a minute and open the link again. Nothing has been changed."},
 }
 
 var unavailablePage = page{

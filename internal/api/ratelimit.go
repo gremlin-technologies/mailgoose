@@ -27,6 +27,10 @@ type RateLimiter struct {
 	Now func() time.Time
 	// Key returns the key a request counts against. Nil means DefaultRateLimitKey.
 	Key func(*http.Request) string
+	// Limited writes the response to a limited request, after Retry-After
+	// is set, with the whole seconds to wait. Nil means the API's JSON
+	// rate_limited error.
+	Limited func(w http.ResponseWriter, r *http.Request, retryAfter int)
 
 	mu      sync.Mutex
 	buckets map[string]*bucket
@@ -121,6 +125,10 @@ func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 	if keyFn == nil {
 		keyFn = DefaultRateLimitKey
 	}
+	limited := l.Limited
+	if limited == nil {
+		limited = writeTooManyRequests
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
 			next.ServeHTTP(w, r)
@@ -136,13 +144,23 @@ func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 				secs = 1
 			}
 			h.Set("Retry-After", strconv.Itoa(secs))
-			WriteError(w, TooManyRequests("rate_limited", "Too many requests.").
-				WithHint("Wait "+strconv.Itoa(secs)+" seconds (see Retry-After) and try again."))
+			limited(w, r, secs)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
+
+// writeTooManyRequests is the API's 429.
+func writeTooManyRequests(w http.ResponseWriter, _ *http.Request, secs int) {
+	WriteError(w, TooManyRequests("rate_limited", "Too many requests.").
+		WithHint("Wait "+strconv.Itoa(secs)+" seconds (see Retry-After) and try again."))
+}
+
+// ClientIPKey counts every request against the client's IP, whatever
+// credentials it carries, for routes where a header can't be allowed to
+// pick a fresh bucket.
+func ClientIPKey(r *http.Request) string { return "ip:" + ClientIP(r) }
 
 // blocked reports, without taking a token, whether key is out of tokens, and
 // how long until it has one.

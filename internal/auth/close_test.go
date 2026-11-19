@@ -27,6 +27,7 @@ func TestDeleteAccount(t *testing.T) {
 			`INSERT INTO campaigns (account_id, name, all_contacts) VALUES ($1, 'Spring', true)`,
 			`INSERT INTO unsubscribe_keys (account_id, key) VALUES ($1, decode(repeat('ab', 32), 'hex'))`,
 			`INSERT INTO unsubscribes (account_id, source) VALUES ($1, 'link')`,
+			`INSERT INTO test_sends (account_id) VALUES ($1)`,
 			`INSERT INTO domains (account_id, name, mail_from, created_at, check_until) VALUES ($1, 'd` + string(rune('0'+i)) + `.example', 'bounce', now(), now())`,
 			`INSERT INTO credit_transactions (account_id, type, amount, expires_at) VALUES ($1, 'grant', 1000, now() + interval '1 month')`,
 			`INSERT INTO idempotency_keys (scope, key, request_hash) VALUES ('account:' || $1 || ':user:x', 'k', 'h')`,

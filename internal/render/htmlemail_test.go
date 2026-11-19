@@ -139,8 +139,8 @@ func TestCompileHTMLRunsTheImportCheck(t *testing.T) {
 		"script":     `<script>x()</script><a href="{{unsubscribe_url}}">Unsubscribe</a>`,
 	} {
 		_, err := CompileHTML(htmlDoc(t, src, ""), Account{PostalAddress: postal})
-		var p Problems
-		if !errors.As(err, &p) || len(p) == 0 || p[0].Path != "html" {
+		var he *emails.HTMLError
+		if !errors.As(err, &he) || len(he.Issues) == 0 {
 			t.Errorf("%s: %v", name, err)
 		}
 	}

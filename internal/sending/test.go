@@ -1,0 +1,248 @@
+package sending
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+
+	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
+	"github.com/gremlin-technologies/mailgoose/internal/contacts"
+	"github.com/gremlin-technologies/mailgoose/internal/domains"
+	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/render"
+	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
+)
+
+// Limits on test sends (CAM-2).
+const (
+	// MaxTestRecipients is how many addresses one test can go to.
+	MaxTestRecipients = 5
+	// TestsPerDay is how many test messages an account can send in any 24
+	// hours.
+	TestsPerDay = 50
+	// TestSubjectPrefix starts every test's subject.
+	TestSubjectPrefix = "[Test] "
+)
+
+// TestUnsubscribePath is where a test's unsubscribe link and header point:
+// a page that explains it's a test and changes nothing. Real tokens start
+// "u1", so it can't be mistaken for one.
+const TestUnsubscribePath = unsubscribe.PathPrefix + "test"
+
+// InvalidError is a request Test refuses before sending anything.
+type InvalidError struct {
+	Field   string
+	Message string
+}
+
+func (e *InvalidError) Error() string { return e.Field + ": " + e.Message }
+
+// RecipientError names a test address that isn't allowed.
+type RecipientError struct {
+	Address string
+}
+
+func (e *RecipientError) Error() string {
+	return e.Address + " isn't the account owner's address or on a verified sending domain of the account"
+}
+
+// LimitError means the test would go over TestsPerDay; RetryAfter is when
+// enough of the day's tests have aged out.
+type LimitError struct {
+	Sent       int
+	RetryAfter time.Duration
+}
+
+func (e *LimitError) Error() string {
+	return fmt.Sprintf("%d test emails sent in the last 24 hours; the limit is %d", e.Sent, TestsPerDay)
+}
+
+// SendError means the mail provider refused a test copy or didn't answer.
+// Copies before it went out.
+type SendError struct {
+	Address string
+	Err     error
+}
+
+func (e *SendError) Error() string { return "send test to " + e.Address + ": " + e.Err.Error() }
+
+func (e *SendError) Unwrap() error { return e.Err }
+
+// TestResult is what a test send did.
+type TestResult struct {
+	Campaign *campaigns.Campaign
+	// To is who each copy went to, in order.
+	To []string
+	// SentToday is the account's test messages in the last 24 hours, this
+	// test's included.
+	SentToday int
+}
+
+// Test sends one copy of the campaign's email to each address in to, or to
+// the account owner when to is empty. Each copy's subject starts
+// "[Test] "; no credits are used. baseURL is the app's public URL, for the
+// test's unsubscribe link. The campaign then records the test and the
+// versions it was made from.
+func (s *Service) Test(ctx context.Context, accountID, campaignID string, to []string, baseURL string) (*TestResult, error) {
+	owner, err := s.ownerEmail(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	recipients, err := s.testRecipients(ctx, accountID, owner, to)
+	if err != nil {
+		return nil, err
+	}
+	// A campaign that's sending or sent can't be tested, whatever else is
+	// wrong with it.
+	c, err := s.Campaigns.Get(ctx, accountID, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	if !campaigns.Editable(c.Status) {
+		return nil, &campaigns.StatusError{Status: c.Status}
+	}
+	p, err := s.Prepare(ctx, accountID, campaignID)
+	if err != nil {
+		return nil, err
+	}
+	sentToday, err := s.reserveTests(ctx, accountID, campaignID, len(recipients))
+	if err != nil {
+		return nil, err
+	}
+
+	unsubURL := strings.TrimRight(baseURL, "/") + TestUnsubscribePath
+	for _, addr := range recipients {
+		r := s.testRecipient(ctx, accountID, addr)
+		r.UnsubscribeURL = unsubURL
+		m := p.Template.Personalize(r)
+		msg := mail.Message{
+			From:       p.From,
+			To:         mail.Address{Email: addr},
+			ReplyTo:    p.ReplyTo,
+			Subject:    TestSubjectPrefix + m.Subject,
+			HTML:       m.HTML,
+			Text:       m.Text,
+			Kind:       mail.KindTest,
+			AccountID:  accountID,
+			CampaignID: campaignID,
+		}
+		for _, h := range m.Headers {
+			msg.Headers = append(msg.Headers, mail.Header{Name: h.Name, Value: h.Value})
+		}
+		if _, err := s.Mail.Send(ctx, msg); err != nil {
+			return nil, &SendError{Address: addr, Err: err}
+		}
+	}
+
+	t := campaigns.Test{At: s.now(), Version: p.Campaign.Version, EmailVersion: p.Email.Version}
+	if err := s.Campaigns.RecordTest(ctx, accountID, campaignID, t); err != nil {
+		return nil, err
+	}
+	p.Campaign.LastTest = &t
+	return &TestResult{Campaign: p.Campaign, To: recipients, SentToday: sentToday}, nil
+}
+
+func (s *Service) ownerEmail(ctx context.Context, accountID string) (string, error) {
+	var email string
+	err := s.DB.QueryRow(ctx, `SELECT email FROM users WHERE account_id = $1`, accountID).Scan(&email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", campaigns.ErrNotFound
+	}
+	return strings.ToLower(email), err
+}
+
+// testRecipients checks the addresses a test may go to: the owner's, or
+// any on a verified domain of the account. Repeats count once.
+func (s *Service) testRecipients(ctx context.Context, accountID, owner string, to []string) ([]string, error) {
+	if len(to) == 0 {
+		return []string{owner}, nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, raw := range to {
+		addr, err := contacts.NormalizeEmail(raw)
+		if err != nil {
+			return nil, &InvalidError{Field: "to", Message: fmt.Sprintf("%q isn't an email address", raw)}
+		}
+		if seen[addr] {
+			continue
+		}
+		seen[addr] = true
+		out = append(out, addr)
+	}
+	if len(out) > MaxTestRecipients {
+		return nil, &InvalidError{Field: "to", Message: fmt.Sprintf("a test goes to at most %d addresses", MaxTestRecipients)}
+	}
+	for _, addr := range out {
+		if addr == owner {
+			continue
+		}
+		err := s.Domains.RequireVerifiedFrom(ctx, accountID, addr)
+		if errors.Is(err, domains.ErrFromNotVerified) {
+			return nil, &RecipientError{Address: addr}
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+// testRecipient fills a test's merge tags: from the contact with that
+// address when there is one, so the test looks as it will for them.
+func (s *Service) testRecipient(ctx context.Context, accountID, addr string) render.Recipient {
+	r := render.Recipient{Email: addr}
+	var first, last *string
+	if err := s.DB.QueryRow(ctx, `SELECT first_name, last_name FROM contacts WHERE account_id = $1 AND email = $2`,
+		accountID, addr).Scan(&first, &last); err == nil {
+		r.FirstName, r.LastName = trimmed(first), trimmed(last)
+	}
+	return r
+}
+
+// reserveTests counts n test messages against the account's day, or
+// returns a *LimitError when they'd go over. The account row is locked, so
+// two tests at once can't both take the last places. A reserved test that
+// then fails to send still counts.
+func (s *Service) reserveTests(ctx context.Context, accountID, campaignID string, n int) (int, error) {
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := tx.Exec(ctx, `SELECT 1 FROM accounts WHERE id = $1 FOR UPDATE`, accountID); err != nil {
+		return 0, err
+	}
+	now := s.now()
+	since := now.Add(-24 * time.Hour)
+	var sent int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM test_sends WHERE account_id = $1 AND sent_at > $2`,
+		accountID, since).Scan(&sent); err != nil {
+		return 0, err
+	}
+	if sent+n > TestsPerDay {
+		// Wait until enough have aged out: the (sent+n-TestsPerDay)th
+		// oldest in the window.
+		var at time.Time
+		if err := tx.QueryRow(ctx, `
+			SELECT sent_at FROM test_sends WHERE account_id = $1 AND sent_at > $2
+			ORDER BY sent_at OFFSET $3 LIMIT 1`, accountID, since, sent+n-TestsPerDay-1).Scan(&at); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return 0, err
+		}
+		retry := at.Add(24 * time.Hour).Sub(now)
+		if at.IsZero() || retry < time.Second {
+			retry = time.Second
+		}
+		return 0, &LimitError{Sent: sent, RetryAfter: retry}
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO test_sends (account_id, campaign_id, sent_at)
+		SELECT $1, $2, $3 FROM generate_series(1, $4)`, accountID, campaignID, now, n); err != nil {
+		return 0, err
+	}
+	return sent + n, tx.Commit(ctx)
+}

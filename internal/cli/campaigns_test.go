@@ -4,6 +4,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/gremlin-technologies/mailgoose/internal/mail"
 )
 
 func TestCampaignsAgainstAPI(t *testing.T) {
@@ -111,5 +115,66 @@ func TestParseSendAt(t *testing.T) {
 	}
 	if _, err := parseSendAt("tomorrow"); err == nil {
 		t.Error("tomorrow parsed")
+	}
+}
+
+func TestCampaignTestAgainstAPI(t *testing.T) {
+	h := liveAPI(t)
+	h.app.Stdin = strings.NewReader(strings.Replace(springDoc, "news@bakery.example", "hello@patsbakery.com", 1))
+	if code := h.run("email", "create", "--name", "Spring", "--file", "-", "--json"); code != ExitOK {
+		t.Fatalf("email: exit %d %s", code, h.errOut)
+	}
+	emailID := h.jsonOut(t)["id"].(string)
+	if code := h.run("campaign", "create", "--name", "Spring", "--email", emailID, "--all", "--json"); code != ExitOK {
+		t.Fatalf("create: exit %d %s", code, h.errOut)
+	}
+	id := h.jsonOut(t)["id"].(string)
+
+	// Not ready: every problem is listed with its fix, and nothing is sent.
+	if code := h.run("campaign", "test", id); code != ExitError {
+		t.Fatalf("not ready: exit %d %s", code, h.errOut)
+	}
+	for _, want := range []string{"2 things to fix", "patsbakery.com isn't on a verified sending domain", "mailgoose domain add patsbakery.com", "no postal address", "mailgoose account update --postal-address"} {
+		if !strings.Contains(h.errOut.String(), want) {
+			t.Errorf("not ready lacks %q:\n%s", want, h.errOut)
+		}
+	}
+	if code := h.run("campaign", "test", id, "--json"); code != ExitError || !strings.Contains(h.errOut.String(), `"problems"`) {
+		t.Errorf("not ready json: exit %d %s", code, h.errOut)
+	}
+
+	if code := h.run("account", "update", "--postal-address", "12 Main St"); code != ExitOK {
+		t.Fatalf("postal: exit %d %s", code, h.errOut)
+	}
+	v, _ := liveDBs.Load(t)
+	if _, err := v.(*pgxpool.Pool).Exec(t.Context(), `
+		INSERT INTO domains (account_id, name, mail_from, created_at, check_until, status)
+		SELECT id, 'patsbakery.com', 'bounce', now(), now(), 'verified' FROM accounts`); err != nil {
+		t.Fatal(err)
+	}
+
+	if code := h.run("campaign", "test", id); code != ExitOK {
+		t.Fatalf("test: exit %d %s", code, h.errOut)
+	}
+	if got := h.out.String(); got != "Sent a test of \"Spring\" to pat@example.com.\n1 of 50 test emails used in the last 24 hours.\n" {
+		t.Errorf("test: %q", got)
+	}
+	if code := h.run("campaign", "test", id, "--to", "sam@patsbakery.com", "--to", "pat@example.com", "--json"); code != ExitOK {
+		t.Fatalf("test --to: exit %d %s", code, h.errOut)
+	}
+	if out := h.jsonOut(t); out["sent_today"] != 3.0 || out["campaign"].(map[string]any)["last_test"] == nil {
+		t.Errorf("test --to: %v", out)
+	}
+	o, _ := liveOutboxes.Load(t)
+	sent := o.(*mail.Fake).Sent()
+	if len(sent) != 3 || sent[1].Message.To.Email != "sam@patsbakery.com" || sent[0].Message.Subject != "[Test] Spring menu" {
+		t.Errorf("sent %+v", sent)
+	}
+
+	if code := h.run("campaign", "test", id, "--to", "someone@gmail.com"); code != ExitError || !strings.Contains(h.errOut.String(), "someone@gmail.com is neither") {
+		t.Errorf("stranger: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("campaign", "test", "spring"); code != ExitUsage {
+		t.Errorf("bad id: exit %d", code)
 	}
 }

@@ -82,6 +82,9 @@ func campaignJSON(c *campaigns.Campaign) apigen.Campaign {
 	for i, t := range c.Tags {
 		out.Recipients.Tags[i] = apigen.TagRef{Id: t.ID, Name: t.Name}
 	}
+	if t := c.LastTest; t != nil {
+		out.LastTest = &apigen.CampaignTest{At: t.At.UTC(), Version: t.Version, EmailVersion: t.EmailVersion}
+	}
 	return out
 }
 
