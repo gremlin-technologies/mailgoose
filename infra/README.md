@@ -73,6 +73,7 @@ infra/
     email/          SES domain identity, DKIM/MAIL FROM/DMARC records, config set, SNS events topic.
     edge/           ACM cert, ALB (HTTP→HTTPS redirect), Route 53 aliases.
     service/        One Fargate service: task def, log group, execution + task roles.
+    images/         Private S3 bucket for uploaded images, read only by CloudFront (origin access control).
     github-deploy-role/  IAM role GitHub Actions assumes via OIDC to deploy images.
 ```
 
@@ -86,6 +87,7 @@ What runs per environment:
 | `ses-events` queue | SES → SNS → SQS. Bounces, complaints, deliveries, opens, clicks for basic reports and suppression. |
 | RDS Postgres | Master password lives in Secrets Manager, managed and rotated by RDS. |
 | `<env>/app` secret | Empty JSON secret for app keys (Stripe etc.). Set values by hand, never in Terraform. |
+| `images` bucket and CDN | Pictures customers upload for image blocks. The bucket is private; CloudFront reads it through origin access control and serves it at its own `*.cloudfront.net` address. The API task role may put, delete and list objects there, and the API gets `IMAGES_BUCKET` and `IMAGES_BASE_URL`. |
 
 All plain AWS provider resources, no community modules, so every line is
 readable and `terraform validate` works offline. The VPC could be swapped for
@@ -116,7 +118,8 @@ separate accounts later means a second state bucket and re-running global per ac
 Per environment, at the defaults: ALB ~$17/mo, RDS db.t4g.micro ~$12/mo
 (db.t4g.small ~$24 in prod), each 0.25 vCPU / 0.5 GB ARM Fargate task ~$7/mo,
 NAT gateway ~$33/mo + $0.045/GB, a few dollars of Secrets Manager, Route 53,
-CloudWatch Logs. Staging runs with **no NAT** (tasks in public subnets with
+CloudWatch Logs, and pennies of S3 for images (CloudFront's first 1 TB a month
+out is free). Staging runs with **no NAT** (tasks in public subnets with
 public IPs, still locked down by security groups) to save the NAT fee.
 VPC interface endpoints are the other way to avoid NAT, but at ~$7/mo each per
 AZ they cost more than one NAT until traffic is large. These are estimates, not
@@ -213,11 +216,16 @@ Do these in order, only after the AWS project allows the OIDC provider:
   refuses the create, and later reads, updates and sends.
 - **Every send passes the configuration set** (`SES_CONFIGURATION_SET`) so events
   reach the events queue.
+- **Uploaded images** go in `IMAGES_BUCKET` and are served from
+  `IMAGES_BASE_URL`. Objects are never public: CloudFront is the only reader.
+  Set `Content-Type` and `Cache-Control` on each upload, since CloudFront caches
+  as long as the object says.
 - Containers run with a read-only root filesystem; write temp files to a mounted
   volume or memory if needed.
 
 ## Not here yet
 
 The prod deploy workflow, autoscaling, CloudWatch alarms, WAF, a custom
-open/click tracking domain, and hosting the web
+open/click tracking domain, a custom name for the image CDN (it needs an ACM
+certificate in us-east-1), and hosting the web
 editor on S3 + CloudFront (the API service can serve it for now).

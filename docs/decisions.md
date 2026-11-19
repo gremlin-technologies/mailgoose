@@ -4,6 +4,25 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-19: Image storage bucket and CDN (MG-23, reversible defaults)
+
+The owner asked for this as a PR to merge (Nov 19). Picked while writing it;
+easy to change.
+
+- **CDN address:** the distribution's own `*.cloudfront.net` name. A name
+  like `img.mailgoose.app` needs an ACM certificate in us-east-1, which the
+  AWS project's Region rule doesn't allow, so it waits.
+- **Price class 100** (North America and Europe edges), the cheapest. Images
+  still load everywhere, just from farther away outside those regions.
+- **SSE-S3 encryption**, public access blocked, bucket owner enforced, and a
+  bucket policy that refuses anything but TLS. Only the distribution may read.
+- **The API task role** may put, delete and list objects in the bucket
+  (uploads, and deleting an account's images). The worker gets no access.
+- **Staging's bucket can be destroyed with images in it**; prod's can't
+  (`force_destroy` follows `deletion_protection`).
+- **No versioning:** an image's name never changes what it holds, and
+  images are only deleted with their account.
+
 ## 2026-11-19: Email check hardening (MG-26 follow-up, reversible defaults)
 
 From the MG-26 review; easy to change.
