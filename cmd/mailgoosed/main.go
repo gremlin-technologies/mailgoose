@@ -32,6 +32,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
+	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
 	"github.com/gremlin-technologies/mailgoose/internal/web"
@@ -117,6 +118,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		srv.Credits = &credits.Ledger{DB: pool}
 		srv.Contacts = &contacts.Service{DB: pool}
 		srv.Emails = &emails.Service{DB: pool}
+		srv.Forms = &forms.Service{DB: pool}
 		if srv.Domains, err = newDomains(ctx, cfg, pool, log); err != nil {
 			return err
 		}

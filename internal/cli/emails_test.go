@@ -17,6 +17,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
+	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 )
 
@@ -31,6 +32,7 @@ func liveAPI(t *testing.T) *harness {
 		DB:       db,
 		Contacts: &contacts.Service{DB: db},
 		Emails:   &emails.Service{DB: db},
+		Forms:    &forms.Service{DB: db},
 		Auth:     &auth.Service{DB: db, Mail: &mail.Fake{}, From: mail.Address{Email: "signin@mail.test.example"}},
 	}
 	var accountID, userID string

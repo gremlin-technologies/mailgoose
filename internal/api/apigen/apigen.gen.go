@@ -522,6 +522,27 @@ func (e FooterBlockType) Valid() bool {
 	}
 }
 
+// Defines values for FormFieldName.
+const (
+	FormFieldNameEmail     FormFieldName = "email"
+	FormFieldNameFirstName FormFieldName = "first_name"
+	FormFieldNameLastName  FormFieldName = "last_name"
+)
+
+// Valid indicates whether the value is a known member of the FormFieldName enum.
+func (e FormFieldName) Valid() bool {
+	switch e {
+	case FormFieldNameEmail:
+		return true
+	case FormFieldNameFirstName:
+		return true
+	case FormFieldNameLastName:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HeadingBlockLevel.
 const (
 	HeadingBlockLevelN1 HeadingBlockLevel = 1
@@ -1251,6 +1272,21 @@ type CreateEmailRequest struct {
 	Name string     `json:"name"`
 }
 
+// CreateFormRequest defines model for CreateFormRequest.
+type CreateFormRequest struct {
+	ButtonText     *string      `json:"button_text,omitempty"`
+	ConfirmSubject *string      `json:"confirm_subject,omitempty"`
+	ConfirmText    *string      `json:"confirm_text,omitempty"`
+	DoubleOptIn    *bool        `json:"double_opt_in,omitempty"`
+	Fields         *[]FormField `json:"fields,omitempty"`
+	Name           string       `json:"name"`
+
+	// RedirectUrl A full https:// address, or empty for none.
+	RedirectUrl    *string   `json:"redirect_url,omitempty"`
+	SuccessMessage *string   `json:"success_message,omitempty"`
+	TagIds         *[]string `json:"tag_ids,omitempty"`
+}
+
 // CreateImportRequest defines model for CreateImportRequest.
 type CreateImportRequest struct {
 	// Columns The header of the column each field comes from. Leave a field out to have it found from common headers.
@@ -1670,6 +1706,67 @@ type FooterBlock struct {
 
 // FooterBlockType defines model for FooterBlock.Type.
 type FooterBlockType string
+
+// Form defines model for Form.
+type Form struct {
+	ButtonText string `json:"button_text"`
+
+	// ConfirmSubject The confirmation email's subject.
+	ConfirmSubject string `json:"confirm_subject"`
+
+	// ConfirmText The confirmation email's text, above its confirm link.
+	ConfirmText string    `json:"confirm_text"`
+	CreatedAt   time.Time `json:"created_at"`
+
+	// DoubleOptIn When on, people get an email to confirm before they're subscribed.
+	DoubleOptIn bool `json:"double_opt_in"`
+
+	// Fields The fields the form asks for, in order.
+	Fields []FormField `json:"fields"`
+	Id     string      `json:"id"`
+	Name   string      `json:"name"`
+
+	// RedirectUrl Where people go after signing up, instead of seeing the success message.
+	RedirectUrl *string `json:"redirect_url"`
+
+	// SuccessMessage Shown after someone signs up, unless there's a redirect_url.
+	SuccessMessage string `json:"success_message"`
+
+	// Tags Tags put on everyone who signs up with the form.
+	Tags      []TagRef  `json:"tags"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// FormEmbed defines model for FormEmbed.
+type FormEmbed struct {
+	// ActionUrl Where the form posts.
+	ActionUrl string `json:"action_url"`
+
+	// Html The form, with its styles. Works without JavaScript.
+	Html string `json:"html"`
+
+	// Script Optional. Paste it after the form to show the result in the page.
+	Script string `json:"script"`
+}
+
+// FormField defines model for FormField.
+type FormField struct {
+	// Label What the field is called on the form. Empty takes the default ("Email", "First name", "Last name").
+	Label *string       `json:"label,omitempty"`
+	Name  FormFieldName `json:"name"`
+
+	// Required Email is always required.
+	Required *bool `json:"required,omitempty"`
+}
+
+// FormFieldName defines model for FormField.Name.
+type FormFieldName string
+
+// FormList defines model for FormList.
+type FormList struct {
+	Data       []Form  `json:"data"`
+	NextCursor *string `json:"next_cursor"`
+}
 
 // HeadingBlock defines model for HeadingBlock.
 type HeadingBlock struct {
@@ -2105,6 +2202,19 @@ type UpdateEmailRequest struct {
 	Version int `json:"version"`
 }
 
+// UpdateFormRequest defines model for UpdateFormRequest.
+type UpdateFormRequest struct {
+	ButtonText     *string      `json:"button_text,omitempty"`
+	ConfirmSubject *string      `json:"confirm_subject,omitempty"`
+	ConfirmText    *string      `json:"confirm_text,omitempty"`
+	DoubleOptIn    *bool        `json:"double_opt_in,omitempty"`
+	Fields         *[]FormField `json:"fields,omitempty"`
+	Name           *string      `json:"name,omitempty"`
+	RedirectUrl    *string      `json:"redirect_url,omitempty"`
+	SuccessMessage *string      `json:"success_message,omitempty"`
+	TagIds         *[]string    `json:"tag_ids,omitempty"`
+}
+
 // User defines model for User.
 type User struct {
 	CreatedAt time.Time `json:"created_at"`
@@ -2142,6 +2252,9 @@ type DomainId = string
 
 // EmailId defines model for EmailId.
 type EmailId = string
+
+// FormId defines model for FormId.
+type FormId = string
 
 // IdempotencyKey defines model for IdempotencyKey.
 type IdempotencyKey = string
@@ -2190,6 +2303,9 @@ type InvalidBlockChange = Error
 
 // InvalidEmail defines model for InvalidEmail.
 type InvalidEmail = Error
+
+// InvalidForm defines model for InvalidForm.
+type InvalidForm = Error
 
 // InvalidHtml defines model for InvalidHtml.
 type InvalidHtml = Error
@@ -2320,6 +2436,15 @@ type PreviewEmailParams struct {
 // PreviewEmailParamsWidth defines parameters for PreviewEmail.
 type PreviewEmailParamsWidth string
 
+// ListFormsParams defines parameters for ListForms.
+type ListFormsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListImportsParams defines parameters for ListImports.
 type ListImportsParams struct {
 	// Limit Items per page.
@@ -2397,6 +2522,12 @@ type DuplicateEmailJSONRequestBody = DuplicateEmailRequest
 
 // ImportEmailHtmlJSONRequestBody defines body for ImportEmailHtml for application/json ContentType.
 type ImportEmailHtmlJSONRequestBody = ImportEmailHtmlRequest
+
+// CreateFormJSONRequestBody defines body for CreateForm for application/json ContentType.
+type CreateFormJSONRequestBody = CreateFormRequest
+
+// UpdateFormJSONRequestBody defines body for UpdateForm for application/json ContentType.
+type UpdateFormJSONRequestBody = UpdateFormRequest
 
 // CreateImportJSONRequestBody defines body for CreateImport for application/json ContentType.
 type CreateImportJSONRequestBody = CreateImportRequest
@@ -3252,6 +3383,24 @@ type ServerInterface interface {
 	// PreviewEmail Preview an email as it will look
 	// (GET /v1/emails/{email_id}/preview)
 	PreviewEmail(w http.ResponseWriter, r *http.Request, emailId EmailId, params PreviewEmailParams)
+	// ListForms List signup forms
+	// (GET /v1/forms)
+	ListForms(w http.ResponseWriter, r *http.Request, params ListFormsParams)
+	// CreateForm Create a signup form
+	// (POST /v1/forms)
+	CreateForm(w http.ResponseWriter, r *http.Request)
+	// DeleteForm Delete a signup form
+	// (DELETE /v1/forms/{form_id})
+	DeleteForm(w http.ResponseWriter, r *http.Request, formId FormId)
+	// GetForm Get a signup form
+	// (GET /v1/forms/{form_id})
+	GetForm(w http.ResponseWriter, r *http.Request, formId FormId)
+	// UpdateForm Change a signup form
+	// (PATCH /v1/forms/{form_id})
+	UpdateForm(w http.ResponseWriter, r *http.Request, formId FormId)
+	// GetFormEmbed Get a signup form's embed code
+	// (GET /v1/forms/{form_id}/embed)
+	GetFormEmbed(w http.ResponseWriter, r *http.Request, formId FormId)
 	// ListImports List CSV imports
 	// (GET /v1/imports)
 	ListImports(w http.ResponseWriter, r *http.Request, params ListImportsParams)
@@ -4595,6 +4744,170 @@ func (siw *ServerInterfaceWrapper) PreviewEmail(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListForms operation middleware
+func (siw *ServerInterfaceWrapper) ListForms(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListFormsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListForms(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateForm operation middleware
+func (siw *ServerInterfaceWrapper) CreateForm(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateForm(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteForm operation middleware
+func (siw *ServerInterfaceWrapper) DeleteForm(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "form_id" -------------
+	var formId FormId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "form_id", r.PathValue("form_id"), &formId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "form_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteForm(w, r, formId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetForm operation middleware
+func (siw *ServerInterfaceWrapper) GetForm(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "form_id" -------------
+	var formId FormId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "form_id", r.PathValue("form_id"), &formId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "form_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetForm(w, r, formId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateForm operation middleware
+func (siw *ServerInterfaceWrapper) UpdateForm(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "form_id" -------------
+	var formId FormId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "form_id", r.PathValue("form_id"), &formId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "form_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateForm(w, r, formId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetFormEmbed operation middleware
+func (siw *ServerInterfaceWrapper) GetFormEmbed(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "form_id" -------------
+	var formId FormId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "form_id", r.PathValue("form_id"), &formId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "form_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFormEmbed(w, r, formId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListImports operation middleware
 func (siw *ServerInterfaceWrapper) ListImports(w http.ResponseWriter, r *http.Request) {
 
@@ -5177,6 +5490,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports", wrapper.CreateImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}", wrapper.GetImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}/skipped-rows", wrapper.ListImportSkippedRows)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/forms", wrapper.ListForms)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/forms", wrapper.CreateForm)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/forms/{form_id}", wrapper.DeleteForm)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/forms/{form_id}", wrapper.GetForm)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/forms/{form_id}", wrapper.UpdateForm)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/forms/{form_id}/embed", wrapper.GetFormEmbed)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails", wrapper.ListEmails)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails", wrapper.CreateEmail)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/emails/{email_id}", wrapper.DeleteEmail)

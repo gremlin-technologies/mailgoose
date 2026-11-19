@@ -490,6 +490,28 @@ most 10 times a minute (`linkChecksPerMinute`); checks past that still run,
 with their links reported as not checked. Only `cmd/mailgoosed` wires it; a test server with no `Links` looks
 at the addresses without fetching them.
 
+## Signup forms
+
+`internal/forms` keeps an account's signup forms; the API has
+`/v1/forms` and the CLI `mailgoose form create|get|list|update|delete|embed`.
+A form asks for an email and, optionally, a first and last name, puts its
+tags on everyone who signs up, and shows a success message or sends people
+to an https redirect. Double opt-in is on by default, with an editable
+confirmation subject and text.
+
+```
+mailgoose form create --name Footer --first-name optional --tag Newsletter
+mailgoose form embed <form-id> > signup.html
+```
+
+`form embed` (`GET /v1/forms/{id}/embed`) gives a plain HTML form that posts
+to `/f/{id}` on the app's URL and works without JavaScript, and an optional
+script that posts in the page and shows the result there. The form carries
+a hidden honeypot field (`website`) and `_mg_ts`, a timestamp signed with
+the form's own key (`forms.Stamp`), for MG-36 to check submissions against.
+`form get --json` output can be edited and passed back with `form update
+--file`.
+
 ## Sending domains
 
 Campaigns go out from an address at a domain the customer owns.

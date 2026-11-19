@@ -144,7 +144,7 @@ machine-readable output. Set MAILGOOSE_API_KEY to run headless.`,
 	root.PersistentFlags().StringVar(&a.apiURL, "api-url", "", "API base URL (overrides "+EnvAPIURL+" and the config file)")
 
 	root.AddCommand(a.versionCmd(), a.statusCmd(), a.configCmd(), a.commandsCmd(), a.keysCmd(), a.creditsCmd(), a.contactsCmd(), a.tagsCmd(), a.importCmd(), a.exportCmd(),
-		a.emailCmd(), a.domainCmd(), a.accountCmd(),
+		a.emailCmd(), a.formCmd(), a.domainCmd(), a.accountCmd(),
 		a.signupCmd(), a.loginCmd(), a.logoutCmd(), a.whoamiCmd(), &cobra.Command{
 			Use:   "exit-codes",
 			Short: "What each exit code means",

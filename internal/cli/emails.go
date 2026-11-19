@@ -59,6 +59,12 @@ func emailPath(id string) string { return "/v1/emails/" + url.PathEscape(id) }
 
 // readDocumentFile reads --file: a path, or - for standard input.
 func (a *App) readDocumentFile(name string) ([]byte, error) {
+	return a.readJSONFile(name, "Pass a document, or the output of `mailgoose email get <id> --json`.")
+}
+
+// readJSONFile reads a JSON file of up to 1 MB: a path, or - for standard
+// input. hint says what the file should hold.
+func (a *App) readJSONFile(name, hint string) ([]byte, error) {
 	var rd io.Reader
 	if name == "-" {
 		rd = a.Stdin
@@ -78,7 +84,7 @@ func (a *App) readDocumentFile(name string) ([]byte, error) {
 		return nil, usageError(name+" is over 1 MB.", "")
 	}
 	if !json.Valid(raw) {
-		return nil, usageError(name+" isn't valid JSON.", "Pass a document, or the output of `mailgoose email get <id> --json`.")
+		return nil, usageError(name+" isn't valid JSON.", hint)
 	}
 	return raw, nil
 }

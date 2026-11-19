@@ -831,6 +831,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/forms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List signup forms
+         * @description The account's signup forms, newest first.
+         */
+        get: operations["listForms"];
+        put?: never;
+        /**
+         * Create a signup form
+         * @description Makes a signup form. Parts left out take their defaults: an email
+         *     field only, a "Subscribe" button, double opt-in on, and a success
+         *     message and confirmation email that fit it. Everyone who signs up
+         *     gets the form's tags. `mailgoose form embed` (getFormEmbed) gives
+         *     the code to put it on a site.
+         */
+        post: operations["createForm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/forms/{form_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a signup form */
+        get: operations["getForm"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a signup form
+         * @description Deletes the form. Contacts who signed up with it stay, and its embed
+         *     code stops taking signups.
+         */
+        delete: operations["deleteForm"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a signup form
+         * @description Changes the parts given; the rest stay. `fields` and `tag_ids`
+         *     replace the whole list. An empty `redirect_url` removes it, so the
+         *     form shows its success message instead. Embed code already on a
+         *     site keeps working, but shows the fields it was made with until
+         *     it's replaced.
+         */
+        patch: operations["updateForm"];
+        trace?: never;
+    };
+    "/v1/forms/{form_id}/embed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get a signup form's embed code
+         * @description The code to paste into a site. `html` is a plain HTML form that
+         *     posts to `action_url` and works without JavaScript; it carries a
+         *     hidden honeypot field (`website`) and a signed timestamp (`_mg_ts`)
+         *     that submissions are checked against. `script` is optional: pasted
+         *     after the form, it posts in the page and shows the success message
+         *     there instead of leaving the page. Labels and the button take the
+         *     site's own fonts.
+         */
+        get: operations["getFormEmbed"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/emails": {
         parameters: {
             query?: never;
@@ -2005,6 +2089,77 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        FormField: {
+            /** @enum {string} */
+            name: "email" | "first_name" | "last_name";
+            /** @description What the field is called on the form. Empty takes the default ("Email", "First name", "Last name"). */
+            label?: string;
+            /**
+             * @description Email is always required.
+             * @default false
+             */
+            required: boolean;
+        };
+        Form: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description The fields the form asks for, in order. */
+            fields: components["schemas"]["FormField"][];
+            /** @description Tags put on everyone who signs up with the form. */
+            tags: components["schemas"]["TagRef"][];
+            button_text: string;
+            /** @description Shown after someone signs up, unless there's a redirect_url. */
+            success_message: string;
+            /** @description Where people go after signing up, instead of seeing the success message. */
+            redirect_url: string | null;
+            /** @description When on, people get an email to confirm before they're subscribed. */
+            double_opt_in: boolean;
+            /** @description The confirmation email's subject. */
+            confirm_subject: string;
+            /** @description The confirmation email's text, above its confirm link. */
+            confirm_text: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        FormList: {
+            data: components["schemas"]["Form"][];
+            next_cursor: string | null;
+        };
+        CreateFormRequest: {
+            name: string;
+            fields?: components["schemas"]["FormField"][];
+            tag_ids?: string[];
+            button_text?: string;
+            success_message?: string;
+            /** @description A full https:// address, or empty for none. */
+            redirect_url?: string;
+            /** @default true */
+            double_opt_in: boolean;
+            confirm_subject?: string;
+            confirm_text?: string;
+        };
+        UpdateFormRequest: {
+            name?: string;
+            fields?: components["schemas"]["FormField"][];
+            tag_ids?: string[];
+            button_text?: string;
+            success_message?: string;
+            redirect_url?: string;
+            double_opt_in?: boolean;
+            confirm_subject?: string;
+            confirm_text?: string;
+        };
+        FormEmbed: {
+            /** @description Where the form posts. */
+            action_url: string;
+            /** @description The form, with its styles. Works without JavaScript. */
+            html: string;
+            /** @description Optional. Paste it after the form to show the result in the page. */
+            script: string;
+        };
         EmailList: {
             data: components["schemas"]["EmailSummary"][];
             next_cursor: string | null;
@@ -2267,6 +2422,20 @@ export interface components {
             };
         };
         /**
+         * @description `invalid_form`: a part of the form breaks a rule; `details.field`
+         *     names it (such as `redirect_url` or `fields[1].name`).
+         *     `unknown_tag`: a tag id isn't one of the account's tags.
+         */
+        InvalidForm: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `invalid_merge_tags`: a merge tag can't be filled or a link is
          *     unsafe; `details.problems` lists each with its `path` (such as
          *     `blocks[2].text`, or `html`) and `message`. `empty_email`: an html
@@ -2443,6 +2612,8 @@ export interface components {
         ImportId: string;
         /** @description The block's `id`. */
         BlockId: components["schemas"]["BlockId"];
+        /** @description The form's `id`. */
+        FormId: string;
         /** @description The email's `id`. */
         EmailId: string;
         /**
@@ -3853,6 +4024,188 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkippedRowList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listForms: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of forms. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createForm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFormRequest"];
+            };
+        };
+        responses: {
+            /** @description The new form. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Form"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            422: components["responses"]["InvalidForm"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getForm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The form's `id`. */
+                form_id: components["parameters"]["FormId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The form. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Form"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteForm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The form's `id`. */
+                form_id: components["parameters"]["FormId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    updateForm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The form's `id`. */
+                form_id: components["parameters"]["FormId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFormRequest"];
+            };
+        };
+        responses: {
+            /** @description The changed form. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Form"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["InvalidForm"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getFormEmbed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The form's `id`. */
+                form_id: components["parameters"]["FormId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The embed code. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormEmbed"];
                 };
             };
             400: components["responses"]["BadRequest"];
