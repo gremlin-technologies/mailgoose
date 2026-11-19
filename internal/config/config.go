@@ -104,6 +104,12 @@ type Config struct {
 	// ImportHold are the thresholds that hold a CSV import for review
 	// (MG-63).
 	ImportHold ImportHold
+
+	// WebRiskAPIKey is the Google Web Risk API key the email check looks
+	// links up with (MG-64), from the <env>/app secret (or the
+	// environment, locally). Empty: links aren't looked up, and the check
+	// says so with a warning.
+	WebRiskAPIKey string
 }
 
 // ImportHold are the import checks' thresholds, as whole percentages and a
@@ -323,6 +329,8 @@ func load(getenv func(string) string) (Config, error) {
 	case cfg.Stripe.WebhookSecret == "":
 		cfg.Stripe.Problem = "STRIPE_SECRET_KEY is set without STRIPE_WEBHOOK_SECRET; purchases would never be credited"
 	}
+
+	cfg.WebRiskAPIKey = secret("WEB_RISK_API_KEY")
 
 	cfg.Images = Images{Bucket: strings.TrimSpace(getenv("IMAGES_BUCKET")), Dir: strings.TrimSpace(getenv("IMAGES_DIR")),
 		BaseURL: strings.TrimRight(strings.TrimSpace(getenv("IMAGES_BASE_URL")), "/")}

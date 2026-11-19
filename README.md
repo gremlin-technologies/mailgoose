@@ -163,6 +163,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | Stripe's secret key and the webhook endpoint's signing secret, from the `<env>/app` secret (or the environment, locally). Only prod may use a live key, and prod only a live one; a wrong key, or a key without the webhook secret, turns buying credits off and says why in the log, rather than stopping the server. |
 | `CREDIT_PACKS` | The credit packs as `name=credits:cents,...`. Empty means the decided packs: `10k=10000:2000,50k=50000:7500,200k=200000:24000,1m=1000000:90000`. |
 | `PLAN_PRICES` | One paid-plan unit's price in cents, as `month:cents,year:cents`. Empty means the decided prices: `month:500,year:5000`. |
+| `WEB_RISK_API_KEY` | The Google Web Risk API key the email check looks links up with, from the `<env>/app` secret (or the environment, locally). Unset, links aren't looked up and the check warns (`link_safety_not_checked`); locally a fake lists only Google's test pages. |
 | `IMAGES_BUCKET`, `IMAGES_BASE_URL` | The S3 bucket uploaded images go in, and the CDN address they're served from. Without `IMAGES_BASE_URL` the API serves them at `PUBLIC_BASE_URL/images/`, redirecting to short-lived presigned URLs (staging until it has a CDN). With no bucket outside local, image uploads answer 503. |
 | `IMAGES_DIR` | Local only: a directory images go in instead of S3, served by the API at `/images/`. Defaults to `.local/images` when `APP_ENV=local` and there's no bucket; its URLs then start `PUBLIC_BASE_URL/images`. Prod refuses it. |
 
@@ -579,9 +580,11 @@ where it applies, the block path, markup line or link:
 
 - errors: `missing_subject`, `missing_from`, `unverified_from`,
   `missing_postal_address`, `empty_email`, `merge_tag`,
-  `missing_unsubscribe`, `broken_link`, `too_large`, `invalid_html`
+  `missing_unsubscribe`, `broken_link`, `too_large`, `invalid_html`,
+  `unsafe_link`
 - warnings: `insecure_link`, `link_unreachable`, `link_not_checked`,
-  `missing_alt`, `near_size_limit`, `unsupported_css`
+  `link_safety_not_checked`, `missing_alt`, `near_size_limit`,
+  `unsupported_css`
 
 The CLI exits 1 when there are errors and 0 otherwise.
 
@@ -594,6 +597,36 @@ other than 80 or 443, is never fetched. One account's checks fetch links at
 most 10 times a minute (`linkChecksPerMinute`); checks past that still run,
 with their links reported as not checked. Only `cmd/mailgoosed` wires it; a test server with no `Links` looks
 at the addresses without fetching them.
+
+### Link safety
+
+Every web link is also looked up on Google Web Risk's malware, social
+engineering (phishing) and unwanted software lists (`internal/linkrisk`), by
+where it goes: one of mailgoose's own tracked `/t/c/` links is read for its
+target. A listed link is an `unsafe_link` error in the check; it stops a test
+send, and stops a launch and pauses the account's sending, with a reason
+naming the link, an `auto_pause` entry in the admin log and an alert to
+`OPS_ALERT_EMAIL`. Answers are cached in memory (a listed link for the time
+Web Risk gives, at most a day; a clean one for 30 minutes), so a campaign's
+links are looked up once.
+
+The lookup never holds sending up: without `WEB_RISK_API_KEY`, or when Web
+Risk errors or takes more than 2 seconds, links pass with a
+`link_safety_not_checked` warning, and the miss is logged. Tests and local
+runs use `linkrisk.Fake`; locally, without a key, it lists Google's test pages
+(`https://testsafebrowsing.appspot.com/s/malware.html`, `phishing.html` and
+`unwanted.html`).
+
+#### Setting up Web Risk
+
+1. In the Google Cloud console, create a project for mailgoose (or pick one)
+   with billing turned on; Web Risk's first 100,000 lookups a month are free.
+2. Enable the **Web Risk API** (APIs & Services, Library, "Web Risk API").
+3. Create an API key (APIs & Services, Credentials, Create credentials, API
+   key) and restrict it to the Web Risk API.
+4. Add it to the `<env>/app` secret as `"WEB_RISK_API_KEY": "<key>"`, next to
+   the Stripe keys, then start new API tasks (force a new deployment of the
+   API service) so they read it.
 
 ## Images
 

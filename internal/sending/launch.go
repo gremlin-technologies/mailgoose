@@ -159,10 +159,21 @@ func (s *Service) Launch(ctx context.Context, accountID, campaignID, code string
 	if !campaigns.Editable(c.Status) {
 		return nil, &campaigns.StatusError{Status: c.Status}
 	}
+	var l *Launched
 	if strings.TrimSpace(code) == "" {
-		return nil, s.summarize(ctx, accountID, c, links)
+		err = s.summarize(ctx, accountID, c, links)
+	} else {
+		l, err = s.confirm(ctx, accountID, campaignID, code)
 	}
-	return s.confirm(ctx, accountID, campaignID, code)
+	// A link on the phishing or malware lists pauses the account too
+	// (MG-64), whichever step found it.
+	var nr *NotReadyError
+	if errors.As(err, &nr) {
+		if unsafe := unsafeLinks(nr.Problems); len(unsafe) > 0 {
+			s.pauseForUnsafeLinks(ctx, accountID, campaignID, unsafe)
+		}
+	}
+	return l, err
 }
 
 func launched(c *campaigns.Campaign) *Launched {
@@ -247,8 +258,12 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 		return nil, nil, err
 	default:
 		res := emailcheck.Check(ctx, emailcheck.Input{Doc: p.Email.Document, PostalAddress: p.PostalAddress,
-			FromEmail: p.From.Email, FromVerified: true}, links)
+			FromEmail: p.From.Email, FromVerified: true, Safety: s.LinkSafety}, links)
 		for _, issue := range res.Errors {
+			if issue.Code == emailcheck.UnsafeLink {
+				problems = append(problems, unsafeProblem(issue))
+				continue
+			}
 			problems = append(problems, Problem{Code: CheckFailed, Message: issue.Message,
 				Hint: "Run `mailgoose email check " + p.Email.ID + "` for the details, and fix it."})
 		}

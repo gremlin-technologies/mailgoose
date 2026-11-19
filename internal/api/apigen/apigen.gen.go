@@ -580,6 +580,7 @@ const (
 	EmailCheckIssueCodeInsecureLink         EmailCheckIssueCode = "insecure_link"
 	EmailCheckIssueCodeInvalidHtml          EmailCheckIssueCode = "invalid_html"
 	EmailCheckIssueCodeLinkNotChecked       EmailCheckIssueCode = "link_not_checked"
+	EmailCheckIssueCodeLinkSafetyNotChecked EmailCheckIssueCode = "link_safety_not_checked"
 	EmailCheckIssueCodeLinkUnreachable      EmailCheckIssueCode = "link_unreachable"
 	EmailCheckIssueCodeMergeTag             EmailCheckIssueCode = "merge_tag"
 	EmailCheckIssueCodeMissingAlt           EmailCheckIssueCode = "missing_alt"
@@ -589,6 +590,7 @@ const (
 	EmailCheckIssueCodeMissingUnsubscribe   EmailCheckIssueCode = "missing_unsubscribe"
 	EmailCheckIssueCodeNearSizeLimit        EmailCheckIssueCode = "near_size_limit"
 	EmailCheckIssueCodeTooLarge             EmailCheckIssueCode = "too_large"
+	EmailCheckIssueCodeUnsafeLink           EmailCheckIssueCode = "unsafe_link"
 	EmailCheckIssueCodeUnsupportedCss       EmailCheckIssueCode = "unsupported_css"
 	EmailCheckIssueCodeUnverifiedFrom       EmailCheckIssueCode = "unverified_from"
 )
@@ -605,6 +607,8 @@ func (e EmailCheckIssueCode) Valid() bool {
 	case EmailCheckIssueCodeInvalidHtml:
 		return true
 	case EmailCheckIssueCodeLinkNotChecked:
+		return true
+	case EmailCheckIssueCodeLinkSafetyNotChecked:
 		return true
 	case EmailCheckIssueCodeLinkUnreachable:
 		return true
@@ -623,6 +627,8 @@ func (e EmailCheckIssueCode) Valid() bool {
 	case EmailCheckIssueCodeNearSizeLimit:
 		return true
 	case EmailCheckIssueCodeTooLarge:
+		return true
+	case EmailCheckIssueCodeUnsafeLink:
 		return true
 	case EmailCheckIssueCodeUnsupportedCss:
 		return true

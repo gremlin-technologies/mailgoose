@@ -300,3 +300,16 @@ func TestImportHoldSettings(t *testing.T) {
 		t.Error("a percentage over 100 should be an error")
 	}
 }
+
+func TestWebRiskKey(t *testing.T) {
+	cfg, err := load(env(map[string]string{"APP_SECRETS_JSON": `{"WEB_RISK_API_KEY":" AIza-secret "}`, "WEB_RISK_API_KEY": "from-env"}))
+	if err != nil || cfg.WebRiskAPIKey != "AIza-secret" {
+		t.Errorf("from the secret: %q %v", cfg.WebRiskAPIKey, err)
+	}
+	if cfg, _ := load(env(map[string]string{"WEB_RISK_API_KEY": "from-env"})); cfg.WebRiskAPIKey != "from-env" {
+		t.Errorf("from the environment: %q", cfg.WebRiskAPIKey)
+	}
+	if cfg, _ := load(env(nil)); cfg.WebRiskAPIKey != "" {
+		t.Errorf("unset: %q", cfg.WebRiskAPIKey)
+	}
+}

@@ -29,7 +29,7 @@ func (s *Server) CheckEmail(w http.ResponseWriter, r *http.Request, id string) {
 	if s.emailError(w, r, err) {
 		return
 	}
-	in := emailcheck.Input{Doc: e.Document}
+	in := emailcheck.Input{Doc: e.Document, Safety: s.LinkSafety}
 	if s.Auth != nil {
 		st, err := s.Auth.AccountSettings(r.Context(), c.AccountID)
 		if err != nil {

@@ -291,3 +291,30 @@ type copyLinks struct {
 
 func (c copyLinks) Click(n int, target string) string { return c.l.Click(c.id, n, target) }
 func (c copyLinks) Pixel() string                     { return c.l.Open(c.id) }
+
+// ClickTarget is where one of mailgoose's tracked links (/t/c/...) goes,
+// read from the token without checking its signature, for looking the
+// target up (MG-64). ok is false for any other link.
+func ClickTarget(link string) (target string, ok bool) {
+	u, err := url.Parse(link)
+	if err != nil {
+		return "", false
+	}
+	token, found := strings.CutPrefix(u.Path, ClickPrefix)
+	if !found {
+		return "", false
+	}
+	rest, found := strings.CutPrefix(token, tokenPrefix)
+	if !found {
+		return "", false
+	}
+	body, err := base64.RawURLEncoding.Strict().DecodeString(rest)
+	if err != nil || len(body) <= headerLen+macLen {
+		return "", false
+	}
+	target = string(body[headerLen : len(body)-macLen])
+	if !Trackable(target) {
+		return "", false
+	}
+	return target, true
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
+	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
@@ -122,12 +123,23 @@ func (s *Service) Test(ctx context.Context, accountID, campaignID string, to []s
 	if err != nil {
 		return nil, err
 	}
+	// A link on the phishing or malware lists stops the test too (MG-64).
+	// Links that couldn't be looked up pass, as in the check.
+	unsubURL := strings.TrimRight(baseURL, "/") + TestUnsubscribePath
+	sample := s.testRecipient(ctx, accountID, recipients[0])
+	sample.UnsubscribeURL = unsubURL
+	if errs, _ := emailcheck.Safety(ctx, p.Template.Personalize(sample).HTML, s.LinkSafety, unsubURL); len(errs) > 0 {
+		problems := make([]Problem, len(errs))
+		for i, e := range errs {
+			problems[i] = unsafeProblem(e)
+		}
+		return nil, &NotReadyError{Problems: problems}
+	}
 	sentToday, err := s.reserveTests(ctx, accountID, campaignID, len(recipients))
 	if err != nil {
 		return nil, err
 	}
 
-	unsubURL := strings.TrimRight(baseURL, "/") + TestUnsubscribePath
 	for _, addr := range recipients {
 		r := s.testRecipient(ctx, accountID, addr)
 		r.UnsubscribeURL = unsubURL

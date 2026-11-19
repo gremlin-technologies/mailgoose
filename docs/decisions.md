@@ -4,6 +4,36 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-19: Link reputation check (MG-64, reversible defaults)
+
+Picked while building MG-64; easy to change. The vendor is an open question
+for the owner (below).
+
+- **Google Web Risk, looked up per link** with `uris:search` on the malware,
+  social engineering and unwanted software lists, by API key
+  (`WEB_RISK_API_KEY` in the `<env>/app` secret). The ticket's default vendor.
+- **Fails open.** No key, an error or no answer within 2 seconds (for every
+  lookup together) lets the links through with a `link_safety_not_checked`
+  warning and a log line. Sending never waits on Web Risk.
+- **Cached in each API task's memory**, keyed by a hash of the link: a listed
+  link for the time Web Risk gives (at most a day), a clean one for 30
+  minutes, since Web Risk gives no time for those. That's long enough for one
+  campaign's check, test, summary and launch to share one lookup. A cache in
+  Postgres, shared between tasks, can come later if lookups grow.
+- **Checked at the email check, the test send and the launch.** A listed link
+  is an `unsafe_link` error; it stops a test send (422) and a launch, and at
+  launch (either the summary or the confirm) also pauses the account like an
+  automatic pause: the reason names the campaign and the link, the admin log
+  gets an `auto_pause` entry with the links, and the ops address an alert. An
+  account already paused keeps its pause and reason, and no second entry or
+  alert is made.
+- **A tracked link is looked up by its target.** One of mailgoose's own
+  `/t/c/` links pasted into an email is read for where it goes.
+- **Locally, without a key**, a fake lists Google's test pages
+  (`https://testsafebrowsing.appspot.com/s/malware.html`, `phishing.html`,
+  `unwanted.html`), so the check can be tried. Tests use the fake; nothing in
+  CI calls Google.
+
 ## 2026-11-19: Import list checks and list source (MG-63, reversible defaults)
 
 Picked while building MG-63; easy to change.
@@ -1797,3 +1827,6 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - Which address takes suspension appeals? (Default: `ABUSE_EMAIL`, else
   `abuse@` the system sending domain, which has to be a real mailbox or
   alias. MG-65.)
+- Which vendor checks links for phishing and malware? (Default: Google Web
+  Risk, licensed for commercial use and free up to 100,000 lookups a month.
+  MG-64.)

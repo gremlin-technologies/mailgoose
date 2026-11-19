@@ -29,6 +29,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/images"
+	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
@@ -116,6 +117,10 @@ type Server struct {
 	// links are only looked at, never fetched; the server wires
 	// emailcheck.HTTPLinks.
 	Links emailcheck.LinkChecker
+	// LinkSafety looks the email check's links up on the phishing and
+	// malware lists (MG-64); nil skips that. The server wires the one the
+	// sending service uses, so they share a cache.
+	LinkSafety *linkrisk.Checker
 	// linkChecks limits how often one account's email checks fetch links;
 	// Handler sets it.
 	linkChecks *RateLimiter

@@ -1718,13 +1718,17 @@ or the account), `unverified_from` (the From isn't on a verified
 sending domain), `missing_postal_address`, `empty_email`,
 `merge_tag` (a tag that can't be filled), `missing_unsubscribe`,
 `broken_link` (not a full web address, or the page or site doesn't
-exist), `too_large` (over 102 KB as rendered), and `invalid_html`.
+exist), `too_large` (over 102 KB as rendered), `invalid_html`, and
+`unsafe_link` (on Google Web Risk's malware, phishing or unwanted
+software lists; `url` names it).
 
 Warning codes: `insecure_link` (http://), `link_unreachable` (an
 error status or a timeout), `link_not_checked` (a private address,
 a port other than 80 or 443, the check ran out of time, or links were
-checked too often), `missing_alt`, `near_size_limit`
-(over 90 KB) and `unsupported_css`.
+checked too often), `link_safety_not_checked` (links weren't looked
+up on the phishing and malware lists: the lookup isn't set up, or
+didn't answer within 2 seconds; they pass), `missing_alt`,
+`near_size_limit` (over 90 KB) and `unsupported_css`.
 
 Each link is fetched once with a HEAD request (GET if the site
 refuses HEAD), 3 seconds per link and 10 seconds in all, up to 50
@@ -1732,6 +1736,12 @@ links. Links to private, loopback or link-local addresses, or to ports
 other than 80 and 443, aren't fetched, whichever way they get there.
 One account's checks fetch links at most 10 times a minute; later
 checks still run, with their links reported as not checked.
+
+Every web link is also looked up on Google Web Risk's lists, by
+where it goes (one of mailgoose's own tracked links by its
+target). Answers are cached, so a campaign's links are looked up
+once. A listed link also stops a test send, and stops a launch and
+pauses the account's sending.
 
 | Parameter | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
@@ -2127,7 +2137,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
-- `422`: `not_ready`: something stops the email being sent; `details.problems` lists each with its `code` (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`, `invalid_html`), `message` and `hint`. `invalid_test`: `to` has an address that isn't one, or more than 5. `test_recipient_not_allowed`: an address in `to` isn't the owner's or on a verified sending domain; `details.address` names it. `test_recipient_suppressed`: an address in `to` unsubscribed, bounced or complained (the owner's own address is never refused); `details.address` names it. [Error](#schema-error)
+- `422`: `not_ready`: something stops the email being sent; `details.problems` lists each with its `code` (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`, `invalid_html`, `unsafe_link` with the link in `url`), `message` and `hint`. `invalid_test`: `to` has an address that isn't one, or more than 5. `test_recipient_not_allowed`: an address in `to` isn't the owner's or on a verified sending domain; `details.address` names it. `test_recipient_suppressed`: an address in `to` unsubscribed, bounced or complained (the owner's own address is never refused); `details.address` names it. [Error](#schema-error)
 - `429`: `test_limit`: the account has sent 50 test emails in the last 24 hours; Retry-After says when enough have aged out. `rate_limited`: the API's request limit. [Error](#schema-error)
 - `502`: `test_send_failed`: the mail provider refused or didn't answer. It still counts toward the day's tests. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
@@ -2176,7 +2186,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `confirmation_required`: nothing was launched. `details.summary` (`campaign_id`, `name`, `subject`, `from`, `reply_to`, `recipient_count`, `send_at`, `credits`, `balance`, `warnings`) is what the person confirms, `details.code` the code that launches it once they say yes, and `details.expires_at` when the code stops working. `campaign_locked`: the campaign isn't a draft and wasn't launched; `details.status` is its status. [Error](#schema-error)
-- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, and `credits_short` with `details.needed`, `details.balance` and `details.short`. `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
+- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, and `credits_short` with `details.needed`, `details.balance` and `details.short`. `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-cancelcampaign"></a>
@@ -4193,7 +4203,7 @@ later. Present only on a campaign launched in a slice.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `code` | string: one of `missing_subject`, `missing_from`, `unverified_from`, `missing_postal_address`, `empty_email`, `merge_tag`, `missing_unsubscribe`, `broken_link`, `too_large`, `invalid_html`, `insecure_link`, `link_unreachable`, `link_not_checked`, `missing_alt`, `near_size_limit`, `unsupported_css` | yes |  |
+| `code` | string: one of `missing_subject`, `missing_from`, `unverified_from`, `missing_postal_address`, `empty_email`, `merge_tag`, `missing_unsubscribe`, `broken_link`, `too_large`, `invalid_html`, `unsafe_link`, `insecure_link`, `link_unreachable`, `link_not_checked`, `link_safety_not_checked`, `missing_alt`, `near_size_limit`, `unsupported_css` | yes |  |
 | `message` | string | yes |  |
 | `path` | string |  | The block field or setting it's about, such as `blocks[2].alt` or `settings.subject`. |
 | `line` | integer |  | The line of an html email's markup it's on. |

@@ -40,6 +40,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/images"
+	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
@@ -157,9 +158,13 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		if err != nil {
 			return err
 		}
+		alerts := &sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
+			To: cfg.OpsAlertEmail, Log: log.With("component", "alerts")}
+		srv.LinkSafety = newLinkSafety(cfg, log)
 		srv.Sending = &sending.Service{DB: pool, Campaigns: srv.Campaigns, Emails: srv.Emails,
 			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Unsubscribe: srv.Unsubscribe, Mail: sender,
-			Limits: sendLimits(cfg), Slicing: slicing(cfg)}
+			Limits: sendLimits(cfg), Slicing: slicing(cfg),
+			LinkSafety: srv.LinkSafety, Alert: alerts.Notify, Log: log.With("component", "sending")}
 		srv.Signups = &signups.Service{DB: pool, Forms: srv.Forms, Settings: &auth.Service{DB: pool},
 			Domains: srv.Domains, Mail: sender}
 		// A suspension emails the owner, with ABUSE_EMAIL for appeals, and
@@ -206,6 +211,28 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	}
 
 	return api.ListenAndServe(ctx, log, ":"+strconv.Itoa(cfg.Port), srv.Handler())
+}
+
+// newLinkSafety is the link safety check (MG-64): Google Web Risk with
+// WEB_RISK_API_KEY. Without a key, a local server uses a fake that lists
+// Google's test pages, so the check can be tried; anywhere else links
+// aren't looked up, and the check says so.
+func newLinkSafety(cfg config.Config, log *slog.Logger) *linkrisk.Checker {
+	c := &linkrisk.Checker{Log: log.With("component", "linkrisk")}
+	switch {
+	case cfg.WebRiskAPIKey != "":
+		c.Lookup = &linkrisk.WebRisk{Key: cfg.WebRiskAPIKey}
+	case cfg.AppEnv == "local":
+		f := &linkrisk.Fake{}
+		f.List("https://testsafebrowsing.appspot.com/s/malware.html", linkrisk.Malware)
+		f.List("https://testsafebrowsing.appspot.com/s/phishing.html", linkrisk.SocialEngineering)
+		f.List("https://testsafebrowsing.appspot.com/s/unwanted.html", linkrisk.UnwantedSoftware)
+		c.Lookup = f
+		log.Info("WEB_RISK_API_KEY is not set; the link safety check uses a fake that lists only Google's test pages")
+	default:
+		log.Warn("WEB_RISK_API_KEY is not set; links aren't checked for phishing or malware")
+	}
+	return c
 }
 
 // newImages builds the image store (DES-5): the S3 bucket behind the CDN
