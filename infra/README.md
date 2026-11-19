@@ -75,6 +75,7 @@ infra/
     service/        One Fargate service: task def, log group, execution + task roles.
     images/         Private S3 bucket for uploaded images, read only by CloudFront (origin access control), or with cdn = false by the API alone.
     github-deploy-role/  IAM role GitHub Actions assumes via OIDC to deploy images.
+    monitoring/     CloudWatch alarms, error-log metric filters, the alerts SNS topic.
 ```
 
 What runs per environment:
@@ -281,9 +282,47 @@ Do these in order, only after the AWS project allows the OIDC provider:
 - Containers run with a read-only root filesystem; write temp files to a mounted
   volume or memory if needed.
 
+## Alarms
+
+`modules/monitoring` puts CloudWatch alarms on each environment. Each one
+notifies the `<env>-alerts` SNS topic when it fires and again when it clears:
+
+| Alarm | Fires when |
+| --- | --- |
+| `<queue>-queue-age` | The send or SES events queue's oldest message has waited over 15 minutes. |
+| `<queue>-dlq` | Anything is on a dead-letter queue (a message failed five times). |
+| `api-5xx-rate` | Over 5% of API requests in 5 minutes end in a 5xx (only judged from 20 requests). |
+| `api-no-healthy-tasks` | The load balancer has had no healthy API task for 5 minutes. |
+| `<service>-not-running` | No api or worker task has reported in for 10 minutes. |
+| `<service>-errors` | A service logged 5 or more `ERROR` lines in 5 minutes. |
+| `ses-bounce-rate`, `ses-complaint-rate` | Prod only, since they cover the whole AWS account: bounces over 4%, complaints over 0.08%. |
+
+Errors are tracked in CloudWatch itself: the app writes JSON lines, a metric
+filter counts the `ERROR` ones. To read them, use CloudWatch Logs Insights on
+`/ecs/<env>-api` or `/ecs/<env>-worker`:
+
+```
+filter level = "ERROR" | sort @timestamp desc
+```
+
+API lines carry `request_id` (also sent back as the `X-Request-Id` header) and
+worker lines carry `queue` and `message_id`, so `filter request_id = "req_..."`
+shows everything one request or job did.
+
+**Where alarms go.** Put the address in a git-ignored file next to each
+environment's `main.tf`, so no personal address lands in the repo, then apply:
+
+```sh
+echo 'alert_email = "you@example.com"' > infra/envs/staging/alerts.auto.tfvars
+```
+
+AWS emails that address a link to confirm the subscription; nothing is
+delivered until it is clicked. With no address, the alarms still show in the
+CloudWatch console. Thresholds are variables of `modules/monitoring`.
+
 ## Not here yet
 
-The prod deploy workflow, autoscaling, CloudWatch alarms, WAF, a custom
+The prod deploy workflow, autoscaling, WAF, a custom
 open/click tracking domain, a custom name for the image CDN (it needs an ACM
 certificate in us-east-1), and hosting the web
 editor on S3 + CloudFront (the API service can serve it for now).

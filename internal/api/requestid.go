@@ -67,7 +67,8 @@ func requestIDs(next http.Handler) http.Handler {
 type requestIDHandler struct{ slog.Handler }
 
 // LogWithRequestIDs wraps h so records logged with a request's context carry
-// its request_id.
+// its request_id. Wrapping twice, even with another wrapper in between (such
+// as worker.LogWithJobs), adds it once.
 func LogWithRequestIDs(h slog.Handler) slog.Handler {
 	if _, ok := h.(requestIDHandler); ok {
 		return h
@@ -76,7 +77,7 @@ func LogWithRequestIDs(h slog.Handler) slog.Handler {
 }
 
 func (h requestIDHandler) Handle(ctx context.Context, r slog.Record) error {
-	if id := RequestID(ctx); id != "" {
+	if id := RequestID(ctx); id != "" && !hasRequestID(r) {
 		r.AddAttrs(slog.String("request_id", id))
 	}
 	return h.Handler.Handle(ctx, r)
@@ -88,4 +89,15 @@ func (h requestIDHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (h requestIDHandler) WithGroup(name string) slog.Handler {
 	return requestIDHandler{h.Handler.WithGroup(name)}
+}
+
+// hasRequestID reports whether r already has a request_id, as it does when a
+// second wrapper further in sees the same record.
+func hasRequestID(r slog.Record) bool {
+	found := false
+	r.Attrs(func(a slog.Attr) bool {
+		found = a.Key == "request_id"
+		return !found
+	})
+	return found
 }

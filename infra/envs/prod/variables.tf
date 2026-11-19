@@ -17,3 +17,9 @@ variable "initial_image_tag" {
   type    = string
   default = "bootstrap"
 }
+
+variable "alert_email" {
+  description = "Gets this environment's alarms. Set it in alerts.auto.tfvars (git-ignored), not terraform.tfvars."
+  type        = string
+  default     = ""
+}

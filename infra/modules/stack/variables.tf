@@ -153,3 +153,17 @@ variable "github_deploy_subjects" {
   description = "OIDC subjects allowed to deploy this environment."
   type        = list(string)
 }
+
+# --- monitoring ---
+
+variable "alert_email" {
+  description = "Address that gets this environment's alarms. Empty: alarms show only in the CloudWatch console."
+  type        = string
+  default     = ""
+}
+
+variable "ses_reputation_alarms" {
+  description = "Alarm on SES's account-wide bounce and complaint rates. Both environments share one AWS account, so only one turns this on."
+  type        = bool
+  default     = false
+}

@@ -51,3 +51,7 @@ output "images_base_url" {
   description = "Where uploaded images are served from (the API's IMAGES_BASE_URL)."
   value       = module.images.base_url
 }
+
+output "alerts_topic_arn" {
+  value = module.monitoring.alerts_topic_arn
+}

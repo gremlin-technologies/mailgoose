@@ -402,3 +402,40 @@ module "deploy_role" {
     module.worker.execution_role_arn,
   ]
 }
+
+# --- Monitoring (OPS-4) ---
+
+module "monitoring" {
+  source = "../monitoring"
+
+  name        = local.name
+  alert_email = var.alert_email
+
+  queues = {
+    send       = module.send_queue.name
+    ses-events = module.events_queue.name
+  }
+  dead_letter_queues = {
+    send       = module.send_queue.dlq_name
+    ses-events = module.events_queue.dlq_name
+  }
+
+  alb_arn_suffix              = module.edge.alb_arn_suffix
+  api_target_group_arn_suffix = module.edge.api_target_group_arn_suffix
+
+  ecs_cluster_name = aws_ecs_cluster.this.name
+  services = {
+    api = {
+      service_name   = module.api.service_name
+      log_group_name = module.api.log_group_name
+      expect_running = var.api_desired_count > 0
+    }
+    worker = {
+      service_name   = module.worker.service_name
+      log_group_name = module.worker.log_group_name
+      expect_running = var.worker_desired_count > 0
+    }
+  }
+
+  ses_reputation_alarms = var.ses_reputation_alarms
+}
