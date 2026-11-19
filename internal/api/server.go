@@ -119,7 +119,7 @@ func (s *Server) Handler() http.Handler {
 	// Recipient pages (unsubscribing) have their own, higher limit and none
 	// of the API's sign-in layers.
 	pages := requestIDs(s.recoverer(s.logRequests(
-		(&RateLimiter{PerMinute: recipientPagesPerMinute, Now: now}).Middleware(s.recipientPages()))))
+		(&RateLimiter{PerMinute: recipientPagesPerMinute, Now: now, Key: ClientIPKey, Limited: s.recipientPageLimited}).Middleware(s.recipientPages()))))
 	// The web app skips the API's middleware: its files need no rate limit,
 	// session lookup or idempotency.
 	var web http.Handler

@@ -6,8 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -232,5 +234,33 @@ func TestUnsubscribePagesWithWebAppAndNoDatabase(t *testing.T) {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(m, unsubscribe.Path(f.patTok), nil))
 		expectPage(t, rec, http.StatusServiceUnavailable, "Unsubscribing isn&#39;t working right now")
+	}
+}
+
+// The recipient pages' limit is per IP, whatever Authorization header a
+// client sends, and a recipient who hits it gets a page, not JSON. A
+// limited POST is logged.
+func TestUnsubscribePagesLimit(t *testing.T) {
+	f := newUnsubscribeFixture(t)
+	// A stopped clock, so no tokens come back while the test runs.
+	at := time.Now()
+	f.srv.Now = func() time.Time { return at }
+	f.h = f.srv.Handler()
+	for i := range recipientPagesPerMinute {
+		rec := f.do(t, http.MethodGet, unsubscribe.PathPrefix+"not-a-token", "", map[string]string{"Authorization": "Bearer x" + strconv.Itoa(i)})
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("request %d: %d", i, rec.Code)
+		}
+	}
+	rec := f.do(t, http.MethodPost, unsubscribe.Path(f.joTok), "List-Unsubscribe=One-Click", map[string]string{"Authorization": "Bearer fresh"})
+	expectPage(t, rec, http.StatusTooManyRequests, "Too many tries just now", "Nothing has been changed.")
+	if rec.Header().Get("Retry-After") == "" {
+		t.Error("no Retry-After")
+	}
+	if f.status(t, f.jo) != "subscribed" {
+		t.Error("a limited POST unsubscribed")
+	}
+	if !strings.Contains(f.logs.String(), "unsubscribe post rate limited") || !strings.Contains(f.logs.String(), "one_click=true") {
+		t.Errorf("logs:\n%s", f.logs)
 	}
 }

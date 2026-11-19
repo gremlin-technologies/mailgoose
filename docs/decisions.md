@@ -48,6 +48,12 @@ Picked while building MG-28; easy to change.
   open.
 - **The pages show the address and the account's name**, so a person with
   more than one address knows which one left.
+- **The recipient pages are limited per IP only** (1,200 a minute), whatever
+  Authorization header a request carries, so a client can't get a fresh
+  bucket per header. A recipient over the limit gets a page with
+  Retry-After, not the API's JSON, and a limited POST is logged as a
+  warning so blocked one-click unsubscribes show up. (Added after the MG-28
+  review.)
 
 ## 2026-11-18: Campaigns (MG-27, reversible defaults)
 
