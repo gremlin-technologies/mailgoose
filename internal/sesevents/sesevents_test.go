@@ -335,6 +335,78 @@ func TestConfirmationBounce(t *testing.T) {
 	}
 }
 
+// A campaign copy whose message id was never recorded is matched by its
+// campaign and address, so its bounce or complaint still reaches the
+// contact (from the MG-33 review).
+func TestUnrecordedCopy(t *testing.T) {
+	ctx := context.Background()
+	for _, name := range []string{"bounce-permanent", "complaint"} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			if _, err := h.db.Exec(ctx, `UPDATE campaign_recipients SET message_id = NULL, status = 'failed' WHERE id = $1`, h.rcpt); err != nil {
+				t.Fatal(err)
+			}
+			if got := h.handle(t, h.payload(t, name, "{{ADDRESS}}", "Sam@PatsBakery.com")); got != Stored {
+				t.Fatalf("outcome = %s", got)
+			}
+			if c := h.contactState(t, h.contact); c.status == "subscribed" {
+				t.Errorf("Sam still subscribed")
+			}
+			ev := h.events(t)
+			if len(ev) != 1 || ev[0].recipient == nil || *ev[0].recipient != h.rcpt ||
+				ev[0].campaign == nil || *ev[0].campaign != h.campaign {
+				t.Errorf("events = %+v", ev)
+			}
+		})
+	}
+	t.Run("not a recipient of that campaign", func(t *testing.T) {
+		h := newHarness(t)
+		jo := h.addContact(t, "jo@example.com", "subscribed")
+		if _, err := h.db.Exec(ctx, `UPDATE campaign_recipients SET message_id = NULL WHERE id = $1`, h.rcpt); err != nil {
+			t.Fatal(err)
+		}
+		h.handle(t, h.payload(t, "bounce-permanent", "{{ADDRESS}}", "jo@example.com"))
+		if c := h.contactState(t, jo); c.status != "subscribed" {
+			t.Errorf("Jo = %s, want untouched", c.status)
+		}
+		if ev := h.events(t); len(ev) != 1 || ev[0].recipient != nil {
+			t.Errorf("events = %+v", ev)
+		}
+	})
+	t.Run("another account's campaign", func(t *testing.T) {
+		h := newHarness(t)
+		other := newHarness(t)
+		if _, err := h.db.Exec(ctx, `UPDATE campaign_recipients SET message_id = NULL WHERE id = $1`, h.rcpt); err != nil {
+			t.Fatal(err)
+		}
+		h.handle(t, h.payload(t, "bounce-permanent", "{{CAMPAIGN_ID}}", other.campaign))
+		if c := h.contactState(t, h.contact); c.status != "subscribed" {
+			t.Errorf("Sam = %s, want untouched", c.status)
+		}
+	})
+}
+
+// Soft bounces leave an unsubscribed contact as it is, so a form can still
+// bring it back; a hard bounce marks it bounced.
+func TestUnsubscribedBounces(t *testing.T) {
+	ctx := context.Background()
+	h := newHarness(t)
+	if _, err := h.db.Exec(ctx, `UPDATE contacts SET status = 'unsubscribed' WHERE id = $1`, h.contact); err != nil {
+		t.Fatal(err)
+	}
+	for n := 1; n <= SoftBounceLimit+1; n++ {
+		at := time.Date(2026, 11, 18, 12, 0, n, 0, time.UTC).Format(time.RFC3339Nano)
+		h.handle(t, h.payload(t, "bounce-transient", "{{TIMESTAMP}}", at))
+	}
+	if c := h.contactState(t, h.contact); c.status != "unsubscribed" || c.soft != 0 {
+		t.Errorf("after soft bounces: %+v, want unsubscribed", c)
+	}
+	h.handle(t, h.payload(t, "bounce-permanent"))
+	if c := h.contactState(t, h.contact); c.status != "bounced" {
+		t.Errorf("after a hard bounce: %+v, want bounced", c)
+	}
+}
+
 func TestTestAndSystemMail(t *testing.T) {
 	h := newHarness(t)
 	// A test send that bounces changes no contact, even one with the address.

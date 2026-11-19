@@ -283,6 +283,22 @@ func (s *Service) store(ctx context.Context, e *event, p *parsed, key string) (O
 			}
 		}
 	}
+	if recipientID == nil && kind == string(mail.KindCampaign) && accountID != nil {
+		// A campaign copy whose message id wasn't recorded (the send
+		// went out but the update failed, which MG-31 logs), or whose
+		// event came first: match it by its campaign and the address,
+		// so a bounce or complaint still reaches the contact.
+		if c := e.tag(mail.TagCampaign); uuidPattern.MatchString(c) && len(p.addresses) > 0 {
+			err := tx.QueryRow(ctx, `
+				SELECT r.id, r.campaign_id, r.contact_id FROM campaign_recipients r
+				JOIN contacts ct ON ct.id = r.contact_id
+				WHERE r.account_id = $1 AND r.campaign_id = $2 AND ct.email = ANY($3) LIMIT 1`,
+				*accountID, c, normalize(p.addresses)).Scan(&recipientID, &campaignID, &contactID)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				return "", err
+			}
+		}
+	}
 	var id int64
 	err = tx.QueryRow(ctx, `
 		INSERT INTO send_events (event_key, account_id, campaign_id, recipient_id, message_id, kind, type, subtype, occurred_at)
@@ -317,20 +333,28 @@ func (s *Service) contactsFor(ctx context.Context, tx pgx.Tx, kind string, accou
 	if kind != string(mail.KindConfirm) || accountID == nil || len(addresses) == 0 {
 		return nil, nil
 	}
-	lower := make([]string, len(addresses))
-	for i, a := range addresses {
-		lower[i] = strings.ToLower(strings.TrimSpace(a))
-	}
-	rows, err := tx.Query(ctx, `SELECT id FROM contacts WHERE account_id = $1 AND email = ANY($2)`, *accountID, lower)
+	rows, err := tx.Query(ctx, `SELECT id FROM contacts WHERE account_id = $1 AND email = ANY($2)`, *accountID, normalize(addresses))
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
+// normalize lowercases and trims addresses, as contacts store them.
+func normalize(addresses []string) []string {
+	out := make([]string, len(addresses))
+	for i, a := range addresses {
+		out[i] = strings.ToLower(strings.TrimSpace(a))
+	}
+	return out
+}
+
 // apply changes the contacts: a hard bounce or a complaint suppresses at
 // once, the third soft bounce in a row suppresses, a delivery clears the
 // count. A complaint outranks a bounce: a complained contact stays so.
+// Soft bounces leave an unsubscribed contact as it is, so it can still
+// come back through a form; a hard bounce marks it bounced, since the
+// address is gone.
 func (s *Service) apply(ctx context.Context, tx pgx.Tx, p *parsed, contactIDs []string) error {
 	if len(contactIDs) == 0 {
 		return nil
@@ -348,7 +372,7 @@ func (s *Service) apply(ctx context.Context, tx pgx.Tx, p *parsed, contactIDs []
 				status = CASE WHEN soft_bounces + 1 >= $3 THEN 'bounced' ELSE status END,
 				status_changed_at = CASE WHEN soft_bounces + 1 >= $3 THEN $2 ELSE status_changed_at END,
 				updated_at = $2
-			WHERE id = ANY($1) AND status NOT IN ('bounced', 'complained')`
+			WHERE id = ANY($1) AND status NOT IN ('bounced', 'complained', 'unsubscribed')`
 		_, err := tx.Exec(ctx, sql, contactIDs, s.now(), SoftBounceLimit)
 		return err
 	case p.typ == TypeDelivery:

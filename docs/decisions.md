@@ -36,6 +36,12 @@ Picked while building MG-33; easy to change.
   confirmations (matched to the account's contact by address). Test sends
   and mailgoose's own mail (sign-in codes) are stored but change no
   contact.
+- **A copy with no recorded message id** (sent, but the record failed, or
+  the event came first) is matched by its campaign tag and the bounced or
+  complained address, among that campaign's recipients only.
+- **An unsubscribed contact:** soft bounces leave it unsubscribed, so a
+  form can still bring it back. A hard bounce marks it `bounced`, since
+  the address is gone.
 - **Duplicates:** an event is stored once, keyed by a hash of its body;
   SNS and SQS can deliver the same one more than once.
 - **Kept events:** `send_events` holds no address and goes when the
