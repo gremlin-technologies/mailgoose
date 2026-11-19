@@ -138,6 +138,36 @@ type Service struct {
 	Now func() time.Time
 
 	keys sync.Map // account id -> *unsubscribe.Signer; keys never change
+
+	missMu sync.Mutex
+	misses map[string]time.Time // account id -> until when it's known keyless
+}
+
+// Accounts with no key are remembered for missTTL, at most maxMisses of
+// them, so forged tokens naming them don't each cost a database read.
+const (
+	missTTL   = time.Minute
+	maxMisses = 10000
+)
+
+func (s *Service) knownKeyless(accountID string, now time.Time) bool {
+	s.missMu.Lock()
+	defer s.missMu.Unlock()
+	until, ok := s.misses[accountID]
+	if ok && now.After(until) {
+		delete(s.misses, accountID)
+		return false
+	}
+	return ok
+}
+
+func (s *Service) rememberKeyless(accountID string, now time.Time) {
+	s.missMu.Lock()
+	defer s.missMu.Unlock()
+	if s.misses == nil || len(s.misses) >= maxMisses {
+		s.misses = map[string]time.Time{}
+	}
+	s.misses[accountID] = now.Add(missTTL)
 }
 
 func (s *Service) now() time.Time {
@@ -151,8 +181,13 @@ func (s *Service) signer(ctx context.Context, accountID string) (*unsubscribe.Si
 	if v, ok := s.keys.Load(accountID); ok {
 		return v.(*unsubscribe.Signer), nil
 	}
+	now := s.now()
+	if s.knownKeyless(accountID, now) {
+		return nil, ErrBadToken
+	}
 	g, err := s.Unsubscribe.Existing(ctx, accountID)
 	if errors.Is(err, unsubscribe.ErrNoKey) {
+		s.rememberKeyless(accountID, now)
 		return nil, ErrBadToken
 	}
 	if err != nil {
@@ -211,7 +246,8 @@ func (s *Service) Record(ctx context.Context, h *Hit) error {
 	var link *int
 	var target *string
 	if h.Link > 0 {
-		typ, link, target = TypeClick, &h.Link, &h.URL
+		stored := StoredURL(h.URL)
+		typ, link, target = TypeClick, &h.Link, &stored
 	}
 	_, err := s.DB.Exec(ctx, `
 		WITH r AS (
@@ -226,6 +262,23 @@ func (s *Service) Record(ctx context.Context, h *Hit) error {
 		WHERE $4 = 'click' AND NOT EXISTS (SELECT 1 FROM engagement_events e WHERE e.recipient_id = r.id AND e.type = 'open')`,
 		h.RecipientID, h.CampaignID, h.AccountID, typ, link, target, s.now())
 	return err
+}
+
+// StoredURL is the part of a clicked link kept with the click. Links are
+// tracked after merge tags are filled in, so the query, fragment and any
+// user info, where merge tags usually land, are dropped; a path holding
+// an address keeps only the site. The click itself still goes to the whole
+// link.
+func StoredURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	site := u.Scheme + "://" + u.Host
+	if strings.Contains(u.Path, "@") { // decoded, so %40 too
+		return site
+	}
+	return site + u.EscapedPath()
 }
 
 // For is one copy's tracked addresses, for render.Track.

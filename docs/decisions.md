@@ -39,6 +39,11 @@ Picked while building MG-37; easy to change.
 - **A click counts as an open** when the copy has none yet, since many mail
   apps block the pixel.
 - **No IP address or browser** is stored with an open or click.
+- **A click keeps only the link's site and path,** not its query, fragment
+  or user info, where merge tags usually land; a path holding an address
+  keeps only the site. The reader still goes to the whole link.
+- **An account with no link key** is remembered for a minute (up to 10,000
+  of them), so forged tokens naming it don't each read the database.
 - **The pixel always loads**, even for a bad token, so mail apps show no
   broken image; only valid tokens are recorded.
 - **Per-IP limit** of 20,000 a minute on `/t/`, well above other recipient
