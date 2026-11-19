@@ -38,6 +38,9 @@ Picked while building MG-49; easy to change.
   shows exactly what a site gets.
 - **Fields are email (always), then first and last name**, each with its own
   label and a required switch. A form keeps the order it was made with.
+- **A form that goes to a page keeps its saved message.** The message box is
+  hidden in that mode, but the API still needs a message, so an emptied one
+  is left as it was saved rather than failing on a field nobody can see.
 
 ## 2026-11-19: Report page (MG-48, reversible defaults)
 

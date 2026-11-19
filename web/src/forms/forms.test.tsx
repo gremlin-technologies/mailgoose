@@ -112,6 +112,24 @@ describe("form helpers", () => {
       confirm_text: "Please confirm.",
     });
   });
+
+  it("keeps the saved message when the form goes to a page and the hidden message is empty", () => {
+    const values = {
+      name: "Signup",
+      fields: [{ name: "email" as const, on: true, label: "", required: true }],
+      tagIds: [],
+      buttonText: "Join",
+      after: "redirect" as const,
+      successMessage: "  ",
+      redirectUrl: "https://example.com/thanks",
+      doubleOptIn: true,
+      confirmSubject: "Confirm",
+      confirmText: "Please confirm.",
+    };
+    expect(bodyOf(values, "Thanks!").success_message).toBe("Thanks!");
+    expect(bodyOf({ ...values, successMessage: "Welcome!" }, "Thanks!").success_message).toBe("Welcome!");
+    expect(bodyOf({ ...values, after: "message" }, "Thanks!").success_message).toBe("");
+  });
 });
 
 describe("forms list", () => {
@@ -158,6 +176,8 @@ describe("form editor", () => {
     await user.click(within(first).getByLabelText("Required"));
     await user.click(within(options).getByLabelText("vip"));
     const button = within(options).getByLabelText("Button text");
+    expect(button.hasAttribute("required")).toBe(true);
+    expect(within(options).getByLabelText("Message").hasAttribute("required")).toBe(true);
     await user.clear(button);
     await user.type(button, "Join us");
     await user.click(within(options).getByLabelText("Go to a page on my site"));
