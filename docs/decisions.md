@@ -4,6 +4,38 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-19: Terms versions (MG-68, reversible defaults)
+
+Picked while building MG-68; easy to change.
+
+- **One version for all four policy pages.** Terms, privacy policy,
+  anti-spam policy and DPA share one version, because sign-up accepts the
+  terms and anti-spam policy together and the DPA comes with the terms. The
+  versions, their effective dates and what changed in each are kept in
+  `internal/policy/policy.go`; `make generate` copies them to the web app.
+- **A version is a date, `YYYY-MM-DD`.** The first is `2026-11-19`, the day
+  the policy pages were published (MG-57). Accounts that signed up before
+  this change were backfilled with it, at the time they signed up, with
+  `via` = `backfill`.
+- **Every new version asks everyone again.** Adding a version to
+  `internal/policy` makes every account accept it before its next launch
+  (`new_terms_not_accepted`). A typo fix that shouldn't ask anyone again
+  shouldn't get a new version. Telling accounts by email ahead of a change
+  isn't built.
+- **Only launch is blocked.** Test sends, editing and campaigns already
+  launched or scheduled carry on. The web app shows a prompt in place of
+  every page until the person accepts, with links to what changed
+  (`/policies/changes`) and the terms; it doesn't stop sign-out.
+- **Accepting takes the current version only**, named exactly
+  (`mailgoose account accept-terms --version <v>`), so nobody accepts a
+  version they didn't read. Accepting the version already accepted adds no
+  row. It needs a session or a full-scope key.
+- **How it was accepted** is recorded as `web` (sign-up or the prompt in the
+  web app), `cli` (the CLI's sign-up, or any request the CLI makes, known by
+  its User-Agent), `api` (another API key) or `backfill`.
+- **The history is kept when an account is deleted**, like the admin log,
+  since it's the record of what the account agreed to.
+
 ## 2026-11-19: Link reputation check (MG-64, reversible defaults)
 
 Picked while building MG-64; easy to change. The vendor is an open question
@@ -256,7 +288,7 @@ owner's to supply.
 - **Which version of the terms was accepted isn't recorded yet;** accounts
   keep `terms_accepted_at` only. Once the real text exists, a version (or
   date) per acceptance is worth adding, so a later change can ask people to
-  accept again.
+  accept again. (Done in MG-68, above.)
 
 ## 2026-11-19: Agent docs (MG-55, reversible defaults)
 

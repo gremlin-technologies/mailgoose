@@ -93,8 +93,9 @@ paths:
       description: |
         The account's name, plan, default From name and address, postal
         address and time zone. `missing_for_send` lists the settings a
-        campaign can't launch without. `send_limit` is its daily send limit
-        now, and why it's lower than usual.
+        campaign can't launch without, `send_limit` its daily send limit now
+        and why it's lower than usual, and `terms` the version of the terms
+        the account accepted against the current one.
       tags: [account]
       security:
         - apiKey: []
@@ -202,6 +203,54 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "502":
           $ref: "#/components/responses/PaymentProviderError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/account/terms:
+    post:
+      operationId: acceptTerms
+      summary: Accept the current terms
+      description: |
+        Accepts the current version of mailgoose's terms of service,
+        anti-spam policy, privacy policy and data processing agreement for
+        the account. `version` must be the current version, as
+        `getAccount` shows it in `terms.current_version`; anything else is a
+        422 `terms_version_not_current`, so a person only accepts the version
+        they read. When the terms change, campaigns can't launch until the
+        new version is accepted (`new_terms_not_accepted`). Each acceptance
+        is kept, with its time and whether it came from the web app, the CLI
+        or an API key. Accepting the version already accepted changes
+        nothing.
+      tags: [account]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcceptTermsRequest"
+      responses:
+        "200":
+          description: The account, with the terms it has now accepted.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/api-keys:
@@ -4437,7 +4486,7 @@ components:
           $ref: "#/components/schemas/ApiKeyScope"
     AccountSettings:
       type: object
-      required: [id, name, plan, from_name, from_email, postal_address, time_zone, missing_for_send, send_limit, created_at]
+      required: [id, name, plan, from_name, from_email, postal_address, time_zone, missing_for_send, send_limit, terms, created_at]
       properties:
         id:
           type: string
@@ -4470,6 +4519,8 @@ components:
           description: Settings a campaign can't launch without, such as `postal_address`. Empty when none are missing.
         send_limit:
           $ref: "#/components/schemas/SendLimit"
+        terms:
+          $ref: "#/components/schemas/TermsStatus"
         created_at:
           type: string
           format: date-time
@@ -4497,6 +4548,45 @@ components:
           type: [string, "null"]
           format: date-time
           description: When a lowered limit lifts; null when it isn't lowered.
+    TermsStatus:
+      type: object
+      description: |
+        Which version of mailgoose's terms the account accepted, and the
+        version in force now. Versions are dates, `YYYY-MM-DD`; what changed
+        in each is on the web app's `/policies/changes` page.
+      required: [accepted_version, accepted_at, current_version, current_effective, acceptance_needed]
+      properties:
+        accepted_version:
+          type: [string, "null"]
+          description: The latest version the account accepted; null if it never accepted one.
+          examples: ["2026-11-19"]
+        accepted_at:
+          type: [string, "null"]
+          format: date-time
+          description: When it accepted that version.
+        current_version:
+          type: string
+          description: The version in force now.
+          examples: ["2026-11-19"]
+        current_effective:
+          type: string
+          format: date
+          description: The day the current version took effect.
+        acceptance_needed:
+          type: boolean
+          description: |
+            True when the account hasn't accepted the current version.
+            Campaigns can't launch until it does; accept with `acceptTerms`.
+    AcceptTermsRequest:
+      type: object
+      required: [version]
+      additionalProperties: false
+      properties:
+        version:
+          type: string
+          maxLength: 20
+          description: The version being accepted. It must be the current one.
+          examples: ["2026-11-19"]
     UpdateAccountRequest:
       type: object
       additionalProperties: false
@@ -4869,8 +4959,9 @@ components:
         accepted_terms:
           type: boolean
           description: |
-            Must be `true`: the person accepts the terms of service and the
-            anti-spam policy. Anything else is a 422 `terms_not_accepted`.
+            Must be `true`: the person accepts the current version of the
+            terms of service and the anti-spam policy, which is recorded with
+            the time. Anything else is a 422 `terms_not_accepted`.
     SignInRequest:
       type: object
       required: [email]
@@ -6445,8 +6536,15 @@ components:
       allOf:
         - $ref: "#/components/schemas/AdminAccountSummary"
         - type: object
-          required: [daily_send_limit, send_limit, throttles, contacts, credit_balance, last_30_days, held_imports, live_campaigns]
+          required: [daily_send_limit, send_limit, throttles, contacts, credit_balance, last_30_days, held_imports, live_campaigns, terms_version, terms_accepted_at]
           properties:
+            terms_version:
+              type: [string, "null"]
+              description: The latest version of the terms the account accepted; null if it never accepted one.
+            terms_accepted_at:
+              type: [string, "null"]
+              format: date-time
+              description: When it accepted that version.
             daily_send_limit:
               type: [integer, "null"]
               description: The account's own daily limit; null follows the schedule.
@@ -6945,7 +7043,9 @@ components:
         (a link on Google Web Risk's malware, phishing or unwanted software
         lists, named in `url`; it also pauses the account's sending),
         `untested` (no test since the last change), `send_at_passed`,
-        `account_paused`, `account_suspended`,
+        `account_paused`, `account_suspended`, `new_terms_not_accepted` (the terms changed and
+        the account hasn't accepted the new version; `details.current_version`
+        and `details.accepted_version`, then `acceptTerms`),
         `subscription_past_due` (sending is paused until the paid plan's
         payment goes through), `no_recipients`, and `credits_short` with `details.needed`,
         `details.balance` and `details.short`. `invalid_confirmation`: the

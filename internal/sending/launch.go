@@ -42,6 +42,9 @@ const (
 	NoRecipients        = "no_recipients"
 	CreditsShort        = "credits_short"
 	SendAtPassed        = "send_at_passed"
+	// NewTermsNotAccepted is an account that hasn't accepted the current
+	// version of the terms (MG-68).
+	NewTermsNotAccepted = "new_terms_not_accepted"
 )
 
 // Summary is what a person confirms before a campaign launches (CAM-3).
@@ -282,12 +285,15 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 			Hint: "Set a new one with `mailgoose campaign update " + c.ID + " --send-at <time>`, or `--send-at now`."})
 	}
 	var pausedAt, suspendedAt *time.Time
-	var reason, code, suspendedReason *string
+	var reason, code, suspendedReason, terms *string
 	if err := s.DB.QueryRow(ctx, `
-		SELECT sending_paused_at, sending_paused_reason, sending_paused_code, suspended_at, suspended_reason
+		SELECT sending_paused_at, sending_paused_reason, sending_paused_code, suspended_at, suspended_reason, terms_version
 		FROM accounts WHERE id = $1`,
-		accountID).Scan(&pausedAt, &reason, &code, &suspendedAt, &suspendedReason); err != nil {
+		accountID).Scan(&pausedAt, &reason, &code, &suspendedAt, &suspendedReason, &terms); err != nil {
 		return nil, nil, err
+	}
+	if p := termsProblem(trimmed(terms)); p != nil {
+		problems = append(problems, *p)
 	}
 	switch {
 	case suspendedAt != nil:

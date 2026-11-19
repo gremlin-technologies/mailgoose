@@ -47,13 +47,14 @@ var AccountTables = []string{
 }
 
 // KeptAccountTables lists the tables with an account_id that DeleteAccount
-// leaves alone: the billing records the law requires us to keep, and the
-// admin log (what staff did to the account, and why). A test
-// checks every table with an account_id is in one list or the other, so a
-// new table can't be forgotten.
+// leaves alone: the billing records the law requires us to keep, the admin
+// log (what staff did to the account, and why) and which terms it accepted.
+// A test checks every table with an account_id is in one list or the other,
+// so a new table can't be forgotten.
 var KeptAccountTables = []string{
 	"credit_transactions",
 	"admin_actions",
+	"terms_acceptances",
 }
 
 // DeleteAccount deletes an account and everything in it (AUTH-6), when

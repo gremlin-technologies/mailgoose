@@ -28,6 +28,7 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	mgmail "github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/policy"
 )
 
 const (
@@ -90,6 +91,8 @@ type SignUpInput struct {
 	AcceptedTerms bool
 	// IP is the client's address, for the per-IP limit on code requests.
 	IP string
+	// Via is how the terms were accepted: TermsViaWeb or TermsViaCLI.
+	Via string
 }
 
 // Account is an account as the API shows it.
@@ -229,9 +232,12 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO accounts (name, status, plan, terms_accepted_at)
-			VALUES ($1, 'pending', 'free', $2) RETURNING id`, name, now).Scan(&accountID); err != nil {
+			INSERT INTO accounts (name, status, plan, terms_accepted_at, terms_version)
+			VALUES ($1, 'pending', 'free', $2, $3) RETURNING id`, name, now, policy.Current().ID).Scan(&accountID); err != nil {
 			return fmt.Errorf("create account: %w", err)
+		}
+		if err := recordTerms(ctx, tx, accountID, policy.Current().ID, in.Via, now); err != nil {
+			return err
 		}
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO users (account_id, email) VALUES ($1, $2) RETURNING id`, accountID, email).Scan(&userID); err != nil {
@@ -252,9 +258,12 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 			purpose = PurposeSignin
 		} else {
 			// Still pending: the latest sign-up's name and acceptance win.
-			if _, err := tx.Exec(ctx, `UPDATE accounts SET name = $2, terms_accepted_at = $3, updated_at = $3 WHERE id = $1`,
-				accountID, name, now); err != nil {
+			if _, err := tx.Exec(ctx, `UPDATE accounts SET name = $2, terms_accepted_at = $3, terms_version = $4, updated_at = $3 WHERE id = $1`,
+				accountID, name, now, policy.Current().ID); err != nil {
 				return fmt.Errorf("update account: %w", err)
+			}
+			if err := recordTerms(ctx, tx, accountID, policy.Current().ID, in.Via, now); err != nil {
+				return err
 			}
 		}
 	}

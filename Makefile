@@ -69,9 +69,10 @@ lint: ## golangci-lint (v2)
 lint-api: web/node_modules ## Lint api/openapi.yaml with Redocly
 	cd web && npm run -s lint:api
 
-generate: web/node_modules ## Regenerate the Go API types and the TypeScript client from api/openapi.yaml
+generate: web/node_modules ## Regenerate the Go API types and the TypeScript client from api/openapi.yaml, and the web app's policy versions
 	$(GO) tool oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
 	cd web && npm run -s generate
+	$(GO) run ./internal/policy/gen
 
 web/node_modules: web/package.json web/package-lock.json
 	cd web && npm ci --no-audit --no-fund

@@ -12,6 +12,8 @@ import (
 
 	"github.com/pb33f/libopenapi"
 	validator "github.com/pb33f/libopenapi-validator"
+
+	"github.com/gremlin-technologies/mailgoose/internal/policy"
 )
 
 // specPath is the API contract, relative to this package.
@@ -125,6 +127,16 @@ var contractCases = map[string][]contractCase{
 			req: bearer(request(http.MethodDelete, "/v1/account?confirm=Test")), status: http.StatusTooManyRequests},
 		{name: "stripe down", server: paidAccount(fullKey(stripeRefuses(authServer))), req: bearer(request(http.MethodDelete, "/v1/account?confirm=Test")), status: http.StatusBadGateway},
 		{name: "no database", server: serverWith(nil), req: bearer(request(http.MethodDelete, "/v1/account?confirm=Test")), status: http.StatusServiceUnavailable},
+	},
+	"acceptTerms": {
+		{name: "accepted", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/account/terms", acceptTermsBody)), status: http.StatusOK},
+		{name: "malformed", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/account/terms", `{"version":1}`)), status: http.StatusBadRequest},
+		{name: "no credentials", server: authServer, req: jsonRequest(http.MethodPost, "/v1/account/terms", acceptTermsBody), status: http.StatusUnauthorized},
+		{name: "draft key", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/account/terms", acceptTermsBody)), status: http.StatusForbidden},
+		{name: "old version", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/account/terms", `{"version":"2000-01-01"}`)), status: http.StatusUnprocessableEntity},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(jsonRequest(http.MethodPost, "/v1/account/terms", acceptTermsBody))),
+			req: bearer(jsonRequest(http.MethodPost, "/v1/account/terms", acceptTermsBody)), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(jsonRequest(http.MethodPost, "/v1/account/terms", acceptTermsBody)), status: http.StatusServiceUnavailable},
 	},
 	"listTags": {
 		{name: "listed", server: draftKey(authServer), before: addedTag, req: bearer(request(http.MethodGet, "/v1/tags?name=VIP&limit=5")), status: http.StatusOK},
@@ -912,6 +924,9 @@ var contractCases = map[string][]contractCase{
 // accountUpdate sets every account setting.
 const accountUpdate = `{"name":"Pat's Bakery","from_name":"Pat","from_email":"news@patsbakery.example",` +
 	`"postal_address":"Pat's Bakery\n12 Main St\nSpringfield, IL 62701","time_zone":"America/Chicago"}`
+
+// acceptTermsBody accepts the current version of the terms.
+var acceptTermsBody = `{"version":"` + policy.Current().ID + `"}`
 
 const noSuchID = "00000000-0000-4000-8000-000000000000"
 

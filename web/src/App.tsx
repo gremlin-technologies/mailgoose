@@ -19,11 +19,12 @@ import { Forms } from "./pages/Forms";
 import { ImportContacts, ImportDetail } from "./pages/Imports";
 import { navPages } from "./pages/nav";
 import { NotFound, Placeholder } from "./pages/Placeholder";
-import { PolicyPage, policies } from "./pages/Policies";
+import { PolicyChangesPage, PolicyPage, policies } from "./pages/Policies";
 import { Settings } from "./pages/Settings";
 import { SignIn } from "./pages/SignIn";
 import { SignUp } from "./pages/SignUp";
 import { Tags } from "./pages/Tags";
+import { policyChangesPath } from "./policyVersions.gen";
 
 /** Pages that are built; the rest of the menu shows a placeholder. */
 const built: Record<string, ReactNode> = {
@@ -46,6 +47,7 @@ export function AppRoutes() {
       {policies.map((p) => (
         <Route key={p.path} path={p.path} element={<PolicyPage policy={p} />} />
       ))}
+      <Route path={policyChangesPath} element={<PolicyChangesPage />} />
       <Route
         path="/sign-in"
         element={

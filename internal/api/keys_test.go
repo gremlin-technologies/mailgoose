@@ -14,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/policy"
 )
 
 type testKey struct{ id, secret string }
@@ -40,7 +41,8 @@ func newTestKey(t *testing.T, s *Server, email, scope string) testKey {
 	ctx := context.Background()
 	pool := s.DB.(*pgxpool.Pool)
 	var accountID, userID string
-	if err := pool.QueryRow(ctx, `INSERT INTO accounts (name, status) VALUES ('Test', 'active') RETURNING id`).Scan(&accountID); err != nil {
+	if err := pool.QueryRow(ctx, `INSERT INTO accounts (name, status, terms_version, terms_accepted_at) VALUES ('Test', 'active', $1, now()) RETURNING id`,
+		policy.Current().ID).Scan(&accountID); err != nil {
 		t.Fatal(err)
 	}
 	if err := pool.QueryRow(ctx, `INSERT INTO users (account_id, email) VALUES ($1, $2) RETURNING id`, accountID, email).Scan(&userID); err != nil {

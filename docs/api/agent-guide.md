@@ -191,6 +191,10 @@ the person turns that off.
   yet, such as no test of this version, no postal address, or too few
   credits. Fix what you can and tell the person the rest; credits are theirs
   to buy (`mailgoose credits buy`).
+- `new_terms_not_accepted` among them: mailgoose's terms changed. Accepting
+  them is the person's, never yours: point them to `/policies/changes` in the
+  web app and let them accept there or run
+  `mailgoose account accept-terms --version <v>` themselves.
 
 The full API reference, with every field, is generated from the OpenAPI spec
 in `docs/api/reference.md` in the mailgoose repository.

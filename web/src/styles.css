@@ -186,6 +186,20 @@ code {
   color: var(--muted);
 }
 
+/* Asking for the new terms in place of a page (MG-68) */
+
+.terms-gate {
+  max-width: 40rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.terms-gate h1,
+.terms-gate p {
+  margin: 0;
+}
+
 .auth-footer {
   color: var(--muted);
 }

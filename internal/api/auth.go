@@ -35,6 +35,7 @@ func (s *Server) CreateSignup(w http.ResponseWriter, r *http.Request) {
 		AccountName:   req.AccountName,
 		AcceptedTerms: req.AcceptedTerms,
 		IP:            ClientIP(r),
+		Via:           termsVia(r, nil),
 	})
 	if s.authError(w, r, err) {
 		return

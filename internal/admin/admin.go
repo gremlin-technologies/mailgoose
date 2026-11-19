@@ -313,6 +313,10 @@ type Account struct {
 	Last30Days    sending.Rates  `json:"last_30_days"`
 	HeldImports   []HeldImport   `json:"held_imports"`
 	LiveCampaigns []LiveCampaign `json:"live_campaigns"`
+	// TermsVersion is the latest version of the terms the account accepted,
+	// at TermsAcceptedAt (MG-68).
+	TermsVersion    *string    `json:"terms_version"`
+	TermsAcceptedAt *time.Time `json:"terms_accepted_at"`
 }
 
 // GetAccount is one account in full.
@@ -328,14 +332,14 @@ func (s *Service) GetAccount(ctx context.Context, id string) (*Account, error) {
 	}
 	since := s.now().Add(-sending.HealthWindow)
 	if err := s.DB.QueryRow(ctx, `
-		SELECT a.daily_send_limit,
+		SELECT a.daily_send_limit, a.terms_version, a.terms_accepted_at,
 			(SELECT count(*) FROM contacts WHERE account_id = a.id),
 			(SELECT count(*) FROM campaign_recipients WHERE account_id = a.id AND sent_at > $2),
 			(SELECT count(DISTINCT recipient_id) FROM send_events
 				WHERE account_id = a.id AND occurred_at > $2 AND kind = 'campaign' AND type = 'bounce' AND subtype LIKE 'permanent/%'),
 			(SELECT count(DISTINCT recipient_id) FROM send_events
 				WHERE account_id = a.id AND occurred_at > $2 AND kind = 'campaign' AND type = 'complaint')
-		FROM accounts a WHERE a.id = $1`, id, since).Scan(&a.DailySendLimit, &a.Contacts,
+		FROM accounts a WHERE a.id = $1`, id, since).Scan(&a.DailySendLimit, &a.TermsVersion, &a.TermsAcceptedAt, &a.Contacts,
 		&a.Last30Days.Sent, &a.Last30Days.HardBounces, &a.Last30Days.Complaints); err != nil {
 		return nil, err
 	}

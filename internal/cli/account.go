@@ -23,7 +23,28 @@ type account struct {
 	TimeZone       string    `json:"time_zone"`
 	MissingForSend []string  `json:"missing_for_send"`
 	SendLimit      sendLimit `json:"send_limit"`
+	Terms          terms     `json:"terms"`
 	CreatedAt      time.Time `json:"created_at"`
+}
+
+// terms is the API's TermsStatus.
+type terms struct {
+	AcceptedVersion  *string    `json:"accepted_version"`
+	AcceptedAt       *time.Time `json:"accepted_at"`
+	CurrentVersion   string     `json:"current_version"`
+	CurrentEffective string     `json:"current_effective"`
+	AcceptanceNeeded bool       `json:"acceptance_needed"`
+}
+
+// termsLine describes an accepted version of the terms, for people.
+func termsLine(version *string, at *time.Time) string {
+	if version == nil {
+		return "never accepted"
+	}
+	if at == nil {
+		return "version " + *version
+	}
+	return fmt.Sprintf("version %s, accepted %s", *version, at.Local().Format("2006-01-02 15:04"))
 }
 
 // sendLimit is the API's SendLimit.
@@ -61,7 +82,9 @@ func (a *App) accountCmd() *cobra.Command {
 		Short: "Show and change account settings",
 		Long: `Account settings: the account name, the default From name and address for
 new campaigns, the postal address that goes in every email's footer (campaigns
-can't launch without it) and the time zone.`,
+can't launch without it) and the time zone. "account get" also shows which
+version of mailgoose's terms the account accepted; when the terms change,
+"account accept-terms" accepts the new version.`,
 	}
 
 	get := calls("getAccount", &cobra.Command{
@@ -177,7 +200,41 @@ it. Only a signed-in person or a full-scope API key can delete an account.`,
 	})
 	del.Flags().StringVar(&confirm, "confirm", "", "the account's exact name; deleting can't be undone")
 
-	cmd.AddCommand(get, update, del)
+	var termsVersion string
+	accept := calls("acceptTerms", &cobra.Command{
+		Use:   "accept-terms --version <version>",
+		Short: "Accept the current terms of service and policies",
+		Long: `Accepts the current version of mailgoose's terms of service, anti-spam
+policy, privacy policy and data processing agreement. When they change,
+campaigns can't launch until the new version is accepted.
+
+Read them first, and what changed, in the web app at /terms and
+/policies/changes. "mailgoose account get" shows the version the account
+accepted and the current one. --version must be the current version, so
+you accept exactly what you read. Only a signed-in person or a full-scope
+API key can accept.`,
+		Example: `  mailgoose account accept-terms --version 2026-11-19
+  mailgoose account accept-terms --version 2026-11-19 --json`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if termsVersion == "" {
+				return needFlag("version", "The version you accept, as `mailgoose account get` shows it")
+			}
+			var acct account
+			if err := a.call(cmd.Context(), http.MethodPost, "/v1/account/terms", map[string]any{"version": termsVersion}, &acct, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(acct)
+				return nil
+			}
+			fmt.Fprintf(a.Stdout, "Accepted the terms, version %s.\n", acct.Terms.CurrentVersion)
+			return nil
+		},
+	})
+	accept.Flags().StringVar(&termsVersion, "version", "", "the version you accept; it must be the current one")
+
+	cmd.AddCommand(get, update, accept, del)
 	return cmd
 }
 
@@ -201,6 +258,11 @@ func (a *App) printAccount(acct account) {
 	fmt.Fprintf(a.Stdout, "Time zone:   %s\n", acct.TimeZone)
 	if acct.SendLimit.Daily > 0 {
 		fmt.Fprintf(a.Stdout, "Send limit:  %s\n", acct.SendLimit)
+	}
+	fmt.Fprintf(a.Stdout, "Terms:       %s\n", termsLine(acct.Terms.AcceptedVersion, acct.Terms.AcceptedAt))
+	if acct.Terms.AcceptanceNeeded {
+		fmt.Fprintf(a.Stdout, "\nThe terms changed: version %s took effect on %s. Read what changed in the web app at /policies/changes,\n", acct.Terms.CurrentVersion, acct.Terms.CurrentEffective)
+		fmt.Fprintf(a.Stdout, "then accept with `mailgoose account accept-terms --version %s`. Campaigns can't launch until you do.\n", acct.Terms.CurrentVersion)
 	}
 	if len(acct.MissingForSend) > 0 {
 		fmt.Fprintf(a.Stdout, "\nCampaigns can't launch until you set: %s\n", strings.Join(acct.MissingForSend, ", "))

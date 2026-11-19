@@ -291,6 +291,31 @@ again afterwards.
 mailgoose account delete --confirm "Pat's Bakery"
 ```
 
+### Terms versions
+
+The terms of service, privacy policy, anti-spam policy and data processing
+agreement share one version, a date such as `2026-11-19`, kept with its
+effective date and what changed in `internal/policy/policy.go`. `make
+generate` copies them to the web app (`web/src/policyVersions.gen.ts`), where
+each policy page shows the version and `/policies/changes` lists every
+version. Sign-up records the version accepted, with the time and how (`web`,
+`cli` or `api`), in `terms_acceptances`; each acceptance is a new row, never
+overwritten, and the rows stay when an account is deleted.
+
+To change the policies, add a version at the end of the list in
+`internal/policy/policy.go` with its effective date and a line for each
+change, then run `make generate`. Every account then has to accept it: the web
+app asks before showing any page, `GET /v1/account` shows
+`terms.acceptance_needed`, and launching is refused with
+`new_terms_not_accepted` until the account accepts it, in the web app or with:
+
+```sh
+mailgoose account accept-terms --version 2026-11-19
+```
+
+Only the current version can be accepted. `mailgoose admin account` shows the
+version an account accepted.
+
 ## Credits
 
 One credit sends one email to one recipient. `internal/credits` is the ledger:

@@ -10,6 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/gremlin-technologies/mailgoose/internal/policy"
+
 	// Time zone names are checked against the embedded IANA database, so the
 	// answer doesn't depend on what the container has installed.
 	_ "time/tzdata"
@@ -35,6 +37,16 @@ type Settings struct {
 	PostalAddress *string
 	TimeZone      string
 	CreatedAt     time.Time
+	// TermsVersion is the latest version of the terms the account accepted,
+	// at TermsAcceptedAt; nil if it never accepted any (MG-68).
+	TermsVersion    *string
+	TermsAcceptedAt *time.Time
+}
+
+// TermsNeeded reports whether the account has yet to accept the current
+// version of the terms.
+func (s *Settings) TermsNeeded() bool {
+	return s.TermsVersion == nil || *s.TermsVersion != policy.Current().ID
 }
 
 // MissingForSend names the settings a campaign can't launch without, in the
@@ -112,12 +124,13 @@ func (s *Service) UpdateAccountSettings(ctx context.Context, accountID string, u
 }
 
 func readSettings(ctx context.Context, tx pgx.Tx, accountID string, lock bool) (*Settings, error) {
-	q := `SELECT id, name, plan, from_name, from_email, postal_address, time_zone, created_at FROM accounts WHERE id = $1`
+	q := `SELECT id, name, plan, from_name, from_email, postal_address, time_zone, created_at, terms_version, terms_accepted_at FROM accounts WHERE id = $1`
 	if lock {
 		q += ` FOR UPDATE`
 	}
 	var st Settings
-	err := tx.QueryRow(ctx, q, accountID).Scan(&st.ID, &st.Name, &st.Plan, &st.FromName, &st.FromEmail, &st.PostalAddress, &st.TimeZone, &st.CreatedAt)
+	err := tx.QueryRow(ctx, q, accountID).Scan(&st.ID, &st.Name, &st.Plan, &st.FromName, &st.FromEmail, &st.PostalAddress, &st.TimeZone, &st.CreatedAt,
+		&st.TermsVersion, &st.TermsAcceptedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoAccount
 	}
