@@ -1398,3 +1398,66 @@ progress {
     grid-template-columns: 1fr;
   }
 }
+
+/* Credits and billing (MG-50) */
+.balance {
+  margin: 0;
+  color: var(--muted);
+}
+
+.balance-number {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.packs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.5rem;
+}
+
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.history li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.history li:last-child {
+  border-bottom: none;
+}
+
+.history-what {
+  flex: 1 1 14rem;
+}
+
+.history-ref {
+  flex: 0 1 auto;
+}
+
+.history-amount {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 6rem;
+  text-align: right;
+}
+
+.history-amount.plus {
+  color: var(--good-text);
+}
+
+.paused-banner {
+  margin-bottom: 1rem;
+}
