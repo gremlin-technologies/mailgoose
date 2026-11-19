@@ -38,6 +38,7 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 - [Show account settings](reference.md#op-getaccount): `GET /v1/account`, CLI `mailgoose account get`. The account's name, plan, default From name and address, postal address and time zone.
 - [Change account settings](reference.md#op-updateaccount): `PATCH /v1/account`, CLI `mailgoose account update`. Changes only the fields sent.
 - [Delete the account](reference.md#op-deleteaccount): `DELETE /v1/account`, CLI `mailgoose account delete`. Deletes the account and everything in it, now: contacts, emails, sending domains (and their Amazon SES identities), API keys, CLI logins and web sessions, and the person's sign-in.
+- [Accept the current terms](reference.md#op-acceptterms): `POST /v1/account/terms`, CLI `mailgoose account accept-terms`. Accepts the current version of mailgoose's terms of service, anti-spam policy, privacy policy and data processing agreement for the account.
 
 ## API keys
 

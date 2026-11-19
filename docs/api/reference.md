@@ -433,8 +433,9 @@ Responses:
 
 The account's name, plan, default From name and address, postal
 address and time zone. `missing_for_send` lists the settings a
-campaign can't launch without. `send_limit` is its daily send limit
-now, and why it's lower than usual.
+campaign can't launch without, `send_limit` its daily send limit now
+and why it's lower than usual, and `terms` the version of the terms
+the account accepted against the current one.
 
 Responses:
 
@@ -504,6 +505,39 @@ Responses:
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `502`: `payment_provider_error`: Stripe couldn't make the Checkout page; try again shortly. [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-acceptterms"></a>
+
+### Accept the current terms
+
+`POST /v1/account/terms`
+
+- Operation: `acceptTerms`
+- CLI: `mailgoose account accept-terms`
+- Needs a `full`-scope key
+
+Accepts the current version of mailgoose's terms of service,
+anti-spam policy, privacy policy and data processing agreement for
+the account. `version` must be the current version, as
+`getAccount` shows it in `terms.current_version`; anything else is a
+422 `terms_version_not_current`, so a person only accepts the version
+they read. When the terms change, campaigns can't launch until the
+new version is accepted (`new_terms_not_accepted`). Each acceptance
+is kept, with its time and whether it came from the web app, the CLI
+or an API key. Accepting the version already accepted changes
+nothing.
+
+Request body (`application/json`, required): [AcceptTermsRequest](#schema-accepttermsrequest)
+
+Responses:
+
+- `200`: The account, with the terms it has now accepted. [AccountSettings](#schema-accountsettings)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-api-keys"></a>
@@ -2186,7 +2220,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `confirmation_required`: nothing was launched. `details.summary` (`campaign_id`, `name`, `subject`, `from`, `reply_to`, `recipient_count`, `send_at`, `credits`, `balance`, `warnings`) is what the person confirms, `details.code` the code that launches it once they say yes, and `details.expires_at` when the code stops working. `campaign_locked`: the campaign isn't a draft and wasn't launched; `details.status` is its status. [Error](#schema-error)
-- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, and `credits_short` with `details.needed`, `details.balance` and `details.short`. `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
+- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `new_terms_not_accepted` (the terms changed and the account hasn't accepted the new version; `details.current_version` and `details.accepted_version`, then `acceptTerms`), `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, and `credits_short` with `details.needed`, `details.balance` and `details.short`. `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-cancelcampaign"></a>
@@ -3153,6 +3187,7 @@ Type: string: one of `pending`, `verified`, `failed`
 | `time_zone` | string | yes | An IANA time zone name. |
 | `missing_for_send` | array of string | yes | Settings a campaign can't launch without, such as `postal_address`. Empty when none are missing. |
 | `send_limit` | [SendLimit](#schema-sendlimit) | yes |  |
+| `terms` | [TermsStatus](#schema-termsstatus) | yes |  |
 | `created_at` | string (date-time) | yes |  |
 
 <a id="schema-sendlimit"></a>
@@ -3171,6 +3206,30 @@ the new-account limit for 7 days.
 | `usual` | integer | yes | The limit for an established account in good standing. |
 | `reason` | string or null | yes | Why `daily` is under `usual` (or set by mailgoose); null at the usual limit. |
 | `lowered_until` | string (date-time) or null | yes | When a lowered limit lifts; null when it isn't lowered. |
+
+<a id="schema-termsstatus"></a>
+
+### TermsStatus
+
+Which version of mailgoose's terms the account accepted, and the
+version in force now. Versions are dates, `YYYY-MM-DD`; what changed
+in each is on the web app's `/policies/changes` page.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `accepted_version` | string or null | yes | The latest version the account accepted; null if it never accepted one. |
+| `accepted_at` | string (date-time) or null | yes | When it accepted that version. |
+| `current_version` | string | yes | The version in force now. |
+| `current_effective` | string (date) | yes | The day the current version took effect. |
+| `acceptance_needed` | boolean | yes | True when the account hasn't accepted the current version. Campaigns can't launch until it does; accept with `acceptTerms`. |
+
+<a id="schema-accepttermsrequest"></a>
+
+### AcceptTermsRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `version` | string | yes | The version being accepted. It must be the current one. |
 
 <a id="schema-updateaccountrequest"></a>
 
@@ -3413,7 +3472,7 @@ Type: string: one of `grant`, `purchase`, `reserve`, `release`, `spend`, `fee`, 
 | --- | --- | --- | --- |
 | `email` | string (email) | yes |  |
 | `account_name` | string | yes |  |
-| `accepted_terms` | boolean | yes | Must be `true`: the person accepts the terms of service and the anti-spam policy. Anything else is a 422 `terms_not_accepted`. |
+| `accepted_terms` | boolean | yes | Must be `true`: the person accepts the current version of the terms of service and the anti-spam policy, which is recorded with the time. Anything else is a 422 `terms_not_accepted`. |
 
 <a id="schema-signinrequest"></a>
 

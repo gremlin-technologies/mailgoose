@@ -54,7 +54,10 @@ type adminAccount struct {
 	adminAccountSummary
 	DailySendLimit *int      `json:"daily_send_limit"`
 	SendLimit      sendLimit `json:"send_limit"`
-	Throttles      []struct {
+	// TermsVersion is the version of the terms the account last accepted.
+	TermsVersion    *string    `json:"terms_version"`
+	TermsAcceptedAt *time.Time `json:"terms_accepted_at"`
+	Throttles       []struct {
 		ID         int64     `json:"id"`
 		CampaignID *string   `json:"campaign_id"`
 		Reason     string    `json:"reason"`
@@ -210,6 +213,7 @@ func (a *App) printAdminAccount(acc adminAccount) {
 	fmt.Fprintf(w, "Daily limit:  %s\n", limit)
 	fmt.Fprintf(w, "Contacts:     %d\n", acc.Contacts)
 	fmt.Fprintf(w, "Credits:      %d\n", acc.CreditBalance)
+	fmt.Fprintf(w, "Terms:        %s\n", termsLine(acc.TermsVersion, acc.TermsAcceptedAt))
 	fmt.Fprintf(w, "Last 30 days: %s\n", acc.Last30Days)
 	for _, th := range acc.Throttles {
 		fmt.Fprintf(w, "Throttled:    %s to %s: %s\n", th.CreatedAt.Local().Format("2006-01-02 15:04"),

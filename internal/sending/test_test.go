@@ -17,6 +17,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/policy"
 )
 
 const baseURL = "https://app.mailgoose.example"
@@ -46,8 +47,9 @@ func newHarness(t *testing.T) *harness {
 		Now:       func() time.Time { return h.now },
 	}
 	if err := db.QueryRow(ctx, `
-		INSERT INTO accounts (name, from_name, from_email, postal_address)
-		VALUES ('Pat''s Bakery', 'Pat''s Bakery', 'hello@patsbakery.com', '12 Main St') RETURNING id`).Scan(&h.acc); err != nil {
+		INSERT INTO accounts (name, from_name, from_email, postal_address, terms_version, terms_accepted_at)
+		VALUES ('Pat''s Bakery', 'Pat''s Bakery', 'hello@patsbakery.com', '12 Main St', $1, now()) RETURNING id`,
+		policy.Current().ID).Scan(&h.acc); err != nil {
 		t.Fatal(err)
 	}
 	for _, q := range []string{

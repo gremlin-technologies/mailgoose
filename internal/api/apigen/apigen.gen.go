@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for AccountPlan.
@@ -1200,6 +1201,14 @@ func (e PreviewEmailParamsWidth) Valid() bool {
 	}
 }
 
+// AcceptTermsRequest defines model for AcceptTermsRequest.
+type AcceptTermsRequest struct {
+	// Version The version being accepted. It must be the current one.
+	//
+	// Examples: 2026-11-19
+	Version string `json:"version"`
+}
+
 // Account defines model for Account.
 type Account struct {
 	CreatedAt time.Time     `json:"created_at"`
@@ -1251,6 +1260,11 @@ type AccountSettings struct {
 	// pass the early-warning limits (0.1% and 2% by default) lowers it to
 	// the new-account limit for 7 days.
 	SendLimit SendLimit `json:"send_limit"`
+
+	// Terms Which version of mailgoose's terms the account accepted, and the
+	// version in force now. Versions are dates, `YYYY-MM-DD`; what changed
+	// in each is on the web app's `/policies/changes` page.
+	Terms TermsStatus `json:"terms"`
 
 	// TimeZone An IANA time zone name.
 	//
@@ -1330,6 +1344,12 @@ type AdminAccount struct {
 	// SuspendedBy The admin's address, `mailgoosed`, or `automatic`.
 	SuspendedBy     *string `json:"suspended_by"`
 	SuspendedReason *string `json:"suspended_reason"`
+
+	// TermsAcceptedAt When it accepted that version.
+	TermsAcceptedAt *time.Time `json:"terms_accepted_at"`
+
+	// TermsVersion The latest version of the terms the account accepted; null if it never accepted one.
+	TermsVersion *string `json:"terms_version"`
 
 	// Throttles Its early-warning throttles in the last 30 days, newest first.
 	Throttles []AdminThrottle `json:"throttles"`
@@ -2998,8 +3018,9 @@ type SignInRequest struct {
 
 // SignupRequest defines model for SignupRequest.
 type SignupRequest struct {
-	// AcceptedTerms Must be `true`: the person accepts the terms of service and the
-	// anti-spam policy. Anything else is a 422 `terms_not_accepted`.
+	// AcceptedTerms Must be `true`: the person accepts the current version of the
+	// terms of service and the anti-spam policy, which is recorded with
+	// the time. Anything else is a 422 `terms_not_accepted`.
 	AcceptedTerms bool `json:"accepted_terms"`
 
 	// AccountName Examples: Pat's Bakery
@@ -3114,6 +3135,31 @@ type TagList struct {
 type TagRef struct {
 	Id   string `json:"id"`
 	Name string `json:"name"`
+}
+
+// TermsStatus Which version of mailgoose's terms the account accepted, and the
+// version in force now. Versions are dates, `YYYY-MM-DD`; what changed
+// in each is on the web app's `/policies/changes` page.
+type TermsStatus struct {
+	// AcceptanceNeeded True when the account hasn't accepted the current version.
+	// Campaigns can't launch until it does; accept with `acceptTerms`.
+	AcceptanceNeeded bool `json:"acceptance_needed"`
+
+	// AcceptedAt When it accepted that version.
+	AcceptedAt *time.Time `json:"accepted_at"`
+
+	// AcceptedVersion The latest version the account accepted; null if it never accepted one.
+	//
+	// Examples: 2026-11-19
+	AcceptedVersion *string `json:"accepted_version"`
+
+	// CurrentEffective The day the current version took effect.
+	CurrentEffective openapi_types.Date `json:"current_effective"`
+
+	// CurrentVersion The version in force now.
+	//
+	// Examples: 2026-11-19
+	CurrentVersion string `json:"current_version"`
 }
 
 // TestCampaignRequest defines model for TestCampaignRequest.
@@ -3593,6 +3639,9 @@ type ListTagsParams struct {
 
 // UpdateAccountJSONRequestBody defines body for UpdateAccount for application/json ContentType.
 type UpdateAccountJSONRequestBody = UpdateAccountRequest
+
+// AcceptTermsJSONRequestBody defines body for AcceptTerms for application/json ContentType.
+type AcceptTermsJSONRequestBody = AcceptTermsRequest
 
 // GrantCreditsJSONRequestBody defines body for GrantCredits for application/json ContentType.
 type GrantCreditsJSONRequestBody = GrantCreditsRequest
@@ -4430,6 +4479,9 @@ type ServerInterface interface {
 	// UpdateAccount Change account settings
 	// (PATCH /v1/account)
 	UpdateAccount(w http.ResponseWriter, r *http.Request)
+	// AcceptTerms Accept the current terms
+	// (POST /v1/account/terms)
+	AcceptTerms(w http.ResponseWriter, r *http.Request)
 	// FindAdminAccounts Find accounts (admin)
 	// (GET /v1/admin/accounts)
 	FindAdminAccounts(w http.ResponseWriter, r *http.Request, params FindAdminAccountsParams)
@@ -4788,6 +4840,20 @@ func (siw *ServerInterfaceWrapper) UpdateAccount(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.UpdateAccount(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AcceptTerms operation middleware
+func (siw *ServerInterfaceWrapper) AcceptTerms(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AcceptTerms(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7418,6 +7484,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/account", wrapper.DeleteAccount)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/account", wrapper.GetAccount)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/account", wrapper.UpdateAccount)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/account/terms", wrapper.AcceptTerms)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/api-keys", wrapper.ListApiKeys)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/api-keys", wrapper.CreateApiKey)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/api-keys/{key_id}", wrapper.RevokeApiKey)

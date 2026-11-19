@@ -1,5 +1,7 @@
 import { Link } from "react-router";
 
+import { currentPolicyVersion, policyChangesPath, policyVersions } from "../policyVersions.gen";
+
 /**
  * The legal pages (CMP-10). Their text is a placeholder outline until
  * Gremlin Technologies supplies reviewed legal text: each page says so at the
@@ -160,6 +162,23 @@ export const policies: Policy[] = [
   },
 ];
 
+/** A policy date, YYYY-MM-DD, as "November 19, 2026". */
+export function formatPolicyDate(day: string): string {
+  const d = new Date(`${day}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return day;
+  return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
+}
+
+/** The version line at the top of each policy page (MG-68). */
+function VersionLine() {
+  return (
+    <p className="muted small policy-version">
+      Version {currentPolicyVersion.version}, effective {formatPolicyDate(currentPolicyVersion.effective)}.{" "}
+      <Link to={policyChangesPath}>What changed</Link>
+    </p>
+  );
+}
+
 /** One legal page. Anyone can read it, signed in or not. */
 export function PolicyPage({ policy }: { policy: Policy }) {
   return (
@@ -169,6 +188,7 @@ export function PolicyPage({ policy }: { policy: Policy }) {
       </Link>
       <main className="card policy-card">
         <h1>{policy.title}</h1>
+        <VersionLine />
         <div className="notice notice-warn" role="note">
           <p>
             <strong>Placeholder.</strong> This isn't the final {policy.title.toLowerCase()}. Gremlin Technologies
@@ -187,19 +207,57 @@ export function PolicyPage({ policy }: { policy: Policy }) {
           </section>
         ))}
       </main>
-      <nav aria-label="Policies" className="policy-nav">
-        <ul>
-          {policies.map((p) => (
-            <li key={p.path}>
-              {p.path === policy.path ? (
-                <span aria-current="page">{p.title}</span>
-              ) : (
-                <Link to={p.path}>{p.title}</Link>
-              )}
-            </li>
-          ))}
-        </ul>
-      </nav>
+      <PolicyNav current={policy.path} />
+    </div>
+  );
+}
+
+function PolicyNav({ current }: { current: string }) {
+  return (
+    <nav aria-label="Policies" className="policy-nav">
+      <ul>
+        {policies.map((p) => (
+          <li key={p.path}>
+            {p.path === current ? <span aria-current="page">{p.title}</span> : <Link to={p.path}>{p.title}</Link>}
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+/**
+ * What changed in each version of the policies, newest first. The four pages
+ * share one version. When the terms change, people are asked to accept them
+ * again, with a link here.
+ */
+export function PolicyChangesPage() {
+  return (
+    <div className="policy">
+      <Link to="/" className="brand auth-brand">
+        mailgoose
+      </Link>
+      <main className="card policy-card">
+        <h1>What changed in our policies</h1>
+        <p>
+          The terms of service, privacy policy, anti-spam policy and data processing agreement share one version. When
+          a new version takes effect, everyone with an account is asked to accept it.
+        </p>
+        {policyVersions.map((v) => (
+          <section key={v.version}>
+            <h2>
+              Version {v.version}, effective {formatPolicyDate(v.effective)}
+              {v.version === currentPolicyVersion.version ? " (current)" : ""}
+            </h2>
+            <ul>
+              {v.changes.map((c) => (
+                <li key={c}>{c}</li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </main>
+      <PolicyNav current={policyChangesPath} />
     </div>
   );
 }
