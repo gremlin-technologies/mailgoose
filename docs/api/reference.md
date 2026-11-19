@@ -3606,7 +3606,7 @@ Some or all settings. Fields left out keep their values.
 | `type` | string | yes |  |
 | `src` | string (uri) | yes | An http or https address, usually one `mailgoose image upload` gave. |
 | `alt` | string | yes |  |
-| `href` | string or null | yes | Where a click on the image goes, if anywhere. |
+| `href` | string or null | yes | Where a click on the image goes, if anywhere. The same rules as a button's link. |
 | `width` | integer or null | yes | Pixels; null for the full content width. |
 | `align` | [Align](#schema-align) | yes |  |
 
@@ -3619,7 +3619,7 @@ Some or all settings. Fields left out keep their values.
 | `id` | [BlockId](#schema-blockid) | yes |  |
 | `type` | string | yes |  |
 | `text` | string | yes |  |
-| `href` | string | yes | An http, https or mailto address, or a merge tag such as `{{unsubscribe_url}}`. |
+| `href` | string | yes | An http, https or mailto address, or exactly `{{unsubscribe_url}}`. Other merge tags may come only after a fixed `https://host/` or in a mailto address, so a contact's field can't decide where the link goes. |
 | `align` | [Align](#schema-align) | yes |  |
 | `background_color` | [Color](#schema-color) | yes |  |
 | `text_color` | [Color](#schema-color) | yes |  |
@@ -4184,7 +4184,7 @@ later. Present only on a campaign launched in a slice.
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `line` | integer | yes | The line it's on, counting from 1. |
-| `code` | string: one of `malformed_markup`, `script`, `form`, `iframe`, `embedded_object`, `external_stylesheet`, `event_handler`, `javascript_url`, `data_url`, `redirect`, `missing_unsubscribe`, `too_large`, `unsupported_css` | yes |  |
+| `code` | string: one of `malformed_markup`, `script`, `form`, `iframe`, `embedded_object`, `external_stylesheet`, `event_handler`, `javascript_url`, `data_url`, `redirect`, `missing_unsubscribe`, `merge_tag_link`, `too_large`, `unsupported_css` | yes |  |
 | `message` | string | yes |  |
 
 <a id="schema-emailcheck"></a>

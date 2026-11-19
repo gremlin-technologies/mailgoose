@@ -5154,7 +5154,9 @@ components:
           type: [string, "null"]
           maxLength: 2000
           default: null
-          description: Where a click on the image goes, if anywhere.
+          description: >-
+            Where a click on the image goes, if anywhere. The same rules as a button's
+            link.
         width:
           type: [integer, "null"]
           minimum: 1
@@ -5181,7 +5183,10 @@ components:
         href:
           type: string
           maxLength: 2000
-          description: An http, https or mailto address, or a merge tag such as `{{unsubscribe_url}}`.
+          description: >-
+            An http, https or mailto address, or exactly `{{unsubscribe_url}}`. Other merge
+            tags may come only after a fixed `https://host/` or in a mailto address, so a
+            contact's field can't decide where the link goes.
         align:
           $ref: "#/components/schemas/Align"
           default: center
@@ -6115,8 +6120,8 @@ components:
         code:
           type: string
           enum: [malformed_markup, script, form, iframe, embedded_object, external_stylesheet,
-            event_handler, javascript_url, data_url, redirect, missing_unsubscribe, too_large,
-            unsupported_css]
+            event_handler, javascript_url, data_url, redirect, missing_unsubscribe, merge_tag_link,
+            too_large, unsupported_css]
         message:
           type: string
     EmailCheck:

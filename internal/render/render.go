@@ -97,13 +97,20 @@ func (t *Template) Personalize(r Recipient) Message {
 }
 
 // Lint returns every merge tag in the document that can't be filled in,
-// and every text-block link that isn't a full https:// address (or mailto:
-// or a merge tag). Compile refuses a document Lint finds anything in.
+// every text-block link that isn't a full https:// address (or mailto: or
+// {{unsubscribe_url}}), and every link a merge tag could point anywhere.
+// Compile refuses a document Lint finds anything in.
 func Lint(doc *emails.Document) []*TagError {
 	var errs []*TagError
 	check := func(path, s string) {
 		_, e := findTags(s, path)
 		errs = append(errs, e...)
+	}
+	// A document saved before MG-64 may hold a link a merge tag decides.
+	fixedHost := func(path, href string) {
+		if !emails.FixedLinkHost(href) {
+			errs = append(errs, &TagError{Path: path, Message: emails.TagLinkMessage})
+		}
 	}
 	check("settings.subject", doc.Settings.Subject)
 	check("settings.preview_text", doc.Settings.PreviewText)
@@ -115,24 +122,34 @@ func Lint(doc *emails.Document) []*TagError {
 		case *emails.Text:
 			check(p+".text", b.Text)
 			for _, l := range badLinks(b.Text) {
-				errs = append(errs, &TagError{Path: p + ".text", Message: fmt.Sprintf("the link %s needs a full https:// address", clip(l))})
+				errs = append(errs, &TagError{Path: p + ".text", Message: badLinkMessage(l)})
 			}
 		case *emails.Image:
 			check(p+".alt", b.Alt)
 			if b.Href != nil {
 				check(p+".href", *b.Href)
+				fixedHost(p+".href", *b.Href)
 			}
 		case *emails.Button:
 			check(p+".text", b.Text)
 			check(p+".href", b.Href)
+			fixedHost(p+".href", b.Href)
 		case *emails.Footer:
 			check(p+".text", b.Text)
 			for _, l := range badLinks(b.Text) {
-				errs = append(errs, &TagError{Path: p + ".text", Message: fmt.Sprintf("the link %s needs a full https:// address", clip(l))})
+				errs = append(errs, &TagError{Path: p + ".text", Message: badLinkMessage(l)})
 			}
 		}
 	}
 	return errs
+}
+
+// badLinkMessage says what's wrong with a [text](target) link Lint found.
+func badLinkMessage(md string) string {
+	if m := mdLink.FindStringSubmatch(md); m != nil && !emails.FixedLinkHost(strings.TrimSpace(m[1])) {
+		return fmt.Sprintf("in the link %s, %s", clip(md), emails.TagLinkMessage)
+	}
+	return fmt.Sprintf("the link %s needs a full https:// address", clip(md))
 }
 
 // Compile renders a blocks document for an account.
@@ -186,6 +203,23 @@ func (t *Template) Has(tag string) bool {
 		}
 	}
 	return false
+}
+
+// TaggedHTML is the email's HTML with its merge tags written back as tags,
+// so a check can see which parts of a link a contact's fields fill in.
+func (t *Template) TaggedHTML() string {
+	var b strings.Builder
+	for _, s := range t.html {
+		switch {
+		case s.tag == "":
+			b.WriteString(s.text)
+		case s.fallback != "":
+			b.WriteString("{{" + s.tag + "|" + s.fallback + "}}")
+		default:
+			b.WriteString("{{" + s.tag + "}}")
+		}
+	}
+	return b.String()
 }
 
 // Styles shared by the blocks.

@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+
+	"github.com/gremlin-technologies/mailgoose/internal/emails"
 )
 
 // A text block holds a small Markdown subset (decided with MG-19): **bold**,
@@ -125,11 +127,18 @@ func closingStar(s string) int {
 	return -1
 }
 
-// okLink is a link a text block may hold: http, https, mailto, or a whole
-// merge tag such as {{unsubscribe_url}}.
+// okLink is a link a text block may hold: http, https or mailto, or
+// exactly {{unsubscribe_url}}. Other merge tags may only come after a fixed
+// address (emails.FixedLinkHost), so a contact's field can't choose where
+// the link goes.
 func okLink(href string) bool {
-	if strings.HasPrefix(href, "{{") && strings.HasSuffix(href, "}}") && strings.Count(href, "{{") == 1 {
-		return true
+	if strings.Contains(href, "{{") {
+		if !emails.FixedLinkHost(href) {
+			return false
+		}
+		if strings.HasPrefix(href, "{{") {
+			return true // {{unsubscribe_url}}
+		}
 	}
 	u, err := url.Parse(href)
 	if err != nil {

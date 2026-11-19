@@ -167,7 +167,7 @@ func Check(ctx context.Context, in Input, links LinkChecker) Result {
 		c.warn(Issue{Code: NearSizeLimit, Message: fmt.Sprintf(
 			"The email is %s, close to the %s where Gmail clips it; link tracking adds a little more.", kb(n), kb(emails.MaxSendableHTMLBytes))})
 	}
-	c.links(ctx, msg.HTML, links, in.Safety)
+	c.links(ctx, msg.HTML, tagLinks(tpl.TaggedHTML()), links, in.Safety)
 	return c.res
 }
 
@@ -245,12 +245,26 @@ func (c *checker) blockAlts(doc *emails.Document) {
 	}
 }
 
-// links checks every link in the rendered email, once each.
-func (c *checker) links(ctx context.Context, src string, checker LinkChecker, safety *linkrisk.Checker) {
+// tagLinks marks, by position, the links whose address a merge tag decides.
+// Render and markup already report each one, and the sample contact's
+// field it would fill in says nothing about where the link really goes.
+func tagLinks(tagged string) map[int]bool {
+	out := map[int]bool{}
+	for i, href := range hrefs(tagged) {
+		if !emails.FixedLinkHost(href) {
+			out[i] = true
+		}
+	}
+	return out
+}
+
+// links checks every link in the rendered email, once each, apart from the
+// ones at the positions in skip.
+func (c *checker) links(ctx context.Context, src string, skip map[int]bool, checker LinkChecker, safety *linkrisk.Checker) {
 	var fetch []string
 	seen := map[string]bool{}
-	for _, href := range hrefs(src) {
-		if seen[href] || href == unsubscribeSample {
+	for i, href := range hrefs(src) {
+		if skip[i] || seen[href] || href == unsubscribeSample {
 			continue
 		}
 		seen[href] = true

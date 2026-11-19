@@ -31,6 +31,7 @@ const (
 	HTMLDataURL            = "data_url"
 	HTMLRedirect           = "redirect"
 	HTMLNoUnsubscribe      = "missing_unsubscribe"
+	HTMLTagLink            = "merge_tag_link"
 	HTMLTooLarge           = "too_large"
 
 	// Warnings
@@ -243,6 +244,10 @@ func (c *htmlChecker) tag(tok html.Token, line int) {
 			c.fail(line, HTMLDataURL, "the href on <%s> holds a data: address, which isn't allowed; link to a web page instead", tok.Data)
 			continue
 		}
+		if key == "href" && !FixedLinkHost(a.Val) {
+			c.fail(line, HTMLTagLink, "the href on <%s> is %q: %s", tok.Data, clipHref(a.Val), TagLinkMessage)
+			continue
+		}
 		if key == "href" && (tok.Data == "a" || tok.Data == "area") && unsubscribeHref.MatchString(a.Val) {
 			c.unsubscribe = true
 		}
@@ -351,4 +356,13 @@ func lineAt(src string, offset int) int {
 
 func kb(n int) string {
 	return strconv.FormatFloat(float64(n)/1024, 'f', 1, 64) + " KB"
+}
+
+// clipHref shortens a long href for a message.
+func clipHref(v string) string {
+	v = strings.TrimSpace(v)
+	if r := []rune(v); len(r) > 80 {
+		return string(r[:79]) + "…"
+	}
+	return v
 }

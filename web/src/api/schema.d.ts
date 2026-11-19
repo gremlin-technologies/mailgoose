@@ -2744,7 +2744,7 @@ export interface components {
             /** @default  */
             alt: string;
             /**
-             * @description Where a click on the image goes, if anywhere.
+             * @description Where a click on the image goes, if anywhere. The same rules as a button's link.
              * @default null
              */
             href: string | null;
@@ -2764,7 +2764,7 @@ export interface components {
              */
             type: "button";
             text: string;
-            /** @description An http, https or mailto address, or a merge tag such as `{{unsubscribe_url}}`. */
+            /** @description An http, https or mailto address, or exactly `{{unsubscribe_url}}`. Other merge tags may come only after a fixed `https://host/` or in a mailto address, so a contact's field can't decide where the link goes. */
             href: string;
             /** @default center */
             align: components["schemas"]["Align"];
@@ -3283,7 +3283,7 @@ export interface components {
             /** @description The line it's on, counting from 1. */
             line: number;
             /** @enum {string} */
-            code: "malformed_markup" | "script" | "form" | "iframe" | "embedded_object" | "external_stylesheet" | "event_handler" | "javascript_url" | "data_url" | "redirect" | "missing_unsubscribe" | "too_large" | "unsupported_css";
+            code: "malformed_markup" | "script" | "form" | "iframe" | "embedded_object" | "external_stylesheet" | "event_handler" | "javascript_url" | "data_url" | "redirect" | "missing_unsubscribe" | "merge_tag_link" | "too_large" | "unsupported_css";
             message: string;
         };
         EmailCheck: {

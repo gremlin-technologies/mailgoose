@@ -50,7 +50,7 @@ func TestHTMLCorpus(t *testing.T) {
 	}
 	// Every rule has a file that breaks it.
 	for _, code := range []string{HTMLMalformed, HTMLScript, HTMLForm, HTMLFrame, HTMLEmbed, HTMLExternalStylesheet,
-		HTMLEventHandler, HTMLScriptURL, HTMLDataURL, HTMLRedirect, HTMLNoUnsubscribe, HTMLUnsupportedCSS} {
+		HTMLEventHandler, HTMLScriptURL, HTMLDataURL, HTMLRedirect, HTMLNoUnsubscribe, HTMLTagLink, HTMLUnsupportedCSS} {
 		if !seen[code] {
 			t.Errorf("no corpus file gives %s", code)
 		}

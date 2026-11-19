@@ -33,6 +33,17 @@ for the owner (below).
   (`https://testsafebrowsing.appspot.com/s/malware.html`, `phishing.html`,
   `unwanted.html`), so the check can be tried. Tests use the fake; nothing in
   CI calls Google.
+- **A merge tag can't decide where a link goes.** A link that was only a
+  tag, such as `{{first_name|https://shop.example}}`, went wherever each
+  contact's field pointed, and the check only ever saw the fallback. Now
+  only `{{unsubscribe_url}}` may be a whole link. Other tags may come only
+  after a fixed `https://host/` (in the path, query or fragment) or in a
+  `mailto:` address. This covers button and image links, text-block links,
+  and every `href` in your own HTML (a `merge_tag_link` markup error).
+  Saving refuses such a link, and the email check, test send and launch
+  refuse one saved earlier. This replaces the "or a merge tag" in the MG-19
+  links rule below. Checking each contact's links at send time instead
+  would cost a lookup for each distinct link in every batch.
 
 ## 2026-11-19: Import list checks and list source (MG-63, reversible defaults)
 

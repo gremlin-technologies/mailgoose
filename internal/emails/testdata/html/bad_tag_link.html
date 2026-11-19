@@ -1,0 +1,11 @@
+<!-- want: merge_tag_link:4 merge_tag_link:5 merge_tag_link:6 merge_tag_link:7 merge_tag_link:8 merge_tag_link:9 -->
+<p>Hi {{first_name}}</p>
+<p>
+<a href="{{first_name}}">A whole tag</a>
+<a href=" {{first_name|https://shop.example}} ">A fallback address</a>
+<a href="https://shop.example{{last_name}}">The tag carries on the host</a>
+<a href="https://shop.example@{{email}}/">The tag is the host</a>
+<a href="//{{first_name}}/">No scheme</a>
+<v:roundrect href="{{last_name}}"></v:roundrect>
+</p>
+<a href="{{unsubscribe_url}}">Unsubscribe</a>
