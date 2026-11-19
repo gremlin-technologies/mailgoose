@@ -23,6 +23,61 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   is the CloudFront address and new uploads use it; images uploaded without it
   keep their API URLs.
 
+## 2026-11-18: The paid plan is a card subscription (owner decision, confirmed)
+
+The owner: "Deducting credits feels confusing. Maybe we just stick to a
+monthly fee with the option to set up annual at sign up for a slight
+discount", and "$50 a year is good".
+
+- **The paid plan is a Stripe card subscription:** $5 a month, or $50 a
+  year (two months free) chosen when starting it. This replaces the earlier
+  decision to take the $5 fee from credits at launch with yearly card
+  billing later (2026-11-17 and the MVP decisions below).
+- **Unchanged:** credit packs at $20 per 10,000, lasting 24 months; buying
+  credits doesn't touch the plan. The free tier stays at 500 contacts and
+  1,000 credits a month. The plan still covers the first 2,500 contacts,
+  with $5 a month ($50 a year) for each further 10,000 or part of it.
+- **Growth mid-period is billed from the next renewal, with no proration**
+  (the owner, Nov 19: "Yes to both defaults", to charging at renewal).
+
+## 2026-11-18: Paid plan subscription (MG-40, reversible defaults)
+
+Picked while building the subscription; easy to change.
+
+- **Plan units.** The subscription is one price times a quantity: one unit
+  for up to 2,500 counted contacts, one more per further 10,000 or part of
+  it, so 2,501 to 12,500 contacts is two units ($10 a month or $100 a year).
+- **Prices live in config** (`PLAN_PRICES`, default `month:500,year:5000`)
+  and each Checkout session carries the price, like the packs: no Stripe
+  products to set up. Tax is added on top, as for packs.
+- **Units follow contacts hourly, billed from the next renewal** (Stripe
+  `proration_behavior: none`). Growth mid-period isn't charged until the
+  renewal; the owner confirmed this on Nov 19 (see the paid plan entry).
+- **Credit packs need the paid plan:** a free account gets 409
+  `plan_required` and is pointed at `mailgoose plan upgrade`.
+- **A live subscription makes the account paid** (no free grant, no contact
+  cap), replacing "paid from the first purchase" (MG-39). Past due and unpaid
+  still count as live while Stripe retries the card.
+- **Past due pauses sending** (code `subscription_past_due`, its own launch
+  problem code) and the pause lifts by itself when the payment goes through
+  or the subscription ends. A pause for another reason isn't touched. Both
+  are in the admin log as automatic.
+- **Cancelling is in Stripe's customer portal** (`mailgoose plan manage`)
+  and runs to the end of the paid period; then the account is free again
+  and keeps its bought credits. Switching between monthly and yearly is
+  cancel and start again for now, since the portal can only switch between
+  Stripe products.
+- **Coming back** after cancelling reuses the same Stripe customer.
+- **Deleting an account cancels its subscription at once**, with no refund
+  for the rest of the period, before anything is deleted; if Stripe can't be
+  reached the delete fails (502) and can be retried.
+- **Event order:** an event older than the last one applied changes
+  nothing, and an old subscription ending doesn't touch the current one. A
+  second live subscription for one account isn't applied and is logged as an
+  error to cancel by hand.
+- **The worker checks hourly** for unit changes and for credits past their
+  expiry.
+
 ## 2026-11-18: Buying credits with Stripe Checkout (MG-39, reversible defaults)
 
 Picked while building MG-39; easy to change.
@@ -40,11 +95,21 @@ Picked while building MG-39; easy to change.
   and prod only a live one; a wrong key turns buying credits off (with a log
   line) instead of stopping the server.
 - **The webhook trusts the pack, not the session alone:** a paid session
-  adds credits only if its amount, currency and credits match the pack as
-  configured now. One that doesn't is logged as an error and adds nothing.
+  adds credits only if its amount and currency match the pack's price. One
+  that doesn't is logged as an error and adds nothing.
+- **Price changes apply to new checkouts.** Each session carries the price
+  and credits it was opened at, and a paid session is credited at those, so
+  changing `CREDIT_PACKS` while a checkout is open (they last up to 24
+  hours) doesn't strand a payment. Only mailgoose's own key can set a
+  session's metadata.
+- **A payment for an account that's gone or closed** adds nothing, is
+  logged as an error to refund by hand, and answers Stripe with 200 so it
+  isn't retried for days.
 - **Paid from the first purchase:** the account becomes paid when its first
   pack is paid for, and `paid_since` records when (the monthly fee, MG-40,
-  will count from it). It gets no more free monthly grants.
+  counts from it). It gets no more free monthly grants. (Replaced the same
+  day: the subscription makes an account paid; see the paid plan entries
+  above.)
 
 ## 2026-11-18: Campaign reports (MG-38, reversible defaults)
 
@@ -269,7 +334,8 @@ The owner accepted the defaults:
   who unsubscribed come back only by signing up again through a form and
   confirming (MG-14, MG-36).
 - **A partial block of 10,000 contacts rounds up** in the monthly fee:
-  2,501 to 12,500 counted contacts is one extra block (MG-40).
+  2,501 to 12,500 counted contacts is one extra block (MG-40). (Still holds
+  for the paid plan's units.)
 
 ## 2026-11-18: Launch (MG-30, reversible defaults)
 
@@ -1142,7 +1208,9 @@ Decided by the owner ("All defaults" to the ten proposals). Full requirements, w
 acceptance criteria, are in `docs/mvp-requirements.md`.
 
 - **Billing ships in the MVP.** Stripe Checkout credit packs, and the $5 account
-  fee taken from credits. Yearly card billing comes after the MVP.
+  fee taken from credits. Yearly card billing comes after the MVP. (Replaced
+  the same day: the paid plan is a card subscription, $5 a month or $50 a
+  year. See the entry at the top.)
 - **Web sign-in:** emailed one-time codes, no passwords. The CLI signs in with a
   browser device flow; agents use API keys.
 - **One person per account.** No team members in the MVP.
@@ -1226,7 +1294,8 @@ Decided by the owner in the PRD scoping call and follow-ups.
   extra 10,000 contacts) plus credits at $20 per 10,000.
 - Credits last 24 months from purchase.
 - The $5 fee comes out of credits by default; yearly card billing ($60) is the
-  alternative.
+  alternative. (Replaced 2026-11-18: a card subscription, $5 a month or $50 a
+  year.)
 - The first plan ($15 per 10,000, no account fee) was dropped as not viable once
   fully loaded costs were counted (about $0.70 per 1,000 emails). The chosen plan
   models at about 56% margin at 1,000 paying customers. See `docs/pricing.md`.

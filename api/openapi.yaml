@@ -155,9 +155,12 @@ paths:
         sending domains (and their Amazon SES identities), API keys, CLI
         logins and web sessions, and the person's sign-in. Only the billing
         records the law requires stay, under a closed account with its name
-        and settings cleared. The address can sign up again afterwards.
-        `confirm` must be the account's name exactly, as `getAccount` shows
-        it. This can't be undone.
+        and settings cleared. A paid plan's subscription is cancelled first,
+        at once, with no refund for the rest of the period; if Stripe can't
+        be reached the account isn't deleted (502), so try again. The
+        address can sign up again afterwards. `confirm` must be the
+        account's name exactly, as `getAccount` shows it. This can't be
+        undone.
       tags: [account]
       x-required-scope: full
       security:
@@ -189,6 +192,8 @@ paths:
           $ref: "#/components/responses/ValidationFailed"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/PaymentProviderError"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
   /v1/api-keys:
@@ -339,12 +344,12 @@ paths:
         Makes a Stripe Checkout page for a credit pack and returns its URL;
         the person pays there, in a browser (BIL-3, BIL-6). Nothing is
         charged until they do. Once Stripe says the payment went through,
-        the pack's credits are added, lasting 24 months, and the account
-        becomes paid: it stops getting the free monthly credits (BIL-5).
-        Sales tax is worked out at checkout and Stripe emails the receipt.
-        The page expires after 24 hours. Packs: `10k` ($20), `50k` ($75),
-        `200k` ($240) and `1m` ($900), unless the server's configured
-        otherwise.
+        the pack's credits are added, lasting 24 months. Packs are for the
+        paid plan (createPlanCheckout); a free account gets a 409
+        `plan_required`. Sales tax is worked out at checkout and Stripe
+        emails the receipt. The page expires after 24 hours. Packs: `10k`
+        ($20), `50k` ($75), `200k` ($240) and `1m` ($900), unless the
+        server's configured otherwise.
       tags: [credits]
       x-required-scope: full
       security:
@@ -372,8 +377,126 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/PlanConflict"
         "422":
           $ref: "#/components/responses/UnknownPack"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/PaymentProviderError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/plan:
+    get:
+      operationId: getPlan
+      summary: Show the account's plan
+      description: |
+        The account's plan (BIL-4): free, or paid by a Stripe subscription
+        at $5 a month or $50 a year for each plan unit. One unit covers the
+        first 2,500 counted contacts (subscribed and unconfirmed), and each
+        further 10,000, or part of one, is another. `units_needed` is what
+        the contacts make now; the subscription moves to it at its next
+        renewal.
+      tags: [plan]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The plan.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/plan/checkout:
+    post:
+      operationId: createPlanCheckout
+      summary: Start the paid plan
+      description: |
+        Makes a Stripe Checkout page that starts the paid plan's card
+        subscription, billed monthly ($5 a unit) or yearly ($50 a unit), and
+        returns its URL; the person pays there, in a browser. Once Stripe
+        confirms it, the account is paid: up to its plan units' contacts, no
+        more free monthly credits, and credit packs to buy (BIL-5). Sales
+        tax is worked out at checkout. The page expires after 24 hours. An
+        account already on the paid plan gets a 409 `already_subscribed`;
+        createPlanPortal changes or cancels it.
+      tags: [plan]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanCheckoutRequest"
+      responses:
+        "201":
+          description: The Checkout page to pay at.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanCheckout"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/PlanConflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/PaymentProviderError"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/plan/portal:
+    post:
+      operationId: createPlanPortal
+      summary: Manage the paid plan
+      description: |
+        Makes a Stripe customer portal page for the account's subscription
+        and returns its URL: change the card, see invoices, or cancel. A
+        cancelled plan runs to the end of the period it's paid for, then the
+        account is free again; bought credits stay. An account that never
+        subscribed gets a 409 `not_subscribed`.
+      tags: [plan]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      responses:
+        "201":
+          description: The portal page.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanPortal"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/PlanConflict"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "502":
@@ -4164,6 +4287,96 @@ components:
             $ref: "#/components/schemas/ApiKey"
         next_cursor:
           type: [string, "null"]
+    PlanCheckoutRequest:
+      type: object
+      additionalProperties: false
+      required: [interval]
+      properties:
+        interval:
+          type: string
+          enum: [month, year]
+          description: Bill each month ($5 a unit) or each year ($50 a unit).
+    PlanCheckout:
+      type: object
+      required: [url, interval, units, unit_price_cents, currency, expires_at]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Stripe's Checkout page; open it in a browser to pay.
+        interval:
+          type: string
+          enum: [month, year]
+        units:
+          type: integer
+          minimum: 1
+          description: Plan units the subscription starts with, from the account's contacts now.
+        unit_price_cents:
+          type: integer
+          description: One unit's price each interval, before any sales tax, in cents.
+        currency:
+          type: string
+          enum: [usd]
+        expires_at:
+          type: string
+          format: date-time
+          description: When the page stops working.
+    PlanPortal:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Stripe's customer portal page; open it in a browser.
+    Plan:
+      type: object
+      required: [plan, status, interval, units, current_period_end, cancel_at_period_end, contacts, units_needed, prices]
+      properties:
+        plan:
+          type: string
+          enum: [free, paid]
+        status:
+          type: [string, "null"]
+          description: |
+            Stripe's subscription status: `active`, `past_due` or `unpaid`
+            (a renewal failed; sending is paused while Stripe retries the
+            card), `canceled`, and so on. Null for an account that never
+            subscribed.
+        interval:
+          type: [string, "null"]
+          description: "`month` or `year`; null without a subscription."
+        units:
+          type: integer
+          minimum: 0
+          description: Plan units the subscription is billed for; 0 without one.
+        current_period_end:
+          type: [string, "null"]
+          format: date-time
+          description: When the paid period ends and the subscription renews, or ends if it's cancelled.
+        cancel_at_period_end:
+          type: boolean
+          description: True when the plan was cancelled and ends at `current_period_end`.
+        contacts:
+          type: integer
+          description: Counted contacts now (subscribed and unconfirmed).
+        units_needed:
+          type: integer
+          minimum: 1
+          description: The plan units those contacts make.
+        prices:
+          type: object
+          required: [month_cents, year_cents, currency]
+          properties:
+            month_cents:
+              type: integer
+              description: One unit for a month, in cents.
+            year_cents:
+              type: integer
+              description: One unit for a year, in cents.
+            currency:
+              type: string
+              enum: [usd]
     CreditCheckoutRequest:
       type: object
       additionalProperties: false
@@ -4217,8 +4430,8 @@ components:
       description: |
         `grant` is a free monthly grant and `purchase` a bought credit pack.
         `reserve` holds credits for a send and `release` gives back what it
-        didn't use. `spend` is credits used directly, `fee` the monthly
-        account fee and `expiry` credits that ran out.
+        didn't use. `spend` is credits used directly and `expiry` credits
+        that ran out. `fee` isn't used: the paid plan is billed to a card.
     CreditTransaction:
       type: object
       required: [id, type, amount, expires_at, ref, created_at]
@@ -6031,6 +6244,19 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    PlanConflict:
+      description: |
+        `plan_required`: credit packs are for the paid plan; start it with
+        createPlanCheckout. `already_subscribed`: the account is already on
+        the paid plan. `not_subscribed`: the account has no subscription to
+        manage.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     UnknownPack:
       description: |
         `unknown_pack`: there's no pack by that name; `details.packs` lists
@@ -6240,7 +6466,8 @@ components:
         `missing_postal_address`, `missing_subject`, `empty_email`,
         `merge_tag`), `check_failed` (an email check error), `untested` (no
         test since the last change), `send_at_passed`, `account_paused`,
-        `no_recipients`, and `credits_short` with `details.needed`,
+        `subscription_past_due` (sending is paused until the paid plan's
+        payment goes through), `no_recipients`, and `credits_short` with `details.needed`,
         `details.balance` and `details.short`. `invalid_confirmation`: the
         code can't be used; `details.reason` is `no_code`, `expired`,
         `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the

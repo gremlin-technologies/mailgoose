@@ -67,9 +67,12 @@ export interface paths {
          *     sending domains (and their Amazon SES identities), API keys, CLI
          *     logins and web sessions, and the person's sign-in. Only the billing
          *     records the law requires stay, under a closed account with its name
-         *     and settings cleared. The address can sign up again afterwards.
-         *     `confirm` must be the account's name exactly, as `getAccount` shows
-         *     it. This can't be undone.
+         *     and settings cleared. A paid plan's subscription is cancelled first,
+         *     at once, with no refund for the rest of the period; if Stripe can't
+         *     be reached the account isn't deleted (502), so try again. The
+         *     address can sign up again afterwards. `confirm` must be the
+         *     account's name exactly, as `getAccount` shows it. This can't be
+         *     undone.
          */
         delete: operations["deleteAccount"];
         options?: never;
@@ -171,14 +174,90 @@ export interface paths {
          * @description Makes a Stripe Checkout page for a credit pack and returns its URL;
          *     the person pays there, in a browser (BIL-3, BIL-6). Nothing is
          *     charged until they do. Once Stripe says the payment went through,
-         *     the pack's credits are added, lasting 24 months, and the account
-         *     becomes paid: it stops getting the free monthly credits (BIL-5).
-         *     Sales tax is worked out at checkout and Stripe emails the receipt.
-         *     The page expires after 24 hours. Packs: `10k` ($20), `50k` ($75),
-         *     `200k` ($240) and `1m` ($900), unless the server's configured
-         *     otherwise.
+         *     the pack's credits are added, lasting 24 months. Packs are for the
+         *     paid plan (createPlanCheckout); a free account gets a 409
+         *     `plan_required`. Sales tax is worked out at checkout and Stripe
+         *     emails the receipt. The page expires after 24 hours. Packs: `10k`
+         *     ($20), `50k` ($75), `200k` ($240) and `1m` ($900), unless the
+         *     server's configured otherwise.
          */
         post: operations["createCreditCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the account's plan
+         * @description The account's plan (BIL-4): free, or paid by a Stripe subscription
+         *     at $5 a month or $50 a year for each plan unit. One unit covers the
+         *     first 2,500 counted contacts (subscribed and unconfirmed), and each
+         *     further 10,000, or part of one, is another. `units_needed` is what
+         *     the contacts make now; the subscription moves to it at its next
+         *     renewal.
+         */
+        get: operations["getPlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/plan/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start the paid plan
+         * @description Makes a Stripe Checkout page that starts the paid plan's card
+         *     subscription, billed monthly ($5 a unit) or yearly ($50 a unit), and
+         *     returns its URL; the person pays there, in a browser. Once Stripe
+         *     confirms it, the account is paid: up to its plan units' contacts, no
+         *     more free monthly credits, and credit packs to buy (BIL-5). Sales
+         *     tax is worked out at checkout. The page expires after 24 hours. An
+         *     account already on the paid plan gets a 409 `already_subscribed`;
+         *     createPlanPortal changes or cancels it.
+         */
+        post: operations["createPlanCheckout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/plan/portal": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Manage the paid plan
+         * @description Makes a Stripe customer portal page for the account's subscription
+         *     and returns its URL: change the card, see invoices, or cancel. A
+         *     cancelled plan runs to the end of the period it's paid for, then the
+         *     account is free again; bought credits stay. An account that never
+         *     subscribed gets a 409 `not_subscribed`.
+         */
+        post: operations["createPlanPortal"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2071,6 +2150,74 @@ export interface components {
             data: components["schemas"]["ApiKey"][];
             next_cursor: string | null;
         };
+        PlanCheckoutRequest: {
+            /**
+             * @description Bill each month ($5 a unit) or each year ($50 a unit).
+             * @enum {string}
+             */
+            interval: "month" | "year";
+        };
+        PlanCheckout: {
+            /**
+             * Format: uri
+             * @description Stripe's Checkout page; open it in a browser to pay.
+             */
+            url: string;
+            /** @enum {string} */
+            interval: "month" | "year";
+            /** @description Plan units the subscription starts with, from the account's contacts now. */
+            units: number;
+            /** @description One unit's price each interval, before any sales tax, in cents. */
+            unit_price_cents: number;
+            /** @enum {string} */
+            currency: "usd";
+            /**
+             * Format: date-time
+             * @description When the page stops working.
+             */
+            expires_at: string;
+        };
+        PlanPortal: {
+            /**
+             * Format: uri
+             * @description Stripe's customer portal page; open it in a browser.
+             */
+            url: string;
+        };
+        Plan: {
+            /** @enum {string} */
+            plan: "free" | "paid";
+            /**
+             * @description Stripe's subscription status: `active`, `past_due` or `unpaid`
+             *     (a renewal failed; sending is paused while Stripe retries the
+             *     card), `canceled`, and so on. Null for an account that never
+             *     subscribed.
+             */
+            status: string | null;
+            /** @description `month` or `year`; null without a subscription. */
+            interval: string | null;
+            /** @description Plan units the subscription is billed for; 0 without one. */
+            units: number;
+            /**
+             * Format: date-time
+             * @description When the paid period ends and the subscription renews, or ends if it's cancelled.
+             */
+            current_period_end: string | null;
+            /** @description True when the plan was cancelled and ends at `current_period_end`. */
+            cancel_at_period_end: boolean;
+            /** @description Counted contacts now (subscribed and unconfirmed). */
+            contacts: number;
+            /** @description The plan units those contacts make. */
+            units_needed: number;
+            prices: {
+                /** @description One unit for a month, in cents. */
+                month_cents: number;
+                /** @description One unit for a year, in cents. */
+                year_cents: number;
+                /** @enum {string} */
+                currency: "usd";
+            };
+        };
         CreditCheckoutRequest: {
             /** @description The pack's name, such as `10k`; case doesn't matter. */
             pack: string;
@@ -2110,8 +2257,8 @@ export interface components {
         /**
          * @description `grant` is a free monthly grant and `purchase` a bought credit pack.
          *     `reserve` holds credits for a send and `release` gives back what it
-         *     didn't use. `spend` is credits used directly, `fee` the monthly
-         *     account fee and `expiry` credits that ran out.
+         *     didn't use. `spend` is credits used directly and `expiry` credits
+         *     that ran out. `fee` isn't used: the paid plan is billed to a card.
          * @enum {string}
          */
         CreditTransactionType: "grant" | "purchase" | "reserve" | "release" | "spend" | "fee" | "expiry";
@@ -3116,6 +3263,21 @@ export interface components {
             };
         };
         /**
+         * @description `plan_required`: credit packs are for the paid plan; start it with
+         *     createPlanCheckout. `already_subscribed`: the account is already on
+         *     the paid plan. `not_subscribed`: the account has no subscription to
+         *     manage.
+         */
+        PlanConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `unknown_pack`: there's no pack by that name; `details.packs` lists
          *     the packs with their credits and prices.
          */
@@ -3351,7 +3513,8 @@ export interface components {
          *     `missing_postal_address`, `missing_subject`, `empty_email`,
          *     `merge_tag`), `check_failed` (an email check error), `untested` (no
          *     test since the last change), `send_at_passed`, `account_paused`,
-         *     `no_recipients`, and `credits_short` with `details.needed`,
+         *     `subscription_past_due` (sending is paused until the paid plan's
+         *     payment goes through), `no_recipients`, and `credits_short` with `details.needed`,
          *     `details.balance` and `details.short`. `invalid_confirmation`: the
          *     code can't be used; `details.reason` is `no_code`, `expired`,
          *     `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the
@@ -3705,6 +3868,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
+            502: components["responses"]["PaymentProviderError"];
             503: components["responses"]["ServiceUnavailable"];
         };
     };
@@ -3878,7 +4042,91 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            409: components["responses"]["PlanConflict"];
             422: components["responses"]["UnknownPack"];
+            429: components["responses"]["TooManyRequests"];
+            502: components["responses"]["PaymentProviderError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getPlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The plan. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Plan"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createPlanCheckout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlanCheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description The Checkout page to pay at. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanCheckout"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["PlanConflict"];
+            429: components["responses"]["TooManyRequests"];
+            502: components["responses"]["PaymentProviderError"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createPlanPortal: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The portal page. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlanPortal"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["PlanConflict"];
             429: components["responses"]["TooManyRequests"];
             502: components["responses"]["PaymentProviderError"];
             503: components["responses"]["ServiceUnavailable"];

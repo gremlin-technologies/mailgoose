@@ -91,6 +91,9 @@ type Stripe struct {
 	// Packs is CREDIT_PACKS: "name=credits:cents,..."; empty means the
 	// decided packs.
 	Packs string
+	// PlanPrices is PLAN_PRICES: one plan unit's price in cents,
+	// "month:500,year:5000"; empty means the decided prices.
+	PlanPrices string
 	// Problem says why the keys can't be used; buying credits is then off
 	// (and the server says so in its log) rather than the server refusing
 	// to start.
@@ -193,6 +196,7 @@ func load(getenv func(string) string) (Config, error) {
 		SecretKey:     secret("STRIPE_SECRET_KEY"),
 		WebhookSecret: secret("STRIPE_WEBHOOK_SECRET"),
 		Packs:         getenv("CREDIT_PACKS"),
+		PlanPrices:    getenv("PLAN_PRICES"),
 	}
 	live := strings.HasPrefix(cfg.Stripe.SecretKey, "sk_live_") || strings.HasPrefix(cfg.Stripe.SecretKey, "rk_live_")
 	switch {

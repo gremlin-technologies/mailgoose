@@ -1,13 +1,16 @@
-// Package billing sells credit packs through Stripe Checkout (BIL-3,
-// BIL-5, BIL-7). Checkout makes a Checkout session for a pack and returns
-// its URL; the person pays in the browser, and Stripe's webhook
-// (HandleWebhook) adds the credits, as a purchase lot that lasts 24 months,
-// and makes the account paid.
+// Package billing runs the paid plan and sells credit packs through Stripe
+// (BIL-3 to BIL-5, BIL-7).
 //
-// Prices live in config (CREDIT_PACKS), not in Stripe: each session carries
-// its pack's price, so no Stripe products or prices need setting up. Stripe
-// Tax works out sales tax at checkout, and Stripe emails the receipt to the
-// account's address.
+// The paid plan is a Stripe subscription, $5 a month or $50 a year for each
+// plan unit (PlanCheckout); Stripe's subscription events (HandleWebhook)
+// make the account paid or free again, and pause sending while a renewal
+// payment is past due. A paid account buys credit packs (Checkout); the
+// webhook adds them as a purchase lot that lasts 24 months.
+//
+// Prices live in config (CREDIT_PACKS, PLAN_PRICES), not in Stripe: each
+// Checkout session carries its price, so no Stripe products or prices need
+// setting up. Stripe Tax works out sales tax at checkout, and Stripe emails
+// receipts to the account's address.
 package billing
 
 import (
@@ -83,13 +86,41 @@ type SessionRequest struct {
 	IdempotencyKey string
 }
 
-// Stripe makes Checkout sessions; Client is the real one.
+// SubscriptionRequest is what the paid plan's Checkout session is made from.
+type SubscriptionRequest struct {
+	AccountID string
+	Email     string
+	// CustomerID is the account's Stripe customer from an earlier
+	// subscription, if any; Checkout makes one otherwise.
+	CustomerID string
+	// Interval is "month" or "year".
+	Interval       string
+	UnitCents      int64
+	Units          int
+	SuccessURL     string
+	CancelURL      string
+	IdempotencyKey string
+}
+
+// Stripe is the part of Stripe's API billing uses; Client is the real one.
 type Stripe interface {
 	CreateCheckoutSession(ctx context.Context, r SessionRequest) (*Session, error)
+	CreateSubscriptionCheckout(ctx context.Context, r SubscriptionRequest) (*Session, error)
+	CreatePortalSession(ctx context.Context, customerID, returnURL string) (string, error)
+	SetSubscriptionUnits(ctx context.Context, subscriptionID, itemID string, units int, idempotencyKey string) error
+	CancelSubscription(ctx context.Context, subscriptionID string) error
 }
 
 // ErrNotConfigured means there are no Stripe keys.
-var ErrNotConfigured = errors.New("buying credits isn't set up on this server")
+var ErrNotConfigured = errors.New("billing isn't set up on this server")
+
+// ErrStripeUnreachable means Stripe didn't answer, or answered with
+// something billing couldn't read.
+var ErrStripeUnreachable = errors.New("stripe didn't answer")
+
+// ErrPlanRequired means a free account tried to buy credits: packs are for
+// the paid plan.
+var ErrPlanRequired = errors.New("buying credits needs the paid plan")
 
 // UnknownPackError means there's no pack by that name.
 type UnknownPackError struct {
@@ -113,6 +144,8 @@ type Service struct {
 	// WebhookSecret checks Stripe's webhook signatures.
 	WebhookSecret string
 	Packs         []Pack
+	// Prices are the paid plan's prices; zero means DefaultPrices.
+	Prices Prices
 	// BaseURL is the app's public URL, where Checkout sends people back.
 	BaseURL string
 	Log     *slog.Logger
@@ -156,9 +189,14 @@ func (s *Service) Checkout(ctx context.Context, accountID, pack, idempotencyKey 
 	}
 	email := ""
 	if s.DB != nil {
-		// One person per account (MVP): the receipt goes to them.
-		if err := s.DB.QueryRow(ctx, `SELECT email FROM users WHERE account_id = $1 ORDER BY created_at LIMIT 1`, accountID).
-			Scan(&email); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		var plan string
+		if err := s.DB.QueryRow(ctx, `SELECT plan FROM accounts WHERE id = $1`, accountID).Scan(&plan); err != nil {
+			return nil, p, err
+		}
+		if plan != "paid" {
+			return nil, p, ErrPlanRequired
+		}
+		if email, err = s.email(ctx, accountID); err != nil {
 			return nil, p, err
 		}
 	}
@@ -177,8 +215,18 @@ func (s *Service) Checkout(ctx context.Context, accountID, pack, idempotencyKey 
 	return sess, p, nil
 }
 
-// purchase adds a paid session's credits and makes the account paid, once
-// per session (BIL-3, BIL-5).
+// email is the account's address, where Stripe sends receipts: one person
+// per account (MVP).
+func (s *Service) email(ctx context.Context, accountID string) (string, error) {
+	var email string
+	err := s.DB.QueryRow(ctx, `SELECT email FROM users WHERE account_id = $1 ORDER BY created_at LIMIT 1`, accountID).Scan(&email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return email, err
+}
+
+// purchase adds a paid session's credits, once per session (BIL-3).
 func purchase(ctx context.Context, tx pgx.Tx, accountID, sessionID string, amount int64, now time.Time) (bool, error) {
 	ref := "stripe:" + sessionID
 	// Lock the account first, so two events for one session take turns; the
@@ -193,11 +241,6 @@ func purchase(ctx context.Context, tx pgx.Tx, accountID, sessionID string, amoun
 	}
 	if done {
 		return false, nil
-	}
-	// Paid first, so the catch-up inside Purchase gives no free grant.
-	if _, err := tx.Exec(ctx, `UPDATE accounts SET plan = 'paid', paid_since = coalesce(paid_since, $2), updated_at = $2 WHERE id = $1`,
-		accountID, now); err != nil {
-		return false, err
 	}
 	if _, err := credits.Purchase(ctx, tx, accountID, amount, ref, now); err != nil {
 		return false, err

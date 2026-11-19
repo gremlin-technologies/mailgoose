@@ -35,7 +35,8 @@ func (a *App) creditsCmd() *cobra.Command {
 		Short: "Show the credit balance",
 		Long: `One credit sends one email to one recipient. Free accounts get 1,000
 credits a month, on the anniversary of signing up, and unused free credits
-expire when the next ones arrive. ` + "`mailgoose credits history`" + ` lists every change.`,
+expire when the next ones arrive. Accounts on the paid plan (` + "`mailgoose plan`" + `)
+buy credits in packs instead, which last 24 months. ` + "`mailgoose credits history`" + ` lists every change.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var sum creditSummary
@@ -111,7 +112,8 @@ expire when the next ones arrive. ` + "`mailgoose credits history`" + ` lists ev
 		Short: "Get a Stripe Checkout link to buy a credit pack",
 		Long: `Makes a Stripe Checkout page for a credit pack and prints its link. Open
 the link in a browser to pay; the credits arrive as soon as Stripe confirms
-the payment, and last 24 months. Buying credits makes the account paid.
+the payment, and last 24 months. Packs are for the paid plan: start it
+first with ` + "`mailgoose plan upgrade`" + `.
 
 The packs are 10k ($20), 50k ($75), 200k ($240) and 1m ($900). Sales tax, if
 any, is added at checkout. Needs a full-scope key.`,

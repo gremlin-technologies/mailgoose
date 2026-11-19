@@ -323,7 +323,7 @@ Acceptance criteria:
 
 - [ ] Counted contacts are unconfirmed plus subscribed.
 - [ ] A free account can't exceed 500 counted contacts through create, import, form signup or status change; the API returns 402 `contact_limit` with the limit and count. One test per route.
-- [ ] Paid accounts have no hard cap; the count feeds the monthly fee (MG-40).
+- [ ] Paid accounts have no hard cap; the count feeds the paid plan's units (MG-40).
 
 ### MG-17: CSV import
 
@@ -600,17 +600,20 @@ Acceptance criteria:
 - [ ] Stripe Tax and receipts are enabled in the Checkout session.
 - [ ] Tests use Stripe's test-mode fixtures or a mocked client; nothing in CI calls live Stripe.
 
-### MG-40: Monthly account fee and credit expiry
+### MG-40: Paid plan subscription and credit expiry
 
-Requirements: BIL-4, BIL-3 (expiry), BIL-2 (paid accounts stop getting grants).
+Requirements: BIL-4, BIL-5, BIL-3 (expiry), BIL-2 (paid accounts stop getting grants).
+
+Changed Nov 18 by the owner: the fee is a card subscription ($5 a month or
+$50 a year), not taken from credits. The earlier criteria are struck below.
 
 Acceptance criteria:
 
-- [ ] On each paid account's monthly billing date, a fee entry takes 2,500 credits plus 2,500 per extra 10,000 counted contacts over 2,500, from the oldest unexpired credits first. A partial block rounds up: 2,501 to 12,500 counted contacts is one extra block (default; open in the decisions log).
-- [ ] If the balance can't cover the fee, sending pauses with reason `fee_unpaid` and resumes automatically after a purchase covers it.
+- [ ] ~~On each paid account's monthly billing date, a fee entry takes 2,500 credits plus 2,500 per extra 10,000 counted contacts over 2,500, from the oldest unexpired credits first.~~ The paid plan is a Stripe subscription, $5 a month or $50 a year per unit: one unit up to 2,500 counted contacts, plus one per further 10,000. A partial block rounds up: 2,501 to 12,500 counted contacts is one extra unit.
+- [ ] ~~If the balance can't cover the fee, sending pauses with reason `fee_unpaid` and resumes automatically after a purchase covers it.~~ If a renewal payment fails, sending pauses with reason `subscription_past_due` and resumes automatically once the payment goes through.
 - [ ] A daily job writes expiry entries for purchased credits past 24 months.
 - [ ] Paid accounts stop receiving the free monthly grant.
-- [ ] Tests with a fake clock cover fee, insufficient balance, expiry order and resume.
+- [ ] Tests with a fake clock and a fake Stripe cover starting, renewing, failing, recovering and ending a subscription, and expiry.
 
 ## M9 Web app
 

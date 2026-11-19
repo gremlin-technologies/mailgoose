@@ -462,6 +462,20 @@ func TestLaunchRefusals(t *testing.T) {
 		}
 	})
 
+	t.Run("subscription past due", func(t *testing.T) {
+		h := readyHarness(t)
+		if _, err := h.db.Exec(ctx, `UPDATE accounts SET sending_paused_at = now(), sending_paused_code = 'subscription_past_due',
+			sending_paused_reason = 'The paid plan''s payment didn''t go through.' WHERE id = $1`, h.acc); err != nil {
+			t.Fatal(err)
+		}
+		_, err := h.launch("")
+		var nr *NotReadyError
+		if problemCodes(err) != SubscriptionPastDue || !errors.As(err, &nr) || !strings.Contains(nr.Problems[0].Message, "payment didn't go through") ||
+			!strings.Contains(nr.Problems[0].Hint, "mailgoose plan manage") {
+			t.Errorf("%v", err)
+		}
+	})
+
 	t.Run("unverified From", func(t *testing.T) {
 		h := readyHarness(t)
 		if _, err := h.db.Exec(ctx, `UPDATE domains SET status = 'pending' WHERE account_id = $1`, h.acc); err != nil {

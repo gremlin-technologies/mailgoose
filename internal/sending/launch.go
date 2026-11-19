@@ -34,9 +34,12 @@ const (
 	Untested      = "untested"
 	CheckFailed   = "check_failed"
 	AccountPaused = "account_paused"
-	NoRecipients  = "no_recipients"
-	CreditsShort  = "credits_short"
-	SendAtPassed  = "send_at_passed"
+	// SubscriptionPastDue is a pause while the paid plan's payment is past
+	// due, lifted once it goes through.
+	SubscriptionPastDue = "subscription_past_due"
+	NoRecipients        = "no_recipients"
+	CreditsShort        = "credits_short"
+	SendAtPassed        = "send_at_passed"
 )
 
 // Summary is what a person confirms before a campaign launches (CAM-3).
@@ -262,12 +265,16 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 			Hint: "Set a new one with `mailgoose campaign update " + c.ID + " --send-at <time>`, or `--send-at now`."})
 	}
 	var pausedAt *time.Time
-	var reason *string
-	if err := s.DB.QueryRow(ctx, `SELECT sending_paused_at, sending_paused_reason FROM accounts WHERE id = $1`,
-		accountID).Scan(&pausedAt, &reason); err != nil {
+	var reason, code *string
+	if err := s.DB.QueryRow(ctx, `SELECT sending_paused_at, sending_paused_reason, sending_paused_code FROM accounts WHERE id = $1`,
+		accountID).Scan(&pausedAt, &reason, &code); err != nil {
 		return nil, nil, err
 	}
-	if pausedAt != nil {
+	switch {
+	case pausedAt != nil && trimmed(code) == SubscriptionPastDue:
+		problems = append(problems, Problem{Code: SubscriptionPastDue, Message: "Sending is paused. " + trimmed(reason),
+			Hint: "Update the card with `mailgoose plan manage`; sending resumes as soon as the payment goes through."})
+	case pausedAt != nil:
 		msg := "Sending is paused for this account."
 		if r := trimmed(reason); r != "" {
 			msg += " " + r

@@ -347,7 +347,7 @@ func (s *Service) Pause(ctx context.Context, actor Actor, accountID, reason stri
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
 		now := s.now()
 		tag, err := tx.Exec(ctx, `
-			UPDATE accounts SET sending_paused_at = coalesce(sending_paused_at, $2), sending_paused_reason = $3, updated_at = $2
+			UPDATE accounts SET sending_paused_at = coalesce(sending_paused_at, $2), sending_paused_reason = $3, sending_paused_code = NULL, updated_at = $2
 			WHERE id = $1`, accountID, now, reason)
 		if err != nil {
 			return err
@@ -375,7 +375,7 @@ func (s *Service) Unpause(ctx context.Context, actor Actor, accountID, reason st
 		now := s.now()
 		var was *string
 		err := tx.QueryRow(ctx, `
-			UPDATE accounts a SET sending_paused_at = NULL, sending_paused_reason = NULL, updated_at = $2
+			UPDATE accounts a SET sending_paused_at = NULL, sending_paused_reason = NULL, sending_paused_code = NULL, updated_at = $2
 			FROM accounts old WHERE a.id = $1 AND old.id = a.id
 			RETURNING old.sending_paused_reason`, accountID, now).Scan(&was)
 		if errors.Is(err, pgx.ErrNoRows) {
