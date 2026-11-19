@@ -73,7 +73,7 @@ infra/
     email/          SES domain identity, DKIM/MAIL FROM/DMARC records, config set, SNS events topic.
     edge/           ACM cert, ALB (HTTP→HTTPS redirect), Route 53 aliases.
     service/        One Fargate service: task def, log group, execution + task roles.
-    images/         Private S3 bucket for uploaded images, read only by CloudFront (origin access control).
+    images/         Private S3 bucket for uploaded images, read only by CloudFront (origin access control), or with cdn = false by the API alone.
     github-deploy-role/  IAM role GitHub Actions assumes via OIDC to deploy images.
 ```
 
@@ -87,7 +87,7 @@ What runs per environment:
 | `ses-events` queue | SES → SNS → SQS. Bounces, complaints, deliveries, opens, clicks for basic reports and suppression. |
 | RDS Postgres | Master password lives in Secrets Manager, managed and rotated by RDS. |
 | `<env>/app` secret | Empty JSON secret for app keys (Stripe etc.). Set values by hand, never in Terraform. |
-| `images` bucket and CDN | Pictures customers upload for image blocks. The bucket is private; CloudFront reads it through origin access control and serves it at its own `*.cloudfront.net` address. The API task role may put, delete and list objects there, and the API gets `IMAGES_BUCKET` and `IMAGES_BASE_URL`. |
+| `images` bucket and CDN | Pictures customers upload for image blocks. The bucket is private; CloudFront reads it through origin access control and serves it at its own `*.cloudfront.net` address. The API task role may put, read, delete and list objects there, and the API gets `IMAGES_BUCKET` and `IMAGES_BASE_URL`. With `images_cdn = false` (staging for now) there is no CloudFront: the API gets only `IMAGES_BUCKET` and serves images itself. |
 
 All plain AWS provider resources, no community modules, so every line is
 readable and `terraform validate` works offline. The VPC could be swapped for
@@ -188,6 +188,43 @@ task definition drift, so the new `IMAGES_*` variables reach the API at its
 next deploy. The distribution takes a few minutes to finish deploying. Prod is
 the same in `infra/envs/prod`, once prod is being brought up.
 
+### Staging without the CDN (until AWS allows CloudFront)
+
+AWS refused staging's distribution with "Your account must be verified before
+you can add new CloudFront resources", which only AWS Support can lift. Until
+it does, staging runs with `images_cdn = false` in `infra/envs/staging/main.tf`:
+
+- No origin access control or distribution. The bucket stays private (public
+  access block on) and its policy only denies non-TLS requests.
+- The API's role may also read the bucket, and the API gets `IMAGES_BUCKET`
+  but no `IMAGES_BASE_URL`. It then serves images itself at
+  `https://api.staging.mailgoose.app/images/<key>`, by redirecting each request
+  to a presigned URL that lasts a few minutes. Image URLs saved in emails stay
+  valid, since they point at the API and not at the presigned URL.
+
+Apply it with the same commands as above. After the earlier failed apply, the
+plan should:
+
+- **destroy** the origin access control that apply created (staging no longer
+  uses it),
+- **update** the bucket policy (the CloudFront statement goes) and the API task
+  role's policy (adds `s3:GetObject` on the bucket),
+- **create** (or replace) the API task definition: the env changes, and the
+  failed apply may have removed the old one before it could register the new
+  one. Like any task definition change, it reaches the running API at its
+  next deploy,
+- leave the bucket and its settings alone.
+
+`images_base_url` is then `null`. If the plan wants to replace or destroy the
+bucket, stop: that isn't expected.
+
+**Turning the CDN on later:** once AWS Support confirms, set `images_cdn =
+true` (or delete the line) and plan and apply again. That creates the origin
+access control and distribution, puts the CloudFront statement back in the
+bucket policy and sets `IMAGES_BASE_URL` to the CloudFront address. Images
+uploaded meanwhile keep working at their API URLs, which redirect for as long
+as the API serves `/images/`; new uploads get CloudFront URLs.
+
 ## How deploys work
 
 - Infra changes: a person runs `terraform plan` / `apply` locally.
@@ -237,6 +274,8 @@ Do these in order, only after the AWS project allows the OIDC provider:
   reach the events queue.
 - **Uploaded images** go in `IMAGES_BUCKET` and are served from
   `IMAGES_BASE_URL`. Objects are never public: CloudFront is the only reader.
+  Without `IMAGES_BASE_URL` (no CDN), serve them at `PUBLIC_BASE_URL/images/`
+  by redirecting to short-lived presigned GET URLs.
   Set `Content-Type` and `Cache-Control` on each upload, since CloudFront caches
   as long as the object says.
 - Containers run with a read-only root filesystem; write temp files to a mounted

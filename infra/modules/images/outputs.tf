@@ -7,10 +7,10 @@ output "bucket_arn" {
 }
 
 output "base_url" {
-  description = "Where uploaded images are served from (IMAGES_BASE_URL)."
-  value       = "https://${aws_cloudfront_distribution.this.domain_name}"
+  description = "Where uploaded images are served from (IMAGES_BASE_URL): the CloudFront address, or null without the CDN, when the API serves them at its own /images/."
+  value       = var.cdn ? "https://${aws_cloudfront_distribution.this[0].domain_name}" : null
 }
 
 output "distribution_id" {
-  value = aws_cloudfront_distribution.this.id
+  value = var.cdn ? aws_cloudfront_distribution.this[0].id : null
 }
