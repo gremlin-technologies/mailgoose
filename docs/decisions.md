@@ -24,6 +24,30 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: Designer properties, preview and autosave (MG-45, reversible defaults)
+
+Picked while building MG-45; easy to change.
+
+- **Text blocks are edited on the email as their Markdown**, with Bold,
+  Italic, Link, list and merge tag buttons that write it, not as a
+  word-processor-style editor. The stored format is that Markdown, so what
+  people see while typing is what the CLI and agents see. A richer editor can
+  replace it later without changing the API.
+- **Autosave runs 0.8 seconds after the last edit**, and straight away when
+  another block is selected, the view changes, a block is added, moved or
+  deleted, or the page is left. Saves go one at a time, each with the version
+  the last one returned. The browser warns before closing a tab with unsaved
+  edits.
+- **A refused save keeps the edit on screen**, shows the API's reason and
+  reads "Not saved" until the next edit saves. A save that meets a newer
+  version (someone else saved) drops the edit and reloads, as in MG-44.
+- **The merge tag menu takes an optional fallback** and doesn't offer the
+  unsubscribe link in the subject, preview text or button text.
+- **The preview is the server's render (MG-25)** in a sandboxed frame that
+  runs no scripts, filled in with the API's sample contact.
+- **The image library shows 24 images at a time**, newest first, with a
+  More button.
+
 ## 2026-11-19: Designer canvas (MG-44, reversible defaults)
 
 Picked while building MG-44; easy to change.

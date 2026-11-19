@@ -146,7 +146,8 @@ describe("designer", () => {
     expect(screen.getByText("cakes").getAttribute("title")).toBe("https://bakery.example");
     expect(screen.getByRole("list", { name: "Left column" })).toBeTruthy();
     const footer = screen.getByRole("group", { name: "Footer block" });
-    expect(within(footer).queryByRole("button")).toBeNull();
+    // The footer can't be moved, copied or deleted; only its line of text can change.
+    expect(within(footer).getAllByRole("button").map((b) => b.textContent)).toEqual(["Edit"]);
     expect(footer.getAttribute("draggable")).toBeNull();
     expect(screen.queryByTestId("zone-top-x-b_footer001")).toBeNull();
   });
