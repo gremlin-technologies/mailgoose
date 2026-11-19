@@ -169,6 +169,25 @@ for an admin user or SSO role in the target account.
    verified recipients, 200 emails/day). Request production access from the SES
    console once DKIM shows verified. This is a manual AWS support request.
 
+### Applying the image bucket and CDN (MG-23)
+
+Staging, from the repo root:
+
+```sh
+cd infra/envs/staging
+terraform init -backend-config="bucket=mailgoose-tfstate-680484232605"
+terraform plan -out tfplan
+terraform apply tfplan
+terraform output -json stack | jq -r '.images_bucket, .images_base_url'
+```
+
+The plan creates the bucket and its four settings, the bucket policy, the
+origin access control and the distribution, updates the API task role's
+policy, and registers a new API task definition revision. The services ignore
+task definition drift, so the new `IMAGES_*` variables reach the API at its
+next deploy. The distribution takes a few minutes to finish deploying. Prod is
+the same in `infra/envs/prod`, once prod is being brought up.
+
 ## How deploys work
 
 - Infra changes: a person runs `terraform plan` / `apply` locally.
