@@ -344,7 +344,7 @@ func TestOnlySubscribedContactsAreRecipients(t *testing.T) {
 	got := map[string]bool{}
 	after := ""
 	for {
-		batch, err := h.svc.Recipients(ctx, h.acc, after, 2)
+		batch, err := h.svc.Recipients(ctx, h.acc, Audience{All: true}, after, 2)
 		if err != nil {
 			t.Fatal(err)
 		}

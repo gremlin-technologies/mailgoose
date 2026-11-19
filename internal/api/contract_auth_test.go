@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
@@ -27,19 +28,25 @@ const signupBody = `{"email":"pat@example.com","account_name":"Pat's Bakery","ac
 // same test can read the code an earlier one emailed.
 var outboxes sync.Map // *testing.T -> *mail.Fake
 
+// testDBs holds each test's database, for a before step that has to set up
+// what no endpoint can yet.
+var testDBs sync.Map // *testing.T -> *pgxpool.Pool
+
 func authServer(t *testing.T) *Server {
 	t.Helper()
 	db := dbtest.New(t)
 	fake := &mail.Fake{}
 	outboxes.Store(t, fake)
-	t.Cleanup(func() { outboxes.Delete(t) })
+	testDBs.Store(t, db)
+	t.Cleanup(func() { outboxes.Delete(t); testDBs.Delete(t) })
 	return &Server{
-		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-		DB:       db,
-		Credits:  &credits.Ledger{DB: db},
-		Contacts: &contacts.Service{DB: db},
-		Emails:   &emails.Service{DB: db},
-		Forms:    &forms.Service{DB: db},
+		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:        db,
+		Credits:   &credits.Ledger{DB: db},
+		Contacts:  &contacts.Service{DB: db},
+		Emails:    &emails.Service{DB: db},
+		Forms:     &forms.Service{DB: db},
+		Campaigns: &campaigns.Service{DB: db},
 		// Fake SES, and DNS that answers with every record asked for, so
 		// domains verify on their first check.
 		Domains: &domains.Service{DB: db, SES: &domains.FakeSES{}, DNS: domains.LocalDNS{Region: "us-east-2"},

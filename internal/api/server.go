@@ -19,6 +19,7 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
@@ -60,6 +61,8 @@ type Server struct {
 	Emails *emails.Service
 	// Forms stores the account's signup forms; nil without a database.
 	Forms *forms.Service
+	// Campaigns stores the account's campaigns; nil without a database.
+	Campaigns *campaigns.Service
 	// TrustedOrigins are other origins (such as the web app's, when it isn't
 	// served from the API's own origin) allowed to send cookie-authenticated
 	// requests that change something. The API's own origin always is.

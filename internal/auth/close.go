@@ -17,9 +17,10 @@ const ClosedAccountName = "Deleted account"
 // AccountTables lists every table holding an account's data, in the order
 // DeleteAccount empties them (children before parents). Each has an
 // account_id column. Rows in tables that hang off these (sessions, sign-in
-// codes, contact tags, form tags, import skips) go with them by ON DELETE
+// codes, contact tags, form and campaign tags, import skips) go with them by ON DELETE
 // CASCADE.
 var AccountTables = []string{
+	"campaigns",
 	"forms",
 	"emails",
 	"imports",

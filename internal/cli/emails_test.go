@@ -14,6 +14,7 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/api"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
@@ -28,12 +29,13 @@ func liveAPI(t *testing.T) *harness {
 	ctx := context.Background()
 	db := dbtest.New(t)
 	srv := &api.Server{
-		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
-		DB:       db,
-		Contacts: &contacts.Service{DB: db},
-		Emails:   &emails.Service{DB: db},
-		Forms:    &forms.Service{DB: db},
-		Auth:     &auth.Service{DB: db, Mail: &mail.Fake{}, From: mail.Address{Email: "signin@mail.test.example"}},
+		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		DB:        db,
+		Contacts:  &contacts.Service{DB: db},
+		Emails:    &emails.Service{DB: db},
+		Forms:     &forms.Service{DB: db},
+		Campaigns: &campaigns.Service{DB: db},
+		Auth:      &auth.Service{DB: db, Mail: &mail.Fake{}, From: mail.Address{Email: "signin@mail.test.example"}},
 	}
 	var accountID, userID string
 	if err := db.QueryRow(ctx, `INSERT INTO accounts (name, status) VALUES ('Test', 'active') RETURNING id`).Scan(&accountID); err != nil {
