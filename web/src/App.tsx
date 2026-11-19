@@ -4,6 +4,8 @@ import { Route, Routes } from "react-router";
 import { RequireSession, SignedOutOnly } from "./guards";
 import { ApiKeys } from "./pages/ApiKeys";
 import { AppLayout } from "./pages/AppLayout";
+import { CampaignDetail } from "./campaigns/CampaignDetail";
+import { Campaigns, NewCampaign } from "./pages/Campaigns";
 import { ContactDetail, Contacts } from "./pages/Contacts";
 import { Device } from "./pages/Device";
 import { Designer } from "./designer/Designer";
@@ -20,6 +22,7 @@ import { Tags } from "./pages/Tags";
 /** Pages that are built; the rest of the menu shows a placeholder. */
 const built: Record<string, ReactNode> = {
   "/emails": <Emails />,
+  "/campaigns": <Campaigns />,
   "/contacts": <Contacts />,
   "/tags": <Tags />,
   "/domains": <Domains />,
@@ -74,6 +77,8 @@ export function AppRoutes() {
         <Route path="/contacts/:id" element={<ContactDetail />} />
         <Route path="/domains/:id" element={<DomainDetail />} />
         <Route path="/emails/:id" element={<Designer />} />
+        <Route path="/campaigns/new" element={<NewCampaign />} />
+        <Route path="/campaigns/:id" element={<CampaignDetail />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>
