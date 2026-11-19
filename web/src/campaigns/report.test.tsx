@@ -1,13 +1,14 @@
-import { act, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { fakeApi, renderApp, signedIn } from "../test/render";
-import { pollEvery } from "./CampaignDetail";
+import { polling } from "./CampaignDetail";
 import { share } from "./Report";
 
 const campaignId = "66666666-6666-4666-8666-666666666666";
 const base = `/v1/campaigns/${campaignId}`;
+const slow = { timeout: 3000 };
 
 const report = {
   campaign_id: campaignId,
@@ -58,7 +59,7 @@ function server(rep: Record<string, unknown>, status = "sent") {
 
 
 afterEach(() => {
-  vi.useRealTimers();
+  polling.every = 5000;
 });
 
 describe("report", () => {
@@ -112,16 +113,13 @@ describe("report", () => {
   });
 
   it("counts again while the campaign is sending", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
+    polling.every = 50;
     const api = server({ ...report, status: "sending", delivered: 10 }, "sending");
     renderApp(`/campaigns/${campaignId}/report`, api.fetch);
-    expect(await screen.findByText("10 (8.3%)")).toBeTruthy();
+    expect(await screen.findByText("10 (8.3%)", {}, slow)).toBeTruthy();
     expect(screen.getByText(/include those held for copies still to go/)).toBeTruthy();
     api.state.report = report;
-    await act(async () => {
-      vi.advanceTimersByTime(pollEvery);
-    });
-    expect(await screen.findByText("117 (97.5%)")).toBeTruthy();
+    expect(await screen.findByText("117 (97.5%)", {}, slow)).toBeTruthy();
   });
 
   it("is linked from a sent campaign's page", async () => {

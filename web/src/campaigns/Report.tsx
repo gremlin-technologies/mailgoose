@@ -8,7 +8,7 @@ import { attempt } from "../api/result";
 import type { components } from "../api/schema";
 import { Badge, formatDate, LoadFailed, Loading, PageHeader, useLoad } from "../components";
 import { statusBadge } from "./campaign";
-import { pollEvery } from "./CampaignDetail";
+import { polling } from "./CampaignDetail";
 
 type Report = components["schemas"]["CampaignReport"];
 
@@ -37,7 +37,7 @@ export function CampaignReport() {
   // While it's sending, the numbers move; count them again now and then.
   useEffect(() => {
     if (!sending) return;
-    const timer = setInterval(reloadReport, pollEvery);
+    const timer = setInterval(reloadReport, polling.every);
     return () => clearInterval(timer);
   }, [sending, reloadReport]);
 

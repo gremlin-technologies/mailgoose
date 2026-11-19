@@ -11,8 +11,8 @@ import { fromLocalInput, plural, recipientsText, statusBadge, toLocalInput, type
 import { CampaignForm } from "./CampaignForm";
 import { CheckStep, LaunchStep, TestStep } from "./steps";
 
-/** How often a sending campaign is looked at again. */
-export const pollEvery = 5000;
+/** How often a sending campaign is looked at again, in milliseconds; tests shorten it. */
+export const polling = { every: 5000 };
 
 const changedElsewhere: Failure = {
   code: "version_conflict",
@@ -36,7 +36,7 @@ export function CampaignDetail() {
   // A sending campaign's status changes on its own; look again now and then.
   useEffect(() => {
     if (status !== "sending") return;
-    const timer = setInterval(reload, pollEvery);
+    const timer = setInterval(reload, polling.every);
     return () => clearInterval(timer);
   }, [status, reload]);
 
