@@ -24,6 +24,25 @@ The owner is opening a case and chose, in his words, "Make the CDN optional".
   keep their API URLs, which the API goes on serving by presigned redirects
   with the CDN on (MG-24 review).
 
+## 2026-11-19: Designer canvas (MG-44, reversible defaults)
+
+Picked while building MG-44; easy to change.
+
+- **Drag and drop uses the browser's own drag events**, with no library.
+  Every block also has Move up, Move down, Duplicate and Delete buttons, which
+  are the keyboard and touch way to do the same things.
+- **Each change is saved at once** through the block operations API, with the
+  email's version. If the email changed elsewhere (another tab, the CLI, an
+  agent), the designer says so and reloads instead of overwriting it.
+- **Image, button and social blocks ask for their details before they're
+  added**, because the API won't take them empty. Headings, text and columns
+  go in with starter content to edit.
+- **The canvas draws its own preview of each block**, not the server's HTML
+  render, so it stays quick. The exact render comes with the preview in MG-45
+  and later tickets.
+- **An Emails page lists emails and creates block emails**, so the designer
+  can be reached. HTML emails open to a note until their editor (MG-46).
+
 ## 2026-11-19: Image upload (MG-24, reversible defaults)
 
 Picked while building MG-24; easy to change.
