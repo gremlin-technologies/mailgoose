@@ -24,6 +24,24 @@ that editor's on-screen behavior was studied. Details:
 - **No API changes.** Every edit still goes through the block operations.
 - **Open:** undo and redo, which need history the API doesn't keep.
 
+## 2026-11-20: SES account alarms on staging, with an early warning (owner decision; levels are reversible defaults, MG-81)
+
+The owner chose CloudWatch alarms on the SES account's own rates, emailed to
+the alert address, over AWS's paid deliverability dashboard (Virtual
+Deliverability Manager), which stays off.
+
+- **Staging watches them now.** `Reputation.BounceRate` and
+  `Reputation.ComplaintRate` belong to the AWS account that staging and prod
+  share, and prod isn't running yet, so until now nothing watched them.
+  Staging turns `ses_reputation_alarms` on and prod turns it off. When prod
+  goes live, flip both, so one set of alarms fires, not two.
+- **Two levels each:** an early warning at 2.5% bounces and 0.05%
+  complaints, and the alarm at 4% and 0.08% (unchanged from MG-53). All sit
+  under AWS's review line of 5% and 0.1%. Each emails when it fires and
+  again when it clears.
+- **Cost:** SES publishes these metrics to CloudWatch at no charge; each
+  alarm is about $0.10 a month, so the four are about $0.40.
+
 ## 2026-11-20: SES ignores tag conditions on sends; the app checks the sending identity (owner decision)
 
 Found while bringing up staging. The owner chose the fix on Nov 20, and that
@@ -565,7 +583,8 @@ the address alarms go to.
 - **SES bounce and complaint rate alarms are in prod only**, since those
   metrics cover the whole AWS account that staging shares. They fire at
   4% bounces and 0.08% complaints, under AWS's review levels of 5% and
-  0.1%. They start when prod is first applied.
+  0.1%. They start when prod is first applied. (Moved to staging until prod
+  runs, with an earlier warning level, on 2026-11-20: see that entry.)
 - **"Task health" uses metrics ECS and the load balancer send for free**
   (the target group's healthy hosts, and whether each service reports CPU),
   rather than turning on Container Insights, which costs extra.

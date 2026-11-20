@@ -38,4 +38,8 @@ module "stack" {
 
   # Alarms email this address once it confirms AWS's subscription email.
   alert_email = var.alert_email
+  # SES reputation is the AWS account's, shared with prod. Staging watches it
+  # while it's the only environment running; once prod is, turn this off here
+  # and on in prod (see docs/decisions.md, 2026-11-20).
+  ses_reputation_alarms = true
 }
