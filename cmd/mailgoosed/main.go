@@ -46,6 +46,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/sesevents"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
+	"github.com/gremlin-technologies/mailgoose/internal/testmode"
 	"github.com/gremlin-technologies/mailgoose/internal/tracking"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
@@ -198,8 +199,15 @@ func serve(ctx context.Context, log *slog.Logger) error {
 				// OPS_ALERT_EMAIL hears of each (MG-66).
 				SignupReview: cfg.SignupReview,
 				OnWaiting:    srv.Admin.Alert.SignupWaiting,
-				Log:          log,
+				// New accounts start in test mode per
+				// NEW_ACCOUNTS_TEST_MODE (MG-80).
+				NewAccountSending: newAccountSending(cfg),
+				Log:               log,
 			}
+			// Test addresses' confirm links come from the same sender as
+			// sign-in codes (MG-80).
+			srv.TestAddresses = &testmode.Service{DB: pool, Mail: sender,
+				From: mail.Address{Name: "mailgoose", Email: "signin@" + cfg.SystemSendingDomain}}
 		}
 
 		if cfg.MigrateOnStart {
@@ -215,6 +223,14 @@ func serve(ctx context.Context, log *slog.Logger) error {
 	}
 
 	return api.ListenAndServe(ctx, log, ":"+strconv.Itoa(cfg.Port), srv.Handler())
+}
+
+// newAccountSending is the sending mode new accounts start in (MG-80).
+func newAccountSending(cfg config.Config) string {
+	if cfg.NewAccountsTestMode {
+		return auth.SendingTest
+	}
+	return auth.SendingFull
 }
 
 // newLinkSafety is the link safety check (MG-64): Google Web Risk with

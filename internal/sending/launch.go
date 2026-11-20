@@ -13,12 +13,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
+	"github.com/gremlin-technologies/mailgoose/internal/testmode"
 )
 
 // Launch confirmation (CAM-4).
@@ -48,6 +50,9 @@ const (
 	// NewTermsNotAccepted is an account that hasn't accepted the current
 	// version of the terms (MG-68).
 	NewTermsNotAccepted = "new_terms_not_accepted"
+	// TestMode is an account in test mode whose campaign reaches anyone
+	// but its test addresses and its owner (MG-80).
+	TestMode = "test_mode"
 )
 
 // Summary is what a person confirms before a campaign launches (CAM-3).
@@ -215,6 +220,11 @@ func (s *Service) summarize(ctx context.Context, accountID string, c *campaigns.
 			return err
 		}
 		problems = append(problems, audienceProblems(c, n, bal)...)
+		tm, err := testModeProblems(ctx, s.DB, accountID, c)
+		if err != nil {
+			return err
+		}
+		problems = append(problems, tm...)
 		sum = &Summary{
 			CampaignID: c.ID, Name: c.Name, Subject: p.Email.Document.Settings.Subject,
 			From: p.From, ReplyTo: p.ReplyTo, RecipientCount: n, SendAt: c.SendAt,
@@ -290,11 +300,12 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 	var pausedAt, suspendedAt *time.Time
 	var reason, code, suspendedReason, terms *string
 	var inReview bool
+	var mode string
 	if err := s.DB.QueryRow(ctx, `
 		SELECT sending_paused_at, sending_paused_reason, sending_paused_code, suspended_at, suspended_reason, terms_version,
-		       coalesce(review = 'waiting', false)
+		       coalesce(review = 'waiting', false), sending_mode
 		FROM accounts WHERE id = $1`,
-		accountID).Scan(&pausedAt, &reason, &code, &suspendedAt, &suspendedReason, &terms, &inReview); err != nil {
+		accountID).Scan(&pausedAt, &reason, &code, &suspendedAt, &suspendedReason, &terms, &inReview, &mode); err != nil {
 		return nil, nil, err
 	}
 	if p := termsProblem(trimmed(terms)); p != nil {
@@ -315,12 +326,38 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 		problems = append(problems, Problem{Code: AccountPaused, Message: msg,
 			Hint: "Reply to the email about the pause, or write to support, to get it lifted."})
 	}
-	if inReview && suspendedAt == nil {
+	// An account in test mode can reach only its own test addresses, so
+	// its review doesn't hold it back (MG-80); full sending needs both.
+	if inReview && suspendedAt == nil && mode != auth.SendingTest {
 		problems = append(problems, Problem{Code: AccountInReview,
 			Message: "New accounts are reviewed before their first campaign, and this one's review isn't done yet.",
 			Hint:    "Keep building and sending tests meanwhile; launching opens once the account is approved."})
 	}
 	return out, problems, nil
+}
+
+// testModeProblems is the launch's problem when the account is in test
+// mode (MG-80) and the campaign reaches anyone but its confirmed test
+// addresses and its owner's own address. Such a launch is refused, not
+// queued.
+func testModeProblems(ctx context.Context, q testmode.Querier, accountID string, c *campaigns.Campaign) ([]Problem, error) {
+	g, err := testmode.Load(ctx, q, accountID)
+	if err != nil || !g.Test() {
+		return nil, err
+	}
+	total, outside, err := contacts.CountRecipientsOutside(ctx, q, accountID, c.Audience(), g.Allowed())
+	if err != nil || outside == 0 {
+		return nil, err
+	}
+	which := fmt.Sprintf("%d of the %d recipients aren't test addresses.", outside, total)
+	if outside == 1 {
+		which = fmt.Sprintf("1 of the %d recipients isn't a test address.", total)
+	}
+	return []Problem{{Code: TestMode,
+		Message: "This account is in test mode, so it can only send to its test addresses. " + which,
+		Hint: "Send to a tag that holds only confirmed test addresses (see `mailgoose test-addresses list`), or ask mailgoose " +
+			"to allow full sending for this account.",
+		Details: map[string]any{"recipients": total, "not_test_addresses": outside}}}, nil
 }
 
 // audienceProblems are the launch's problems with who it goes to and what
@@ -398,6 +435,15 @@ func (s *Service) confirm(ctx context.Context, accountID, campaignID, code strin
 		}
 		if len(problems) > 0 {
 			return &NotReadyError{Problems: problems}
+		}
+		// Test mode (MG-80) is checked again here, as a scheduled campaign
+		// is confirmed: anyone outside the test addresses refuses it.
+		tm, err := testModeProblems(ctx, tx, accountID, c)
+		if err != nil {
+			return err
+		}
+		if len(tm) > 0 {
+			return &NotReadyError{Problems: tm}
 		}
 
 		now := s.now()

@@ -21,7 +21,7 @@ func accountStub(t *testing.T) (*harness, *[]map[string]any) {
 			"postal_address": nil, "time_zone": "UTC", "missing_for_send": []string{"postal_address"}, "created_at": "2026-11-18T12:00:00Z",
 			"send_limit": map[string]any{"daily": 1000, "usual": 10000, "reason": "New accounts start at 1,000 a day.", "lowered_until": nil},
 			"terms": map[string]any{"accepted_version": "2026-11-19", "accepted_at": "2026-11-18T12:00:00Z", "current_version": "2026-11-19",
-				"current_effective": "2026-11-19", "acceptance_needed": false}}
+				"current_effective": "2026-11-19", "acceptance_needed": false}, "sending_mode": "full"}
 		if r.Method == http.MethodPatch {
 			var b map[string]any
 			raw, _ := io.ReadAll(r.Body)
@@ -50,7 +50,31 @@ func TestAccountGet(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
 	for _, want := range []string{"Pat's Bakery (free plan)", "From email:  (not set)", "can't launch until you set: postal_address",
-		"Send limit:  1,000 a day\n             New accounts start at 1,000 a day.", "Terms:       version 2026-11-19, accepted"} {
+		"Send limit:  1,000 a day\n             New accounts start at 1,000 a day.", "Terms:       version 2026-11-19, accepted", "Sending:     full"} {
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, h.out)
+		}
+	}
+}
+
+// TestAccountShowsTestMode: `mailgoose account` says when the account is in
+// test mode and where its test addresses are (MG-80).
+func TestAccountShowsTestMode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"a1","name":"QA","plan":"free","time_zone":"UTC","missing_for_send":[],"created_at":"2026-11-18T12:00:00Z",` +
+			`"send_limit":{"daily":1000,"usual":10000,"reason":"","lowered_until":null},"terms":{"accepted_version":"2026-11-19",` +
+			`"accepted_at":"2026-11-18T12:00:00Z","current_version":"2026-11-19","current_effective":"2026-11-19","acceptance_needed":false},` +
+			`"sending_mode":"test"}`))
+	}))
+	t.Cleanup(srv.Close)
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_key"
+	if code := h.run("account", "get"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	for _, want := range []string{"Sending:     TEST MODE", "mailgoose test-addresses list"} {
 		if !strings.Contains(h.out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, h.out)
 		}

@@ -64,6 +64,9 @@ func (s *Server) adminError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, admin.ErrNotWaiting):
 		WriteError(w, Conflict("signup_not_waiting", "The account isn't waiting for its sign-up review, so nothing changed.").
 			WithHint("`mailgoose admin signups` lists the accounts waiting."))
+	case errors.Is(err, admin.ErrSendingModeUnchanged):
+		WriteError(w, Conflict("sending_mode_unchanged", "The account is in that sending mode already, so nothing changed.").
+			WithHint("`mailgoose admin account <account-id>` shows its mode."))
 	case errors.Is(err, admin.ErrNotHeld):
 		WriteError(w, Conflict("import_not_held", "The import isn't waiting for approval, so nothing changed."))
 	case errors.As(err, &st):
@@ -200,6 +203,37 @@ func (s *Server) ApproveSignup(w http.ResponseWriter, r *http.Request, id apigen
 // RejectSignup is POST /v1/admin/accounts/{account_id}/reject-signup.
 func (s *Server) RejectSignup(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
 	s.pauseOrUnpause(w, r, id, s.Admin.RejectSignup)
+}
+
+// ListTestModeAccounts is GET /v1/admin/test-mode (MG-80).
+func (s *Server) ListTestModeAccounts(w http.ResponseWriter, r *http.Request, _ apigen.ListTestModeAccountsParams) {
+	if s.requireAdmin(w, r) == nil {
+		return
+	}
+	pr, err := ParsePageRequest(r)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	found, err := s.Admin.ListTestMode(r.Context(), pr.Limit)
+	if err != nil {
+		s.adminError(w, r, err)
+		return
+	}
+	if found == nil {
+		found = []admin.AccountSummary{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": found, "next_cursor": nil})
+}
+
+// AllowFullSending is POST /v1/admin/accounts/{account_id}/allow-full-sending.
+func (s *Server) AllowFullSending(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
+	s.pauseOrUnpause(w, r, id, s.Admin.AllowFullSending)
+}
+
+// SetTestMode is POST /v1/admin/accounts/{account_id}/set-test-mode.
+func (s *Server) SetTestMode(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
+	s.pauseOrUnpause(w, r, id, s.Admin.SetTestMode)
 }
 
 func (s *Server) pauseOrUnpause(w http.ResponseWriter, r *http.Request, id string,

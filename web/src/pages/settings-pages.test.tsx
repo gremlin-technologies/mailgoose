@@ -234,6 +234,7 @@ describe("settings", () => {
     postal_address: null,
     time_zone: "UTC",
     missing_for_send: ["postal_address"],
+    sending_mode: "full",
     send_limit: {
       daily: 1000,
       usual: 10000,

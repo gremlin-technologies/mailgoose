@@ -157,6 +157,22 @@ func TestSignupReview(t *testing.T) {
 	}
 }
 
+func TestNewAccountsTestMode(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || !cfg.NewAccountsTestMode {
+		t.Fatalf("default = %v, %v; want on", cfg.NewAccountsTestMode, err)
+	}
+	for v, want := range map[string]bool{"on": true, "off": false, "OFF": false} {
+		cfg, err := load(env(map[string]string{"NEW_ACCOUNTS_TEST_MODE": v}))
+		if err != nil || cfg.NewAccountsTestMode != want {
+			t.Errorf("%s = %v, %v", v, cfg.NewAccountsTestMode, err)
+		}
+	}
+	if _, err := load(env(map[string]string{"NEW_ACCOUNTS_TEST_MODE": "yes"})); err == nil {
+		t.Fatal("NEW_ACCOUNTS_TEST_MODE=yes loaded")
+	}
+}
+
 func TestWebDirSetting(t *testing.T) {
 	cfg, err := load(env(nil))
 	if err != nil || cfg.WebDir != "" {

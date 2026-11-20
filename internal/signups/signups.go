@@ -23,6 +23,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/testmode"
 )
 
 const (
@@ -52,8 +53,13 @@ var (
 	// verified sending domain, so no confirmation email can go.
 	ErrNotReady = errors.New("the form can't send confirmation emails yet")
 	// ErrFormClosed means a form whose account can't take signups now: it's
-	// suspended (MG-65), or waiting for its sign-up review (MG-66).
+	// suspended (MG-65), or waiting for its sign-up review (MG-66) with full
+	// sending.
 	ErrFormClosed = errors.New("the form isn't taking signups")
+	// ErrTestMode means a signup from an address that isn't a confirmed
+	// test address (or the owner's) of an account in test mode (MG-80).
+	// Nothing is stored and no confirmation email goes.
+	ErrTestMode = errors.New("the form is in test mode")
 	// ErrBadToken means a confirm link that isn't one, or was cut short.
 	ErrBadToken = errors.New("confirm link not valid")
 	// ErrNotFound means a confirm link whose signup is gone: the contact
@@ -153,6 +159,15 @@ func (s *Service) Submit(ctx context.Context, formID string, sub Submission, bas
 	in, err := fieldsOf(f, sub)
 	if err != nil {
 		return nil, err
+	}
+	// In test mode only test addresses sign up, so no confirmation email
+	// goes to anyone else (MG-80).
+	ok, err := testmode.Allows(ctx, s.DB, f.AccountID, in.Email)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrTestMode
 	}
 
 	// A double opt-in form can't take signups it can't confirm. A form
@@ -488,9 +503,13 @@ func (s *Service) inTx(ctx context.Context, f func(pgx.Tx) error) error {
 }
 
 // accepting returns ErrFormClosed when the account can't take signups now.
+// An account in test mode that's waiting for review takes them, since only
+// its test addresses can sign up (MG-80).
 func (s *Service) accepting(ctx context.Context, accountID string) error {
 	var closed bool
-	if err := s.DB.QueryRow(ctx, `SELECT suspended_at IS NOT NULL OR coalesce(review = 'waiting', false) FROM accounts WHERE id = $1`,
+	if err := s.DB.QueryRow(ctx, `
+		SELECT suspended_at IS NOT NULL OR (coalesce(review = 'waiting', false) AND sending_mode <> 'test')
+		FROM accounts WHERE id = $1`,
 		accountID).Scan(&closed); err != nil {
 		return err
 	}

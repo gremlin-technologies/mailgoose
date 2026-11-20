@@ -168,25 +168,29 @@ func (e AdminAccountSummaryReviewFlags) Valid() bool {
 
 // Defines values for AdminActionAction.
 const (
-	AdminActionActionApproveImport AdminActionAction = "approve_import"
-	AdminActionActionApproveSignup AdminActionAction = "approve_signup"
-	AdminActionActionAutoPause     AdminActionAction = "auto_pause"
-	AdminActionActionAutoSuspend   AdminActionAction = "auto_suspend"
-	AdminActionActionGrantAdmin    AdminActionAction = "grant_admin"
-	AdminActionActionGrantCredits  AdminActionAction = "grant_credits"
-	AdminActionActionPause         AdminActionAction = "pause"
-	AdminActionActionRejectSignup  AdminActionAction = "reject_signup"
-	AdminActionActionRevokeAdmin   AdminActionAction = "revoke_admin"
-	AdminActionActionStopCampaign  AdminActionAction = "stop_campaign"
-	AdminActionActionSuspend       AdminActionAction = "suspend"
-	AdminActionActionThrottle      AdminActionAction = "throttle"
-	AdminActionActionUnpause       AdminActionAction = "unpause"
-	AdminActionActionUnsuspend     AdminActionAction = "unsuspend"
+	AdminActionActionAllowFullSending AdminActionAction = "allow_full_sending"
+	AdminActionActionApproveImport    AdminActionAction = "approve_import"
+	AdminActionActionApproveSignup    AdminActionAction = "approve_signup"
+	AdminActionActionAutoPause        AdminActionAction = "auto_pause"
+	AdminActionActionAutoSuspend      AdminActionAction = "auto_suspend"
+	AdminActionActionGrantAdmin       AdminActionAction = "grant_admin"
+	AdminActionActionGrantCredits     AdminActionAction = "grant_credits"
+	AdminActionActionPause            AdminActionAction = "pause"
+	AdminActionActionRejectSignup     AdminActionAction = "reject_signup"
+	AdminActionActionRevokeAdmin      AdminActionAction = "revoke_admin"
+	AdminActionActionSetTestMode      AdminActionAction = "set_test_mode"
+	AdminActionActionStopCampaign     AdminActionAction = "stop_campaign"
+	AdminActionActionSuspend          AdminActionAction = "suspend"
+	AdminActionActionThrottle         AdminActionAction = "throttle"
+	AdminActionActionUnpause          AdminActionAction = "unpause"
+	AdminActionActionUnsuspend        AdminActionAction = "unsuspend"
 )
 
 // Valid indicates whether the value is a known member of the AdminActionAction enum.
 func (e AdminActionAction) Valid() bool {
 	switch e {
+	case AdminActionActionAllowFullSending:
+		return true
 	case AdminActionActionApproveImport:
 		return true
 	case AdminActionActionApproveSignup:
@@ -204,6 +208,8 @@ func (e AdminActionAction) Valid() bool {
 	case AdminActionActionRejectSignup:
 		return true
 	case AdminActionActionRevokeAdmin:
+		return true
+	case AdminActionActionSetTestMode:
 		return true
 	case AdminActionActionStopCampaign:
 		return true
@@ -1129,6 +1135,24 @@ func (e PlanCheckoutRequestInterval) Valid() bool {
 	}
 }
 
+// Defines values for SendingMode.
+const (
+	SendingModeFull SendingMode = "full"
+	SendingModeTest SendingMode = "test"
+)
+
+// Valid indicates whether the value is a known member of the SendingMode enum.
+func (e SendingMode) Valid() bool {
+	switch e {
+	case SendingModeFull:
+		return true
+	case SendingModeTest:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SkipReason.
 const (
 	SkipReasonDuplicate    SkipReason = "duplicate"
@@ -1228,6 +1252,24 @@ func (e SpacerBlockType) Valid() bool {
 	}
 }
 
+// Defines values for TestAddressStatus.
+const (
+	TestAddressStatusConfirmed TestAddressStatus = "confirmed"
+	TestAddressStatusPending   TestAddressStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the TestAddressStatus enum.
+func (e TestAddressStatus) Valid() bool {
+	switch e {
+	case TestAddressStatusConfirmed:
+		return true
+	case TestAddressStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TextBlockType.
 const (
 	TextBlockTypeText TextBlockType = "text"
@@ -1319,10 +1361,17 @@ type Account struct {
 	// InReview True while a new account waits for its sign-up review (MG-66).
 	// Until it's approved it can build emails, import contacts and send
 	// tests, but can't launch campaigns or take form signups.
-	InReview bool          `json:"in_review"`
-	Name     string        `json:"name"`
-	Plan     AccountPlan   `json:"plan"`
-	Status   AccountStatus `json:"status"`
+	InReview bool        `json:"in_review"`
+	Name     string      `json:"name"`
+	Plan     AccountPlan `json:"plan"`
+
+	// SendingMode `test` while the account is in test mode (MG-80): it sends only to
+	// its confirmed test addresses (`listTestAddresses`) and its owner's
+	// own sign-in address. Launches and test sends to anyone else are
+	// refused with the code `test_mode`, and its forms take signups only
+	// from those addresses. mailgoose staff allow `full` sending.
+	SendingMode SendingMode   `json:"sending_mode"`
+	Status      AccountStatus `json:"status"`
 
 	// Suspension Set while the account is suspended; null otherwise.
 	Suspension *AccountSuspension `json:"suspension"`
@@ -1367,6 +1416,13 @@ type AccountSettings struct {
 	// pass the early-warning limits (0.1% and 2% by default) lowers it to
 	// the new-account limit for 7 days.
 	SendLimit SendLimit `json:"send_limit"`
+
+	// SendingMode `test` while the account is in test mode (MG-80): it sends only to
+	// its confirmed test addresses (`listTestAddresses`) and its owner's
+	// own sign-in address. Launches and test sends to anyone else are
+	// refused with the code `test_mode`, and its forms take signups only
+	// from those addresses. mailgoose staff allow `full` sending.
+	SendingMode SendingMode `json:"sending_mode"`
 
 	// Terms Which version of mailgoose's terms the account accepted, and the
 	// version in force now. Versions are dates, `YYYY-MM-DD`; what changed
@@ -1417,6 +1473,12 @@ type AddEmailBlockRequest struct {
 	Version int `json:"version"`
 }
 
+// AddTestAddressRequest defines model for AddTestAddressRequest.
+type AddTestAddressRequest struct {
+	// Email Examples: qa@example.com
+	Email string `json:"email"`
+}
+
 // AdminAccount defines model for AdminAccount.
 type AdminAccount struct {
 	Contacts      int       `json:"contacts"`
@@ -1451,10 +1513,17 @@ type AdminAccount struct {
 	// the usual limit. A campaign whose spam complaints or hard bounces
 	// pass the early-warning limits (0.1% and 2% by default) lowers it to
 	// the new-account limit for 7 days.
-	SendLimit           SendLimit  `json:"send_limit"`
-	SendingPausedAt     *time.Time `json:"sending_paused_at"`
-	SendingPausedReason *string    `json:"sending_paused_reason"`
-	Status              string     `json:"status"`
+	SendLimit SendLimit `json:"send_limit"`
+
+	// SendingMode `test` while the account is in test mode (MG-80): it sends only to
+	// its confirmed test addresses (`listTestAddresses`) and its owner's
+	// own sign-in address. Launches and test sends to anyone else are
+	// refused with the code `test_mode`, and its forms take signups only
+	// from those addresses. mailgoose staff allow `full` sending.
+	SendingMode         SendingMode `json:"sending_mode"`
+	SendingPausedAt     *time.Time  `json:"sending_paused_at"`
+	SendingPausedReason *string     `json:"sending_paused_reason"`
+	Status              string      `json:"status"`
 
 	// SuspendedAt When the account was suspended (MG-65); null when it isn't.
 	SuspendedAt *time.Time `json:"suspended_at"`
@@ -1468,6 +1537,12 @@ type AdminAccount struct {
 
 	// TermsVersion The latest version of the terms the account accepted; null if it never accepted one.
 	TermsVersion *string `json:"terms_version"`
+
+	// TestAddressesConfirmed Test addresses whose link was used (MG-80).
+	TestAddressesConfirmed int `json:"test_addresses_confirmed"`
+
+	// TestAddressesPending Test addresses whose link hasn't been used yet.
+	TestAddressesPending int `json:"test_addresses_pending"`
 
 	// Throttles Its early-warning throttles in the last 30 days, newest first.
 	Throttles []AdminThrottle `json:"throttles"`
@@ -1502,10 +1577,17 @@ type AdminAccountSummary struct {
 	// ReviewFlags What looked risky at sign-up: a disposable address, more than 3
 	// accounts from its IP in 24 hours, or an IP or company domain
 	// shared with a suspended account. Empty when nothing did.
-	ReviewFlags         []AdminAccountSummaryReviewFlags `json:"review_flags"`
-	SendingPausedAt     *time.Time                       `json:"sending_paused_at"`
-	SendingPausedReason *string                          `json:"sending_paused_reason"`
-	Status              string                           `json:"status"`
+	ReviewFlags []AdminAccountSummaryReviewFlags `json:"review_flags"`
+
+	// SendingMode `test` while the account is in test mode (MG-80): it sends only to
+	// its confirmed test addresses (`listTestAddresses`) and its owner's
+	// own sign-in address. Launches and test sends to anyone else are
+	// refused with the code `test_mode`, and its forms take signups only
+	// from those addresses. mailgoose staff allow `full` sending.
+	SendingMode         SendingMode `json:"sending_mode"`
+	SendingPausedAt     *time.Time  `json:"sending_paused_at"`
+	SendingPausedReason *string     `json:"sending_paused_reason"`
+	Status              string      `json:"status"`
 
 	// SuspendedAt When the account was suspended (MG-65); null when it isn't.
 	SuspendedAt *time.Time `json:"suspended_at"`
@@ -1513,6 +1595,12 @@ type AdminAccountSummary struct {
 	// SuspendedBy The admin's address, `mailgoosed`, or `automatic`.
 	SuspendedBy     *string `json:"suspended_by"`
 	SuspendedReason *string `json:"suspended_reason"`
+
+	// TestAddressesConfirmed Test addresses whose link was used (MG-80).
+	TestAddressesConfirmed int `json:"test_addresses_confirmed"`
+
+	// TestAddressesPending Test addresses whose link hasn't been used yet.
+	TestAddressesPending int `json:"test_addresses_pending"`
 }
 
 // AdminAccountSummaryReview The sign-up review (MG-66); null for an account that never needed one.
@@ -1918,6 +2006,20 @@ type ColumnsBlock struct {
 
 // ColumnsBlockType defines model for ColumnsBlock.Type.
 type ColumnsBlockType string
+
+// ConfirmTestAddressRequest defines model for ConfirmTestAddressRequest.
+type ConfirmTestAddressRequest struct {
+	// Token The `token` in the confirm link's query.
+	Token string `json:"token"`
+}
+
+// ConfirmedTestAddress defines model for ConfirmedTestAddress.
+type ConfirmedTestAddress struct {
+	// AccountName The account the address now gets test mode's emails from.
+	AccountName string    `json:"account_name"`
+	ConfirmedAt time.Time `json:"confirmed_at"`
+	Email       string    `json:"email"`
+}
 
 // Contact defines model for Contact.
 type Contact struct {
@@ -3135,6 +3237,13 @@ type SendLimit struct {
 	Usual int `json:"usual"`
 }
 
+// SendingMode `test` while the account is in test mode (MG-80): it sends only to
+// its confirmed test addresses (`listTestAddresses`) and its owner's
+// own sign-in address. Launches and test sends to anyone else are
+// refused with the code `test_mode`, and its forms take signups only
+// from those addresses. mailgoose staff allow `full` sending.
+type SendingMode string
+
 // Session defines model for Session.
 type Session struct {
 	Account   Account   `json:"account"`
@@ -3301,6 +3410,33 @@ type TermsStatus struct {
 	//
 	// Examples: 2026-11-19
 	CurrentVersion string `json:"current_version"`
+}
+
+// TestAddress defines model for TestAddress.
+type TestAddress struct {
+	// ConfirmExpiresAt When the latest confirm link stops working; null once confirmed.
+	ConfirmExpiresAt *time.Time `json:"confirm_expires_at"`
+
+	// ConfirmSentAt When the latest confirm link was emailed; null once confirmed, or when the email couldn't be sent.
+	ConfirmSentAt *time.Time `json:"confirm_sent_at"`
+	ConfirmedAt   *time.Time `json:"confirmed_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+
+	// Email Examples: qa@example.com
+	Email string `json:"email"`
+	Id    string `json:"id"`
+
+	// Status `pending` until the emailed link is used; only `confirmed` addresses can be sent to in test mode.
+	Status TestAddressStatus `json:"status"`
+}
+
+// TestAddressStatus `pending` until the emailed link is used; only `confirmed` addresses can be sent to in test mode.
+type TestAddressStatus string
+
+// TestAddressList defines model for TestAddressList.
+type TestAddressList struct {
+	Data       []TestAddress `json:"data"`
+	NextCursor any           `json:"next_cursor"`
 }
 
 // TestCampaignRequest defines model for TestCampaignRequest.
@@ -3488,6 +3624,9 @@ type Limit = int
 // TagId defines model for TagId.
 type TagId = string
 
+// TestAddressId defines model for TestAddressId.
+type TestAddressId = string
+
 // BadRequest defines model for BadRequest.
 type BadRequest = Error
 
@@ -3542,6 +3681,9 @@ type InvalidHtml = Error
 // InvalidImage defines model for InvalidImage.
 type InvalidImage = Error
 
+// InvalidTestAddress defines model for InvalidTestAddress.
+type InvalidTestAddress = Error
+
 // LaunchConfirmation defines model for LaunchConfirmation.
 type LaunchConfirmation = Error
 
@@ -3560,6 +3702,9 @@ type PlanConflict = Error
 // RequestTooLarge defines model for RequestTooLarge.
 type RequestTooLarge = Error
 
+// SendingModeConflict defines model for SendingModeConflict.
+type SendingModeConflict = Error
+
 // ServiceUnavailable defines model for ServiceUnavailable.
 type ServiceUnavailable = Error
 
@@ -3571,6 +3716,15 @@ type SuspensionConflict = Error
 
 // TagConflict defines model for TagConflict.
 type TagConflict = Error
+
+// TestAddressConflict defines model for TestAddressConflict.
+type TestAddressConflict = Error
+
+// TestAddressEmailFailed defines model for TestAddressEmailFailed.
+type TestAddressEmailFailed = Error
+
+// TestAddressLinkExpired defines model for TestAddressLinkExpired.
+type TestAddressLinkExpired = Error
 
 // TestLimited defines model for TestLimited.
 type TestLimited = Error
@@ -3627,6 +3781,12 @@ type ListAdminActionsParams struct {
 
 // ListSignupReviewsParams defines parameters for ListSignupReviews.
 type ListSignupReviewsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListTestModeAccountsParams defines parameters for ListTestModeAccounts.
+type ListTestModeAccountsParams struct {
 	// Limit Items per page.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 }
@@ -3793,6 +3953,9 @@ type UpdateAccountJSONRequestBody = UpdateAccountRequest
 // AcceptTermsJSONRequestBody defines body for AcceptTerms for application/json ContentType.
 type AcceptTermsJSONRequestBody = AcceptTermsRequest
 
+// AllowFullSendingJSONRequestBody defines body for AllowFullSending for application/json ContentType.
+type AllowFullSendingJSONRequestBody = AdminReasonRequest
+
 // ApproveSignupJSONRequestBody defines body for ApproveSignup for application/json ContentType.
 type ApproveSignupJSONRequestBody = AdminReasonRequest
 
@@ -3804,6 +3967,9 @@ type PauseAccountJSONRequestBody = AdminReasonRequest
 
 // RejectSignupJSONRequestBody defines body for RejectSignup for application/json ContentType.
 type RejectSignupJSONRequestBody = AdminReasonRequest
+
+// SetTestModeJSONRequestBody defines body for SetTestMode for application/json ContentType.
+type SetTestModeJSONRequestBody = AdminReasonRequest
 
 // SuspendAccountJSONRequestBody defines body for SuspendAccount for application/json ContentType.
 type SuspendAccountJSONRequestBody = AdminReasonRequest
@@ -3921,6 +4087,12 @@ type TagContactsJSONRequestBody = ContactSelection
 
 // UntagContactsJSONRequestBody defines body for UntagContacts for application/json ContentType.
 type UntagContactsJSONRequestBody = ContactSelection
+
+// AddTestAddressJSONRequestBody defines body for AddTestAddress for application/json ContentType.
+type AddTestAddressJSONRequestBody = AddTestAddressRequest
+
+// ConfirmTestAddressJSONRequestBody defines body for ConfirmTestAddress for application/json ContentType.
+type ConfirmTestAddressJSONRequestBody = ConfirmTestAddressRequest
 
 // AsHeadingBlock returns the union data inside the Block as a HeadingBlock
 func (t Block) AsHeadingBlock() (HeadingBlock, error) {
@@ -4644,6 +4816,9 @@ type ServerInterface interface {
 	// GetAdminAccount Look at an account (admin)
 	// (GET /v1/admin/accounts/{account_id})
 	GetAdminAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// AllowFullSending Allow full sending (admin)
+	// (POST /v1/admin/accounts/{account_id}/allow-full-sending)
+	AllowFullSending(w http.ResponseWriter, r *http.Request, accountId AccountId)
 	// ApproveSignup Approve a sign-up (admin)
 	// (POST /v1/admin/accounts/{account_id}/approve-signup)
 	ApproveSignup(w http.ResponseWriter, r *http.Request, accountId AccountId)
@@ -4656,6 +4831,9 @@ type ServerInterface interface {
 	// RejectSignup Reject a sign-up (admin)
 	// (POST /v1/admin/accounts/{account_id}/reject-signup)
 	RejectSignup(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// SetTestMode Put an account in test mode (admin)
+	// (POST /v1/admin/accounts/{account_id}/set-test-mode)
+	SetTestMode(w http.ResponseWriter, r *http.Request, accountId AccountId)
 	// SuspendAccount Suspend an account (admin)
 	// (POST /v1/admin/accounts/{account_id}/suspend)
 	SuspendAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
@@ -4677,6 +4855,9 @@ type ServerInterface interface {
 	// ListSignupReviews List sign-ups waiting for review (admin)
 	// (GET /v1/admin/signups)
 	ListSignupReviews(w http.ResponseWriter, r *http.Request, params ListSignupReviewsParams)
+	// ListTestModeAccounts List accounts in test mode (admin)
+	// (GET /v1/admin/test-mode)
+	ListTestModeAccounts(w http.ResponseWriter, r *http.Request, params ListTestModeAccountsParams)
 	// ListApiKeys List API keys
 	// (GET /v1/api-keys)
 	ListApiKeys(w http.ResponseWriter, r *http.Request, params ListApiKeysParams)
@@ -4911,6 +5092,21 @@ type ServerInterface interface {
 	// UntagContacts Untag contacts
 	// (POST /v1/tags/{tag_id}/contacts/remove)
 	UntagContacts(w http.ResponseWriter, r *http.Request, tagId TagId)
+	// ListTestAddresses List test addresses
+	// (GET /v1/test-addresses)
+	ListTestAddresses(w http.ResponseWriter, r *http.Request)
+	// AddTestAddress Add a test address
+	// (POST /v1/test-addresses)
+	AddTestAddress(w http.ResponseWriter, r *http.Request)
+	// ConfirmTestAddress Confirm a test address
+	// (POST /v1/test-addresses/confirm)
+	ConfirmTestAddress(w http.ResponseWriter, r *http.Request)
+	// RemoveTestAddress Remove a test address
+	// (DELETE /v1/test-addresses/{test_address_id})
+	RemoveTestAddress(w http.ResponseWriter, r *http.Request, testAddressId TestAddressId)
+	// ResendTestAddress Resend a test address's confirm link
+	// (POST /v1/test-addresses/{test_address_id}/resend)
+	ResendTestAddress(w http.ResponseWriter, r *http.Request, testAddressId TestAddressId)
 	// GetWhoami Who is calling
 	// (GET /v1/whoami)
 	GetWhoami(w http.ResponseWriter, r *http.Request)
@@ -5100,6 +5296,32 @@ func (siw *ServerInterfaceWrapper) GetAdminAccount(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
+// AllowFullSending operation middleware
+func (siw *ServerInterfaceWrapper) AllowFullSending(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AllowFullSending(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ApproveSignup operation middleware
 func (siw *ServerInterfaceWrapper) ApproveSignup(w http.ResponseWriter, r *http.Request) {
 
@@ -5195,6 +5417,32 @@ func (siw *ServerInterfaceWrapper) RejectSignup(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RejectSignup(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetTestMode operation middleware
+func (siw *ServerInterfaceWrapper) SetTestMode(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetTestMode(w, r, accountId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -5417,6 +5665,39 @@ func (siw *ServerInterfaceWrapper) ListSignupReviews(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListSignupReviews(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTestModeAccounts operation middleware
+func (siw *ServerInterfaceWrapper) ListTestModeAccounts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTestModeAccountsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTestModeAccounts(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -7595,6 +7876,100 @@ func (siw *ServerInterfaceWrapper) UntagContacts(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// ListTestAddresses operation middleware
+func (siw *ServerInterfaceWrapper) ListTestAddresses(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTestAddresses(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddTestAddress operation middleware
+func (siw *ServerInterfaceWrapper) AddTestAddress(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddTestAddress(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmTestAddress operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmTestAddress(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmTestAddress(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveTestAddress operation middleware
+func (siw *ServerInterfaceWrapper) RemoveTestAddress(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "test_address_id" -------------
+	var testAddressId TestAddressId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "test_address_id", r.PathValue("test_address_id"), &testAddressId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "test_address_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveTestAddress(w, r, testAddressId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResendTestAddress operation middleware
+func (siw *ServerInterfaceWrapper) ResendTestAddress(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "test_address_id" -------------
+	var testAddressId TestAddressId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "test_address_id", r.PathValue("test_address_id"), &testAddressId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "test_address_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResendTestAddress(w, r, testAddressId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetWhoami operation middleware
 func (siw *ServerInterfaceWrapper) GetWhoami(w http.ResponseWriter, r *http.Request) {
 
@@ -7738,6 +8113,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/api-keys", wrapper.ListApiKeys)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/api-keys", wrapper.CreateApiKey)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/api-keys/{key_id}", wrapper.RevokeApiKey)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/test-addresses", wrapper.ListTestAddresses)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/test-addresses", wrapper.AddTestAddress)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/test-addresses/confirm", wrapper.ConfirmTestAddress)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/test-addresses/{test_address_id}", wrapper.RemoveTestAddress)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/test-addresses/{test_address_id}/resend", wrapper.ResendTestAddress)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/credits", wrapper.GetCredits)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/credits/checkout", wrapper.CreateCreditCheckout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/plan", wrapper.GetPlan)
@@ -7823,6 +8203,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/signups", wrapper.ListSignupReviews)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/approve-signup", wrapper.ApproveSignup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/reject-signup", wrapper.RejectSignup)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/test-mode", wrapper.ListTestModeAccounts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/allow-full-sending", wrapper.AllowFullSending)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/set-test-mode", wrapper.SetTestMode)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/credits", wrapper.GrantCredits)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/campaigns/{campaign_id}/stop", wrapper.StopCampaign)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/imports/{import_id}/approve", wrapper.ApproveImport)

@@ -49,7 +49,11 @@ type adminAccountSummary struct {
 	Review              *string    `json:"review"`
 	ReviewFlags         []string   `json:"review_flags"`
 	ReviewAt            *time.Time `json:"review_at"`
-	CreatedAt           time.Time  `json:"created_at"`
+	// Test mode (MG-80).
+	SendingMode            string    `json:"sending_mode"`
+	TestAddressesConfirmed int       `json:"test_addresses_confirmed"`
+	TestAddressesPending   int       `json:"test_addresses_pending"`
+	CreatedAt              time.Time `json:"created_at"`
 }
 
 // adminAccount is the API's AdminAccount.
@@ -127,14 +131,16 @@ func (a *App) adminCmd() *cobra.Command {
 		Use:   "admin",
 		Short: "mailgoose staff tools (admins only)",
 		Long: `Tools for mailgoose staff: find an account, pause or unpause its
-sending, suspend or unsuspend it, review new sign-ups, stop a campaign in
-flight, approve a held import and grant credits.
+sending, suspend or unsuspend it, review new sign-ups, switch it between
+test mode and full sending, stop a campaign in flight, approve a held import
+and grant credits.
 They need you signed in with ` + "`mailgoose login`" + ` as an admin; API keys
 are refused. Every action takes --reason and is logged with who did it
 (` + "`mailgoose admin log`" + `).`,
 	}
 	cmd.AddCommand(a.adminFindCmd(), a.adminAccountCmd(), a.adminPauseCmd(true), a.adminPauseCmd(false),
 		a.adminSuspendCmd(true), a.adminSuspendCmd(false), a.adminSignupsCmd(), a.adminReviewCmd(true), a.adminReviewCmd(false),
+		a.adminTestModeCmd(), a.adminSendingModeCmd(true), a.adminSendingModeCmd(false),
 		a.adminStopCmd(), a.adminApproveImportCmd(), a.adminGrantCmd(), a.adminLogCmd())
 	return cmd
 }
@@ -205,6 +211,7 @@ func (a *App) printAdminAccount(acc adminAccount) {
 		}
 		fmt.Fprintf(w, "Sign-up:      %s\n", review)
 	}
+	fmt.Fprintf(w, "Mode:         %s\n", sendingModeLine(acc.SendingMode, acc.TestAddressesConfirmed, acc.TestAddressesPending))
 	if acc.SendingPausedAt != nil {
 		reason := ""
 		if acc.SendingPausedReason != nil {
@@ -475,6 +482,110 @@ to appeal. --reason is logged and shown to the account as why.`, ""
 		help = "why (logged)"
 	}
 	c.Flags().StringVar(&reason, "reason", def, help)
+	return c
+}
+
+// sendingModeLine describes an account's sending mode (MG-80) for people.
+func sendingModeLine(mode string, confirmed, pending int) string {
+	if mode != "test" {
+		return "full sending"
+	}
+	return fmt.Sprintf("TEST MODE (sends only to its test addresses: %d confirmed, %d pending)", confirmed, pending)
+}
+
+// adminTestModeCmd is `mailgoose admin test-mode` (MG-80).
+func (a *App) adminTestModeCmd() *cobra.Command {
+	var limit int
+	c := calls("listTestModeAccounts", &cobra.Command{
+		Use:   "test-mode",
+		Short: "List accounts in test mode",
+		Long: `Lists the accounts in test mode, oldest first, with how many test addresses
+each has confirmed and pending. An account in test mode sends only to its
+confirmed test addresses and its owner's own address. New accounts start in
+test mode while the server's NEW_ACCOUNTS_TEST_MODE setting is on. Allow one
+full sending with ` + "`mailgoose admin allow-full-sending`" + `.`,
+		Example: `  mailgoose admin test-mode`,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			path := "/v1/admin/test-mode"
+			if limit > 0 {
+				path += "?limit=" + strconv.Itoa(limit)
+			}
+			var page struct {
+				Data       []adminAccountSummary `json:"data"`
+				NextCursor *string               `json:"next_cursor"`
+			}
+			if err := a.call(cmd.Context(), http.MethodGet, path, nil, &page, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(page)
+				return nil
+			}
+			if len(page.Data) == 0 {
+				fmt.Fprintln(a.Stdout, "No accounts are in test mode.")
+				return nil
+			}
+			tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(tw, "ID\tNAME\tOWNER\tCREATED\tTEST ADDRESSES")
+			for _, s := range page.Data {
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d confirmed, %d pending\n", s.ID, s.Name, s.OwnerEmail,
+					s.CreatedAt.Local().Format("2006-01-02"), s.TestAddressesConfirmed, s.TestAddressesPending)
+			}
+			return tw.Flush()
+		},
+	})
+	c.Flags().IntVar(&limit, "limit", 0, "most accounts to show (1 to 100, default 50)")
+	return c
+}
+
+// adminSendingModeCmd is `mailgoose admin allow-full-sending` and
+// `set-test-mode` (MG-80).
+func (a *App) adminSendingModeCmd(full bool) *cobra.Command {
+	var reason string
+	op, use, short, long, def := "allowFullSending", "allow-full-sending", "Take an account out of test mode",
+		`Allows an account full sending: it can send to its whole audience, not
+just its test addresses. It doesn't approve a sign-up review; an account
+still waiting for one needs `+"`mailgoose admin approve-signup`"+` too.
+--reason is logged.`, "Full sending allowed."
+	if !full {
+		op, use, short, long, def = "setTestMode", "set-test-mode", "Put an account in test mode",
+			`Puts an account in test mode: from now on it sends only to its confirmed
+test addresses and its owner's own address. Copies of a campaign already
+sending to anyone else are skipped, with their credits given back.
+--reason is logged.`, "Put in test mode."
+	}
+	c := calls(op, &cobra.Command{
+		Use:     use + " <account-id>",
+		Short:   short,
+		Long:    long,
+		Example: `  mailgoose admin ` + use + ` 3f1c... --reason "Helping us test sending"`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := adminIDArg(args[0], "an account")
+			if err != nil {
+				return err
+			}
+			if err := needReason(reason); err != nil {
+				return err
+			}
+			var acc adminAccount
+			if err := a.call(cmd.Context(), http.MethodPost, adminAccountPath(id)+"/"+use, map[string]any{"reason": reason}, &acc, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(acc)
+				return nil
+			}
+			if full {
+				fmt.Fprintf(a.Stdout, "Allowed %s (%s) full sending. It can send to its whole audience now.\n", acc.Name, acc.ID)
+			} else {
+				fmt.Fprintf(a.Stdout, "Put %s (%s) in test mode. It sends only to its test addresses now.\n", acc.Name, acc.ID)
+			}
+			return nil
+		},
+	})
+	c.Flags().StringVar(&reason, "reason", def, "why (logged)")
 	return c
 }
 

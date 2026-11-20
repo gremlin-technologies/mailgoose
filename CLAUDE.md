@@ -63,6 +63,10 @@ scope; they only show where an idea came from.
   audience per account with tags; CLI only, no MCP server; open and click
   tracking on by default with a per-campaign switch (our own pixel and
   redirects only; SES tracking off).
+- Test mode (Nov 20, MG-80): accounts send in `test` or `full` mode; test
+  mode sends only to up to 5 confirmed test addresses plus the owner's own.
+  New accounts start in test mode while `NEW_ACCOUNTS_TEST_MODE` is on (the
+  default); prod turns it off before launch. Admins switch accounts.
 - Brand (Nov 18): the goose in `docs/brand/mascot.png` is the mascot and the
   UI palette comes from it; modern and sleek, but simple to use. See
   `docs/brand.md`.

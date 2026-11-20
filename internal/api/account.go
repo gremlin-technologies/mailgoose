@@ -131,8 +131,9 @@ func accountJSON(st *auth.Settings, limit sending.SendLimit) apigen.AccountSetti
 		MissingForSend: append([]string{}, st.MissingForSend()...),
 		SendLimit: apigen.SendLimit{Daily: limit.Daily, Usual: limit.Usual, Reason: limit.Reason,
 			LoweredUntil: limit.LoweredUntil},
-		Terms:     termsJSON(st),
-		CreatedAt: st.CreatedAt.UTC(),
+		Terms:       termsJSON(st),
+		SendingMode: apigen.SendingMode(st.SendingMode),
+		CreatedAt:   st.CreatedAt.UTC(),
 	}
 }
 

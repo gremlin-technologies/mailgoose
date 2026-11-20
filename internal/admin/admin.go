@@ -44,6 +44,9 @@ const (
 	ActionAutoSuspend   = sending.ActionAutoSuspend
 	ActionApproveSignup = "approve_signup"
 	ActionRejectSignup  = "reject_signup"
+	// Test mode (MG-80).
+	ActionAllowFullSending = "allow_full_sending"
+	ActionSetTestMode      = "set_test_mode"
 )
 
 // Limits on what an admin sends.
@@ -68,6 +71,9 @@ var (
 	// ErrNotWaiting is approving or rejecting an account that isn't waiting
 	// for its sign-up review (MG-66).
 	ErrNotWaiting = errors.New("the account isn't waiting for review")
+	// ErrSendingModeUnchanged is allowing full sending to an account that
+	// has it, or putting one in test mode that's in it already (MG-80).
+	ErrSendingModeUnchanged = errors.New("the account is in that sending mode already")
 )
 
 // InputError is a reason or amount that can't be used.
@@ -226,15 +232,24 @@ type AccountSummary struct {
 	Review      *string    `json:"review"`
 	ReviewFlags []string   `json:"review_flags"`
 	ReviewAt    *time.Time `json:"review_at"`
-	CreatedAt   time.Time  `json:"created_at"`
+	// Test mode (MG-80): test or full, and how many test addresses are
+	// confirmed and how many wait for their link to be used.
+	SendingMode            string    `json:"sending_mode"`
+	TestAddressesConfirmed int       `json:"test_addresses_confirmed"`
+	TestAddressesPending   int       `json:"test_addresses_pending"`
+	CreatedAt              time.Time `json:"created_at"`
 }
 
 const summaryColumns = `a.id, a.name, a.status, a.plan, u.email, a.sending_paused_at, a.sending_paused_reason,
-	a.suspended_at, a.suspended_reason, a.suspended_by, a.review, a.review_flags, a.review_at, a.created_at`
+	a.suspended_at, a.suspended_reason, a.suspended_by, a.review, a.review_flags, a.review_at, a.sending_mode,
+	(SELECT count(*) FILTER (WHERE t.confirmed_at IS NOT NULL) FROM test_addresses t WHERE t.account_id = a.id),
+	(SELECT count(*) FILTER (WHERE t.confirmed_at IS NULL) FROM test_addresses t WHERE t.account_id = a.id),
+	a.created_at`
 
 func scanSummary(row pgx.Row, a *AccountSummary) error {
 	if err := row.Scan(&a.ID, &a.Name, &a.Status, &a.Plan, &a.OwnerEmail, &a.PausedAt, &a.PauseReason,
-		&a.SuspendedAt, &a.SuspendedReason, &a.SuspendedBy, &a.Review, &a.ReviewFlags, &a.ReviewAt, &a.CreatedAt); err != nil {
+		&a.SuspendedAt, &a.SuspendedReason, &a.SuspendedBy, &a.Review, &a.ReviewFlags, &a.ReviewAt,
+		&a.SendingMode, &a.TestAddressesConfirmed, &a.TestAddressesPending, &a.CreatedAt); err != nil {
 		return err
 	}
 	if a.ReviewFlags == nil {
@@ -635,6 +650,69 @@ func (s *Service) RejectSignup(ctx context.Context, actor Actor, accountID, reas
 	}
 	if sus != nil && s.Alert != nil {
 		s.Alert.Suspended(ctx, *sus)
+	}
+	return s.GetAccount(ctx, accountID)
+}
+
+// ListTestMode is the accounts in test mode (MG-80), oldest first, closed
+// ones left out.
+func (s *Service) ListTestMode(ctx context.Context, limit int) ([]AccountSummary, error) {
+	limit = min(max(limit, 1), MaxFindResults)
+	rows, err := s.DB.Query(ctx, `
+		SELECT `+summaryColumns+`
+		FROM accounts a LEFT JOIN users u ON u.account_id = a.id
+		WHERE a.sending_mode = 'test' AND a.status <> 'closed'
+		ORDER BY a.created_at, a.id
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (AccountSummary, error) {
+		var a AccountSummary
+		err := scanSummary(row, &a)
+		return a, err
+	})
+}
+
+// AllowFullSending takes an account out of test mode (MG-80): it can send
+// to its whole audience. It doesn't approve a sign-up review; a waiting
+// account still needs that to launch to anyone but its test addresses.
+func (s *Service) AllowFullSending(ctx context.Context, actor Actor, accountID, reason string) (*Account, error) {
+	return s.setSendingMode(ctx, actor, accountID, "full", ActionAllowFullSending, reason)
+}
+
+// SetTestMode puts an account in test mode (MG-80): from its next launch,
+// test send or form signup, and its next copy in flight, it sends only to
+// its confirmed test addresses and its owner's address.
+func (s *Service) SetTestMode(ctx context.Context, actor Actor, accountID, reason string) (*Account, error) {
+	return s.setSendingMode(ctx, actor, accountID, "test", ActionSetTestMode, reason)
+}
+
+func (s *Service) setSendingMode(ctx context.Context, actor Actor, accountID, mode, action, reason string) (*Account, error) {
+	reason, err := cleanReason(reason)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.inTx(ctx, func(tx pgx.Tx) error {
+		var cur string
+		err := tx.QueryRow(ctx, `SELECT sending_mode FROM accounts WHERE id = $1 FOR UPDATE`, accountID).Scan(&cur)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		if err != nil {
+			return err
+		}
+		if cur == mode {
+			return ErrSendingModeUnchanged
+		}
+		now := s.now()
+		if _, err := tx.Exec(ctx, `UPDATE accounts SET sending_mode = $2, updated_at = $3 WHERE id = $1`, accountID, mode, now); err != nil {
+			return err
+		}
+		_, err = s.record(ctx, tx, actor, action, &accountID, nil, reason, map[string]any{"from": cur, "to": mode}, now)
+		return err
+	}); err != nil {
+		return nil, err
 	}
 	return s.GetAccount(ctx, accountID)
 }

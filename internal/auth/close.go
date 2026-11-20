@@ -44,6 +44,7 @@ var AccountTables = []string{
 	"device_logins",
 	"api_keys",
 	"signup_ips",
+	"test_addresses",
 	"users",
 }
 

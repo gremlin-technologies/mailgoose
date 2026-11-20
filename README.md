@@ -153,6 +153,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `ABUSE_DIGEST_HOUR` | The hour, UTC (0 to 23), the worker emails the daily abuse digest to `OPS_ALERT_EMAIL`. Default 13 (8 AM US Eastern in winter). |
 | `ABUSE_EMAIL` | Where a suspended account's owner appeals: the Reply-To of the email that tells them about the suspension, and named in its errors. Defaults to `abuse@` the `SYSTEM_SENDING_DOMAIN`; that mailbox has to exist. |
 | `SIGNUP_REVIEW` | Which new accounts wait for an admin to approve them before they can launch campaigns or take form signups (see [Sign-up review](#account-health-and-send-limits)): `all` (the default, for the beta and launch month), `flagged` or `off`. |
+| `NEW_ACCOUNTS_TEST_MODE` | `on` (the default) or `off`: whether new accounts start in [test mode](#account-health-and-send-limits), sending only to their test addresses. Accounts made before MG-80 keep full sending. **Prod must set `off` before launch.** The local stack sets `off` unless you set it. |
 | `SYSTEM_SENDING_DOMAIN` | mailgoose's own sending domain; sign-in codes come from `signin@` it. Defaults to `mail.localhost` when mail is captured (`MAIL_SENDER=fake`). Unset with SES, sign-up and sign-in answer 503. |
 | `WEB_DIR` | The built web app (`web/dist`) the API serves at `/`. The image sets it to `/srv/web`; unset, the API serves no web app. |
 | `WEB_ORIGINS` | Comma-separated origins, besides the API's own, that may send cookie-authenticated requests that change something, such as `https://app.staging.mailgoose.app`. Empty by default. |
@@ -940,6 +941,24 @@ day, so the digest goes at most once a day however many worker tasks run or
 restart; one started after the hour sends that day's late. With no
 `OPS_ALERT_EMAIL` the job doesn't run.
 
+**Test mode.** An account in test mode (`sending_mode: test` on the
+account) sends only to its confirmed test addresses and its owner's own
+sign-in address, which takes no slot. It can have up to 5 test addresses,
+pending ones included; each is confirmed by a link emailed to it, valid for
+7 days (resent at most once a minute, and a resend replaces the old link).
+Addresses match ignoring case. They're managed in the web app (Test addresses, linked from Settings and the banner),
+the API (`/v1/test-addresses`) and `mailgoose test-addresses`. In test mode
+a launch is refused (`test_mode`, with how many recipients aren't test
+addresses), a test send to anyone else is refused (422 `test_mode`), a
+queued copy for anyone else is skipped with its credit given back (for
+example after an admin switches a sending account to test mode), and forms
+take signups only from test addresses (403 `test_mode`). New accounts start
+in test mode while `NEW_ACCOUNTS_TEST_MODE` is on; older accounts keep full
+sending. A test-mode account still waiting for its sign-up review may launch
+to its test addresses and take their signups; allowing full sending doesn't
+approve the review. `mailgoose admin test-mode` lists accounts in test mode,
+and `allow-full-sending` and `set-test-mode` switch one.
+
 ### Admin tools
 
 mailgoose staff use `mailgoose admin` (the `/v1/admin/*` endpoints). They
@@ -959,6 +978,9 @@ an admin; API keys are refused, even an admin's. Every action takes a
 | `mailgoose admin signups` | New accounts waiting for their sign-up review, oldest first, with what flagged them. |
 | `mailgoose admin approve-signup <id> [--reason]` | Approves one: it can launch campaigns and take form signups. |
 | `mailgoose admin reject-signup <id> --reason` | Rejects one and suspends it, emailing the owner why and how to appeal. |
+| `mailgoose admin test-mode` | Accounts in test mode, oldest first, with their confirmed and pending test addresses. |
+| `mailgoose admin allow-full-sending <id> [--reason]` | Takes one out of [test mode](#account-health-and-send-limits): it can send to its whole audience. Doesn't approve a sign-up review. |
+| `mailgoose admin set-test-mode <id> [--reason]` | Puts one in test mode; copies already queued for anyone else are skipped. |
 | `mailgoose admin stop-campaign <id> --reason --yes` | The kill switch: nobody else gets it, unused credits come back, it ends `cancelled`. |
 | `mailgoose admin approve-import <id> --reason` | Lets a held import's contacts be mailed. |
 | `mailgoose admin grant-credits <id> --amount --reason` | Adds up to 1,000,000 credits, lasting 24 months. |

@@ -1512,7 +1512,8 @@ progress {
 }
 
 .paused-banner,
-.review-banner {
+.review-banner,
+.test-mode-banner {
   margin-bottom: 1rem;
 }
 

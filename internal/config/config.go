@@ -76,6 +76,11 @@ type Config struct {
 	// them (MG-66): all (the default, for the beta and launch month),
 	// flagged or off.
 	SignupReview string
+	// NewAccountsTestMode makes new accounts start in test mode (MG-80):
+	// they send only to their own test addresses until an admin allows
+	// full sending. NEW_ACCOUNTS_TEST_MODE, on (the default) or off;
+	// production turns it off before launch.
+	NewAccountsTestMode bool
 	// SESConfigurationSet must be passed on every send so events are recorded.
 	SESConfigurationSet string
 	// SystemSendingDomain is mailgoose's own sending domain (sign-in codes, double opt-in).
@@ -391,6 +396,14 @@ func load(getenv func(string) string) (Config, error) {
 	cfg.SignupReview = orDefault(strings.TrimSpace(getenv("SIGNUP_REVIEW")), "all")
 	if r := cfg.SignupReview; r != "all" && r != "flagged" && r != "off" {
 		errs = append(errs, fmt.Errorf("SIGNUP_REVIEW must be all, flagged or off, got %q", r))
+	}
+
+	switch v := strings.ToLower(strings.TrimSpace(getenv("NEW_ACCOUNTS_TEST_MODE"))); v {
+	case "", "on":
+		cfg.NewAccountsTestMode = true
+	case "off":
+	default:
+		errs = append(errs, fmt.Errorf("NEW_ACCOUNTS_TEST_MODE must be on or off, got %q", v))
 	}
 
 	cfg.MailCaptureDir = getenv("MAIL_CAPTURE_DIR")

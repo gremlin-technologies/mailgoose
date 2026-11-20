@@ -17,7 +17,7 @@ func adminStub(t *testing.T, bodies map[string]map[string]any) *harness {
 	account := `{"id":"` + testAccountID + `","name":"Pat's Bakery","status":"active","plan":"paid","owner_email":"pat@example.com",` +
 		`"sending_paused_at":"2026-11-18T10:00:00Z","sending_paused_reason":"Phishing reports",` +
 		`"suspended_at":"2026-11-19T08:00:00Z","suspended_reason":"Bought list","suspended_by":"staff@example.com",` +
-		`"review":"waiting","review_flags":["disposable_domain","ip_burst"],"review_at":"2026-11-01T09:05:00Z","created_at":"2026-11-01T09:00:00Z",` +
+		`"review":"waiting","review_flags":["disposable_domain","ip_burst"],"review_at":"2026-11-01T09:05:00Z","sending_mode":"test","test_addresses_confirmed":2,"test_addresses_pending":1,"created_at":"2026-11-01T09:00:00Z",` +
 		`"daily_send_limit":2000,"send_limit":{"daily":1000,"usual":10000,"reason":"Lowered automatically.","lowered_until":"2026-11-25T10:00:00Z"},` +
 		`"throttles":[{"id":3,"campaign_id":"camp-1","reason":"Lowered automatically: 0.2% marked it as spam.","created_at":"2026-11-18T10:00:00Z","until":"2026-11-25T10:00:00Z"}],` +
 		`"contacts":1200,"credit_balance":9000,"last_30_days":{"sent":1000,"hard_bounces":12,"complaints":4},` +
@@ -34,7 +34,7 @@ func adminStub(t *testing.T, bodies map[string]map[string]any) *harness {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.URL.Path == "/v1/admin/accounts" || r.URL.Path == "/v1/admin/signups":
+		case r.URL.Path == "/v1/admin/accounts" || r.URL.Path == "/v1/admin/signups" || r.URL.Path == "/v1/admin/test-mode":
 			_, _ = w.Write([]byte(`{"data":[` + strings.SplitN(account, `,"daily_send_limit"`, 2)[0] + `}],"next_cursor":null}`))
 		case strings.HasSuffix(r.URL.Path, "/credits"):
 			_, _ = w.Write([]byte(`{"account_id":"` + testAccountID + `","amount":5000,"expires_at":"2028-11-18T00:00:00Z","credit_balance":14000}`))
@@ -78,6 +78,10 @@ func TestAdminCommands(t *testing.T) {
 		{[]string{"admin", "approve-signup", testAccountID}, []string{"Approved Pat's Bakery", "launch campaigns"}},
 		{[]string{"admin", "reject-signup", testAccountID, "--reason", "Throwaway address"}, []string{"Rejected Pat's Bakery", "suspended"}},
 		{[]string{"admin", "reject-signup", testAccountID, "--reason", "Throwaway address", "--json"}, []string{`"review": "waiting"`}},
+		{[]string{"admin", "account", testAccountID}, []string{"Mode:         TEST MODE (sends only to its test addresses: 2 confirmed, 1 pending)"}},
+		{[]string{"admin", "test-mode"}, []string{"TEST ADDRESSES", testAccountID, "pat@example.com", "2 confirmed, 1 pending"}},
+		{[]string{"admin", "allow-full-sending", testAccountID}, []string{"Allowed Pat's Bakery", "full sending"}},
+		{[]string{"admin", "set-test-mode", testAccountID, "--reason", "Internal testing account"}, []string{"Put Pat's Bakery", "in test mode"}},
 		{[]string{"admin", "stop-campaign", testAccountID, "--reason", "Phishing", "--yes"}, []string{"Stopped campaign \"Bread week\""}},
 		{[]string{"admin", "approve-import", testAccountID, "--reason", "Signup sheet"}, []string{"3000 contacts can be mailed"}},
 		{[]string{"admin", "grant-credits", testAccountID, "--amount", "5000", "--reason", "Outage"}, []string{"Granted 5000 credits", "now 14000"}},
@@ -105,6 +109,12 @@ func TestAdminCommands(t *testing.T) {
 	if b := bodies["/v1/admin/accounts/"+testAccountID+"/approve-signup"]; b["reason"] != "Sign-up approved." {
 		t.Errorf("approve body = %v, want the default reason", b)
 	}
+	if b := bodies["/v1/admin/accounts/"+testAccountID+"/allow-full-sending"]; b["reason"] != "Full sending allowed." {
+		t.Errorf("allow-full-sending body = %v, want the default reason", b)
+	}
+	if b := bodies["/v1/admin/accounts/"+testAccountID+"/set-test-mode"]; b["reason"] != "Internal testing account" {
+		t.Errorf("set-test-mode body = %v", b)
+	}
 	if b := bodies["/v1/admin/accounts/"+testAccountID+"/reject-signup"]; b["reason"] != "Throwaway address" {
 		t.Errorf("reject body = %v", b)
 	}
@@ -125,6 +135,9 @@ func TestAdminNeedsReason(t *testing.T) {
 		{"admin", "approve-import", testAccountID},
 		{"admin", "grant-credits", testAccountID, "--reason", "x"},
 		{"admin", "account", "pats-bakery"},
+		{"admin", "set-test-mode", testAccountID, "--reason", " "},
+		{"admin", "allow-full-sending", "pats-bakery"},
+		{"admin", "test-mode", "extra"},
 	} {
 		if code := h.run(args...); code != ExitUsage {
 			t.Errorf("%v: exit %d", args, code)

@@ -150,7 +150,8 @@ func (s *Service) SessionByToken(ctx context.Context, token string) (*Current, e
 	err = tx.QueryRow(ctx, `
 		SELECT s.id, s.expires_at,
 		       u.id, u.email, u.created_at,
-		       a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason, coalesce(a.review = 'waiting', false)
+		       a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason, coalesce(a.review = 'waiting', false),
+		       a.sending_mode
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		JOIN accounts a ON a.id = u.account_id
@@ -158,7 +159,7 @@ func (s *Service) SessionByToken(ctx context.Context, token string) (*Current, e
 		TokenHash(token), s.now()).Scan(&c.SessionID, &c.ExpiresAt,
 		&c.User.ID, &c.User.Email, &c.User.CreatedAt,
 		&c.Account.ID, &c.Account.Name, &c.Account.Status, &c.Account.Plan, &c.Account.CreatedAt,
-		&suspendedAt, &suspendedReason, &c.Account.InReview)
+		&suspendedAt, &suspendedReason, &c.Account.InReview, &c.Account.SendingMode)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoSession
 	}

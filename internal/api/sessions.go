@@ -111,13 +111,14 @@ func sessionJSON(a auth.Account, u auth.User, expires time.Time) apigen.Session 
 
 func accountSummaryJSON(a auth.Account) apigen.Account {
 	return apigen.Account{
-		Id:         a.ID,
-		Name:       a.Name,
-		Status:     apigen.AccountStatus(a.Status),
-		Plan:       apigen.AccountPlan(a.Plan),
-		CreatedAt:  a.CreatedAt.UTC(),
-		Suspension: suspensionJSON(a.Suspension),
-		InReview:   a.InReview,
+		Id:          a.ID,
+		Name:        a.Name,
+		Status:      apigen.AccountStatus(a.Status),
+		Plan:        apigen.AccountPlan(a.Plan),
+		CreatedAt:   a.CreatedAt.UTC(),
+		Suspension:  suspensionJSON(a.Suspension),
+		InReview:    a.InReview,
+		SendingMode: apigen.SendingMode(a.SendingMode),
 	}
 }
 

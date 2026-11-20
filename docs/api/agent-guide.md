@@ -151,6 +151,11 @@ and ask the person again. Never reuse a yes for a different summary.
 A scheduled campaign can be moved with `campaign reschedule` or stopped with
 `campaign cancel --yes` (both need a `full` key).
 
+If `mailgoose account get` says the account is in test mode, it sends only to its
+confirmed test addresses (`mailgoose test-addresses list`) and the owner's own
+address, and a launch to anyone else is refused with `test_mode`. Tell the
+person; only mailgoose can allow full sending.
+
 ## 7. Read the report
 
 ```sh
