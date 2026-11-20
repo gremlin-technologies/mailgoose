@@ -18,6 +18,8 @@ already use.
   by `make docs` from `api/openapi.yaml` and the CLI. Don't edit them by hand.
 - `docs/brand.md`: the goose mascot, the UI's direction and its starting color
   palette. UI tickets build their design tokens from it.
+- `site/` and `docs/public-site.md`: the public site at mailgoose.app (plain
+  HTML on GitHub Pages) and how it's set up.
 
 The PRD, pricing and MVP requirements files are snapshots of Claude Docs; the
 Claude Doc is the live version. In the PRD and pricing files, lines marked
