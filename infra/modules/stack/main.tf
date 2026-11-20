@@ -297,6 +297,17 @@ data "aws_iam_policy_document" "api" {
     resources = [module.images.bucket_arn]
   }
 
+  # Sign-in and sign-up codes go straight from the API, from the system
+  # sending domain. The identity and configuration set are this environment's
+  # own, named exactly, so no tag condition is needed to keep staging and prod
+  # apart. The tagged statement below didn't match the system identity (every
+  # sign-up got a 403 from SES on staging), so the system sender is allowed here.
+  statement {
+    sid       = "SendSystemEmail"
+    actions   = ["ses:SendEmail", "ses:SendRawEmail"]
+    resources = [module.email.identity_arn, module.email.configuration_set_arn]
+  }
+
   # Test sends ("mailgoose send --test") go straight from the API.
   statement {
     sid       = "SendTestEmail"
@@ -328,6 +339,14 @@ data "aws_iam_policy_document" "worker" {
     sid       = "ReadDatabaseSecret"
     actions   = ["secretsmanager:GetSecretValue"]
     resources = [module.database.master_user_secret_arn]
+  }
+
+  # The system sending domain and configuration set, by exact ARN (see the API's
+  # SendSystemEmail). The worker sends the ops digest and alerts from there.
+  statement {
+    sid       = "SendSystemEmail"
+    actions   = ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"]
+    resources = [module.email.identity_arn, module.email.configuration_set_arn]
   }
 
   statement {
