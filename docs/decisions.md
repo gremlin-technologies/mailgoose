@@ -4,6 +4,37 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-20: SES ignores tag conditions on sends (finding; the fix is an open question)
+
+Found while bringing up staging. Not a decision yet: how to fix it is the
+owner's call, and the question below stays open until then.
+
+- **What happened.** Every sign-up on staging failed with a 403 from SES: the
+  API's task role wasn't allowed `ses:SendEmail` on the system sending
+  identity. The role allowed sends only from identities and the configuration
+  set tagged `Environment=<env>`, and both were tagged. PR #172 worked around
+  it for the system identity by naming it and the configuration set by exact
+  ARN with no tag condition.
+- **The test.** A throwaway role in the AWS project, with one send each to a
+  verified address, tried the tag condition on both resources, on the
+  configuration set only and on identities only. All three were denied, each
+  naming the resource that carried the condition. So SES never matches
+  `aws:ResourceTag/...` for `ses:SendEmail`, on identities or configuration
+  sets, even when the tags are there. Only the system identity was tested,
+  and no AWS page found says why.
+- **What it breaks.** The worker sends campaigns, and the API sends test
+  emails, from customers' own domain identities, whose ARNs aren't known
+  ahead of time. Their only send permission is the tag-conditioned one, so
+  those sends are denied, in staging and in prod.
+- **What it changes.** Staging and prod share one AWS account (2026-11-17),
+  and the Environment tag was what kept each environment's role from sending
+  as the other's identities. Tags can't do that for sends. Creating, reading
+  and changing identities use the same tag pattern; that wasn't tested.
+- **Open question for the owner.** The options are: allow sends from any
+  identity but only through the environment's own configuration set, plus a
+  check in the app that the sending identity belongs to the environment; a
+  separate AWS account for prod; or accept the shared scope for sends.
+
 ## 2026-11-20: Web app UI overhaul: white, neutral, shadow-based (owner decision; the details are reversible defaults)
 
 The owner asked for a full UI overhaul of the web app, modeled on the restraint

@@ -103,9 +103,12 @@ apart by:
 - **State:** separate keys in the state bucket (`envs/staging/...`, `envs/prod/...`).
 - **Network:** separate VPCs (`10.10.0.0/16` and `10.20.0.0/16`).
 - **Tags:** the providers tag everything `Environment = staging | prod`. Each
-  environment's app can only create, change, delete and send from SES identities
-  tagged with its own environment, and only its own configuration set may publish
-  to its own SES events topic.
+  environment's app can only create, change and delete SES identities tagged
+  with its own environment, and only its own configuration set may publish to
+  its own SES events topic. Tags don't keep sends apart: SES never matches a tag
+  condition on `ses:SendEmail` (see `docs/decisions.md`, 2026-11-20), so each
+  role sends from its own system identity by exact ARN, and customer-domain
+  sends wait on a fix.
 - **IAM:** task roles, deploy roles and secrets are per environment and scoped by ARN.
 
 What they still share, by the nature of one account: the SES sending quota, sandbox
@@ -168,7 +171,8 @@ for an admin user or SSO role in the target account.
 
 6. **SES production access.** New accounts start in the SES sandbox (only
    verified recipients, 200 emails/day). Request production access from the SES
-   console once DKIM shows verified. This is a manual AWS support request.
+   console once DKIM shows verified. This is a manual AWS support request; see
+   "Bringing up staging for testing" for the details used for staging.
 
 ### Applying the image bucket and CDN (MG-23)
 
@@ -268,6 +272,103 @@ Do these in order, only after the AWS project allows the OIDC provider:
 4. Raise `api_desired_count` and `worker_desired_count` in staging once the
    first deployed image is healthy.
 
+## Bringing up staging for testing
+
+What it took to get staging ready for internal testing on Nov 20, 2026, with
+the snags hit along the way. Run it from the repo root on a machine signed in
+to the AWS project, with the AWS CLI v2, `jq`, Docker (images are ARM64) and
+Terraform 1.10 or newer.
+
+```sh
+export AWS_REGION=us-east-2
+```
+
+1. **Check what's running.**
+   ```sh
+   aws ecs describe-services --cluster mailgoose-staging \
+     --services mailgoose-staging-api mailgoose-staging-worker \
+     --query 'services[].[serviceName,runningCount,desiredCount,taskDefinition]' --output table
+   curl -s https://api.staging.mailgoose.app/readyz
+   ```
+
+2. **SES.** `aws sesv2 get-account --query ProductionAccessEnabled` says
+   whether the account is out of the sandbox. In the sandbox SES only sends
+   to verified addresses, 200 a day, one a second. Verify each tester's
+   address, tagged like everything else in the environment:
+   ```sh
+   aws sesv2 create-email-identity --email-identity tester@example.com \
+     --tags Key=Environment,Value=staging
+   ```
+   SES emails that address a link to click. To leave the sandbox, request
+   production access in the SES console (Ohio, Account dashboard), mail type
+   Marketing, website `https://mailgoose.app`. AWS can take a few days to
+   answer. The sandbox and production access cover the whole AWS account, prod
+   included.
+
+3. **Alerts.** Put the address in the git-ignored `alerts.auto.tfvars` (see
+   "Where alarms go" below), then plan and apply:
+   ```sh
+   cd infra/envs/staging
+   terraform init -backend-config="bucket=mailgoose-tfstate-680484232605"
+   terraform plan -out tfplan
+   terraform apply tfplan
+   cd -
+   ```
+   Expect the plan to create the email subscription on the alerts topic, or
+   replace the existing one if the address changed (a subscription nobody
+   confirmed shows up as one to replace), and to register new API and worker
+   task definition revisions for `OPS_ALERT_EMAIL`. Anything else is worth a
+   second look. Click the link AWS emails to confirm the subscription.
+
+4. **Deploy current main** (see "How deploys work"):
+   ```sh
+   git checkout main && git pull
+   make push-ecr
+   CLUSTER=mailgoose-staging \
+   IMAGE=680484232605.dkr.ecr.us-east-2.amazonaws.com/mailgoose:$(git rev-parse --short HEAD) \
+   API_SERVICE=mailgoose-staging-api WORKER_SERVICE=mailgoose-staging-worker \
+   scripts/ci/deploy-ecs.sh
+   ```
+   It runs the migrations first and stops if one fails. Nothing tells you
+   when staging falls behind main, so redeploy after merges you want to test.
+
+5. **Your own account.** Sign up at `https://app.staging.mailgoose.app/signup`.
+   Sign up, not sign in: signing in with an address that has no account
+   answers the same as for one that does (so the form can't be used to find
+   accounts) but sends nothing. Then make yourself an admin with a one-off
+   task, which needs the account to exist:
+   ```sh
+   svc=$(aws ecs describe-services --cluster mailgoose-staging --services mailgoose-staging-api --query 'services[0]')
+   task=$(aws ecs run-task --cluster mailgoose-staging --launch-type FARGATE \
+     --task-definition "$(echo "$svc" | jq -r .taskDefinition)" \
+     --network-configuration "$(echo "$svc" | jq -c .networkConfiguration)" \
+     --overrides '{"containerOverrides":[{"name":"app","command":["admin","grant","you@example.com","--reason","staging admin"]}]}' \
+     --query 'tasks[0].taskArn' --output text)
+   aws ecs wait tasks-stopped --cluster mailgoose-staging --tasks "$task"
+   aws logs tail /ecs/mailgoose-staging-api --since 15m | grep -i admin
+   ```
+
+6. **The CLI.** `make build` needs the Go version in `go.mod` (1.27). Go 1.21
+   or newer fetches it by itself (`GOTOOLCHAIN=auto`, the default), so with
+   mise any installed Go works once one is selected, for example
+   `mise use go@1.25`. Then:
+   ```sh
+   make build
+   ./bin/mailgoose config set api-url https://api.staging.mailgoose.app
+   ./bin/mailgoose login
+   ```
+   `mailgoose login` prints a code and waits while you approve it in the
+   browser, so run it in a terminal of your own. It fails from a coding
+   agent's shell or any shell without a TTY.
+
+7. **Admin commands.** `./bin/mailgoose admin signups` lists accounts waiting
+   for sign-up review (staging leaves `SIGNUP_REVIEW` unset, so every new
+   account waits), and `./bin/mailgoose admin approve-signup <account> --reason "..."`
+   lets one in. Both need a build from Nov 19 or later (MG-66), on the server
+   and in the CLI. New accounts start in test mode; accounts made before test
+   mode keep full sending, so lock them with
+   `./bin/mailgoose admin set-test-mode <account> --reason "..."`.
+
 ## Things the app code must handle
 
 - **DB password rotation.** RDS rotates the managed master password (every 7 days by
@@ -277,7 +378,9 @@ Do these in order, only after the AWS project allows the OIDC provider:
   identities for them at runtime (its task role allows `ses:CreateEmailIdentity`
   and friends) and shows the customer the DKIM records to add. Every identity it
   creates must carry the tag in `SES_IDENTITY_TAG` (`Environment=<env>`), or IAM
-  refuses the create, and later reads, updates and sends.
+  refuses the create, and later reads and updates. Sends from these identities
+  are denied today, because SES ignores the tag condition on sends (see
+  `docs/decisions.md`, 2026-11-20).
 - **Every send passes the configuration set** (`SES_CONFIGURATION_SET`) so events
   reach the events queue.
 - **Uploaded images** go in `IMAGES_BUCKET` and are served from
