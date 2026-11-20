@@ -116,7 +116,7 @@ func (s *Server) requireCaller(w http.ResponseWriter, r *http.Request) *Caller {
 	c := CallerFrom(r.Context())
 	if c == nil {
 		if _, err := r.Cookie(SessionCookie); err == nil {
-			clearSessionCookie(w)
+			clearSessionCookie(w, r)
 		}
 		WriteError(w, Unauthorized("unauthenticated", "Sign in, or send an API key.").
 			WithHint("Send `Authorization: Bearer <key>`, or sign in to the web app again."))

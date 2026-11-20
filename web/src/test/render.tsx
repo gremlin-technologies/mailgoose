@@ -6,8 +6,19 @@ import { AppRoutes } from "../App";
 import { createApiClient } from "../api/client";
 import { ApiProvider } from "../api/context";
 import { SessionProvider } from "../session";
+import { expectAccessible } from "./axe";
 
-afterEach(cleanup);
+// Every page a test renders is checked with axe as the test leaves it
+// (WEB-3), so each state the tests reach is covered, not one per page.
+let rendered = false;
+afterEach(async () => {
+  try {
+    if (rendered) await expectAccessible();
+  } finally {
+    rendered = false;
+    cleanup();
+  }
+});
 
 /** A JSON body, or with html set, an HTML page. */
 type Reply = { status: number; body?: unknown; html?: string };
@@ -75,6 +86,7 @@ function Where() {
 
 /** Renders the whole app at path against a fake API. */
 export function renderApp(path: string, fetch: (req: Request) => Promise<Response>) {
+  rendered = true;
   const api = createApiClient({ baseUrl: "http://mailgoose.test", fetch });
   return render(
     <ApiProvider client={api}>

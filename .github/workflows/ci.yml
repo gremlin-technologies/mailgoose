@@ -76,7 +76,7 @@ jobs:
         run: make web
       - name: Install Playwright's Chromium
         working-directory: web
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium firefox webkit msedge
       - name: Start the local stack
         run: |
           ./scripts/dev.sh > stack.log 2>&1 &
