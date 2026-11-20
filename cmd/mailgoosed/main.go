@@ -159,6 +159,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		if err != nil {
 			return err
 		}
+		sender = guardSender(cfg, pool, sender)
 		alerts := &sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
 			To: cfg.OpsAlertEmail, Log: log.With("component", "alerts")}
 		srv.LinkSafety = newLinkSafety(cfg, log)
@@ -363,6 +364,7 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	sender = guardSender(cfg, pool, sender)
 	// Deliveries, bounces and complaints from SES.
 	alert, notices := healthAlerts(cfg, sender, log)
 	events := &sesevents.Service{DB: pool, Log: log.With("queue", "ses-events"), Alert: alert.AutoPaused,
@@ -424,6 +426,16 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 
 // dispatchEvery is how often due campaigns are batched.
 const dispatchEvery = 2 * time.Second
+
+// guardSender checks every message before it goes out: it must be from the
+// system sending domain, or from a domain its account verified in this
+// environment. Staging and prod share one AWS account and SES ignores tag
+// conditions on sends, so this check, not IAM, keeps each environment to
+// its own identities (decisions, 2026-11-20).
+func guardSender(cfg config.Config, pool *pgxpool.Pool, sender mail.Sender) mail.Sender {
+	return &mail.Guard{Sender: sender, System: cfg.SystemSendingDomain,
+		Verified: (&domains.Service{DB: pool}).RequireVerifiedFrom}
+}
 
 func newPipeline(cfg config.Config, pool *pgxpool.Pool, sender mail.Sender, log *slog.Logger) *sending.Pipeline {
 	// A new account's slice that goes over the limits is reported like a

@@ -28,6 +28,15 @@ resource "aws_sesv2_configuration_set" "this" {
   suppression_options {
     suppressed_reasons = ["BOUNCE", "COMPLAINT"]
   }
+
+  # SES reports delivery options this block never sets (the plan showed
+  # max_delivery_seconds = 0), so every plan wanted to remove them, and the
+  # change made the topic policy below, which reads this set's ARN, show as
+  # changed too. mailgoose doesn't manage delivery options, so leave them
+  # to SES.
+  lifecycle {
+    ignore_changes = [delivery_options]
+  }
 }
 
 # SES cannot publish to an SNS topic encrypted with the AWS-managed SNS key,

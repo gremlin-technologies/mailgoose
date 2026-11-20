@@ -56,7 +56,9 @@ scope; they only show where an idea came from.
 - AWS Region: us-east-2 for everything Regional (the project allows no other).
 - AWS layout: one account shared by staging and prod (kept apart by names, state
   keys and `Environment` tags). No production database standby until there are
-  paying customers.
+  paying customers. SES ignores tags on sends, so the app checks that each
+  message's sending domain belongs to its environment; prod gets its own AWS
+  account before the first beta customer (Nov 20).
 - Confirmed Nov 18: RDS Postgres, ECS Fargate, SQS for the send queue, SES with
   SNS events, Terraform, one REST API with an OpenAPI spec shared by web app, CLI
   and agents, designs stored as JSON blocks rendered server-side.
