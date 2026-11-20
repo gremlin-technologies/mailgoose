@@ -4,6 +4,66 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-20: SES ignores tag conditions on sends; the app checks the sending identity (owner decision)
+
+Found while bringing up staging. The owner chose the fix on Nov 20, and that
+a separate prod AWS account comes before beta.
+
+- **What happened.** Every sign-up on staging failed with a 403 from SES: the
+  API's task role wasn't allowed `ses:SendEmail` on the system sending
+  identity. The role allowed sends only from identities and the configuration
+  set tagged `Environment=<env>`, and both were tagged. PR #172 worked around
+  it for the system identity by naming it and the configuration set by exact
+  ARN with no tag condition.
+- **The test.** A throwaway role in the AWS project, with one send each to a
+  verified address, tried the tag condition on both resources, on the
+  configuration set only and on identities only. All three were denied, each
+  naming the resource that carried the condition. So SES never matches
+  `aws:ResourceTag/...` for `ses:SendEmail`, on identities or configuration
+  sets, even when the tags are there. Only the system identity was tested,
+  and no AWS page found says why.
+- **What it broke.** The worker sends campaigns, and the API sends test
+  emails and double opt-in confirmations, from customers' own domain
+  identities, whose ARNs aren't known ahead of time. Their only send
+  permission was the tag-conditioned one, so those sends were denied, in
+  staging and in prod.
+- **The choice.** Each environment's API and worker roles may send
+  (`ses:SendEmail`, `ses:SendRawEmail`, and `ses:SendBulkEmail` for the
+  worker) as any identity in the account, with no tag condition, but only
+  through that environment's own configuration set, named by exact ARN. The
+  app checks every message before it goes out (`mail.Guard`, wrapped around
+  the sender in the API and the worker): the From domain must be the system
+  sending domain, or a domain (or a subdomain of one) that the message's
+  account verified in this environment's database. Anything else is refused
+  and never reaches SES. The other options were a separate AWS account for
+  prod now, or accepting the shared scope with no check.
+- **What it means.** Staging and prod share one AWS account (2026-11-17), and
+  the Environment tag was meant to keep each environment's role from sending
+  as the other's identities. For sends, that isolation now rests on our code,
+  not on IAM: a bug in the check, or a staging task that's compromised, could
+  send as a prod customer's domain. The check holds because SES keeps one
+  identity per name in the account and an environment won't adopt an
+  identity tagged for another account (internal/domains), so a domain
+  verified in one environment's database belongs to that environment. One
+  gap: a send from a subdomain uses the most specific identity SES has, so a
+  staging account that verified `acme.com` sending from `news.acme.com`
+  would use prod's identity if prod had verified `news.acme.com`. That needs
+  control of `acme.com`'s DNS to set up.
+- **Not changed yet.** Creating, reading, changing and deleting identities
+  keep their tag conditions (`aws:RequestTag` and `aws:ResourceTag`). Whether
+  SES honors those hasn't been tried; `infra/README.md` ("Bringing up staging
+  for testing", step 8) has the check. If SES ignores them too, they get the
+  same change, with the app's existing checks (each environment only touches
+  domains in its own database, and adopts an existing identity only when its
+  Account tag matches).
+- **Follow-up before beta (owner, Nov 20).** The shared account stays for now,
+  but prod must have an AWS account of its own before the first beta
+  customer. Shared SES reputation and quotas mean staging's bounces or
+  complaints could get prod's sending paused, and send isolation rests on app
+  code. The likely shape: keep the current account (SES production access in
+  review) as prod, and move staging to a new account that can stay in the SES
+  sandbox. No work on it until then.
+
 ## 2026-11-20: Web app UI overhaul: white, neutral, shadow-based (owner decision; the details are reversible defaults)
 
 The owner asked for a full UI overhaul of the web app, modeled on the restraint

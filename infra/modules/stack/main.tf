@@ -241,7 +241,10 @@ data "aws_iam_policy_document" "api" {
   # manages SES identities on their behalf. Identity ARNs aren't known ahead of
   # time, so the resource is a wildcard. Staging and prod share one AWS account,
   # so every identity carries an Environment tag and each environment can only
-  # create, read, change or delete identities tagged with its own name.
+  # create, read, change or delete identities tagged with its own name. SES
+  # ignores tag conditions on sends (decisions, 2026-11-20); whether it honors
+  # them here hasn't been tried yet. infra/README.md has the check, and if it
+  # fails these go the way of SendEmail, with the app's own checks.
   statement {
     sid = "CreateCustomerIdentities"
     actions = [
@@ -297,29 +300,17 @@ data "aws_iam_policy_document" "api" {
     resources = [module.images.bucket_arn]
   }
 
-  # Sign-in and sign-up codes go straight from the API, from the system
-  # sending domain. The identity and configuration set are this environment's
-  # own, named exactly, so no tag condition is needed to keep staging and prod
-  # apart. The tagged statement below didn't match the system identity (every
-  # sign-up got a 403 from SES on staging), so the system sender is allowed here.
+  # Sign-in codes, test sends and double opt-in confirmations go straight
+  # from the API. SES ignores tag conditions on sends (decisions, 2026-11-20),
+  # so the role may send as any identity in the account, but only through
+  # this environment's configuration set, named by exact ARN. Which identity
+  # a message may use is checked by the app before every send (mail.Guard):
+  # the system sending domain, or a domain the account verified in this
+  # environment's database.
   statement {
-    sid       = "SendSystemEmail"
-    actions   = ["ses:SendEmail", "ses:SendRawEmail"]
-    resources = [module.email.identity_arn, module.email.configuration_set_arn]
-  }
-
-  # Test sends ("mailgoose send --test") go straight from the API.
-  statement {
-    sid       = "SendTestEmail"
+    sid       = "SendEmail"
     actions   = ["ses:SendEmail", "ses:SendRawEmail"]
     resources = [local.ses_identity_arns, module.email.configuration_set_arn]
-
-    # Only identities and the configuration set tagged for this environment.
-    condition {
-      test     = "StringEquals"
-      variable = "aws:ResourceTag/Environment"
-      values   = [var.environment]
-    }
   }
 }
 
@@ -341,24 +332,13 @@ data "aws_iam_policy_document" "worker" {
     resources = [module.database.master_user_secret_arn]
   }
 
-  # The system sending domain and configuration set, by exact ARN (see the API's
-  # SendSystemEmail). The worker sends the ops digest and alerts from there.
-  statement {
-    sid       = "SendSystemEmail"
-    actions   = ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"]
-    resources = [module.email.identity_arn, module.email.configuration_set_arn]
-  }
-
+  # Campaigns, the ops digest and alerts. As for the API's SendEmail: any
+  # identity, this environment's configuration set by exact ARN, and the
+  # app's check before every send.
   statement {
     sid       = "SendEmail"
     actions   = ["ses:SendEmail", "ses:SendRawEmail", "ses:SendBulkEmail"]
     resources = [local.ses_identity_arns, module.email.configuration_set_arn]
-
-    condition {
-      test     = "StringEquals"
-      variable = "aws:ResourceTag/Environment"
-      values   = [var.environment]
-    }
   }
 }
 
