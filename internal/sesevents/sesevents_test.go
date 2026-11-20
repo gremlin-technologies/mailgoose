@@ -279,6 +279,8 @@ func TestDroppedEvents(t *testing.T) {
 		{"bounce without its details", []byte(`{"eventType":"Bounce","mail":{"messageId":"x"}}`), Malformed},
 		{"bounce of an unknown type", []byte(`{"eventType":"Bounce","bounce":{"bounceType":"Odd"},"mail":{"messageId":"x"}}`), Malformed},
 		{"SNS subscription confirmation", []byte(`{"Type":"SubscriptionConfirmation","Message":"confirm"}`), Ignored},
+		{"SES validation notice", []byte("Successfully validated SNS topic for Amazon SES event publishing" + "\n"), Ignored},
+		{"SES validation notice in an SNS notification", []byte(`{"Type":"Notification","Message":"` + "Successfully validated SNS topic for Amazon SES event publishing" + `"}`), Ignored},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -556,5 +558,39 @@ func TestSimulatorEvents(t *testing.T) {
 				t.Errorf("contact %s, want %s", c.status, tc.status)
 			}
 		})
+	}
+}
+
+// SES sends a plain-text notice, not an event, when an event destination is
+// set up. The first staging deploy's stub refused it until it reached the
+// dead-letter queue (Nov 19); it's acknowledged at info level, with no
+// database work and no warning.
+func TestValidationNotice(t *testing.T) {
+	var buf bytes.Buffer
+	svc := &Service{Log: slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+	for _, body := range []string{
+		"Successfully validated SNS topic for Amazon SES event publishing.",
+		`{"Type":"Notification","Message":"Successfully validated SNS topic for Amazon SES event publishing."}`,
+	} {
+		buf.Reset()
+		got, err := svc.handle(context.Background(), []byte(body))
+		if err != nil || got != Ignored {
+			t.Fatalf("handle(%q) = %s, %v; want ignored, acknowledged", body, got, err)
+		}
+		var line struct{ Level, Msg string }
+		if err := json.Unmarshal(buf.Bytes(), &line); err != nil {
+			t.Fatalf("log = %q: %v", buf.String(), err)
+		}
+		if line.Level != "INFO" || !strings.Contains(line.Msg, "validation notice") {
+			t.Errorf("log = %s %q, want one INFO line about the validation notice", line.Level, line.Msg)
+		}
+	}
+	// Other text still counts as unreadable.
+	buf.Reset()
+	if got, _ := svc.handle(context.Background(), []byte("Successfully did something else")); got != Malformed {
+		t.Errorf("other text = %s, want malformed", got)
+	}
+	if !strings.Contains(buf.String(), `"level":"WARN"`) {
+		t.Errorf("log = %q, want a warning", buf.String())
 	}
 }
