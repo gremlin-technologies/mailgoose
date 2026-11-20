@@ -4,6 +4,26 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-20: Block designer rebuilt around typing on the email (owner ask; details are reversible defaults)
+
+The owner asked for the drag-and-drop builder to be rebuilt with a modern look
+and a smooth feel, using Mailchimp's editor as the reference for dragging and
+inline editing, but keeping mailgoose's own simple blocks and options. Only
+that editor's on-screen behavior was studied. Details:
+`docs/design-system.md`, "The email editor".
+
+- **Inline editing.** Headings, text blocks and button labels are typed on the
+  canvas. Text blocks still store the MG-19 Markdown subset; the editor
+  converts to and from it (`web/src/designer/richtext.ts`). Bold inside italic
+  (and the reverse) can't be said in the subset, so only the outer one is kept.
+- **Formatting uses the browser's own editing commands**
+  (`document.execCommand`), which every current browser supports but which is
+  marked obsolete. Default; swapping in an editing library later only touches
+  `inline.tsx`.
+- **Full-window editor**, with the app's side menu hidden while designing.
+- **No API changes.** Every edit still goes through the block operations.
+- **Open:** undo and redo, which need history the API doesn't keep.
+
 ## 2026-11-20: SES ignores tag conditions on sends; the app checks the sending identity (owner decision)
 
 Found while bringing up staging. The owner chose the fix on Nov 20, and that
