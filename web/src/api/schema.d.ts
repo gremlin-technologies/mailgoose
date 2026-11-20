@@ -1950,6 +1950,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/deliverability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Per-customer deliverability report (admin)
+         * @description mailgoose staff only (MG-82): every account that sent campaign email
+         *     in the last 7 days, or had a hard bounce or complaint reported in
+         *     them, with its copies sent, hard bounces and complaints (and their
+         *     rates) over the last 24 hours and 7 days. Counted from `send_events`
+         *     and `campaign_recipients` exactly as the daily digest counts the
+         *     platform's rates: copies sent in the window, and the distinct
+         *     recipients whose hard bounce or complaint was reported in it.
+         *
+         *     Worst first: the accounts over the early warning over 7 days
+         *     (`over_warning`) first, then by how far their 7-day rates are over
+         *     the early-warning thresholds, then their 24-hour rates, then the
+         *     most copies sent. Each row says whether the account is paused,
+         *     suspended, throttled or in test mode. At most `limit` rows; `total`
+         *     counts them all, and there's no next page.
+         */
+        get: operations["getDeliverabilityReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/accounts/{account_id}/allow-full-sending": {
         parameters: {
             query?: never;
@@ -3824,6 +3857,66 @@ export interface components {
         AdminAccountList: {
             data: components["schemas"]["AdminAccountSummary"][];
             next_cursor: null;
+        };
+        /**
+         * @description Campaign copies sent in the window, and the recipients whose hard
+         *     bounce or complaint was reported in it, with the rates as
+         *     percentages (rounded to 4 places; null when nothing was sent in the
+         *     window).
+         */
+        AdminDeliverabilityRates: {
+            sent: number;
+            hard_bounces: number;
+            complaints: number;
+            hard_bounce_percent: number | null;
+            complaint_percent: number | null;
+        };
+        AdminAccountDeliverability: {
+            /** Format: uuid */
+            account_id: string;
+            account_name: string;
+            owner_email: string | null;
+            sending_mode: components["schemas"]["SendingMode"];
+            /**
+             * Format: date-time
+             * @description When its sending was paused; null when it isn't.
+             */
+            sending_paused_at: string | null;
+            /**
+             * Format: date-time
+             * @description When it was suspended; null when it isn't.
+             */
+            suspended_at: string | null;
+            /**
+             * Format: date-time
+             * @description When its early-warning throttle lifts; null when it isn't throttled.
+             */
+            throttled_until: string | null;
+            last_24_hours: components["schemas"]["AdminDeliverabilityRates"];
+            last_7_days: components["schemas"]["AdminDeliverabilityRates"];
+            /**
+             * @description Whether its last 7 days are over the early warning, as the daily
+             *     digest judges them: see `early_warning`.
+             */
+            over_warning: boolean;
+        };
+        /**
+         * @description The early warning: over `complaint_percent` complaints (and at least
+         *     `min_complaints` of them) or over `hard_bounce_percent` hard
+         *     bounces, on `min_copies` or more copies.
+         */
+        AdminEarlyWarning: {
+            complaint_percent: number;
+            hard_bounce_percent: number;
+            min_complaints: number;
+            min_copies: number;
+        };
+        AdminDeliverabilityReport: {
+            data: components["schemas"]["AdminAccountDeliverability"][];
+            next_cursor: null;
+            /** @description Every account in the report, including those over `limit`. */
+            total: number;
+            early_warning: components["schemas"]["AdminEarlyWarning"];
         };
         AdminHeldImport: {
             /** Format: uuid */
@@ -7651,6 +7744,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminAccountList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getDeliverabilityReport: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The report. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDeliverabilityReport"];
                 };
             };
             400: components["responses"]["BadRequest"];

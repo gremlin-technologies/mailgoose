@@ -21,11 +21,14 @@ import (
 //   - imports held for review, and sign-ups waiting for review, whenever
 //     they were made;
 //   - the platform's complaint and hard-bounce rates over 24 hours and 30
-//     days.
+//     days;
+//   - the accounts whose own rates over the last 7 days are over the early
+//     warning, on enough copies and complaints to judge (MG-82).
 //
 // Each item names the account and the `mailgoose admin` command to act on
-// it. Nothing goes on a quiet day: no items, and rates under the early
-// warning thresholds (on enough copies to judge, as for one account).
+// it. Nothing goes on a quiet day: no items, no account over the early
+// warning, and the platform's rates under it (on enough copies to judge, as
+// for one account).
 //
 // A row in ops_digests claims each UTC day, so the digest goes at most once
 // a day across restarts and worker tasks. The claim is committed before the
@@ -35,6 +38,10 @@ import (
 // DigestWindow is how far back the digest looks for throttles, pauses and
 // suspensions, and for the short platform rates.
 const DigestWindow = 24 * time.Hour
+
+// DigestMaxAccounts is the most accounts over the early warning the digest
+// lists; `mailgoose admin deliverability` lists them all.
+const DigestMaxAccounts = 20
 
 // DefaultDigestHour is the hour, UTC, the digest goes when none is set:
 // 8 AM in US Eastern winter time.
@@ -65,6 +72,11 @@ type Digest struct {
 	// HealthWindow.
 	Day, Month Rates
 	Warning    Warning
+	// Accounts are the accounts over the early warning over the last
+	// DeliverabilityWindow, worst first, at most DigestMaxAccounts (MG-82);
+	// AccountsOver counts them all.
+	Accounts     []AccountDeliverability
+	AccountsOver int
 }
 
 // Items is how many items the digest lists, rates aside.
@@ -79,7 +91,7 @@ func (d Digest) RatesHigh() bool {
 }
 
 // Empty says whether the digest has nothing to say, so isn't sent.
-func (d Digest) Empty() bool { return d.Items() == 0 && !d.RatesHigh() }
+func (d Digest) Empty() bool { return d.Items() == 0 && !d.RatesHigh() && d.AccountsOver == 0 }
 
 // Subject is the digest email's subject, after "mailgoose: ".
 func (d Digest) Subject() string {
@@ -89,6 +101,12 @@ func (d Digest) Subject() string {
 		s += " (1 item)"
 	case n > 1:
 		s += fmt.Sprintf(" (%d items)", n)
+	}
+	switch n := d.AccountsOver; {
+	case n == 1:
+		s += ", 1 account over the early warning"
+	case n > 1:
+		s += fmt.Sprintf(", %d accounts over the early warning", n)
 	}
 	if d.RatesHigh() {
 		s += ", platform rates over the early warning"
@@ -122,25 +140,56 @@ func (d Digest) Text() string {
 			}
 		}
 	}
+	w := d.Warning.orDefault()
+	if d.AccountsOver > 0 {
+		fmt.Fprintf(&b, "\nAccounts over the early warning in the last 7 days (%d)\n\n", d.AccountsOver)
+		fmt.Fprintf(&b, "Each account's campaign email over the last 7 days, listed when over %s complaints (and at least %d) "+
+			"or %s hard bounces, on %d or more copies. Worst first. `mailgoose admin deliverability` lists every account that sent.\n",
+			percent(w.ComplaintsPer10k, 10000), MinComplaints, percent(w.HardBouncesPer10k, 10000), HealthMinRecipients)
+		for _, a := range d.Accounts {
+			state := "Sending normally."
+			if st := a.State(); len(st) > 0 {
+				state = "Now: " + strings.Join(st, ", ") + "."
+			}
+			fmt.Fprintf(&b, "\n- %s (account %s): last 7 days %s Last 24 hours %s %s\n", orDeleted(a.AccountName), a.AccountID,
+				ratesText(a.Week.Rates), ratesText(a.Day.Rates), state)
+			fmt.Fprintf(&b, "    mailgoose admin account %s\n", a.AccountID)
+			if a.SendingPausedAt == nil && a.SuspendedAt == nil {
+				fmt.Fprintf(&b, "    mailgoose admin pause %s --reason \"...\"\n", a.AccountID)
+			}
+		}
+		if more := d.AccountsOver - len(d.Accounts); more > 0 {
+			fmt.Fprintf(&b, "\n... and %d more: mailgoose admin deliverability\n", more)
+		}
+	}
 	b.WriteString("\nPlatform rates (campaign email)\n\n")
 	fmt.Fprintf(&b, "- Last 24 hours: %s\n", rateLine(d.Day, d.Warning))
 	fmt.Fprintf(&b, "- Last 30 days: %s\n", rateLine(d.Month, d.Warning))
-	w := d.Warning.orDefault()
 	fmt.Fprintf(&b, "\nEarly warning at %s complaints (and at least %d) or %s hard bounces, on %d or more copies.\n",
 		percent(w.ComplaintsPer10k, 10000), MinComplaints, percent(w.HardBouncesPer10k, 10000), HealthMinRecipients)
 	return b.String()
 }
 
 func rateLine(r Rates, w Warning) string {
-	if r.Sent == 0 {
-		return "nothing sent."
-	}
-	s := fmt.Sprintf("%s sent, %s hard bounces (%s), %s complaints (%s).", thousands(r.Sent),
-		thousands(r.HardBounces), percent(r.HardBounces, r.Sent), thousands(r.Complaints), percent(r.Complaints, r.Sent))
-	if r.OverWarning(w) {
+	s := ratesText(r)
+	if r.Sent > 0 && r.OverWarning(w) {
 		s += " OVER THE EARLY WARNING."
 	}
 	return s
+}
+
+// ratesText is copies sent, hard bounces and complaints, with their rates:
+// "1,000 sent, 3 hard bounces (0.3%), 2 complaints (0.2%)."
+func ratesText(r Rates) string {
+	if r.Sent == 0 {
+		if r.HardBounces == 0 && r.Complaints == 0 {
+			return "nothing sent."
+		}
+		// Reports in the window on copies sent before it.
+		return fmt.Sprintf("nothing sent, %s hard bounces, %s complaints.", thousands(r.HardBounces), thousands(r.Complaints))
+	}
+	return fmt.Sprintf("%s sent, %s hard bounces (%s), %s complaints (%s).", thousands(r.Sent),
+		thousands(r.HardBounces), percent(r.HardBounces, r.Sent), thousands(r.Complaints), percent(r.Complaints, r.Sent))
 }
 
 // holdReasons say why an import is held, by imports.hold_reason.
@@ -314,8 +363,25 @@ func BuildDigest(ctx context.Context, q digestQuerier, now time.Time, w Warning)
 	if d.Day, err = platformRates(ctx, q, since, now); err != nil {
 		return d, err
 	}
-	d.Month, err = platformRates(ctx, q, now.Add(-HealthWindow), now)
-	return d, err
+	if d.Month, err = platformRates(ctx, q, now.Add(-HealthWindow), now); err != nil {
+		return d, err
+	}
+
+	report, err := DeliverabilityReport(ctx, q, now, w)
+	if err != nil {
+		return d, err
+	}
+	// Worst first puts the accounts over the early warning first.
+	for _, a := range report {
+		if !a.OverWarning {
+			break
+		}
+		d.AccountsOver++
+		if len(d.Accounts) < DigestMaxAccounts {
+			d.Accounts = append(d.Accounts, a)
+		}
+	}
+	return d, nil
 }
 
 // platformRates counts every account's campaign copies sent after since,
@@ -324,11 +390,9 @@ func platformRates(ctx context.Context, q querier, since, now time.Time) (Rates,
 	var r Rates
 	err := q.QueryRow(ctx, `
 		SELECT
-			(SELECT count(*) FROM campaign_recipients WHERE sent_at > $1 AND sent_at <= $2),
-			(SELECT count(DISTINCT recipient_id) FROM send_events
-				WHERE occurred_at > $1 AND occurred_at <= $2 AND kind = 'campaign' AND type = 'bounce' AND subtype LIKE 'permanent/%'),
-			(SELECT count(DISTINCT recipient_id) FROM send_events
-				WHERE occurred_at > $1 AND occurred_at <= $2 AND kind = 'campaign' AND type = 'complaint')`,
+			(SELECT count(*) `+sentIn+`),
+			(SELECT count(DISTINCT recipient_id) `+hardBouncedIn+`),
+			(SELECT count(DISTINCT recipient_id) `+complainedIn+`)`,
 		since, now).Scan(&r.Sent, &r.HardBounces, &r.Complaints)
 	return r, err
 }
@@ -428,7 +492,8 @@ func (j *DigestJob) RunOnce(ctx context.Context) (bool, error) {
 		j.log().InfoContext(ctx, "abuse digest: a quiet day, nothing sent", "day", day)
 		return false, nil
 	}
-	j.log().InfoContext(ctx, "sending the abuse digest", "day", day, "items", d.Items(), "rates_high", d.RatesHigh())
+	j.log().InfoContext(ctx, "sending the abuse digest", "day", day, "items", d.Items(), "accounts_over", d.AccountsOver,
+		"rates_high", d.RatesHigh())
 	j.Alert.Notify(ctx, d.Subject(), d.Text())
 	return true, nil
 }

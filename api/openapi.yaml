@@ -3978,6 +3978,52 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/deliverability:
+    get:
+      operationId: getDeliverabilityReport
+      summary: Per-customer deliverability report (admin)
+      description: |
+        mailgoose staff only (MG-82): every account that sent campaign email
+        in the last 7 days, or had a hard bounce or complaint reported in
+        them, with its copies sent, hard bounces and complaints (and their
+        rates) over the last 24 hours and 7 days. Counted from `send_events`
+        and `campaign_recipients` exactly as the daily digest counts the
+        platform's rates: copies sent in the window, and the distinct
+        recipients whose hard bounce or complaint was reported in it.
+
+        Worst first: the accounts over the early warning over 7 days
+        (`over_warning`) first, then by how far their 7-day rates are over
+        the early-warning thresholds, then their 24-hour rates, then the
+        most copies sent. Each row says whether the account is paused,
+        suspended, throttled or in test mode. At most `limit` rows; `total`
+        counts them all, and there's no next page.
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: The report.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminDeliverabilityReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/admin/accounts/{account_id}/allow-full-sending:
     post:
       operationId: allowFullSending
@@ -7016,6 +7062,91 @@ components:
             $ref: "#/components/schemas/AdminAccountSummary"
         next_cursor:
           type: "null"
+    AdminDeliverabilityRates:
+      type: object
+      description: |
+        Campaign copies sent in the window, and the recipients whose hard
+        bounce or complaint was reported in it, with the rates as
+        percentages (rounded to 4 places; null when nothing was sent in the
+        window).
+      required: [sent, hard_bounces, complaints, hard_bounce_percent, complaint_percent]
+      properties:
+        sent:
+          type: integer
+        hard_bounces:
+          type: integer
+        complaints:
+          type: integer
+        hard_bounce_percent:
+          type: [number, "null"]
+        complaint_percent:
+          type: [number, "null"]
+    AdminAccountDeliverability:
+      type: object
+      required: [account_id, account_name, owner_email, sending_mode, sending_paused_at, suspended_at,
+        throttled_until, last_24_hours, last_7_days, over_warning]
+      properties:
+        account_id:
+          type: string
+          format: uuid
+        account_name:
+          type: string
+        owner_email:
+          type: [string, "null"]
+        sending_mode:
+          $ref: "#/components/schemas/SendingMode"
+        sending_paused_at:
+          type: [string, "null"]
+          format: date-time
+          description: When its sending was paused; null when it isn't.
+        suspended_at:
+          type: [string, "null"]
+          format: date-time
+          description: When it was suspended; null when it isn't.
+        throttled_until:
+          type: [string, "null"]
+          format: date-time
+          description: When its early-warning throttle lifts; null when it isn't throttled.
+        last_24_hours:
+          $ref: "#/components/schemas/AdminDeliverabilityRates"
+        last_7_days:
+          $ref: "#/components/schemas/AdminDeliverabilityRates"
+        over_warning:
+          type: boolean
+          description: |
+            Whether its last 7 days are over the early warning, as the daily
+            digest judges them: see `early_warning`.
+    AdminEarlyWarning:
+      type: object
+      description: |
+        The early warning: over `complaint_percent` complaints (and at least
+        `min_complaints` of them) or over `hard_bounce_percent` hard
+        bounces, on `min_copies` or more copies.
+      required: [complaint_percent, hard_bounce_percent, min_complaints, min_copies]
+      properties:
+        complaint_percent:
+          type: number
+        hard_bounce_percent:
+          type: number
+        min_complaints:
+          type: integer
+        min_copies:
+          type: integer
+    AdminDeliverabilityReport:
+      type: object
+      required: [data, next_cursor, total, early_warning]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminAccountDeliverability"
+        next_cursor:
+          type: "null"
+        total:
+          type: integer
+          description: Every account in the report, including those over `limit`.
+        early_warning:
+          $ref: "#/components/schemas/AdminEarlyWarning"
     AdminHeldImport:
       type: object
       required: [id, file_name, total_rows, hold_reason, status, list_source, list_source_detail, checks, created_at]

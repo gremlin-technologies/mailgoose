@@ -132,15 +132,15 @@ func (a *App) adminCmd() *cobra.Command {
 		Short: "mailgoose staff tools (admins only)",
 		Long: `Tools for mailgoose staff: find an account, pause or unpause its
 sending, suspend or unsuspend it, review new sign-ups, switch it between
-test mode and full sending, stop a campaign in flight, approve a held import
-and grant credits.
+test mode and full sending, see each account's bounce and complaint rates,
+stop a campaign in flight, approve a held import and grant credits.
 They need you signed in with ` + "`mailgoose login`" + ` as an admin; API keys
 are refused. Every action takes --reason and is logged with who did it
 (` + "`mailgoose admin log`" + `).`,
 	}
 	cmd.AddCommand(a.adminFindCmd(), a.adminAccountCmd(), a.adminPauseCmd(true), a.adminPauseCmd(false),
 		a.adminSuspendCmd(true), a.adminSuspendCmd(false), a.adminSignupsCmd(), a.adminReviewCmd(true), a.adminReviewCmd(false),
-		a.adminTestModeCmd(), a.adminSendingModeCmd(true), a.adminSendingModeCmd(false),
+		a.adminTestModeCmd(), a.adminSendingModeCmd(true), a.adminSendingModeCmd(false), a.adminDeliverabilityCmd(),
 		a.adminStopCmd(), a.adminApproveImportCmd(), a.adminGrantCmd(), a.adminLogCmd())
 	return cmd
 }
@@ -533,6 +533,134 @@ full sending with ` + "`mailgoose admin allow-full-sending`" + `.`,
 					s.CreatedAt.Local().Format("2006-01-02"), s.TestAddressesConfirmed, s.TestAddressesPending)
 			}
 			return tw.Flush()
+		},
+	})
+	c.Flags().IntVar(&limit, "limit", 0, "most accounts to show (1 to 100, default 50)")
+	return c
+}
+
+// deliverabilityRates is the API's AdminDeliverabilityRates.
+type deliverabilityRates struct {
+	Sent              int      `json:"sent"`
+	HardBounces       int      `json:"hard_bounces"`
+	Complaints        int      `json:"complaints"`
+	HardBouncePercent *float64 `json:"hard_bounce_percent"`
+	ComplaintPercent  *float64 `json:"complaint_percent"`
+}
+
+// rate is n with its percentage: "0.3% (3)", or "-" when nothing was sent.
+func (r deliverabilityRates) rate(n int, pct *float64) string {
+	if pct == nil {
+		if n == 0 {
+			return "-"
+		}
+		return fmt.Sprintf("- (%s)", thousands(n))
+	}
+	return fmt.Sprintf("%s%% (%s)", strconv.FormatFloat(*pct, 'f', -1, 64), thousands(n))
+}
+
+// accountDeliverability is the API's AdminAccountDeliverability.
+type accountDeliverability struct {
+	AccountID       string              `json:"account_id"`
+	AccountName     string              `json:"account_name"`
+	OwnerEmail      *string             `json:"owner_email"`
+	SendingMode     string              `json:"sending_mode"`
+	SendingPausedAt *time.Time          `json:"sending_paused_at"`
+	SuspendedAt     *time.Time          `json:"suspended_at"`
+	ThrottledUntil  *time.Time          `json:"throttled_until"`
+	Day             deliverabilityRates `json:"last_24_hours"`
+	Week            deliverabilityRates `json:"last_7_days"`
+	OverWarning     bool                `json:"over_warning"`
+}
+
+// state is how the account stands: "OVER WARNING, paused, test mode", or
+// "ok".
+func (d accountDeliverability) state() string {
+	var s []string
+	if d.OverWarning {
+		s = append(s, "OVER WARNING")
+	}
+	if d.SuspendedAt != nil {
+		s = append(s, "suspended")
+	}
+	if d.SendingPausedAt != nil {
+		s = append(s, "paused")
+	}
+	if d.ThrottledUntil != nil {
+		s = append(s, "throttled until "+d.ThrottledUntil.Local().Format("2006-01-02 15:04"))
+	}
+	if d.SendingMode == "test" {
+		s = append(s, "test mode")
+	}
+	if len(s) == 0 {
+		return "ok"
+	}
+	return strings.Join(s, ", ")
+}
+
+// adminDeliverabilityCmd is `mailgoose admin deliverability` (MG-82).
+func (a *App) adminDeliverabilityCmd() *cobra.Command {
+	var limit int
+	c := calls("getDeliverabilityReport", &cobra.Command{
+		Use:   "deliverability",
+		Short: "List accounts' bounce and complaint rates, worst first",
+		Long: `Lists every account that sent campaign email in the last 7 days (or had a
+hard bounce or complaint reported in them), with its copies sent, hard
+bounce rate and complaint rate over the last 24 hours and the last 7 days.
+Worst first: accounts over the early warning over 7 days (OVER WARNING) come
+first, then by how far their rates are over it. STATE says whether each is
+suspended, paused, throttled or in test mode. The daily abuse digest lists
+the accounts over the early warning.`,
+		Example: `  mailgoose admin deliverability
+  mailgoose admin deliverability --limit 10 --json`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			path := "/v1/admin/deliverability"
+			if limit > 0 {
+				path += "?limit=" + strconv.Itoa(limit)
+			}
+			var rep struct {
+				Data         []accountDeliverability `json:"data"`
+				NextCursor   *string                 `json:"next_cursor"`
+				Total        int                     `json:"total"`
+				EarlyWarning struct {
+					ComplaintPercent  float64 `json:"complaint_percent"`
+					HardBouncePercent float64 `json:"hard_bounce_percent"`
+					MinComplaints     int     `json:"min_complaints"`
+					MinCopies         int     `json:"min_copies"`
+				} `json:"early_warning"`
+			}
+			if err := a.call(cmd.Context(), http.MethodGet, path, nil, &rep, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(rep)
+				return nil
+			}
+			if len(rep.Data) == 0 {
+				fmt.Fprintln(a.Stdout, "No account sent campaign email in the last 7 days.")
+				return nil
+			}
+			tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(tw, "ID\tNAME\t24H SENT\t24H HARD BOUNCES\t24H COMPLAINTS\t7D SENT\t7D HARD BOUNCES\t7D COMPLAINTS\tSTATE")
+			for _, d := range rep.Data {
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", d.AccountID, d.AccountName,
+					thousands(d.Day.Sent), d.Day.rate(d.Day.HardBounces, d.Day.HardBouncePercent),
+					d.Day.rate(d.Day.Complaints, d.Day.ComplaintPercent),
+					thousands(d.Week.Sent), d.Week.rate(d.Week.HardBounces, d.Week.HardBouncePercent),
+					d.Week.rate(d.Week.Complaints, d.Week.ComplaintPercent), d.state())
+			}
+			if err := tw.Flush(); err != nil {
+				return err
+			}
+			w := rep.EarlyWarning
+			fmt.Fprintf(a.Stdout, "\nOVER WARNING: the last 7 days are over %s%% complaints (and at least %d) or %s%% hard bounces, on %s or more copies.\n",
+				strconv.FormatFloat(w.ComplaintPercent, 'f', -1, 64), w.MinComplaints,
+				strconv.FormatFloat(w.HardBouncePercent, 'f', -1, 64), thousands(w.MinCopies))
+			if rep.Total > len(rep.Data) {
+				fmt.Fprintf(a.Stdout, "Showing the worst %d of %d accounts; --limit shows up to 100.\n", len(rep.Data), rep.Total)
+			}
+			return nil
 		},
 	})
 	c.Flags().IntVar(&limit, "limit", 0, "most accounts to show (1 to 100, default 50)")

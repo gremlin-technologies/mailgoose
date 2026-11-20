@@ -171,7 +171,8 @@ func serve(ctx context.Context, log *slog.Logger) error {
 			Domains: srv.Domains, Mail: sender}
 		// A suspension emails the owner, with ABUSE_EMAIL for appeals, and
 		// OPS_ALERT_EMAIL.
-		srv.Admin = &admin.Service{DB: pool, Sending: srv.Sending, Limits: sendLimits(cfg), Log: log.With("component", "admin"),
+		srv.Admin = &admin.Service{DB: pool, Sending: srv.Sending, Limits: sendLimits(cfg), Warning: warning(cfg),
+			Log: log.With("component", "admin"),
 			Alert: &sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
 				To: cfg.OpsAlertEmail, Abuse: cfg.AbuseEmail, AppURL: cfg.PublicBaseURL, Log: log.With("component", "admin")}}
 		// Payments someone has to refund or cancel by hand go to OPS_ALERT_EMAIL.

@@ -97,6 +97,9 @@ type Service struct {
 	Sending *sending.Service
 	// Limits are the send limits, for showing an account's.
 	Limits sending.Limits
+	// Warning is the early warning the deliverability report judges
+	// accounts by (MG-82); unset is sending.DefaultWarning.
+	Warning sending.Warning
 	// Alert tells a suspended account's owner and the operators (MG-65);
 	// nil tells no one.
 	Alert *sending.OpsAlert
@@ -672,6 +675,37 @@ func (s *Service) ListTestMode(ctx context.Context, limit int) ([]AccountSummary
 		err := scanSummary(row, &a)
 		return a, err
 	})
+}
+
+// MaxDeliverabilityRows is the most accounts the deliverability report
+// lists at once.
+const MaxDeliverabilityRows = 100
+
+// Deliverability is the per-customer deliverability report (MG-82).
+type Deliverability struct {
+	// Accounts are the worst first, at most the limit asked for.
+	Accounts []sending.AccountDeliverability
+	// Total is every account in the report, over the limit or not.
+	Total int
+	// Warning is the early warning OverWarning was judged by.
+	Warning sending.Warning
+}
+
+// Deliverability is every account that sent campaign email in the last 7
+// days, or had a hard bounce or complaint reported in them, with its rates
+// over 24 hours and 7 days, worst first: at most limit (1 to
+// MaxDeliverabilityRows) of them (MG-82).
+func (s *Service) Deliverability(ctx context.Context, limit int) (*Deliverability, error) {
+	limit = min(max(limit, 1), MaxDeliverabilityRows)
+	w := s.Warning
+	if w.ComplaintsPer10k <= 0 || w.HardBouncesPer10k <= 0 {
+		w = sending.DefaultWarning
+	}
+	all, err := sending.DeliverabilityReport(ctx, s.DB, s.now(), w)
+	if err != nil {
+		return nil, err
+	}
+	return &Deliverability{Accounts: all[:min(limit, len(all))], Total: len(all), Warning: w}, nil
 }
 
 // AllowFullSending takes an account out of test mode (MG-80): it can send

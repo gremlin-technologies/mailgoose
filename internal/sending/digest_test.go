@@ -134,6 +134,9 @@ func TestDigestContents(t *testing.T) {
 			t.Errorf("missing %q in:\n%s", want, m.Text)
 		}
 	}
+	if strings.Contains(m.Text, "Accounts over the early warning") {
+		t.Errorf("listed accounts over the early warning when none are:\n%s", m.Text)
+	}
 	if strings.Contains(m.Text, "An old pause") {
 		t.Errorf("listed a pause older than a day:\n%s", m.Text)
 	}
@@ -167,7 +170,7 @@ func TestDigestRates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Day != (Rates{Sent: 1000, Complaints: 1}) || d.Month != d.Day || !d.Empty() {
+	if d.Day != (Rates{Sent: 1000, Complaints: 1}) || d.Month != d.Day || d.AccountsOver != 0 || !d.Empty() {
 		t.Fatalf("digest = %+v, %+v, empty %v", d.Day, d.Month, d.Empty())
 	}
 
@@ -183,7 +186,8 @@ func TestDigestRates(t *testing.T) {
 	}
 	last, _ := h.fake.Last()
 	m := last.Message
-	if m.Subject != "mailgoose: abuse digest for 2026-11-18, platform rates over the early warning" {
+	// The one account that sent is over the early warning too (MG-82).
+	if m.Subject != "mailgoose: abuse digest for 2026-11-18, 1 account over the early warning, platform rates over the early warning" {
 		t.Errorf("subject %q", m.Subject)
 	}
 	for _, want := range []string{
@@ -218,8 +222,8 @@ func TestDigestRates(t *testing.T) {
 	}
 	d, err = BuildDigest(ctx, tx, now, Warning{ComplaintsPer10k: 30, HardBouncesPer10k: 400})
 	_ = tx.Rollback(ctx)
-	if err != nil || d.RatesHigh() {
-		t.Errorf("with higher thresholds: high %v, %v", d.RatesHigh(), err)
+	if err != nil || d.RatesHigh() || d.AccountsOver != 0 || !d.Empty() {
+		t.Errorf("with higher thresholds: high %v, accounts over %d, %v", d.RatesHigh(), d.AccountsOver, err)
 	}
 }
 
