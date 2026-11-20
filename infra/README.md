@@ -106,9 +106,12 @@ apart by:
   environment's app can only create, change and delete SES identities tagged
   with its own environment, and only its own configuration set may publish to
   its own SES events topic. Tags don't keep sends apart: SES never matches a tag
-  condition on `ses:SendEmail` (see `docs/decisions.md`, 2026-11-20), so each
-  role sends from its own system identity by exact ARN, and customer-domain
-  sends wait on a fix.
+  condition on `ses:SendEmail` (see `docs/decisions.md`, 2026-11-20). Each
+  role may send as any identity in the account, but only through its own
+  configuration set, by exact ARN, and the app checks every message before
+  it goes out: it must be from the system sending domain or from a domain its
+  account verified in this environment (`mail.Guard`). So on sends, isolation
+  rests on our code, not on IAM.
 - **IAM:** task roles, deploy roles and secrets are per environment and scoped by ARN.
 
 What they still share, by the nature of one account: the SES sending quota, sandbox
@@ -116,6 +119,13 @@ status and account-level suppression list, the ECR image repository, and the Git
 OIDC provider. A staging test that bounces a lot can dent prod's SES reputation, so
 send staging tests to SES's mailbox simulator addresses where possible. Moving to
 separate accounts later means a second state bucket and re-running global per account.
+
+**Before the first beta customer, prod gets an AWS account of its own**
+(decided Nov 20, 2026). Shared SES reputation and quotas mean staging's
+bounces or complaints could get prod's sending paused, and send isolation
+rests on app code. The likely shape: this account, whose SES production
+access is in review, stays prod, and staging moves to a new account that can
+stay in the SES sandbox.
 
 ## Cost notes (rough, before email volume)
 
@@ -369,6 +379,22 @@ export AWS_REGION=us-east-2
    mode keep full sending, so lock them with
    `./bin/mailgoose admin set-test-mode <account> --reason "..."`.
 
+8. **Check customer domains work.** Sends no longer rely on tags, but adding,
+   checking and deleting a customer's domain still do (`aws:RequestTag` and
+   `aws:ResourceTag` on the SES identity calls), and that hasn't been tried
+   against SES yet. Add a made-up domain, check it, and delete it. The
+   identity stays pending and nothing is sent:
+   ```sh
+   ./bin/mailgoose domain add tagcheck-mailgoose.com
+   ./bin/mailgoose domain verify tagcheck-mailgoose.com
+   ./bin/mailgoose domain delete tagcheck-mailgoose.com
+   ```
+   `add` should print DKIM records, `verify` should say it isn't verified yet,
+   and `delete` should succeed. An error on any of them that the API log
+   (`aws logs tail /ecs/mailgoose-staging-api --since 15m | grep -i AccessDenied`)
+   shows as an SES `AccessDenied` means SES ignores tags there too, and those
+   statements need the same change as sends.
+
 ## Things the app code must handle
 
 - **DB password rotation.** RDS rotates the managed master password (every 7 days by
@@ -378,9 +404,10 @@ export AWS_REGION=us-east-2
   identities for them at runtime (its task role allows `ses:CreateEmailIdentity`
   and friends) and shows the customer the DKIM records to add. Every identity it
   creates must carry the tag in `SES_IDENTITY_TAG` (`Environment=<env>`), or IAM
-  refuses the create, and later reads and updates. Sends from these identities
-  are denied today, because SES ignores the tag condition on sends (see
-  `docs/decisions.md`, 2026-11-20).
+  refuses the create, and later reads and updates. Sends aren't tag-conditioned
+  (SES ignores tags on sends, `docs/decisions.md` 2026-11-20): before every
+  send the app checks the From domain is the system sending domain or one the
+  account verified in this environment, and refuses the message otherwise.
 - **Every send passes the configuration set** (`SES_CONFIGURATION_SET`) so events
   reach the events queue.
 - **Uploaded images** go in `IMAGES_BUCKET` and are served from
