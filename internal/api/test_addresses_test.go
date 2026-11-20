@@ -122,7 +122,7 @@ func testModeTarget(t *testing.T, h http.Handler) {
 func init() {
 	for op, cases := range map[string][]contractCase{
 		"listTestAddresses": {
-			{name: "listed", server: draftKey(authServer), before: addedTestAddress, req: bearer(request(http.MethodGet, "/v1/test-addresses")), status: http.StatusOK},
+			{name: "listed", server: fullKey(authServer), before: addedTestAddress, req: bearer(request(http.MethodGet, "/v1/test-addresses")), status: http.StatusOK},
 			{name: "no credentials", server: authServer, req: request(http.MethodGet, "/v1/test-addresses"), status: http.StatusUnauthorized},
 			{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/test-addresses"))),
 				req: bearer(request(http.MethodGet, "/v1/test-addresses")), status: http.StatusTooManyRequests},
@@ -132,6 +132,7 @@ func init() {
 			{name: "added", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/test-addresses", testAddressBody)), status: http.StatusCreated},
 			{name: "malformed", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/test-addresses", `{"email":`)), status: http.StatusBadRequest},
 			{name: "no credentials", server: authServer, req: jsonRequest(http.MethodPost, "/v1/test-addresses", testAddressBody), status: http.StatusUnauthorized},
+			{name: "draft key", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/test-addresses", testAddressBody)), status: http.StatusForbidden},
 			{name: "there already", server: fullKey(authServer), before: addedTestAddress,
 				req: bearer(jsonRequest(http.MethodPost, "/v1/test-addresses", `{"email":"QA@example.com"}`)), status: http.StatusConflict},
 			{name: "not an address", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/test-addresses", `{"email":"qa"}`)), status: http.StatusUnprocessableEntity},
@@ -162,6 +163,7 @@ func init() {
 			{name: "resent", server: fullKey(authServer), before: resendableTestAddress, req: bearer(testAddressPath(http.MethodPost, "/v1/test-addresses/ADDR/resend")), status: http.StatusOK},
 			{name: "bad id", server: fullKey(authServer), req: bearer(request(http.MethodPost, "/v1/test-addresses/nope/resend")), status: http.StatusBadRequest},
 			{name: "no credentials", server: authServer, req: request(http.MethodPost, "/v1/test-addresses/"+noSuchID+"/resend"), status: http.StatusUnauthorized},
+			{name: "draft key", server: draftKey(authServer), req: bearer(request(http.MethodPost, "/v1/test-addresses/"+noSuchID+"/resend")), status: http.StatusForbidden},
 			{name: "unknown", server: fullKey(authServer), req: bearer(request(http.MethodPost, "/v1/test-addresses/"+noSuchID+"/resend")), status: http.StatusNotFound},
 			{name: "confirmed", server: fullKey(authServer), before: confirmedTestAddress, req: bearer(testAddressPath(http.MethodPost, "/v1/test-addresses/ADDR/resend")), status: http.StatusConflict},
 			{name: "too soon", server: fullKey(authServer), before: addedTestAddress, req: bearer(testAddressPath(http.MethodPost, "/v1/test-addresses/ADDR/resend")), status: http.StatusTooManyRequests},

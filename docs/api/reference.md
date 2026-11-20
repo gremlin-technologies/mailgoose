@@ -3030,12 +3030,19 @@ Responses:
 
 - Operation: `addTestAddress`
 - CLI: `mailgoose test-addresses add`
+- Needs a `full`-scope key
 
 Adds a test address (MG-80) and emails it a link to confirm it; it
 counts once the link is used, within 7 days. An account keeps up to
 5, pending ones included; remove one to free its slot. Addresses
 are compared ignoring case. The owner's own sign-in address is
 always allowed and can't be added.
+
+Adding one emails someone, so it needs a full-scope key or a
+sign-in (403 `insufficient_scope` for a draft-scope key). An
+account sends at most 10 confirm emails in any 24 hours, adds and
+resends alike, and removing an address gives none back (429
+`test_address_rate_limited` with `Retry-After`).
 
 Request body (`application/json`, required): [AddTestAddressRequest](#schema-addtestaddressrequest)
 
@@ -3044,6 +3051,7 @@ Responses:
 - `201`: The new test address, pending until its link is used. [TestAddress](#schema-testaddress)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `409`: `test_address_exists`: the account has that address already. `test_address_limit`: the account has 5 test addresses; remove one first. `test_address_confirmed`: the address is confirmed, so there's no link to resend. [Error](#schema-error)
 - `422`: `invalid_email`: that isn't an email address. `test_address_is_owner`: the owner's own sign-in address is always allowed, so it needs no slot. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
@@ -3110,11 +3118,14 @@ Responses:
 
 - Operation: `resendTestAddress`
 - CLI: `mailgoose test-addresses resend`
+- Needs a `full`-scope key
 
 Emails a pending test address a new confirm link, good for 7 days;
 the old link stops working. At most once a minute per address (429
-`test_address_resend_too_soon` with `Retry-After`). A confirmed
-address answers 409 `test_address_confirmed`.
+`test_address_resend_too_soon` with `Retry-After`), and it counts
+toward the account's 10 confirm emails in any 24 hours (429
+`test_address_rate_limited`). A confirmed address answers 409
+`test_address_confirmed`. Needs a full-scope key or a sign-in.
 
 | Parameter | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
@@ -3125,6 +3136,7 @@ Responses:
 - `200`: The test address, with the new link's times. [TestAddress](#schema-testaddress)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `test_address_exists`: the account has that address already. `test_address_limit`: the account has 5 test addresses; remove one first. `test_address_confirmed`: the address is confirmed, so there's no link to resend. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)

@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
@@ -12,11 +13,17 @@ import (
 
 // Test addresses (MG-80): who an account in test mode may send to.
 
-// testAddressesCaller is requireCaller, then a 503 when the server keeps
-// no test addresses (no database, or no system sending domain to email
-// their links from).
-func (s *Server) testAddressesCaller(w http.ResponseWriter, r *http.Request) *Caller {
-	c := s.requireCaller(w, r)
+// testAddressesCaller is requireCaller (requireFull when full: adding an
+// address or resending its link emails someone, which a draft-scope key
+// can't do), then a 503 when the server keeps no test addresses (no
+// database, or no system sending domain to email their links from).
+func (s *Server) testAddressesCaller(w http.ResponseWriter, r *http.Request, full bool) *Caller {
+	var c *Caller
+	if full {
+		c = s.requireFull(w, r)
+	} else {
+		c = s.requireCaller(w, r)
+	}
 	if c == nil {
 		return nil
 	}
@@ -38,7 +45,7 @@ func testAddressJSON(a *testmode.Address) apigen.TestAddress {
 
 // ListTestAddresses is GET /v1/test-addresses.
 func (s *Server) ListTestAddresses(w http.ResponseWriter, r *http.Request) {
-	c := s.testAddressesCaller(w, r)
+	c := s.testAddressesCaller(w, r, false)
 	if c == nil {
 		return
 	}
@@ -55,7 +62,7 @@ func (s *Server) ListTestAddresses(w http.ResponseWriter, r *http.Request) {
 
 // AddTestAddress is POST /v1/test-addresses.
 func (s *Server) AddTestAddress(w http.ResponseWriter, r *http.Request) {
-	c := s.testAddressesCaller(w, r)
+	c := s.testAddressesCaller(w, r, true)
 	if c == nil {
 		return
 	}
@@ -73,7 +80,7 @@ func (s *Server) AddTestAddress(w http.ResponseWriter, r *http.Request) {
 
 // ResendTestAddress is POST /v1/test-addresses/{test_address_id}/resend.
 func (s *Server) ResendTestAddress(w http.ResponseWriter, r *http.Request, id apigen.TestAddressId) {
-	c := s.testAddressesCaller(w, r)
+	c := s.testAddressesCaller(w, r, true)
 	if c == nil || !validTestAddressID(w, id) {
 		return
 	}
@@ -86,7 +93,7 @@ func (s *Server) ResendTestAddress(w http.ResponseWriter, r *http.Request, id ap
 
 // RemoveTestAddress is DELETE /v1/test-addresses/{test_address_id}.
 func (s *Server) RemoveTestAddress(w http.ResponseWriter, r *http.Request, id apigen.TestAddressId) {
-	c := s.testAddressesCaller(w, r)
+	c := s.testAddressesCaller(w, r, false)
 	if c == nil || !validTestAddressID(w, id) {
 		return
 	}
@@ -129,6 +136,7 @@ func (s *Server) testAddressError(w http.ResponseWriter, r *http.Request, err er
 	var invalid *testmode.InvalidError
 	var limit *testmode.LimitError
 	var soon *testmode.TooSoonError
+	var capped *testmode.RateLimitError
 	var send *testmode.SendError
 	switch {
 	case err == nil:
@@ -153,6 +161,12 @@ func (s *Server) testAddressError(w http.ResponseWriter, r *http.Request, err er
 		w.Header().Set("Retry-After", strconv.Itoa(secs))
 		WriteError(w, TooManyRequests("test_address_resend_too_soon", "A confirm link went to this address less than a minute ago.").
 			WithHint("Wait "+wait(secs)+" (see Retry-After), and check the address's spam folder meanwhile."))
+	case errors.As(err, &capped):
+		secs := max(1, int(math.Ceil(capped.RetryAfter.Seconds())))
+		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		WriteError(w, TooManyRequests("test_address_rate_limited",
+			fmt.Sprintf("The account has sent %d confirm emails in the last 24 hours, the most it can. Removing an address doesn't give any back.", testmode.DailyEmails)).
+			WithHint("Wait "+wait(secs)+" (see Retry-After)."))
 	case errors.As(err, &send):
 		s.Log.ErrorContext(r.Context(), "send a test address's confirm link", "err", send.Err)
 		WriteError(w, &Error{Status: http.StatusBadGateway, Code: "test_address_email_failed",

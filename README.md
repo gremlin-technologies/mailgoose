@@ -945,7 +945,9 @@ restart; one started after the hour sends that day's late. With no
 account) sends only to its confirmed test addresses and its owner's own
 sign-in address, which takes no slot. It can have up to 5 test addresses,
 pending ones included; each is confirmed by a link emailed to it, valid for
-7 days (resent at most once a minute, and a resend replaces the old link).
+7 days (resent at most once a minute, and a resend replaces the old link;
+at most 10 confirm emails an account in any 24 hours, adds and resends
+alike, and removing an address gives none back).
 Addresses match ignoring case. They're managed in the web app (Test addresses, linked from Settings and the banner),
 the API (`/v1/test-addresses`) and `mailgoose test-addresses`. In test mode
 a launch is refused (`test_mode`, with how many recipients aren't test

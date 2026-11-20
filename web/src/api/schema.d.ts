@@ -192,6 +192,12 @@ export interface paths {
          *     5, pending ones included; remove one to free its slot. Addresses
          *     are compared ignoring case. The owner's own sign-in address is
          *     always allowed and can't be added.
+         *
+         *     Adding one emails someone, so it needs a full-scope key or a
+         *     sign-in (403 `insufficient_scope` for a draft-scope key). An
+         *     account sends at most 10 confirm emails in any 24 hours, adds and
+         *     resends alike, and removing an address gives none back (429
+         *     `test_address_rate_limited` with `Retry-After`).
          */
         post: operations["addTestAddress"];
         delete?: never;
@@ -259,8 +265,10 @@ export interface paths {
          * Resend a test address's confirm link
          * @description Emails a pending test address a new confirm link, good for 7 days;
          *     the old link stops working. At most once a minute per address (429
-         *     `test_address_resend_too_soon` with `Retry-After`). A confirmed
-         *     address answers 409 `test_address_confirmed`.
+         *     `test_address_resend_too_soon` with `Retry-After`), and it counts
+         *     toward the account's 10 confirm emails in any 24 hours (429
+         *     `test_address_rate_limited`). A confirmed address answers 409
+         *     `test_address_confirmed`. Needs a full-scope key or a sign-in.
          */
         post: operations["resendTestAddress"];
         delete?: never;
@@ -4890,6 +4898,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             409: components["responses"]["TestAddressConflict"];
             422: components["responses"]["InvalidTestAddress"];
             429: components["responses"]["TooManyRequests"];
@@ -4978,6 +4987,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["TestAddressConflict"];
             429: components["responses"]["TooManyRequests"];

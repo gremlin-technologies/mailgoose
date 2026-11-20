@@ -87,7 +87,7 @@ func TestConfirm(t *testing.T) {
 		t.Errorf("added = %+v", a)
 	}
 	m, _ := h.fake.Last()
-	if m.Message.Subject != "Confirm your test address for QA Shop" || m.Message.Kind != mail.KindSystem ||
+	if m.Message.Subject != "Confirm a test address on mailgoose" || m.Message.Kind != mail.KindSystem ||
 		m.Message.From.Email != "signin@mail.mailgoose.test" {
 		t.Errorf("email = %+v", m.Message)
 	}
@@ -263,4 +263,87 @@ func mustLoad(t *testing.T, h *harness) *Gate {
 		t.Fatal(err)
 	}
 	return g
+}
+
+// TestDailyEmailCap: an account sends at most DailyEmails confirm emails in
+// any EmailWindow, adds and resends alike. Removing an address gives none
+// back, so adding and removing in a loop stops at the cap.
+func TestDailyEmailCap(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	start := h.now
+	// Eight adds of one address, each removed at once, a minute apart.
+	for i := range DailyEmails - 2 {
+		a, err := h.svc.Add(ctx, h.acc, "loop@example.com", baseURL)
+		if err != nil {
+			t.Fatalf("add %d: %v", i+1, err)
+		}
+		if err := h.svc.Remove(ctx, h.acc, a.ID); err != nil {
+			t.Fatal(err)
+		}
+		h.now = h.now.Add(time.Minute)
+	}
+	// The ninth is an add, the tenth a resend of it.
+	kept, err := h.svc.Add(ctx, h.acc, "kept@example.com", baseURL)
+	if err != nil {
+		t.Fatalf("ninth: %v", err)
+	}
+	h.now = h.now.Add(time.Minute)
+	if _, err := h.svc.Resend(ctx, h.acc, kept.ID, baseURL); err != nil {
+		t.Fatalf("tenth (a resend): %v", err)
+	}
+	if got := len(h.fake.Sent()); got != DailyEmails {
+		t.Fatalf("%d emails sent, want %d", got, DailyEmails)
+	}
+
+	// The eleventh is refused, an add or a resend, and sends nothing.
+	h.now = h.now.Add(time.Minute)
+	var capped *RateLimitError
+	if _, err := h.svc.Add(ctx, h.acc, "loop@example.com", baseURL); !errors.As(err, &capped) {
+		t.Fatalf("eleventh add: %v", err)
+	}
+	if want := start.Add(EmailWindow).Sub(h.now); capped.RetryAfter != want {
+		t.Errorf("retry after %v, want %v (when the first email leaves the window)", capped.RetryAfter, want)
+	}
+	if _, err := h.svc.Resend(ctx, h.acc, kept.ID, baseURL); !errors.As(err, &capped) {
+		t.Fatalf("eleventh as a resend: %v", err)
+	}
+	if got := len(h.fake.Sent()); got != DailyEmails {
+		t.Errorf("%d emails sent after the cap, want %d", got, DailyEmails)
+	}
+	list, _ := h.svc.List(ctx, h.acc)
+	if len(list) != 1 || list[0].Email != "kept@example.com" {
+		t.Errorf("a refused add left a row: %+v", list)
+	}
+
+	// Removing doesn't give any back.
+	if err := h.svc.Remove(ctx, h.acc, kept.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Add(ctx, h.acc, "kept@example.com", baseURL); !errors.As(err, &capped) {
+		t.Fatalf("re-add after remove: %v", err)
+	}
+
+	// Another account has its own cap.
+	var other string
+	if err := h.db.QueryRow(ctx, `INSERT INTO accounts (name, status) VALUES ('Other', 'active') RETURNING id`).Scan(&other); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.Add(ctx, other, "loop@example.com", baseURL); err != nil {
+		t.Errorf("other account: %v", err)
+	}
+
+	// Once the first email is 24 hours old, one more may go, and the old
+	// record is pruned.
+	h.now = start.Add(EmailWindow)
+	if _, err := h.svc.Add(ctx, h.acc, "kept@example.com", baseURL); err != nil {
+		t.Fatalf("a day later: %v", err)
+	}
+	var n int
+	if err := h.db.QueryRow(ctx, `SELECT count(*) FROM test_address_emails WHERE account_id = $1`, h.acc).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != DailyEmails {
+		t.Errorf("%d emails on record, want %d (the oldest pruned, this one added)", n, DailyEmails)
+	}
 }

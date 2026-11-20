@@ -23,8 +23,16 @@ full sending is turned on for the people who help test it.
   an emailed link (hashed token, valid 7 days; a resend replaces the link and
   is allowed at most once a minute). Listed, added, resent and removed in
   the web app, the API (`/v1/test-addresses`) and the CLI (`mailgoose
-  test-addresses`); confirming needs no sign-in. Draft-scope keys can manage
-  them.
+  test-addresses`); confirming needs no sign-in. Adding an address and
+  resending its link email someone, so they need a full-scope key or a
+  sign-in; a draft-scope key can list and remove them (changed in review).
+- **Confirm email cap.** An account sends at most 10 confirm emails in any
+  24 hours, adds and resends alike (429 `test_address_rate_limited` with
+  `Retry-After`). Each is logged in `test_address_emails`, which outlives
+  the address, so removing and re-adding addresses can't be used to mail
+  strangers from mailgoose's own sender. A send that fails still counts.
+  The email's subject is fixed ("Confirm a test address on mailgoose");
+  the account's name appears only in the body. (Added in review.)
 - **What test mode refuses.** A launch is refused, not queued (problem code
   `test_mode`, with how many recipients aren't test addresses). A test send
   to anyone else is refused (422 `test_mode`); in test mode a test send to a

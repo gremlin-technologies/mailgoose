@@ -29,6 +29,17 @@ CREATE TABLE test_addresses (
 CREATE UNIQUE INDEX test_addresses_account_email ON test_addresses (account_id, lower(email));
 CREATE UNIQUE INDEX test_addresses_token ON test_addresses (confirm_token_hash) WHERE confirm_token_hash IS NOT NULL;
 
+-- Every confirm email an account sent, for its daily cap (adds and resends
+-- alike). It outlives the address's row, so removing an address and adding
+-- it again doesn't reset the cap. Rows older than a day are pruned at the
+-- account's next add or resend.
+CREATE TABLE test_address_emails (
+    account_id uuid        NOT NULL REFERENCES accounts (id) ON DELETE CASCADE,
+    sent_at    timestamptz NOT NULL
+);
+
+CREATE INDEX test_address_emails_account ON test_address_emails (account_id, sent_at);
+
 ALTER TABLE admin_actions DROP CONSTRAINT admin_actions_action_check;
 ALTER TABLE admin_actions ADD CONSTRAINT admin_actions_action_check CHECK (action IN (
     'grant_admin', 'revoke_admin', 'pause', 'unpause', 'auto_pause',
@@ -45,6 +56,7 @@ ALTER TABLE admin_actions ADD CONSTRAINT admin_actions_action_check CHECK (actio
     'stop_campaign', 'approve_import', 'grant_credits', 'throttle',
     'suspend', 'unsuspend', 'auto_suspend',
     'approve_signup', 'reject_signup'));
+DROP TABLE test_address_emails;
 DROP TABLE test_addresses;
 DROP INDEX accounts_test_mode;
 ALTER TABLE accounts

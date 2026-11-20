@@ -38,6 +38,12 @@ const (
 	// ResendGap is the least time between two confirm emails to one
 	// address.
 	ResendGap = time.Minute
+	// DailyEmails is how many confirm emails an account may send in any
+	// EmailWindow, adds and resends alike. Removing an address doesn't give
+	// any back, so adding and removing in a loop can't mail strangers.
+	DailyEmails = 10
+	// EmailWindow is the window DailyEmails counts over.
+	EmailWindow = 24 * time.Hour
 	// ConfirmPath is the web app's page a confirm link opens, with the
 	// token in its query: ConfirmPath + "?token=" + token. The page calls
 	// the API to confirm, so mail scanners that open links confirm nothing.
@@ -88,6 +94,14 @@ type TooSoonError struct{ RetryAfter time.Duration }
 
 func (e *TooSoonError) Error() string {
 	return "a confirm email went to this address less than a minute ago"
+}
+
+// RateLimitError is an account that has sent DailyEmails confirm emails in
+// the last EmailWindow. RetryAfter is when the oldest of them leaves it.
+type RateLimitError struct{ RetryAfter time.Duration }
+
+func (e *RateLimitError) Error() string {
+	return fmt.Sprintf("the account has sent %d confirm emails in the last 24 hours, the most it can", DailyEmails)
 }
 
 // SendError is a confirm email the mail provider refused or didn't answer.
@@ -207,6 +221,9 @@ func (s *Service) Add(ctx context.Context, accountID, rawEmail, baseURL string) 
 		if n >= MaxAddresses {
 			return &LimitError{Count: n}
 		}
+		if err := countEmail(ctx, tx, accountID, now); err != nil {
+			return err
+		}
 		err := tx.QueryRow(ctx, `
 			INSERT INTO test_addresses (account_id, email, confirm_token_hash, confirm_expires_at, confirm_sent_at, created_at)
 			VALUES ($1, $2, $3, $4, $5, $5) RETURNING id`,
@@ -251,6 +268,14 @@ func (s *Service) Resend(ctx context.Context, accountID, id, baseURL string) (*A
 		}
 		if sent != nil && now.Sub(*sent) < ResendGap {
 			return &TooSoonError{RetryAfter: sent.Add(ResendGap).Sub(now)}
+		}
+		// The account row is locked, as in Add, so resends of two addresses
+		// at once can't both take the last email of the day.
+		if _, err := tx.Exec(ctx, `SELECT 1 FROM accounts WHERE id = $1 FOR UPDATE`, accountID); err != nil {
+			return err
+		}
+		if err := countEmail(ctx, tx, accountID, now); err != nil {
+			return err
 		}
 		_, err = tx.Exec(ctx, `
 			UPDATE test_addresses SET confirm_token_hash = $3, confirm_expires_at = $4, confirm_sent_at = $5
@@ -325,6 +350,28 @@ func (s *Service) Confirm(ctx context.Context, token string) (*Confirmed, error)
 	return &out, nil
 }
 
+// countEmail records a confirm email the account is about to send, or
+// returns a *RateLimitError when it has sent DailyEmails in the last
+// EmailWindow. The caller holds the account row's lock. A send that then
+// fails still counts: the cap is on attempts.
+func countEmail(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) error {
+	since := now.Add(-EmailWindow)
+	if _, err := tx.Exec(ctx, `DELETE FROM test_address_emails WHERE account_id = $1 AND sent_at <= $2`, accountID, since); err != nil {
+		return err
+	}
+	var n int
+	var oldest *time.Time
+	if err := tx.QueryRow(ctx, `SELECT count(*), min(sent_at) FROM test_address_emails WHERE account_id = $1`,
+		accountID).Scan(&n, &oldest); err != nil {
+		return err
+	}
+	if n >= DailyEmails && oldest != nil {
+		return &RateLimitError{RetryAfter: oldest.Add(EmailWindow).Sub(now)}
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO test_address_emails (account_id, sent_at) VALUES ($1, $2)`, accountID, now)
+	return err
+}
+
 // send emails the confirm link. When it can't, the send isn't recorded,
 // so a resend may go at once, and a *SendError is returned.
 func (s *Service) send(ctx context.Context, accountID, accountName, id, to, token, baseURL string) error {
@@ -361,7 +408,7 @@ The link works for 7 days. If you don't know %s, ignore this email: nothing will
 	return mail.Message{
 		From:      from,
 		To:        mail.Address{Email: to},
-		Subject:   "Confirm your test address for " + accountName,
+		Subject:   "Confirm a test address on mailgoose",
 		HTML:      b.String(),
 		Text:      text,
 		Kind:      mail.KindSystem,
