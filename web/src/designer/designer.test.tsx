@@ -145,9 +145,12 @@ describe("designer", () => {
     expect(screen.getByText("bread").tagName).toBe("STRONG");
     expect(screen.getByText("cakes").getAttribute("title")).toBe("https://bakery.example");
     expect(screen.getByRole("list", { name: "Left column" })).toBeTruthy();
+    // A list needs items, so the column with no blocks is a group until it has some.
+    expect(screen.getByRole("group", { name: "Right column" })).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Right column" })).toBeNull();
     const footer = screen.getByRole("group", { name: "Footer block" });
     // The footer can't be moved, copied or deleted; only its line of text can change.
-    expect(within(footer).getAllByRole("button").map((b) => b.textContent)).toEqual(["Edit"]);
+    expect(within(footer).getAllByRole("button").map((b) => b.getAttribute("aria-label"))).toEqual(["Edit"]);
     expect(footer.getAttribute("draggable")).toBeNull();
     expect(screen.queryByTestId("zone-top-x-b_footer001")).toBeNull();
   });
@@ -164,6 +167,25 @@ describe("designer", () => {
     renderApp(`/emails/${emailId}`, api.fetch);
     await user.click(await screen.findByRole("button", { name: "Add heading" }));
     await waitFor(() => expect(posted).toEqual({ version: 3, block: { type: "heading", text: "A heading" } }));
+  });
+
+  it("selects a block it just added, ready to type over", async () => {
+    const added = doc();
+    added.blocks.splice(3, 0, { id: "b_new000001", type: "text", text: "Write something here.", align: "left" });
+    const api = designerApi({
+      [`POST ${base}/blocks`]: () => ({
+        status: 201,
+        body: { block: { block: added.blocks[3], path: "blocks[3]", parent_id: null, column: null, index: 3 }, email: email(4, added) },
+      }),
+    });
+    const user = userEvent.setup();
+    renderApp(`/emails/${emailId}`, api.fetch);
+    await user.click(await screen.findByRole("button", { name: "Add text" }));
+    const box = await screen.findByText("Write something here.");
+    const block = box.closest("[role=group]") as HTMLElement;
+    await waitFor(() => expect(within(block).getByRole("button", { name: "Edit" }).getAttribute("aria-pressed")).toBe("true"));
+    expect(document.activeElement).toBe(box.closest("[role=textbox]"));
+    expect(screen.getByRole("form", { name: "Text block settings" })).toBeTruthy();
   });
 
   it("drags a new block into a column and an existing block to a new place", async () => {

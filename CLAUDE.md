@@ -78,8 +78,11 @@ scope; they only show where an idea came from.
   `docs/brand.md`.
 - UI look (Nov 20): white pages, near-black text, the periwinkle blue only for
   actions and state, hairline-and-shadow depth, 120ms transitions, Lucide icons
-  in the side menu. See `docs/design-system.md`. The email editor has its own
-  redesign.
+  in the side menu. See `docs/design-system.md`.
+- Block designer (Nov 20): rebuilt full-window, with headings, text and button
+  labels typed on the email itself, a floating formatting toolbar, and drags
+  that snap to the nearest gap. Text blocks keep the Markdown subset; no API
+  changes.
 
 ## Working rules
 

@@ -1,10 +1,31 @@
-import { useCallback, useState, type DragEvent, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Columns2,
+  Copy,
+  GripVertical,
+  Heading as HeadingIcon,
+  Image as ImageIcon,
+  Lock,
+  Minus,
+  Monitor,
+  PencilRuler,
+  RectangleHorizontal,
+  Share2,
+  Smartphone,
+  Trash2,
+  Type,
+  UnfoldVertical,
+  type LucideIcon,
+} from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 
 import { useApi } from "../api/context";
 import { attempt, type Failure, type Result } from "../api/result";
 import type { components } from "../api/schema";
-import { Badge, FailureNotice, LoadFailed, Loading, PageHeader, useLoad } from "../components";
+import { FailureNotice, LoadFailed, Loading, useLoad } from "../components";
 import {
   blockLabels,
   canDrop,
@@ -19,24 +40,38 @@ import {
   zoneUp,
   type Block,
   type BlockDocument,
+  type BlockType,
   type Drag,
   type NewBlock,
   type PaletteType,
   type Zone,
 } from "./blocks";
-import { Markdown } from "./markdown";
 import { Preview, type Width } from "./Preview";
 import { EMAIL, saveSettings, saveText, useAutosave } from "./autosave";
 import { HtmlEditor } from "./HtmlEditor";
-import { base64, BlockProperties, EmailProperties, TextEditor, type Settings } from "./properties";
+import { InlineText, RichText } from "./inline";
+import { base64, BlockProperties, EmailProperties, type Settings } from "./properties";
 
 type Email = components["schemas"]["Email"];
 
 type Mode = "design" | Width;
+
+const blockIcons: Record<BlockType, LucideIcon> = {
+  heading: HeadingIcon,
+  text: Type,
+  image: ImageIcon,
+  button: RectangleHorizontal,
+  divider: Minus,
+  spacer: UnfoldVertical,
+  columns: Columns2,
+  social: Share2,
+  footer: Lock,
+};
+
 /**
- * The email designer: a block palette, a canvas you drag blocks onto, and a
- * properties panel for the selected block or the email's settings. Edits
- * save themselves a moment after the last one.
+ * The email designer: a block palette, a canvas you drag blocks onto and
+ * type on, and a properties panel for the selected block or the email's
+ * settings. Edits save themselves a moment after the last one.
  */
 export function Designer() {
   const { id = "" } = useParams();
@@ -50,12 +85,46 @@ export function Designer() {
   return <BlockDesigner email={state.data} replace={replace} reload={reload} />;
 }
 
+/** Every block id in a document, columns' contents too. */
+function idsOf(doc: BlockDocument): Set<string> {
+  const ids = new Set<string>();
+  for (const b of doc.blocks) {
+    ids.add(b.id);
+    if (b.type === "columns") for (const col of b.columns) for (const inner of col.blocks) ids.add(inner.id);
+  }
+  return ids;
+}
+
+const zoneKey = (z: Zone) => `zone-${z.parent ?? "top"}-${z.column ?? "x"}-${z.after ?? "start"}`;
+
+/**
+ * The open drop zone nearest a point, so a drag never has to hit a thin
+ * target: anywhere over the email picks the closest gap between blocks.
+ */
+function nearestZone(root: HTMLElement, x: number, y: number): Zone | undefined {
+  let best: { zone: Zone; score: number } | undefined;
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>(".drop-zone.open"))) {
+    const r = el.getBoundingClientRect();
+    if (r.width === 0) continue;
+    const dx = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+    const dy = y < r.top ? r.top - y : y > r.bottom ? y - r.bottom : 0;
+    // Being outside a column counts for more than being a little further down.
+    const score = dy + dx * 3;
+    if (!best || score < best.score) best = { zone: JSON.parse(el.dataset.zone ?? "null") as Zone, score };
+  }
+  return best?.zone;
+}
+
 function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: Email) => void; reload: () => void }) {
   const api = useApi();
   const [drag, setDrag] = useState<Drag>();
+  const [over, setOver] = useState<string>();
   const [pending, setPending] = useState<{ type: "image" | "button" | "social"; zone?: Zone }>();
   const [selected, setSelected] = useState<string>();
+  // A block just added: it is selected, and its words are ready to type over.
+  const [fresh, setFresh] = useState<string>();
   const [mode, setMode] = useState<Mode>("design");
+  const before = useRef<Set<string>>(undefined);
 
   const path = { email_id: email.id };
   const doc = email.document as BlockDocument;
@@ -83,8 +152,20 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
           ),
   });
 
-  const add = (block: NewBlock, zone?: Zone) =>
-    run((v) =>
+  // After an add, the one id that wasn't there before is the new block: select it.
+  useEffect(() => {
+    const had = before.current;
+    if (!had) return;
+    const added = [...idsOf(doc)].find((id) => !had.has(id));
+    if (!added) return;
+    before.current = undefined;
+    setSelected(added);
+    setFresh(added);
+  }, [doc]);
+
+  const add = async (block: NewBlock, zone?: Zone) => {
+    before.current = idsOf(doc);
+    const ok = await run((v) =>
       emailOf(
         attempt(() =>
           api.POST("/v1/emails/{email_id}/blocks", {
@@ -94,6 +175,9 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
         ),
       ),
     );
+    if (!ok) before.current = undefined;
+    return ok;
+  };
 
   const move = (blockId: string, zone: Zone) =>
     run((v) =>
@@ -140,95 +224,143 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
     void add(starterBlock(type), zone);
   }
 
+  function endDrag() {
+    setDrag(undefined);
+    setOver(undefined);
+  }
+
   function drop(zone: Zone) {
     const d = drag;
-    setDrag(undefined);
+    endDrag();
     if (!d || busy || !canDrop(d, zone, doc)) return;
     if (d.kind === "new") addNew(d.type, zone);
     else void move(d.id, zone);
   }
 
-  const zoneProps = { drag, doc, onDrop: drop };
+  const zoneProps = { drag, doc, over, setOver, onDrop: drop };
   const top = doc.blocks;
   const frame = (b: Block) => ({
     block: view(b),
     doc,
     busy,
     selected: selected === b.id,
+    moving: drag?.kind === "move" && drag.id === b.id,
     select: () => select(b.id),
     setDrag,
+    endDrag,
     move,
     duplicate: (zone: Zone) => add(copyOf(view(b)), zone),
     remove,
   });
-  const content = (b: Block) =>
-    b.type === "text" && selected === b.id ? (
-      <TextEditor text={view(b).text} onChange={(text) => edit(b.id, { text })} />
-    ) : (
-      <BlockView block={view(b)} />
-    );
+  const content = (b: Block) => (
+    <BlockView
+      block={view(b)}
+      active={selected === b.id}
+      fresh={fresh === b.id}
+      select={() => select(b.id)}
+      set={(fields) => edit(b.id, fields)}
+    />
+  );
+
+  const views = [
+    ["design", "Design", PencilRuler, "Design"],
+    ["desktop", "Desktop preview", Monitor, "Desktop"],
+    ["mobile", "Mobile preview", Smartphone, "Mobile"],
+  ] as const;
 
   return (
-    <section className="page designer">
-      <PageHeader title={name || email.name} about="Drag blocks onto the email, or click one to add it at the end. Changes save as you go.">
+    <section className="editor">
+      <header className="editor-bar">
+        <Link to="/emails" className="editor-back" aria-label="All emails" title="All emails">
+          <ArrowLeft size={18} aria-hidden="true" />
+        </Link>
+        <h1>{name || email.name}</h1>
         <span className={`save-state save-${save}`} role="status">
           {saveText[save]}
         </span>
-        <div className="row segmented" role="group" aria-label="View">
-          {(
-            [
-              ["design", "Design"],
-              ["desktop", "Desktop preview"],
-              ["mobile", "Mobile preview"],
-            ] as const
-          ).map(([m, label]) => (
+        <div className="segmented" role="group" aria-label="View">
+          {views.map(([m, label, Icon, short]) => (
             <button
               key={m}
               type="button"
-              className="button small"
+              aria-label={label}
               aria-pressed={mode === m}
               onClick={() => {
                 void flush();
                 setMode(m);
               }}
             >
-              {label}
+              <Icon size={15} aria-hidden="true" />
+              {short}
             </button>
           ))}
         </div>
-        <Link to="/emails" className="button small">
-          All emails
-        </Link>
-      </PageHeader>
-      <FailureNotice failure={failure} />
+      </header>
+      {failure && (
+        <div className="editor-notice">
+          <FailureNotice failure={failure} />
+        </div>
+      )}
       {mode !== "design" ? (
-        <Preview emailId={email.id} width={mode} version={email.version} />
+        <div className="editor-preview">
+          <Preview emailId={email.id} width={mode} version={email.version} />
+        </div>
       ) : (
-        <div className="designer-body">
+        <div className="editor-body">
           <aside className="palette" aria-label="Blocks">
-            <h2 className="small muted">Blocks</h2>
+            <h2>Blocks</h2>
+            <p className="muted small">Drag one onto the email, or click to add it at the end.</p>
             <ul>
-              {paletteTypes.map((type) => (
-                <li key={type}>
-                  <button
-                    type="button"
-                    className="palette-item"
-                    draggable={!busy}
-                    disabled={busy}
-                    aria-label={`Add ${blockLabels[type].toLowerCase()}`}
-                    onDragStart={(e) => startDrag(e, { kind: "new", type }, setDrag)}
-                    onDragEnd={() => setDrag(undefined)}
-                    onClick={() => addNew(type)}
-                  >
-                    {blockLabels[type]}
-                  </button>
-                </li>
-              ))}
+              {paletteTypes.map((type) => {
+                const Icon = blockIcons[type];
+                return (
+                  <li key={type}>
+                    <button
+                      type="button"
+                      className="palette-item"
+                      draggable={!busy}
+                      disabled={busy}
+                      aria-label={`Add ${blockLabels[type].toLowerCase()}`}
+                      onDragStart={(e) => startDrag(e, { kind: "new", type }, setDrag)}
+                      onDragEnd={endDrag}
+                      onClick={() => addNew(type)}
+                    >
+                      <Icon size={20} strokeWidth={1.75} aria-hidden="true" />
+                      <span>{blockLabels[type]}</span>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           </aside>
-          <div className="canvas-wrap" style={{ background: settings.background_color }} onClick={() => select(undefined)}>
+          <div
+            className="canvas-wrap"
+            style={{ background: settings.background_color }}
+            onClick={() => select(undefined)}
+            onKeyDown={(e) => {
+              if (e.key !== "Escape") return;
+              (document.activeElement as HTMLElement | null)?.blur?.();
+              select(undefined);
+            }}
+            onDragOver={(e) => {
+              if (!drag) return;
+              const zone = nearestZone(e.currentTarget, e.clientX, e.clientY);
+              if (!zone) return;
+              e.preventDefault();
+              setOver(zoneKey(zone));
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(undefined);
+            }}
+            onDrop={(e) => {
+              const zone = nearestZone(e.currentTarget, e.clientX, e.clientY);
+              if (!zone) return;
+              e.preventDefault();
+              drop(zone);
+            }}
+          >
             {pending && (
-              <div onClick={(e) => e.stopPropagation()}>
+              <div className="details-wrap" onClick={(e) => e.stopPropagation()}>
                 <Details
                   type={pending.type}
                   busy={busy}
@@ -261,8 +393,7 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
                             role={col.blocks.length === 0 ? "group" : "list"}
                             aria-label={c === 0 ? "Left column" : "Right column"}
                           >
-                            <DropZone zone={{ parent: b.id, column: c, after: null }} {...zoneProps} />
-                            {col.blocks.length === 0 && <p className="canvas-empty">Drop blocks here</p>}
+                            <DropZone zone={{ parent: b.id, column: c, after: null }} fill={col.blocks.length === 0} {...zoneProps} />
                             {(col.blocks as Block[]).map((inner) => (
                               <div key={inner.id} role="listitem">
                                 <BlockFrame {...frame(inner)}>{content(inner)}</BlockFrame>
@@ -281,15 +412,14 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
               ))}
             </div>
           </div>
-          <aside className="properties panel" aria-label="Properties">
+          <aside className="inspector" aria-label="Properties">
             {current ? (
               <>
+                <button type="button" className="inspector-back" onClick={() => select(undefined)}>
+                  <ArrowLeft size={15} aria-hidden="true" />
+                  Email settings
+                </button>
                 <BlockProperties block={view(current)} set={(f) => edit(current.id, f)} />
-                <div>
-                  <button type="button" className="button small" onClick={() => select(undefined)}>
-                    Email settings
-                  </button>
-                </div>
               </>
             ) : (
               <EmailProperties name={name} settings={settings} set={(f) => edit(EMAIL, f)} />
@@ -301,49 +431,78 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
   );
 }
 
-function startDrag(e: DragEvent, d: Drag, setDrag: (d: Drag) => void) {
+function startDrag(e: DragEvent, d: Drag, setDrag: (d: Drag) => void, image?: Element | null) {
   // Firefox starts a drag only once something is set.
   e.dataTransfer?.setData("text/plain", d.kind === "new" ? d.type : d.id);
   if (e.dataTransfer) e.dataTransfer.effectAllowed = d.kind === "new" ? "copy" : "move";
+  // Dragging by the handle still shows the whole block under the pointer.
+  if (image && e.dataTransfer?.setDragImage) e.dataTransfer.setDragImage(image, 24, 16);
   setDrag(d);
 }
 
-function zoneKey(z: Zone) {
-  return `zone-${z.parent ?? "top"}-${z.column ?? "x"}-${z.after ?? "start"}`;
-}
-
-/** A place between blocks that a drag can drop on. Mouse only: each block's buttons do the same by keyboard. */
-function DropZone({ zone, drag, doc, onDrop }: { zone: Zone; drag?: Drag; doc: BlockDocument; onDrop: (z: Zone) => void }) {
-  const [over, setOver] = useState(false);
+/**
+ * A place between blocks that a drag can drop on, drawn as a line when it's
+ * the nearest one. It takes no room, so nothing moves under the pointer.
+ * Mouse only: each block's buttons do the same by keyboard.
+ */
+function DropZone({
+  zone,
+  drag,
+  doc,
+  over,
+  setOver,
+  onDrop,
+  fill = false,
+}: {
+  zone: Zone;
+  drag?: Drag;
+  doc: BlockDocument;
+  over?: string;
+  setOver: (key?: string) => void;
+  onDrop: (z: Zone) => void;
+  /** An empty column's zone covers the whole column. */
+  fill?: boolean;
+}) {
+  const key = zoneKey(zone);
   const ok = drag !== undefined && canDrop(drag, zone, doc);
   return (
     <div
-      className={`drop-zone${ok ? " open" : ""}${over && ok ? " over" : ""}`}
-      data-testid={zoneKey(zone)}
+      className={`drop-zone${fill ? " fill" : ""}${ok ? " open" : ""}${over === key && ok ? " over" : ""}`}
+      data-testid={key}
+      data-zone={JSON.stringify(zone)}
       aria-hidden="true"
       onDragOver={(e) => {
         if (!ok) return;
         e.preventDefault();
-        setOver(true);
+        e.stopPropagation();
+        setOver(key);
       }}
-      onDragLeave={() => setOver(false)}
       onDrop={(e) => {
         e.preventDefault();
-        setOver(false);
+        e.stopPropagation();
         onDrop(zone);
       }}
-    />
+    >
+      {fill && <span className="canvas-empty">Drop blocks here</span>}
+    </div>
   );
 }
 
-/** A block on the canvas, with its buttons: move up and down, duplicate, delete. The footer is locked. */
+/**
+ * A block on the canvas. Selected (or hovered), it shows a tab that names it
+ * and drags it, and its buttons: move up and down, duplicate, delete. They
+ * float above the block, so the email keeps its real spacing. The footer is
+ * locked.
+ */
 function BlockFrame({
   block,
   doc,
   busy,
   selected,
+  moving,
   select,
   setDrag,
+  endDrag,
   move,
   duplicate,
   remove,
@@ -353,8 +512,10 @@ function BlockFrame({
   doc: BlockDocument;
   busy: boolean;
   selected: boolean;
+  moving: boolean;
   select: () => void;
   setDrag: (d?: Drag) => void;
+  endDrag: () => void;
   move: (id: string, zone: Zone) => Promise<boolean>;
   duplicate: (zone: Zone) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
@@ -366,17 +527,15 @@ function BlockFrame({
     e.stopPropagation();
     select();
   };
-  const edit = (
-    <button type="button" className="button small" aria-pressed={selected} onClick={pick}>
-      Edit
-    </button>
-  );
+  const cls = `canvas-block canvas-block-${block.type}${selected ? " selected" : ""}${moving ? " moving" : ""}`;
   if (block.type === "footer") {
     return (
-      <div className={`canvas-block locked${selected ? " selected" : ""}`} role="group" aria-label="Footer block" onClick={pick}>
-        <div className="block-tools">
-          <Badge tone="neutral">Footer, locked</Badge>
-          {edit}
+      <div className={`${cls} locked`} role="group" aria-label="Footer block" onClick={pick}>
+        <div className="block-bar">
+          <button type="button" className="block-tab" aria-label="Edit" aria-pressed={selected} title="Footer, locked: it stays last" onClick={pick}>
+            <Lock size={12} aria-hidden="true" />
+            <span aria-hidden="true">Footer</span>
+          </button>
         </div>
         {children}
       </div>
@@ -387,53 +546,65 @@ function BlockFrame({
   // The copy lands right after the block, in its own list.
   const at = locate(doc, block.id);
   const here: Zone = { parent: at?.parent ?? null, column: at?.column ?? null, after: block.id };
+  // Blocks you type on are dragged by their tab, so the mouse can select words.
+  const typed = block.type === "heading" || block.type === "text" || block.type === "button";
+  const act = (name: string, Icon: LucideIcon, run: () => void, disabled: boolean) => (
+    <button type="button" className="tool" aria-label={name} title={name} disabled={disabled} onClick={run}>
+      <Icon size={15} aria-hidden="true" />
+    </button>
+  );
   return (
     <div
-      className={`canvas-block${selected ? " selected" : ""}`}
+      className={cls}
       role="group"
       aria-label={`${label} block`}
       onClick={pick}
-      // A text block being edited can't be dragged, so selecting words works.
-      draggable={!busy && !(selected && block.type === "text")}
+      draggable={!busy && !typed ? true : undefined}
       onDragStart={(e) => {
         e.stopPropagation();
-        startDrag(e, { kind: "move", id: block.id, type: block.type }, setDrag);
+        startDrag(e, { kind: "move", id: block.id, type: block.type }, setDrag, e.currentTarget);
       }}
-      onDragEnd={() => setDrag(undefined)}
+      onDragEnd={endDrag}
     >
-      <div className="block-tools">
-        <span className="block-label">{label}</span>
-        {edit}
-        <button type="button" className="button small" disabled={busy || !up} onClick={() => up && move(block.id, up)}>
-          Move up
+      <div className="block-bar" onClick={(e) => e.stopPropagation()}>
+        <button
+          type="button"
+          className="block-tab"
+          aria-label="Edit"
+          aria-pressed={selected}
+          title="Drag to move"
+          draggable={!busy}
+          onClick={pick}
+        >
+          <GripVertical size={12} aria-hidden="true" />
+          <span aria-hidden="true">{label}</span>
         </button>
-        <button type="button" className="button small" disabled={busy || !down} onClick={() => down && move(block.id, down)}>
-          Move down
-        </button>
-        <button type="button" className="button small" disabled={busy} onClick={() => duplicate(here)}>
-          Duplicate
-        </button>
-        {confirming ? (
-          <>
-            <button
-              type="button"
-              className="button small danger"
-              disabled={busy}
-              onClick={async () => {
-                if (await remove(block.id)) setConfirming(false);
-              }}
-            >
-              {block.type === "columns" ? "Delete with its contents" : "Delete block"}
-            </button>
-            <button type="button" className="button small" onClick={() => setConfirming(false)}>
-              Keep
-            </button>
-          </>
-        ) : (
-          <button type="button" className="button small" disabled={busy} onClick={() => setConfirming(true)}>
-            Delete
-          </button>
-        )}
+        <div className="block-actions">
+          {confirming ? (
+            <>
+              <button
+                type="button"
+                className="button small danger"
+                disabled={busy}
+                onClick={async () => {
+                  if (await remove(block.id)) setConfirming(false);
+                }}
+              >
+                {block.type === "columns" ? "Delete with its contents" : "Delete block"}
+              </button>
+              <button type="button" className="button small" onClick={() => setConfirming(false)}>
+                Keep
+              </button>
+            </>
+          ) : (
+            <>
+              {act("Move up", ArrowUp, () => up && void move(block.id, up), busy || !up)}
+              {act("Move down", ArrowDown, () => down && void move(block.id, down), busy || !down)}
+              {act("Duplicate", Copy, () => void duplicate(here), busy)}
+              {act("Delete", Trash2, () => setConfirming(true), busy)}
+            </>
+          )}
+        </div>
       </div>
       {children}
     </div>
@@ -442,39 +613,62 @@ function BlockFrame({
 
 const align = (a: string | undefined) => ({ textAlign: (a ?? "left") as "left" | "center" | "right" });
 
-/** How a block looks in the email, near enough to design with. */
-function BlockView({ block }: { block: Block }) {
+/**
+ * How a block looks in the email, near enough to design with. A heading, a
+ * text block and a button's words are typed right here.
+ */
+function BlockView({
+  block,
+  active,
+  fresh,
+  select,
+  set,
+}: {
+  block: Block;
+  active: boolean;
+  fresh: boolean;
+  select: () => void;
+  set: (fields: Record<string, unknown>) => void;
+}) {
   switch (block.type) {
-    case "heading": {
-      const H = (`h${block.level}` as "h1" | "h2" | "h3");
-      // An emptied heading still shows, so it can be found and filled in.
-      if (!block.text.trim()) {
-        return (
-          <H className="canvas-heading canvas-empty" style={align(block.align)}>
-            Empty heading
-          </H>
-        );
-      }
-      return <H className="canvas-heading" style={align(block.align)}>{block.text}</H>;
-    }
+    case "heading":
+      return (
+        <InlineText
+          as={`h${block.level}` as "h1" | "h2" | "h3"}
+          className="canvas-heading"
+          style={align(block.align)}
+          value={block.text}
+          placeholder="Heading"
+          // An emptied heading is an empty h1-h3 (the CSS placeholder isn't part of its
+          // accessible name), so it gets one until it has words again.
+          ariaLabel={block.text.trim() ? undefined : "Empty heading"}
+          autoFocus={fresh}
+          onFocus={select}
+          onChange={(text) => set({ text })}
+        />
+      );
     case "text":
       return (
-        <div className="canvas-text" style={align(block.align)}>
-          <Markdown text={block.text} />
-        </div>
+        <RichText value={block.text} active={active} style={align(block.align)} autoFocus={fresh} onFocus={select} onChange={(text) => set({ text })} />
       );
     case "image":
       return (
         <div style={align(block.align)}>
-          <img className="canvas-image" src={block.src} alt={block.alt} width={block.width ?? undefined} />
+          <img className="canvas-image" src={block.src} alt={block.alt} width={block.width ?? undefined} draggable={false} />
         </div>
       );
     case "button":
       return (
         <div style={align(block.align)}>
-          <span className="canvas-button" style={{ background: block.background_color, color: block.text_color }} title={block.href}>
-            {block.text}
-          </span>
+          <InlineText
+            className="canvas-button"
+            style={{ background: block.background_color, color: block.text_color }}
+            value={block.text}
+            label="Button text"
+            placeholder="Button"
+            onFocus={select}
+            onChange={(text) => set({ text })}
+          />
         </div>
       );
     case "divider":

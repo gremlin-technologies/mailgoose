@@ -111,11 +111,46 @@ the app; the mascot keeps them.
 - Dark mode follows the system setting, with the same structure: hairlines and
   shadows are re-tuned rather than inverted.
 
+## The email editor
+
+The block designer (`web/src/designer/`) was rebuilt on Nov 20 after studying
+how Mailchimp's editor behaves on screen: what happens on hover, on click, on
+drop. Only behavior was observed; none of its code, assets or block options
+were used, and the blocks are mailgoose's own.
+
+What was taken from it:
+
+- **Click anything to edit it.** Clicking a block selects it: an outline, a
+  small tab that names it, and its buttons. The properties panel follows.
+- **Type on the email.** Headings, text and a button's words are edited where
+  they sit. A text block gets a floating toolbar (bold, italic, link, lists,
+  merge tag) and is saved as the same Markdown subset as before.
+- **A dropped block is ready.** A new block is selected at once, with its
+  starter words selected so typing replaces them.
+- **Chrome floats.** The tab and buttons sit above the block instead of taking
+  room in it, so the canvas has the email's real spacing.
+
+What is mailgoose's own:
+
+- **Layout.** The editor takes the whole window (the app's side menu is
+  hidden): a bar with the name, save state and Design / Desktop / Mobile; the
+  block palette on the left; the email in the middle; properties on the right.
+  The palette stays visible while a block is selected, so blocks can be added
+  without leaving it.
+- **Dragging.** A drag never has to hit a thin target: anywhere over the email
+  picks the nearest gap and draws one line there, labeled "Drop here". The
+  line takes no room, so nothing shifts under the pointer. Blocks you type on
+  are dragged by their tab; the others from anywhere on them. An empty column
+  is one big target.
+- **Keyboard.** Every block's tab and buttons are in the tab order; Move up
+  and Move down do what a drag does. Escape deselects.
+
+Not done yet: undo and redo (the API has no history), optimistic moves (a move
+shows when the server answers), adding an image, button or social block still
+asks for its details first, and the HTML email editor keeps its old layout.
+
 ## Not done here
 
-- **The email editor** (`.designer-*`, `.palette`, `.canvas*`, `.properties`,
-  `.html-*`, `.code-editor` in `styles.css`) is untouched, byte for byte. It
-  inherits the new tokens and control height automatically.
 - **The mascot** is not used in the app yet. `docs/brand.md` suggests the
   sign-in page, empty states and the 404 page.
 - **Toasts, menus and dialogs** don't exist yet; `--shadow-pop` is ready for

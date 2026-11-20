@@ -1,7 +1,7 @@
 // The designer's properties panel: the selected block's fields, or the
 // email's own settings when no block is selected. Every edit is reported with
 // set(), and the designer saves it a moment later (autosave).
-import { useCallback, useRef, useState, type FormEvent } from "react";
+import { useCallback, useState } from "react";
 
 import { useApi } from "../api/context";
 import { attempt, type Failure } from "../api/result";
@@ -9,8 +9,7 @@ import type { components } from "../api/schema";
 import { useLoad } from "../components";
 import type { Block } from "./blocks";
 import { blockLabels } from "./blocks";
-import { AlignField, ColorField, MergeTags, NumberField, TagField, useSelection, type Align } from "./fields";
-import { insert, link, list, wrap } from "./format";
+import { AlignField, ColorField, NumberField, TagField, type Align } from "./fields";
 
 export type Settings = components["schemas"]["EmailSettings"];
 type Image = components["schemas"]["Image"];
@@ -32,7 +31,7 @@ export function EmailProperties({
   return (
     <form className="stack" aria-label="Email settings" onSubmit={(e) => e.preventDefault()}>
       <h2>Email settings</h2>
-      {!html && <p className="muted small">Select a block on the email to change it.</p>}
+      {!html && <p className="muted small">Click anything on the email to change it.</p>}
       <label className="field">
         <span>Name (only you see it)</span>
         <input value={name} maxLength={200} onChange={(e) => set({ name: e.target.value })} />
@@ -108,7 +107,7 @@ function Fieldset({ block, set }: { block: Block; set: (f: Fields) => void }) {
     case "text":
       return (
         <>
-          <p className="muted small">Edit the words on the email itself. Use the buttons above them for bold, italic, links and lists.</p>
+          <p className="muted small">Type on the email itself. The buttons above the block make words bold or italic, add links and lists, and insert merge tags.</p>
           <AlignField value={block.align as Align} onChange={(v) => set({ align: v })} />
         </>
       );
@@ -342,78 +341,4 @@ export async function base64(file: File): Promise<string> {
   let s = "";
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s);
-}
-
-/**
- * A text block edited where it sits on the email: its Markdown, with buttons
- * that write bold, italic, links and lists, and a merge tag menu.
- */
-export function TextEditor({ text, onChange }: { text: string; onChange: (v: string) => void }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  const select = useSelection(ref);
-  const [linking, setLinking] = useState(false);
-  const [url, setUrl] = useState("https://");
-
-  function apply(f: (t: string, s: number, e: number) => { text: string; start: number; end: number }) {
-    const el = ref.current;
-    const start = el?.selectionStart ?? text.length;
-    const end = el?.selectionEnd ?? text.length;
-    const e = f(text, start, end);
-    select(e);
-    onChange(e.text);
-  }
-
-  function addLink(e: FormEvent) {
-    e.preventDefault();
-    const u = url.trim();
-    if (!u || u === "https://") return;
-    apply((t, s, en) => link(t, s, en, u));
-    setLinking(false);
-    setUrl("https://");
-  }
-
-  return (
-    <div className="text-editor" onClick={(e) => e.stopPropagation()}>
-      <div className="row toolbar" role="toolbar" aria-label="Formatting">
-        <button type="button" className="button small" onClick={() => apply((t, s, e) => wrap(t, s, e, "**", "bold text"))}>
-          Bold
-        </button>
-        <button type="button" className="button small" onClick={() => apply((t, s, e) => wrap(t, s, e, "*", "italic text"))}>
-          Italic
-        </button>
-        <button type="button" className="button small" onClick={() => setLinking((l) => !l)} aria-expanded={linking}>
-          Link
-        </button>
-        <button type="button" className="button small" onClick={() => apply((t, s, e) => list(t, s, e, false))}>
-          Bulleted list
-        </button>
-        <button type="button" className="button small" onClick={() => apply((t, s, e) => list(t, s, e, true))}>
-          Numbered list
-        </button>
-        <MergeTags onInsert={(tag) => apply((t, s, e) => insert(t, s, e, tag))} />
-      </div>
-      {linking && (
-        <div className="row" role="group" aria-label="Add a link">
-          <label className="field grow">
-            <span>Link address</span>
-            <input
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") addLink(e);
-              }}
-            />
-          </label>
-          <button type="button" className="button small primary" onClick={addLink}>
-            Add link
-          </button>
-        </div>
-      )}
-      <label className="field">
-        <span className="visually-hidden">Text</span>
-        <textarea ref={ref} value={text} rows={Math.min(16, Math.max(4, text.split("\n").length + 1))} maxLength={20000} onChange={(e) => onChange(e.target.value)} />
-      </label>
-      <small className="muted">**bold**, *italic*, [words](https://link), lines starting "- " or "1. " for lists, a blank line between paragraphs.</small>
-    </div>
-  );
 }
