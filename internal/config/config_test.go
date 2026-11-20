@@ -230,6 +230,24 @@ func TestSliceSettings(t *testing.T) {
 	}
 }
 
+func TestAbuseDigestHour(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || cfg.AbuseDigestHour != 13 {
+		t.Fatalf("default = %d, %v", cfg.AbuseDigestHour, err)
+	}
+	for v, want := range map[string]int{"0": 0, "8": 8, "23": 23} {
+		cfg, err := load(env(map[string]string{"ABUSE_DIGEST_HOUR": v}))
+		if err != nil || cfg.AbuseDigestHour != want {
+			t.Errorf("ABUSE_DIGEST_HOUR=%s: %d, %v", v, cfg.AbuseDigestHour, err)
+		}
+	}
+	for _, bad := range []string{"24", "-1", "eight", "8am"} {
+		if _, err := load(env(map[string]string{"ABUSE_DIGEST_HOUR": bad})); err == nil || !strings.Contains(err.Error(), "ABUSE_DIGEST_HOUR") {
+			t.Errorf("ABUSE_DIGEST_HOUR=%q: %v", bad, err)
+		}
+	}
+}
+
 func TestStripeSettings(t *testing.T) {
 	cfg, err := load(env(map[string]string{
 		"APP_ENV":          "staging",

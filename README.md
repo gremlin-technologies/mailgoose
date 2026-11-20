@@ -149,7 +149,8 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `SEND_RATE_PER_SECOND` | Campaign emails sent a second, across every worker. Default 10. |
 | `ACCOUNT_DAILY_SEND_LIMIT`, `NEW_ACCOUNT_DAILY_SEND_LIMIT` | The most campaign emails an account may send in any 24 hours (10,000 by default), and its limit in its first 7 days (1,000). In between the limit grows on a schedule (see [Account health](#account-health-and-send-limits)). An account's own `daily_send_limit` overrides both. |
 | `IMPORT_HOLD_RISKY_PERCENT`, `IMPORT_HOLD_INVALID_PERCENT`, `IMPORT_HOLD_SHARED_PERCENT`, `IMPORT_HOLD_SHARED_MIN` | When an import is held for review: role plus disposable addresses over 10% of its valid rows, invalid rows over 5% of all rows, or at least 50% of its addresses, and at least 200, in other accounts' imports. Percentages are 1 to 100. |
-| `OPS_ALERT_EMAIL` | Where to email an alert when an account is paused automatically, or a payment needs refunding or cancelling by hand in Stripe. Unset, these are only logged (as errors). |
+| `OPS_ALERT_EMAIL` | Where to email an alert when an account is paused, throttled or suspended automatically, a sign-up waits for review, or a payment needs refunding or cancelling by hand in Stripe, and the daily abuse digest. Unset, these are only logged (as errors) and no digest is sent. Terraform sets it from `alert_email` (see `infra/README.md`). |
+| `ABUSE_DIGEST_HOUR` | The hour, UTC (0 to 23), the worker emails the daily abuse digest to `OPS_ALERT_EMAIL`. Default 13 (8 AM US Eastern in winter). |
 | `ABUSE_EMAIL` | Where a suspended account's owner appeals: the Reply-To of the email that tells them about the suspension, and named in its errors. Defaults to `abuse@` the `SYSTEM_SENDING_DOMAIN`; that mailbox has to exist. |
 | `SIGNUP_REVIEW` | Which new accounts wait for an admin to approve them before they can launch campaigns or take form signups (see [Sign-up review](#account-health-and-send-limits)): `all` (the default, for the beta and launch month), `flagged` or `off`. |
 | `SYSTEM_SENDING_DOMAIN` | mailgoose's own sending domain; sign-in codes come from `signin@` it. Defaults to `mail.localhost` when mail is captured (`MAIL_SENDER=fake`). Unset with SES, sign-up and sign-in answer 503. |
@@ -926,6 +927,19 @@ signups. When it confirms its address, `OPS_ALERT_EMAIL` gets an email.
 The local stack (`make dev`) sets `SIGNUP_REVIEW=off` unless you set it, so
 local sign-ups can launch at once.
 
+**Daily abuse digest.** Once a day at `ABUSE_DIGEST_HOUR` (UTC, default 13)
+the worker emails `OPS_ALERT_EMAIL` one digest: the throttles, pauses and
+suspensions of the last 24 hours (automatic or by an admin, and whether each
+still holds), imports held for review and sign-ups waiting for review
+(however old), and the platform's campaign complaint and hard-bounce rates
+over 24 hours and 30 days. Each item names the account and the `mailgoose
+admin` commands to act on it. Nothing is sent on a quiet day: no items, and
+neither rate over the early warning (0.1% complaints or 2% hard bounces, on
+500 or more copies, as for one account). A row in `ops_digests` claims each
+day, so the digest goes at most once a day however many worker tasks run or
+restart; one started after the hour sends that day's late. With no
+`OPS_ALERT_EMAIL` the job doesn't run.
+
 ### Admin tools
 
 mailgoose staff use `mailgoose admin` (the `/v1/admin/*` endpoints). They
@@ -1105,5 +1119,6 @@ images by hand from a machine signed in to AWS.
 
 Later images get their own tags (`make push-ecr` defaults to the commit). With
 deploys off, rolling one out means registering a new task definition revision
-with that image and updating the service, which the deploy workflow will do
-once OIDC is allowed.
+with that image and updating the service. `scripts/ci/deploy-ecs.sh` does
+both, with migrations first (see `infra/README.md`, "How deploys work"), and
+the deploy workflow will run it once OIDC is allowed.

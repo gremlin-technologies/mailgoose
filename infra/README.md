@@ -229,10 +229,17 @@ as the API serves `/images/`; new uploads get CloudFront URLs.
 ## How deploys work
 
 - Infra changes: a person runs `terraform plan` / `apply` locally.
-- App deploys, today: a person runs `make push-ecr` (images) and registers the
-  task definition by hand. GitHub OIDC is off because the AWS project's managed
-  service control policy denies creating the OIDC provider (`docs/decisions.md`,
-  2026-11-18).
+- App deploys, today: a person runs `make push-ecr` (images), then, from a
+  machine signed in to AWS, the same script CI will run:
+  ```sh
+  CLUSTER=mailgoose-staging \
+  IMAGE=<account>.dkr.ecr.us-east-2.amazonaws.com/mailgoose:<commit> \
+  API_SERVICE=mailgoose-staging-api WORKER_SERVICE=mailgoose-staging-worker \
+  scripts/ci/deploy-ecs.sh
+  ```
+  It needs the AWS CLI and `jq`. GitHub OIDC is off because the AWS project's
+  managed service control policy denies creating the OIDC provider
+  (`docs/decisions.md`, 2026-11-18).
 - App deploys, once OIDC is allowed: `.github/workflows/deploy-staging.yml`
   assumes `mailgoose-staging-github-deploy` through OIDC (no AWS keys stored in
   GitHub), pushes the image to ECR tagged with the commit, runs
@@ -319,6 +326,20 @@ echo 'alert_email = "you@example.com"' > infra/envs/staging/alerts.auto.tfvars
 AWS emails that address a link to confirm the subscription; nothing is
 delivered until it is clicked. With no address, the alarms still show in the
 CloudWatch console. Thresholds are variables of `modules/monitoring`.
+
+The same `alert_email` is also set as `OPS_ALERT_EMAIL` on the API and worker
+task definitions (`common_env` in `modules/stack`), so the app's own alerts
+go there: automatic pauses, throttles and suspensions, sign-ups waiting for
+review, and the worker's daily abuse digest (at `ABUSE_DIGEST_HOUR`, 13:00
+UTC by default; see the root README). Empty, `OPS_ALERT_EMAIL` isn't set and
+the app only logs those alerts. Applying a change registers new task
+definition revisions; the services ignore task definition drift, so the
+tasks pick the address up at their next deploy. Those revisions still name
+the `initial_image_tag` image (`:bootstrap`), so don't point a service at
+the latest revision by hand: that rolls it back to that image. Deploy with
+`scripts/ci/deploy-ecs.sh` instead, which copies the latest revision with
+only the image swapped (see "How deploys work"); once OIDC is allowed,
+`deploy-staging` runs it.
 
 ## Not here yet
 

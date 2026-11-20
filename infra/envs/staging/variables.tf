@@ -19,7 +19,7 @@ variable "initial_image_tag" {
 }
 
 variable "alert_email" {
-  description = "Gets this environment's alarms. Set it in alerts.auto.tfvars (git-ignored), not terraform.tfvars."
+  description = "Gets this environment's alarms, and the app's ops alerts and daily abuse digest (OPS_ALERT_EMAIL). Set it in alerts.auto.tfvars (git-ignored), not terraform.tfvars."
   type        = string
   default     = ""
 }

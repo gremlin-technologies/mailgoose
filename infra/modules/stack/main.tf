@@ -187,7 +187,11 @@ resource "aws_ecs_cluster_capacity_providers" "this" {
 }
 
 locals {
-  common_env = {
+  # OPS_ALERT_EMAIL is the same address as the alarms (var.alert_email): it
+  # gets automatic pauses, throttles, suspensions, sign-ups waiting for
+  # review and the daily abuse digest. Left unset when alert_email is empty,
+  # so the app only logs them.
+  common_env = merge({
     APP_ENV               = var.environment
     AWS_REGION            = data.aws_region.current.region
     DATABASE_HOST         = module.database.address
@@ -200,7 +204,9 @@ locals {
     SYSTEM_SENDING_DOMAIN = var.sending_domain
     SES_IDENTITY_TAG      = "Environment=${var.environment}" # tag every customer identity the app creates
     PUBLIC_BASE_URL       = "https://${var.hostnames[0]}"
-  }
+    }, {
+    for k, v in { OPS_ALERT_EMAIL = var.alert_email } : k => v if v != ""
+  })
 
   # The API also serves image uploads, so only it gets the image bucket.
   # Without the CDN, IMAGES_BASE_URL is left unset and the API serves the
