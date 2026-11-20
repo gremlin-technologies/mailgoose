@@ -4,6 +4,28 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-20: Import from Mailchimp (owner decision)
+
+Bending Spoons announced on 2026-11-19 that it will buy Mailchimp, closing in
+early 2027. The owner asked for an "import from Mailchimp" option so Mailchimp
+customers can bring over their audiences, templates and so on, and for
+marketing to focus on them.
+
+- **In scope.** An import from Mailchimp joins v1's scope. It runs once (or
+  again, idempotently); it is not a sync.
+- **Spec and tickets.** The spec is the [Import from Mailchimp Claude
+  Doc](https://claude.ai/artifact/8Me7gKuU325VinXAoiNqYF); tickets MG-69 to
+  MG-78 are issues #153 to #162, label `M11 Mailchimp import`. The build
+  picks them up after its current queue.
+- **Public formats only.** It is built from Mailchimp's public export formats
+  and Marketing API documentation.
+- **Every existing rule applies.** Imported contacts go through the same
+  limits, holds and checks as a CSV import (CON-5, CON-6, CON-9, MG-61 to
+  MG-66). The import adds signals for review, never exceptions.
+
+The product choices inside it are open questions for the owner, listed under
+Open questions with the default the tickets build on.
+
 ## 2026-11-19: Ops alert address and daily abuse digest (MG-67, reversible defaults)
 
 Picked while building MG-67; easy to change.
@@ -1902,6 +1924,30 @@ Decided by the owner in the PRD scoping call and follow-ups.
 
 ## Open questions
 
+- Mailchimp import: do imported subscribed contacts skip re-confirmation?
+  (Default: yes, once the permission box is ticked, with Mailchimp's opt-in
+  and confirm times and IPs in each consent record. MG-70.)
+- Mailchimp import: how are unsubscribed and cleaned contacts kept? (Default:
+  as ordinary contacts with status unsubscribed or bounced, not counted, and
+  imported even when the rest is held. Other option: a hashed suppression
+  entry only. MG-70.)
+- Mailchimp import: several Mailchimp audiences into mailgoose's one audience.
+  (Default: merged, with an `audience: <name>` tag; an address unsubscribed or
+  cleaned in any audience is suppressed. MG-70.)
+- Mailchimp import: size and pricing. (Default: no special pricing; the
+  preview shows the plan needed; an import over the limit is held until the
+  subscription covers it; at most 250,000 contacts per import during the beta.
+  A switcher offer is a marketing call. MG-70, MG-77.)
+- Mailchimp import: does a large import need the owner's approval? (Default:
+  yes, through the existing holds, unchanged, with Mailchimp signals shown on
+  held imports. MG-77.)
+- Mailchimp import: merge fields beyond name (address, phone, birthday,
+  custom). (Default: dropped and listed in the preview. MG-69, MG-70.)
+- Mailchimp import: pending contacts. (Default: unconfirmed, no email sent.
+  MG-70.)
+- Mailchimp import: the OAuth path needs a registered Mailchimp app. (Default:
+  the upload path ships first; the owner registers the app before MG-73 goes
+  live. MG-73.)
 - How does prod get DNS? Default is to delegate only `api`, `app` and `mail`
   (see 2026-11-18); awaiting the owner's confirmation and the GoDaddy step.
   (Blocks MG-60.)

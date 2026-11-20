@@ -32,6 +32,11 @@ scope; they only show where an idea came from.
 - v1 is five things: designer, contacts with basic tags, campaign sending,
   signup forms, basic reports. Everything else is out of scope at first, except
   maybe very simple automations later.
+- Import from Mailchimp (Nov 20): customers can bring their audiences, tags and
+  email HTML over from Mailchimp, by uploading Mailchimp's export or (later)
+  connecting with OAuth, in the web app, API and CLI. Tickets MG-69 to MG-78
+  (issues #153 to #162), after the current queue. Its product choices are
+  open; see `docs/decisions.md`.
 - Designer: drag-and-drop blocks, plus bring-your-own HTML (parsed and validated,
   edited in a code editor with a live preview). Blocks are creatable and editable
   from the CLI so LLMs can build emails.
