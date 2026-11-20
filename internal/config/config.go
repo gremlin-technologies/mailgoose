@@ -52,7 +52,7 @@ type Config struct {
 	// EarlyWarningComplaintsPer10k and EarlyWarningHardBouncesPer10k are
 	// the early-warning thresholds that throttle an account (MG-61), in
 	// hundredths of a percent, from EARLY_WARNING_COMPLAINT_PERCENT
-	// (default 0.1) and EARLY_WARNING_HARD_BOUNCE_PERCENT (default 2).
+	// (default 0.05) and EARLY_WARNING_HARD_BOUNCE_PERCENT (default 2).
 	EarlyWarningComplaintsPer10k  int
 	EarlyWarningHardBouncesPer10k int
 	// SlicePercent, SliceMin and SliceWait shape a new account's sliced
@@ -239,11 +239,12 @@ func load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	// The early-warning thresholds must sit under the 0.3% and 5% that
-	// pause an account, or they'd never fire first.
-	warnComplaints, err := percentEnv(getenv, "EARLY_WARNING_COMPLAINT_PERCENT", 10, 30)
+	// The early-warning thresholds must sit under the 0.1% and 3% that
+	// pause an account (sending.ComplaintsPer10k and HardBouncesPer10k), or
+	// they'd never fire first.
+	warnComplaints, err := percentEnv(getenv, "EARLY_WARNING_COMPLAINT_PERCENT", 5, 10)
 	errs = append(errs, err)
-	warnBounces, err := percentEnv(getenv, "EARLY_WARNING_HARD_BOUNCE_PERCENT", 200, 500)
+	warnBounces, err := percentEnv(getenv, "EARLY_WARNING_HARD_BOUNCE_PERCENT", 200, 300)
 	errs = append(errs, err)
 
 	slicePercent, err := intEnv(getenv, "SLICE_PERCENT", 10)

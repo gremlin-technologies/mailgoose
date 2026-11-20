@@ -17,8 +17,9 @@ import (
 // Early-warning throttles (MG-61).
 //
 // A campaign of HealthMinRecipients or more whose complaints or hard
-// bounces pass the early-warning thresholds (0.1% and 2% by default, under
-// the 0.3% and 5% that pause) throttles its account: its daily limit drops
+// bounces pass the early-warning thresholds (0.05% and 2% by default, under
+// the 0.1% and 3% that pause; complaints counted from MinComplaints)
+// throttles its account: its daily limit drops
 // to the new-account limit for ThrottleFor, whatever its ramp had reached,
 // and the owner is told. Each such campaign throttles once, and another
 // one meanwhile starts the seven days again, so the limit lifts after seven
@@ -40,8 +41,8 @@ type Warning struct {
 	HardBouncesPer10k int
 }
 
-// DefaultWarning is 0.1% complaints and 2% hard bounces.
-var DefaultWarning = Warning{ComplaintsPer10k: 10, HardBouncesPer10k: 200}
+// DefaultWarning is 0.05% complaints and 2% hard bounces.
+var DefaultWarning = Warning{ComplaintsPer10k: 5, HardBouncesPer10k: 200}
 
 // orDefault is w, or DefaultWarning for an unset one.
 func (w Warning) orDefault() Warning {
@@ -52,16 +53,18 @@ func (w Warning) orDefault() Warning {
 }
 
 // OverWarning says whether the rates are over an early-warning threshold,
-// on enough copies.
+// on enough copies and complaints.
 func (r Rates) OverWarning(w Warning) bool {
-	return r.Sent >= HealthMinRecipients && r.overWarning(w)
+	return r.Sent >= HealthMinRecipients && r.overWarningFrom(w, MinComplaints)
 }
 
 // overWarning says whether the rates are over an early-warning threshold,
-// on any number of copies.
-func (r Rates) overWarning(w Warning) bool {
+// on any number of copies and complaints, as a slice is judged.
+func (r Rates) overWarning(w Warning) bool { return r.overWarningFrom(w, 1) }
+
+func (r Rates) overWarningFrom(w Warning, minComplaints int) bool {
 	w = w.orDefault()
-	return over(r.Complaints, r.Sent, w.ComplaintsPer10k) || over(r.HardBounces, r.Sent, w.HardBouncesPer10k)
+	return r.complaintsOver(w.ComplaintsPer10k, minComplaints) || over(r.HardBounces, r.Sent, w.HardBouncesPer10k)
 }
 
 // Throttle is an account throttled by a campaign's bounces or complaints.
@@ -85,7 +88,9 @@ func per10k(n int) string { return percent(n, 10000) }
 
 func throttleReason(t *Throttle) string {
 	r, w := t.Rates, t.Warning
-	if over(r.Complaints, r.Sent, w.ComplaintsPer10k) {
+	// As in pauseReason: a single complaint is named only when the bounces
+	// weren't over.
+	if r.complaintsOver(w.ComplaintsPer10k, MinComplaints) || !over(r.HardBounces, r.Sent, w.HardBouncesPer10k) {
 		return fmt.Sprintf("Lowered automatically: %s of the people sent %q marked it as spam, over the %s early-warning limit.",
 			percent(r.Complaints, r.Sent), t.CampaignName, per10k(w.ComplaintsPer10k))
 	}
@@ -217,8 +222,8 @@ func (l Limits) ForAccount(ctx context.Context, q querier, accountID string, own
 	case out.Daily >= l.Daily:
 		out.Reason = nil
 	case !clean:
-		reason(fmt.Sprintf("Held at %s a day: a campaign in the last 30 days went over the spam-complaint (0.3%%) or hard-bounce (5%%) limit.",
-			thousands(out.Daily)))
+		reason(fmt.Sprintf("Held at %s a day: a campaign in the last 30 days went over the spam-complaint (%s) or hard-bounce (%s) limit.",
+			thousands(out.Daily), per10k(ComplaintsPer10k), per10k(HardBouncesPer10k)))
 	case lifted:
 		reason(fmt.Sprintf("Growing again after a lowered limit: it doubles each week of clean sending, up to %s a day.", thousands(l.Daily)))
 	default:

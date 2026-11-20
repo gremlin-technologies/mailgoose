@@ -4,6 +4,34 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-20: Pause and early-warning limits tightened below AWS's review line (owner decision; numbers are reversible defaults, MG-79)
+
+AWS reviews the whole SES account, which every customer shares, at 0.1%
+complaints or 5% bounces, and may pause it at 0.5% or 10%. The old
+per-customer pause (0.3% complaints) let one customer pull the account into
+review before mailgoose stopped it. The owner asked to tighten it; the exact
+numbers below were picked while building MG-79 and are easy to change.
+
+- **Pause:** over 0.1% complaints or 3% hard bounces on a campaign of 500 or
+  more (was 0.3% and 5%). The same limits decide whether an account's last
+  30 days are clean for its limit to grow.
+- **Early warning (throttle):** over 0.05% complaints or 2% hard bounces
+  (complaints were 0.1%). `EARLY_WARNING_COMPLAINT_PERCENT` now takes 0.01
+  to under 0.1, and `EARLY_WARNING_HARD_BOUNCE_PERCENT` 0.01 to under 3, so
+  the warning still fires before the pause.
+- **At least 2 complaints.** At 0.1%, a single complaint on any campaign
+  under 1,000 copies would pause it, and one complaint is chance. A full
+  campaign's (and an account's 30-day) complaint rate counts only from two
+  complaints. Hard bounces need no minimum: 2% of 500 is already 10.
+- **Slices are unchanged in kind:** a new account's first slice (MG-62) is
+  still judged on any number of copies and complaints, so one complaint in
+  a 200-copy slice still pauses, as before. Whether a slice should need a
+  few complaints first stays an open question.
+- **The daily abuse digest** (MG-67) judges the platform's rates by the same
+  early warning, two-complaint minimum included.
+- **Account-wide alarms** on SES's own rates are a separate infra change for
+  the owner to merge.
+
 ## 2026-11-20: Test mode (MG-80, owner decision; details are reversible defaults)
 
 The owner asked for a test mode that only allows sending to a set of up to 5
@@ -306,7 +334,8 @@ Picked while building MG-61; each is easy to change.
 - **Thresholds.** 0.1% spam complaints or 2% hard bounces on a campaign of
   500 or more, set by `EARLY_WARNING_COMPLAINT_PERCENT` and
   `EARLY_WARNING_HARD_BOUNCE_PERCENT`. Each must sit under the 0.3% and 5%
-  that pause. Still open for the owner (see Open questions).
+  that pause. (Tightened on 2026-11-20 to 0.05% and 2%, under 0.1% and 3%;
+  see that entry.) Still open for the owner (see Open questions).
 - **When it's checked.** On every bounce and complaint SES reports, like the
   pause check, so a campaign is throttled once it's past 500 copies and over
   the line, while it's still sending, and one whose complaints come in days
@@ -815,7 +844,7 @@ Picked while building MG-34; easy to change.
   last 30 days are clean. An account that isn't clean is held at 1,000.
 - **Clean** means the account's campaigns over 30 days are under 0.3%
   complaints and 5% hard bounces (judged on 500 or more sent), and none of
-  them paused it.
+  them paused it. (0.1% and 3% since 2026-11-20, MG-79.)
 - **Rates count people**, not events: two complaints from one recipient
   count once.
 - **A campaign pauses its account once.** After an admin lifts the pause,
@@ -2017,8 +2046,11 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - Deleting an account that still has bought credits: are they refunded or
   forfeited? (Default: forfeited; the ledger keeps them as billing records.
   MG-43, for MG-39 and MG-40 to settle.)
-- Early-warning thresholds that throttle an account: 0.1% complaints and 2%
-  hard bounces? (Default: those; config values. MG-61, see 2026-11-19.)
+- Early-warning thresholds that throttle an account: 0.05% complaints and 2%
+  hard bounces, under a pause at 0.1% and 3%, counting complaints from two?
+  (Default: those; the warning ones are config values. The owner asked to
+  tighten them below AWS's review line; the numbers are MG-79's pick, see
+  2026-11-20.)
 - A new account's first slice is checked against the pause limits however
   small it is, so one complaint in 200 pauses the account: is that strict
   enough to keep, or should a slice need a few complaints first? (Default:

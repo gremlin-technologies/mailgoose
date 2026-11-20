@@ -165,7 +165,7 @@ func TestSliceStoppedWhenOverPauseLimits(t *testing.T) {
 		t.Fatalf("sent %d", n)
 	}
 	before := h.balance(t)
-	// One complaint: 0.5% of the slice, over 0.3%, though 200 copies are
+	// One complaint: 0.5% of the slice, over 0.1%, though 200 copies are
 	// under the 500 the usual check needs.
 	h.eventsFor(t, "complaint", "", 1, h.now)
 	h.now = h.now.Add(time.Hour)
@@ -206,7 +206,7 @@ func TestSliceHeldWhenOverWarning(t *testing.T) {
 	if n := sendSlice(t, h, p, q); n != 200 {
 		t.Fatalf("sent %d", n)
 	}
-	// Five hard bounces: 2.5%, over the 2% early warning, under the 5% pause.
+	// Five hard bounces: 2.5%, over the 2% early warning, under the 3% pause.
 	h.eventsFor(t, "bounce", "permanent/general", 5, h.now)
 	h.now = h.now.Add(time.Hour)
 	if n := sendSlice(t, h, p, q); n != 0 {

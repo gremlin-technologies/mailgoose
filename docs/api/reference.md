@@ -3597,7 +3597,7 @@ Type: string: one of `test`, `full`
 How many campaign recipients the account may send to in 24 hours.
 New accounts start low and double each week of clean sending up to
 the usual limit. A campaign whose spam complaints or hard bounces
-pass the early-warning limits (0.1% and 2% by default) lowers it to
+pass the early-warning limits (0.05% and 2% by default) lowers it to
 the new-account limit for 7 days.
 
 | Field | Type | Required | Description |
