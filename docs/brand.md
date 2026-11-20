@@ -14,6 +14,12 @@ editor tickets (MG-41 onward) build their design tokens from this file.
   plain.
 - **The color palette comes from the mascot.**
 
+> **Update, Nov 20:** the web app's look moved to white pages and near-black
+> text with the blue as the only accent; see `design-system.md`. Cream, the warm
+> shade and the satchel colors are no longer used in the app, and orange is
+> only the dot in the wordmark. The mascot and this palette still describe the
+> goose and the public site.
+
 ## Starting palette
 
 Sampled from `brand/mascot.png`. These are a starting point, not final tokens.

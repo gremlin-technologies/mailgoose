@@ -18,6 +18,8 @@ already use.
   by `make docs` from `api/openapi.yaml` and the CLI. Don't edit them by hand.
 - `docs/brand.md`: the goose mascot, the UI's direction and its starting color
   palette. UI tickets build their design tokens from it.
+- `docs/design-system.md`: how the web app looks (tokens, components,
+  interaction rules) and the research behind it. Read it before changing UI.
 - `site/` and `docs/public-site.md`: the public site at mailgoose.app (plain
   HTML on GitHub Pages) and how it's set up.
 
@@ -72,6 +74,10 @@ scope; they only show where an idea came from.
 - Brand (Nov 18): the goose in `docs/brand/mascot.png` is the mascot and the
   UI palette comes from it; modern and sleek, but simple to use. See
   `docs/brand.md`.
+- UI look (Nov 20): white pages, near-black text, the periwinkle blue only for
+  actions and state, hairline-and-shadow depth, 120ms transitions, Lucide icons
+  in the side menu. See `docs/design-system.md`. The email editor has its own
+  redesign.
 
 ## Working rules
 

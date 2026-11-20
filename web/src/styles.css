@@ -1,49 +1,88 @@
 /*
- * Design tokens, derived from the goose mascot (docs/brand.md). Every text and
+ * Design tokens and the app's shared components. The direction is in
+ * docs/design-system.md: white pages, near-black text, one blue for actions and
+ * state, depth from hairlines and soft shadows. The blue and the beak-orange
+ * brand dot come from the goose mascot (docs/brand.md). Every text and
  * background pair meets WCAG 2.2 AA; src/styles.test.ts checks the ratios.
  */
 :root {
-  --bg: #faf5ef; /* cream, lightened */
+  /* Surfaces */
+  --bg: #ffffff;
   --surface: #ffffff;
-  --text: #473e3b; /* eye charcoal */
-  --muted: #6b5f5a;
-  --border: #ebddd2; /* warm shade, lightened: decorative lines only */
-  --input-border: #8c7a72; /* 3:1 against surfaces, for controls */
-  --accent: #5562a3; /* deep periwinkle */
+  --surface-subtle: #f7f8fa; /* sidebar, table headers, code */
+  --surface-hover: #f0f2f5;
+
+  /* Text */
+  --text: #0f1217;
+  --muted: #596072;
+
+  /* Lines: --border and --line-strong are decorative; --input-border marks a
+   * control's edge and needs 3:1. */
+  --border: #e3e6ec;
+  --line-strong: #cdd2db;
+  --input-border: #858c9b;
+
+  /* The blue: deep periwinkle from the goose's shadow */
+  --accent: #5562a3;
   --accent-hover: #47528a;
   --accent-text: #ffffff;
-  --accent-soft: #eceffa;
+  --accent-soft: #eff1fb;
   --accent-soft-text: #3f4a85;
+  --focus: #5562a3;
+  --focus-ring: rgba(85, 98, 163, 0.22);
+
   --brand-mark: #f68a3f; /* beak orange: decoration only, never behind text */
-  --good-bg: #e6f2e8;
-  --good-text: #2f6b3a;
-  --warn-bg: #fcebd9;
-  --warn-text: #8a4b14;
-  --error-bg: #fbe7e4;
+
+  /* Status */
+  --good-bg: #e8f4ea;
+  --good-text: #2a6636;
+  --warn-bg: #fdf0e0;
+  --warn-text: #84470f;
+  --error-bg: #fcebe8;
   --error-text: #9b2c1f;
   --danger: #b3261e;
   --danger-text: #ffffff;
-  --focus: #5562a3;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Depth */
+  --shadow-xs: 0 1px 2px rgba(15, 18, 23, 0.05);
+  --shadow-card: 0 1px 2px rgba(15, 18, 23, 0.04), 0 2px 8px -2px rgba(15, 18, 23, 0.06);
+  --shadow-pop: 0 1px 2px rgba(15, 18, 23, 0.05), 0 12px 32px -8px rgba(15, 18, 23, 0.14);
+  --shadow-button: 0 0 0 1px var(--line-strong), 0 1px 2px rgba(15, 18, 23, 0.06);
+  --shadow-button-primary: 0 1px 2px rgba(15, 18, 23, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+
+  /* Shape and motion */
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --ease: 120ms ease;
+
+  color-scheme: light dark;
+  font-family: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 16px;
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
+  -webkit-font-smoothing: antialiased;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1f1b1a;
-    --surface: #2a2523;
-    --text: #f4e3d2; /* cream */
-    --muted: #c2b2a6;
-    --border: #3d3532;
-    --input-border: #8a7a72;
+    --bg: #0f1115;
+    --surface: #16181d;
+    --surface-subtle: #1b1e24;
+    --surface-hover: #23272e;
+    --text: #f2f3f5;
+    --muted: #a3aab8;
+    --border: #2a2e36;
+    --line-strong: #3a3f49;
+    --input-border: #7d8493;
     --accent: #9aa7e0;
     --accent-hover: #b3bdea;
-    --accent-text: #1f1b1a;
-    --accent-soft: #2e3352;
+    --accent-text: #0f1115;
+    --accent-soft: #232846;
     --accent-soft-text: #c9d0f2;
+    --focus: #9aa7e0;
+    --focus-ring: rgba(154, 167, 224, 0.28);
     --brand-mark: #f68a3f;
     --good-bg: #1e3324;
     --good-text: #a7d8b0;
@@ -52,8 +91,12 @@
     --error-bg: #3f1d19;
     --error-text: #f4b4aa;
     --danger: #f08c82;
-    --danger-text: #1f1b1a;
-    --focus: #9aa7e0;
+    --danger-text: #0f1115;
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px -2px rgba(0, 0, 0, 0.35);
+    --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+    --shadow-button: 0 0 0 1px var(--line-strong), 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-button-primary: 0 1px 2px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   }
 }
 
@@ -64,11 +107,27 @@
 body {
   margin: 0;
   background: var(--bg);
+  font-size: 0.9375rem;
 }
 
 h1 {
   font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
   margin: 0 0 1rem;
+}
+
+h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  margin: 0;
+}
+
+h3 {
+  font-size: 0.9375rem;
+  font-weight: 600;
 }
 
 p {
@@ -76,12 +135,17 @@ p {
 }
 
 a {
-  color: inherit;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
 }
 
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 0.9em;
+  font-size: 0.875em;
 }
 
 :focus-visible {
@@ -89,21 +153,26 @@ code {
   outline-offset: 2px;
 }
 
+.brand {
+  color: var(--text);
+  font-weight: 700;
+  font-size: 1.1875rem;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}
+
+.brand:hover {
+  text-decoration: none;
+}
+
 .brand::after {
   content: "";
   display: inline-block;
-  width: 0.4em;
-  height: 0.4em;
+  width: 0.38em;
+  height: 0.38em;
   margin-left: 0.1em;
   border-radius: 50%;
   background: var(--brand-mark);
-}
-
-.brand {
-  font-weight: 700;
-  font-size: 1.25rem;
-  text-decoration: none;
-  letter-spacing: -0.02em;
 }
 
 .muted {
@@ -111,7 +180,7 @@ code {
 }
 
 .small {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 .stack {
@@ -127,6 +196,29 @@ code {
   align-items: center;
 }
 
+/* Everything that changes on hover or focus eases the same way. */
+.button,
+.field input,
+.field select,
+.field textarea,
+.sidebar nav a,
+.table td,
+.history li,
+.choice,
+.link {
+  transition:
+    background-color var(--ease),
+    border-color var(--ease),
+    box-shadow var(--ease),
+    color var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+
 /* Sign up, sign in and CLI approval */
 
 .auth {
@@ -134,17 +226,26 @@ code {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 3rem 1rem;
+  padding: 12vh 1rem 3rem;
   gap: 1.5rem;
+}
+
+.auth-brand {
+  font-size: 1.375rem;
 }
 
 .card {
   width: 100%;
-  max-width: 26rem;
+  max-width: 25rem;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-pop);
   padding: 2rem;
+}
+
+.card h1 {
+  font-size: 1.25rem;
 }
 
 /* Policy pages: the sign-in layout, wider for reading */
@@ -154,7 +255,7 @@ code {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 3rem 1rem;
+  padding: 4rem 1rem 3rem;
   gap: 1.5rem;
 }
 
@@ -163,8 +264,8 @@ code {
 }
 
 .policy-card h2 {
-  font-size: 1.125rem;
-  margin: 1.5rem 0 0.5rem;
+  font-size: 1.0625rem;
+  margin: 1.75rem 0 0.5rem;
 }
 
 .policy-card ul {
@@ -211,8 +312,9 @@ code {
   letter-spacing: 0.1em;
   text-align: center;
   padding: 0.75rem;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
+  background: var(--surface-subtle);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
 }
 
 /* Forms */
@@ -221,6 +323,7 @@ code {
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
+  font-size: 0.875rem;
   font-weight: 500;
 }
 
@@ -228,12 +331,47 @@ code {
 .field select,
 .field textarea {
   font: inherit;
+  font-size: 0.9375rem;
   font-weight: 400;
-  padding: 0.625rem 0.75rem;
+  padding: 0.4375rem 0.75rem;
   border: 1px solid var(--input-border);
-  border-radius: 8px;
-  background: var(--bg);
+  border-radius: var(--radius);
+  background: var(--surface);
   color: var(--text);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Inputs, selects and buttons share one height (36px) so a row of them lines up. */
+.field input:not([type="checkbox"], [type="radio"], [type="color"], [type="file"]),
+.field select {
+  height: 2.25rem;
+}
+
+.field input:hover:not(:disabled),
+.field select:hover:not(:disabled),
+.field textarea:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.field input:disabled,
+.field select:disabled,
+.field textarea:disabled {
+  background: var(--surface-subtle);
+  color: var(--muted);
+}
+
+input[type="checkbox"],
+input[type="radio"],
+progress {
+  accent-color: var(--accent);
 }
 
 .check {
@@ -248,40 +386,60 @@ code {
 }
 
 .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
   font: inherit;
-  font-weight: 600;
-  padding: 0.625rem 1rem;
-  border-radius: 8px;
-  border: 1px solid var(--input-border);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.25rem;
+  min-height: 2.25rem;
+  padding: 0.4375rem 0.875rem;
+  border: 0;
+  border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
+  box-shadow: var(--shadow-button);
+  text-decoration: none;
   cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  text-decoration: none;
 }
 
 .button.primary {
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--accent-text);
+  box-shadow: var(--shadow-button-primary);
 }
 
 .button.primary:hover:not(:disabled) {
   background: var(--accent-hover);
-  border-color: var(--accent-hover);
 }
 
 .button.danger {
   background: var(--danger);
-  border-color: var(--danger);
   color: var(--danger-text);
+  box-shadow: var(--shadow-button-primary);
+}
+
+.button.danger:hover:not(:disabled) {
+  background: var(--danger);
+  filter: brightness(0.92);
 }
 
 .button.small {
+  min-height: 1.75rem;
   padding: 0.25rem 0.625rem;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
+  line-height: 1.125rem;
 }
 
 .button:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: default;
 }
 
@@ -290,15 +448,19 @@ code {
   background: none;
   border: none;
   padding: 0;
-  color: inherit;
-  text-decoration: underline;
+  color: var(--accent);
   cursor: pointer;
+}
+
+.link:hover {
+  text-decoration: underline;
 }
 
 .notice {
   padding: 0.75rem 1rem;
-  border-radius: 8px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
+  background: var(--surface-subtle);
 }
 
 .notice-error {
@@ -309,7 +471,7 @@ code {
 
 .hint {
   margin-top: 0.25rem;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
 }
 
 .loading {
@@ -327,24 +489,40 @@ code {
 }
 
 .sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  padding: 1.5rem 1rem;
-  background: var(--surface);
+  padding: 1.25rem 0.75rem 1rem;
+  background: var(--surface-subtle);
   border-right: 1px solid var(--border);
 }
 
 .sidebar .brand {
-  padding: 0 0.75rem;
+  padding: 0 0.625rem;
 }
 
 .account {
-  padding: 0 0.75rem;
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  font-size: 0.875rem;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-xs);
+}
+
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
 
 .sidebar ul {
@@ -356,36 +534,82 @@ code {
   gap: 0.125rem;
 }
 
-.sidebar nav a {
-  display: block;
-  padding: 0.5rem 0.75rem;
-  border-radius: 6px;
-  text-decoration: none;
+.nav-label {
+  margin: 0 0 0.25rem;
+  padding: 0 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--muted);
 }
 
-.sidebar nav a:hover {
+.sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.4375rem 0.625rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
   color: var(--text);
 }
 
+.sidebar nav a:hover {
+  background: var(--surface-hover);
+}
+
 .sidebar nav a.active {
-  background: var(--accent-soft);
-  color: var(--accent-soft-text);
-  font-weight: 600;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--border),
+    var(--shadow-xs);
+}
+
+.nav-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.sidebar nav a.active .nav-icon {
+  color: var(--accent);
 }
 
 .sidebar-foot {
   margin-top: auto;
-  padding: 0 0.75rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  align-items: flex-start;
+  padding: 0.75rem 0.625rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.sidebar-foot .email {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-foot .link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  align-self: flex-start;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.sidebar-foot .link:hover {
+  color: var(--text);
 }
 
 .content {
-  padding: 2rem 2.5rem;
-  max-width: 64rem;
+  padding: 2.25rem 2.5rem 4rem;
+  max-width: 68rem;
+  width: 100%;
+  min-width: 0;
 }
 
 .page p + p {
@@ -398,35 +622,60 @@ code {
   }
 
   .sidebar {
+    position: static;
+    height: auto;
+    gap: 0.75rem;
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
 
+  .sidebar nav {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 0.25rem;
+  }
+
+  .sidebar nav > div {
+    display: contents;
+  }
+
   .sidebar ul {
     flex-direction: row;
-    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  .sidebar nav a {
+    white-space: nowrap;
+  }
+
+  .nav-label {
+    display: none;
   }
 
   .sidebar-foot {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
     margin-top: 0;
+    padding-top: 0.5rem;
+  }
+
+  .sidebar-foot .email {
+    min-width: 0;
   }
 
   .content {
-    padding: 1.5rem 1rem;
+    padding: 1.5rem 1rem 3rem;
   }
 }
 
 /* Pages */
 
-h2 {
-  font-size: 1.125rem;
-  margin: 0;
-}
-
 .page {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.5rem;
 }
 
 .page-head {
@@ -442,14 +691,15 @@ h2 {
 }
 
 .crumb {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   color: var(--muted);
 }
 
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
   padding: 1.25rem 1.5rem;
 }
 
@@ -471,21 +721,24 @@ h2 {
 }
 
 .empty {
-  padding: 2rem;
+  padding: 2.5rem 2rem;
   text-align: center;
   color: var(--muted);
-  border: 1px dashed var(--input-border);
-  border-radius: 12px;
+  background: var(--surface-subtle);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-lg);
 }
 
 .table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
-  font-size: 0.9375rem;
+  font-size: 0.875rem;
 }
 
 .table th,
@@ -497,9 +750,14 @@ h2 {
 }
 
 .table th {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--muted);
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
+  background: var(--surface-subtle);
+}
+
+.table tbody tr:hover td {
+  background: var(--surface-subtle);
 }
 
 .table tr:last-child td {
@@ -512,17 +770,18 @@ h2 {
 
 .badge {
   display: inline-block;
-  padding: 0.125rem 0.5rem;
+  padding: 0.0625rem 0.5rem;
   border-radius: 999px;
-  font-size: 0.8125rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.25rem;
   white-space: nowrap;
 }
 
 .badge-neutral {
-  background: var(--bg);
+  background: var(--surface-subtle);
   color: var(--muted);
-  border: 1px solid var(--border);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .badge-info {
@@ -569,7 +828,8 @@ h2 {
 .record {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
   padding: 1rem 1.25rem;
   display: flex;
   flex-direction: column;
@@ -595,7 +855,7 @@ h2 {
 
 .record-fields dt {
   color: var(--muted);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   padding-top: 0.25rem;
 }
 
@@ -612,8 +872,8 @@ h2 {
   flex: 1;
   overflow-wrap: anywhere;
   padding: 0.25rem 0.5rem;
-  background: var(--bg);
-  border-radius: 6px;
+  background: var(--surface-subtle);
+  border-radius: var(--radius-sm);
 }
 
 .secret {
@@ -630,7 +890,7 @@ h2 {
 }
 
 .secret-row code {
-  font-size: 1rem;
+  font-size: 0.9375rem;
   padding: 0.5rem 0.75rem;
 }
 
@@ -644,6 +904,7 @@ h2 {
 }
 
 .choices legend {
+  font-size: 0.875rem;
   font-weight: 500;
   margin-bottom: 0.375rem;
 }
@@ -654,7 +915,12 @@ h2 {
   align-items: flex-start;
   padding: 0.625rem 0.75rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.choice:hover {
+  border-color: var(--line-strong);
 }
 
 .choice:has(input:checked) {
@@ -733,8 +999,9 @@ fieldset.panel legend {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.25rem 0.25rem 0.25rem 0.75rem;
+  padding: 0.1875rem 0.25rem 0.1875rem 0.75rem;
   border-radius: 999px;
+  font-size: 0.875rem;
   background: var(--accent-soft);
   color: var(--accent-soft-text);
 }
@@ -749,21 +1016,24 @@ fieldset.panel legend {
 .stats div {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 0.875rem 1.25rem;
   min-width: 8rem;
 }
 
 .stats dt {
   color: var(--muted);
   font-size: 0.8125rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .stats dd {
   margin: 0;
   font-size: 1.5rem;
   font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
 .plain {
@@ -773,8 +1043,7 @@ fieldset.panel legend {
 
 progress {
   width: 100%;
-  height: 0.75rem;
-  accent-color: var(--accent);
+  height: 0.5rem;
 }
 
 /* Email designer. The canvas shows the email as it will look, so its
@@ -1241,7 +1510,7 @@ progress {
 .facts {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0.375rem 1.25rem;
+  gap: 0.5rem 1.5rem;
   margin: 0;
 }
 
@@ -1269,7 +1538,8 @@ progress {
   counter-increment: step;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
   padding: 1.25rem 1.5rem;
   display: flex;
   flex-direction: column;
@@ -1281,8 +1551,19 @@ progress {
 }
 
 .step h3::before {
-  content: counter(step) ". ";
-  color: var(--accent);
+  content: counter(step);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-right: 0.625rem;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent-soft-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+  vertical-align: 0.0625rem;
 }
 
 .step p {
@@ -1321,7 +1602,7 @@ progress {
 
 .launch-summary h4 {
   margin: 0;
-  font-size: 1.125rem;
+  font-size: 1.0625rem;
 }
 
 @media (max-width: 40rem) {
@@ -1345,19 +1626,23 @@ progress {
 .tile {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
   padding: 0.875rem 1rem;
 }
 
 .tile dt {
   color: var(--muted);
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
 }
 
 .tile dd {
   margin: 0.25rem 0 0;
-  font-size: 1.25rem;
+  font-size: 1.375rem;
   font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
@@ -1367,7 +1652,9 @@ progress {
   padding: 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
 .link-clicks li {
@@ -1391,6 +1678,7 @@ progress {
 
 .link-counts {
   color: var(--muted);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
@@ -1407,9 +1695,10 @@ progress {
   flex-wrap: wrap;
   gap: 0.5rem 1rem;
   align-items: flex-end;
-  padding: 0.625rem 0.75rem;
+  padding: 0.75rem;
+  background: var(--surface-subtle);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .form-field-row > .check {
@@ -1428,7 +1717,7 @@ progress {
   width: 100%;
   min-height: 18rem;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
   background: #ffffff;
 }
 
@@ -1460,7 +1749,9 @@ progress {
 
 .balance-number {
   font-size: 2rem;
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
@@ -1476,7 +1767,9 @@ progress {
   padding: 0;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
 .history li {
@@ -1486,6 +1779,10 @@ progress {
   gap: 0.25rem 1rem;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
+}
+
+.history li:hover {
+  background: var(--surface-subtle);
 }
 
 .history li:last-child {
@@ -1524,7 +1821,7 @@ progress {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
 .checklist li {
@@ -1532,12 +1829,10 @@ progress {
   gap: 0.75rem;
   align-items: flex-start;
   padding: 0.625rem 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius);
 }
 
 .checklist li.next {
-  border-color: var(--accent);
   background: var(--accent-soft);
 }
 
@@ -1547,15 +1842,20 @@ progress {
 }
 
 .checklist .tick {
-  flex: 0 0 1.5rem;
-  height: 1.5rem;
-  border: 2px solid var(--input-border);
+  flex: 0 0 1.375rem;
+  height: 1.375rem;
+  margin-top: 0.0625rem;
+  border: 1.5px solid var(--input-border);
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 700;
+}
+
+.checklist li.next .tick {
+  border-color: var(--accent);
 }
 
 .checklist li.done .tick {
@@ -1567,4 +1867,8 @@ progress {
 .checklist-text {
   display: flex;
   flex-direction: column;
+}
+
+.checklist-text a {
+  font-weight: 500;
 }

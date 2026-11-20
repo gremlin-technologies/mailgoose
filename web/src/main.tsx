@@ -6,6 +6,7 @@ import { AppRoutes } from "./App";
 import { createApiClient } from "./api/client";
 import { ApiProvider } from "./api/context";
 import { SessionProvider } from "./session";
+import "@fontsource-variable/inter/wght.css";
 import "./styles.css";
 
 // The API serves this app from its own origin, so requests go to /v1 here and
