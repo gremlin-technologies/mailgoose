@@ -43,7 +43,9 @@ jobs:
       - name: go test
         env:
           MAILGOOSE_TEST_DATABASE_URL: postgres://mailgoose:mailgoose@localhost:5432/mailgoose_test?sslmode=disable
-        run: go test -race -count=1 ./...
+        # The api package's database-backed tests take 7 to 9 minutes under
+        # -race on a hosted runner, near go test's default 10-minute limit.
+        run: go test -race -count=1 -timeout 20m ./...
 
   e2e:
     name: End-to-end
