@@ -110,6 +110,7 @@ test("sign up, set up, design, test and launch a campaign", async ({ page }, tes
     await page.getByRole("button", { name: "Add heading" }).click();
     await page.getByRole("button", { name: "Add text" }).click();
     await expect(page.getByRole("group", { name: "Text block" })).toBeVisible();
+    await page.getByRole("button", { name: "Email settings" }).click();
     const settings = page.getByRole("form", { name: "Email settings" });
     await settings.getByLabel("Subject", { exact: true }).fill(`Spring is here ${run}`);
     await expect(page.locator(".save-state")).toHaveText("All changes saved");
