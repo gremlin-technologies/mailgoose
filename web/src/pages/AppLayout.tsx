@@ -1,3 +1,4 @@
+import { LogOut } from "lucide-react";
 import { useState } from "react";
 import { NavLink, Outlet } from "react-router";
 
@@ -5,7 +6,7 @@ import type { Failure } from "../api/result";
 import { PausedBanner } from "../billing/PausedBanner";
 import { FailureNotice } from "../components";
 import { useSession } from "../session";
-import { navPages } from "./nav";
+import { navGroups } from "./nav";
 import { ReviewBanner } from "./ReviewBanner";
 import { TermsGate } from "./TermsGate";
 import { TestModeBanner } from "./TestAddresses";
@@ -34,19 +35,26 @@ export function AppLayout() {
           </p>
         )}
         <nav aria-label="Main">
-          <ul>
-            {navPages.map((p) => (
-              <li key={p.path}>
-                <NavLink to={p.path} end={p.path === "/"}>
-                  {p.label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
+          {navGroups().map((g) => (
+            <div key={g.label ?? "top"}>
+              {g.label && <p className="nav-label">{g.label}</p>}
+              <ul>
+                {g.pages.map((p) => (
+                  <li key={p.path}>
+                    <NavLink to={p.path} end={p.path === "/"}>
+                      <p.icon className="nav-icon" size={18} strokeWidth={1.75} aria-hidden="true" />
+                      {p.label}
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </nav>
         <div className="sidebar-foot">
-          {session && <p className="muted small">{session.user.email}</p>}
+          {session && <p className="muted small email">{session.user.email}</p>}
           <button type="button" className="link" onClick={onSignOut}>
+            <LogOut size={16} strokeWidth={1.75} aria-hidden="true" />
             Sign out
           </button>
           <FailureNotice failure={failure} />

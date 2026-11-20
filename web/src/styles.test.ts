@@ -41,6 +41,17 @@ const pairs: [string, string, number][] = [
   ["warn-text", "warn-bg", 4.5],
   ["error-text", "error-bg", 4.5],
   ["danger-text", "danger", 4.5],
+  // Links are the accent on whatever they sit on.
+  ["accent", "bg", 4.5],
+  ["accent", "surface", 4.5],
+  ["accent", "surface-subtle", 4.5],
+  ["accent", "accent-soft", 4.5],
+  // The quiet fills: sidebar, table headers, row hover, code.
+  ["text", "surface-subtle", 4.5],
+  ["text", "surface-hover", 4.5],
+  ["muted", "surface-subtle", 4.5],
+  ["muted", "surface-hover", 4.5],
+  ["good-text", "surface", 4.5],
   ["input-border", "surface", 3],
   ["input-border", "bg", 3],
   ["focus", "surface", 3],

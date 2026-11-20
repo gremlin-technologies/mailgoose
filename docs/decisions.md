@@ -4,6 +4,25 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-20: Web app UI overhaul: white, neutral, shadow-based (owner decision; the details are reversible defaults)
+
+The owner asked for a full UI overhaul of the web app, modeled on the restraint
+of Stripe, Airbnb and Shopify, in mailgoose's colors: white pages, near-black
+text, the blue only for actions and state, a minimal box-shadow look, simple
+interactions and simple icons in the sidebar. The email editor is being
+redesigned separately and is left alone. Reasoning and tokens:
+`docs/design-system.md`.
+
+- **Palette changes.** Pages and cards are white and text is near-black, where
+  the earlier tokens used cream surfaces and charcoal text. Cream and the warm
+  shade are no longer used in the app. The blue stays the deep periwinkle
+  (`#5562a3`); beak orange survives only as the dot in the wordmark.
+- **Inter, self-hosted** (`@fontsource-variable/inter`), and **Lucide icons**
+  (`lucide-react`), both pinned. The CSP needs no change.
+- **Side menu** gets icons and two headings (Marketing, Account).
+- **Dark mode is kept**, since the app already followed the system setting.
+- **Open:** whether "the blue" is the periwinkle used here. Default: yes.
+
 ## 2026-11-20: Public site at mailgoose.app on GitHub Pages (owner ask; hosting is a reversible default)
 
 The owner asked for a page at https://mailgoose.app that explains the product,
