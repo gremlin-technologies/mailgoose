@@ -936,14 +936,32 @@ local sign-ups can launch at once.
 the worker emails `OPS_ALERT_EMAIL` one digest: the throttles, pauses and
 suspensions of the last 24 hours (automatic or by an admin, and whether each
 still holds), imports held for review and sign-ups waiting for review
-(however old), and the platform's campaign complaint and hard-bounce rates
+(however old), the accounts whose own campaign email over the last 7 days
+is over the early warning (worst first, at most 20; the section is left out
+when none are), and the platform's campaign complaint and hard-bounce rates
 over 24 hours and 30 days. Each item names the account and the `mailgoose
-admin` commands to act on it. Nothing is sent on a quiet day: no items, and
-neither rate over the early warning (0.05% complaints, from two complaints,
-or 2% hard bounces, on 500 or more copies, as for one account). A row in `ops_digests` claims each
+admin` commands to act on it. Nothing is sent on a quiet day: no items, no
+account over the early warning, and neither platform rate over it. The early
+warning is the configured `EARLY_WARNING_*` thresholds (0.05% complaints, from
+two complaints, or 2% hard bounces by default), on 500 or more copies, as for
+one account. A row in `ops_digests` claims each
 day, so the digest goes at most once a day however many worker tasks run or
 restart; one started after the hour sends that day's late. With no
 `OPS_ALERT_EMAIL` the job doesn't run.
+
+**Per-customer deliverability.** `mailgoose admin deliverability` (`GET
+/v1/admin/deliverability`) lists every account that sent campaign email in
+the last 7 days, or had a hard bounce or complaint reported in them, with
+its copies sent, hard bounce rate and complaint rate over the last 24 hours
+and 7 days, and whether it's paused, suspended, throttled or in test mode.
+They're counted from `campaign_recipients` and `send_events` exactly as the
+digest counts the platform's rates (copies sent in the window; recipients
+whose hard bounce or complaint was reported in it), so an account can show
+complaints with nothing sent when they come in for older copies. Worst
+first: accounts over the early warning over 7 days, then by how far their
+7-day rates (then 24-hour rates) are over the early-warning thresholds,
+then the most copies. `--limit` (1 to 100, default 50) and `--json`. This
+stands in for SES's paid per-tenant deliverability dashboard (MG-82).
 
 **Test mode.** An account in test mode (`sending_mode: test` on the
 account) sends only to its confirmed test addresses and its owner's own
@@ -987,6 +1005,7 @@ an admin; API keys are refused, even an admin's. Every action takes a
 | `mailgoose admin test-mode` | Accounts in test mode, oldest first, with their confirmed and pending test addresses. |
 | `mailgoose admin allow-full-sending <id> [--reason]` | Takes one out of [test mode](#account-health-and-send-limits): it can send to its whole audience. Doesn't approve a sign-up review. |
 | `mailgoose admin set-test-mode <id> [--reason]` | Puts one in test mode; copies already queued for anyone else are skipped. |
+| `mailgoose admin deliverability [--limit]` | Each account's copies sent, hard bounce and complaint rates over 24 hours and 7 days, worst first, with whether it's paused, suspended, throttled or in test mode (see [Per-customer deliverability](#account-health-and-send-limits)). |
 | `mailgoose admin stop-campaign <id> --reason --yes` | The kill switch: nobody else gets it, unused credits come back, it ends `cancelled`. |
 | `mailgoose admin approve-import <id> --reason` | Lets a held import's contacts be mailed. |
 | `mailgoose admin grant-credits <id> --amount --reason` | Adds up to 1,000,000 credits, lasting 24 months. |

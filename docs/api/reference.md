@@ -2805,6 +2805,44 @@ Responses:
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
+<a id="op-getdeliverabilityreport"></a>
+
+### Per-customer deliverability report (admin)
+
+`GET /v1/admin/deliverability`
+
+- Operation: `getDeliverabilityReport`
+- CLI: `mailgoose admin deliverability`
+- Needs a `full`-scope key
+
+mailgoose staff only (MG-82): every account that sent campaign email
+in the last 7 days, or had a hard bounce or complaint reported in
+them, with its copies sent, hard bounces and complaints (and their
+rates) over the last 24 hours and 7 days. Counted from `send_events`
+and `campaign_recipients` exactly as the daily digest counts the
+platform's rates: copies sent in the window, and the distinct
+recipients whose hard bounce or complaint was reported in it.
+
+Worst first: the accounts over the early warning over 7 days
+(`over_warning`) first, then by how far their 7-day rates are over
+the early-warning thresholds, then their 24-hour rates, then the
+most copies sent. Each row says whether the account is paused,
+suspended, throttled or in test mode. At most `limit` rows; `total`
+counts them all, and there's no next page.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `limit` | query | integer |  | Items per page. |
+
+Responses:
+
+- `200`: The report. [AdminDeliverabilityReport](#schema-admindeliverabilityreport)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
 <a id="op-allowfullsending"></a>
 
 ### Allow full sending (admin)
@@ -4814,6 +4852,66 @@ Copies sent, and the recipients who hard bounced or complained.
 | --- | --- | --- | --- |
 | `data` | array of [AdminAccountSummary](#schema-adminaccountsummary) | yes |  |
 | `next_cursor` | null | yes |  |
+
+<a id="schema-admindeliverabilityrates"></a>
+
+### AdminDeliverabilityRates
+
+Campaign copies sent in the window, and the recipients whose hard
+bounce or complaint was reported in it, with the rates as
+percentages (rounded to 4 places; null when nothing was sent in the
+window).
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `sent` | integer | yes |  |
+| `hard_bounces` | integer | yes |  |
+| `complaints` | integer | yes |  |
+| `hard_bounce_percent` | number or null | yes |  |
+| `complaint_percent` | number or null | yes |  |
+
+<a id="schema-adminaccountdeliverability"></a>
+
+### AdminAccountDeliverability
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `account_id` | string (uuid) | yes |  |
+| `account_name` | string | yes |  |
+| `owner_email` | string or null | yes |  |
+| `sending_mode` | [SendingMode](#schema-sendingmode) | yes |  |
+| `sending_paused_at` | string (date-time) or null | yes | When its sending was paused; null when it isn't. |
+| `suspended_at` | string (date-time) or null | yes | When it was suspended; null when it isn't. |
+| `throttled_until` | string (date-time) or null | yes | When its early-warning throttle lifts; null when it isn't throttled. |
+| `last_24_hours` | [AdminDeliverabilityRates](#schema-admindeliverabilityrates) | yes |  |
+| `last_7_days` | [AdminDeliverabilityRates](#schema-admindeliverabilityrates) | yes |  |
+| `over_warning` | boolean | yes | Whether its last 7 days are over the early warning, as the daily digest judges them: see `early_warning`. |
+
+<a id="schema-adminearlywarning"></a>
+
+### AdminEarlyWarning
+
+The early warning: over `complaint_percent` complaints (and at least
+`min_complaints` of them) or over `hard_bounce_percent` hard
+bounces, on `min_copies` or more copies.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `complaint_percent` | number | yes |  |
+| `hard_bounce_percent` | number | yes |  |
+| `min_complaints` | integer | yes |  |
+| `min_copies` | integer | yes |  |
+
+<a id="schema-admindeliverabilityreport"></a>
+
+### AdminDeliverabilityReport
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `data` | array of [AdminAccountDeliverability](#schema-adminaccountdeliverability) | yes |  |
+| `next_cursor` | null | yes |  |
+| `total` | integer | yes | Every account in the report, including those over `limit`. |
+| `early_warning` | [AdminEarlyWarning](#schema-adminearlywarning) | yes |  |
 
 <a id="schema-adminheldimport"></a>
 

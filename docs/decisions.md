@@ -4,6 +4,46 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-20: Per-customer deliverability report (MG-82, owner decision; details are reversible defaults)
+
+The owner decided to show each customer's bounce and complaint rates from
+data mailgoose already records (`campaign_recipients` and `send_events`),
+instead of paying for AWS's deliverability dashboard. The details below
+were picked while building MG-82 and are easy to change.
+
+- **Where.** `mailgoose admin deliverability` (`GET
+  /v1/admin/deliverability`, admins only, `--limit` 1 to 100, default 50,
+  and `--json`), and a section in the daily abuse digest (MG-67). No web UI.
+- **Who is listed.** Every account that sent campaign email in the last 7
+  days, or had a hard bounce or complaint reported in them; closed accounts
+  too, if they sent. `total` counts them all.
+- **How it's counted.** Exactly as the digest counts the platform's rates:
+  copies sent in the window, and the distinct recipients whose permanent
+  bounce or complaint (campaign email only) was reported in it, over the last
+  24 hours and 7 days. The platform and the per-account report share the same
+  SQL, so the accounts add up to the platform. A complaint reported this week
+  on a copy sent earlier counts this week, so an account can show complaints
+  with nothing sent (its rate is then null).
+- **Rates** are percentages rounded to 4 places in the API, null when
+  nothing was sent in the window.
+- **Worst first.** Accounts over the early warning over 7 days first (the
+  configured `EARLY_WARNING_*` thresholds, 0.05% complaints or 2% hard bounces
+  by default, with the same minimums as one account: 500 copies and 2
+  complaints), then by how far their 7-day rates are over those thresholds
+  (the larger of the two, as a multiple of its threshold), then their
+  24-hour rates the same way, then the most copies sent.
+- **State.** Each row says whether the account is suspended, paused,
+  throttled (until when) or in test mode.
+- **The digest section** lists the accounts over the early warning over 7
+  days, by the rule above, so a small account with one complaint isn't
+  flagged; the section states the rule and is left out when none are. It
+  lists at most 20, worst first, and says how many more there are. Each
+  names `mailgoose admin account` and, unless it's paused or suspended,
+  `mailgoose admin pause`. An account over the early warning sends the
+  digest on an otherwise quiet day; the subject says how many there are.
+  They aren't counted as digest items (`ops_digests.items`), which stay
+  throttles, pauses, suspensions, held imports and waiting sign-ups.
+
 ## 2026-11-20: Block designer rebuilt around typing on the email (owner ask; details are reversible defaults)
 
 The owner asked for the drag-and-drop builder to be rebuilt with a modern look

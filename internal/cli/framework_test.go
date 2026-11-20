@@ -217,6 +217,10 @@ func TestNoCommandWaitsForInput(t *testing.T) {
 		"/v1/admin/test-mode": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`))
 		},
+		"/v1/admin/deliverability": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"data":[],"next_cursor":null,"total":0,` +
+				`"early_warning":{"complaint_percent":0.05,"hard_bounce_percent":2,"min_complaints":2,"min_copies":500}}`))
+		},
 		"/v1/test-addresses": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`))
 		},

@@ -1554,6 +1554,45 @@ type AdminAccountReview string
 // AdminAccountReviewFlags defines model for AdminAccount.ReviewFlags.
 type AdminAccountReviewFlags string
 
+// AdminAccountDeliverability defines model for AdminAccountDeliverability.
+type AdminAccountDeliverability struct {
+	AccountId   string `json:"account_id"`
+	AccountName string `json:"account_name"`
+
+	// Last24Hours Campaign copies sent in the window, and the recipients whose hard
+	// bounce or complaint was reported in it, with the rates as
+	// percentages (rounded to 4 places; null when nothing was sent in the
+	// window).
+	Last24Hours AdminDeliverabilityRates `json:"last_24_hours"`
+
+	// Last7Days Campaign copies sent in the window, and the recipients whose hard
+	// bounce or complaint was reported in it, with the rates as
+	// percentages (rounded to 4 places; null when nothing was sent in the
+	// window).
+	Last7Days AdminDeliverabilityRates `json:"last_7_days"`
+
+	// OverWarning Whether its last 7 days are over the early warning, as the daily
+	// digest judges them: see `early_warning`.
+	OverWarning bool    `json:"over_warning"`
+	OwnerEmail  *string `json:"owner_email"`
+
+	// SendingMode `test` while the account is in test mode (MG-80): it sends only to
+	// its confirmed test addresses (`listTestAddresses`) and its owner's
+	// own sign-in address. Launches and test sends to anyone else are
+	// refused with the code `test_mode`, and its forms take signups only
+	// from those addresses. mailgoose staff allow `full` sending.
+	SendingMode SendingMode `json:"sending_mode"`
+
+	// SendingPausedAt When its sending was paused; null when it isn't.
+	SendingPausedAt *time.Time `json:"sending_paused_at"`
+
+	// SuspendedAt When it was suspended; null when it isn't.
+	SuspendedAt *time.Time `json:"suspended_at"`
+
+	// ThrottledUntil When its early-warning throttle lifts; null when it isn't throttled.
+	ThrottledUntil *time.Time `json:"throttled_until"`
+}
+
 // AdminAccountList defines model for AdminAccountList.
 type AdminAccountList struct {
 	Data       []AdminAccountSummary `json:"data"`
@@ -1632,6 +1671,42 @@ type AdminActionAction string
 type AdminActionList struct {
 	Data       []AdminAction `json:"data"`
 	NextCursor *string       `json:"next_cursor"`
+}
+
+// AdminDeliverabilityRates Campaign copies sent in the window, and the recipients whose hard
+// bounce or complaint was reported in it, with the rates as
+// percentages (rounded to 4 places; null when nothing was sent in the
+// window).
+type AdminDeliverabilityRates struct {
+	ComplaintPercent  *float32 `json:"complaint_percent"`
+	Complaints        int      `json:"complaints"`
+	HardBouncePercent *float32 `json:"hard_bounce_percent"`
+	HardBounces       int      `json:"hard_bounces"`
+	Sent              int      `json:"sent"`
+}
+
+// AdminDeliverabilityReport defines model for AdminDeliverabilityReport.
+type AdminDeliverabilityReport struct {
+	Data []AdminAccountDeliverability `json:"data"`
+
+	// EarlyWarning The early warning: over `complaint_percent` complaints (and at least
+	// `min_complaints` of them) or over `hard_bounce_percent` hard
+	// bounces, on `min_copies` or more copies.
+	EarlyWarning AdminEarlyWarning `json:"early_warning"`
+	NextCursor   any               `json:"next_cursor"`
+
+	// Total Every account in the report, including those over `limit`.
+	Total int `json:"total"`
+}
+
+// AdminEarlyWarning The early warning: over `complaint_percent` complaints (and at least
+// `min_complaints` of them) or over `hard_bounce_percent` hard
+// bounces, on `min_copies` or more copies.
+type AdminEarlyWarning struct {
+	ComplaintPercent  float32 `json:"complaint_percent"`
+	HardBouncePercent float32 `json:"hard_bounce_percent"`
+	MinComplaints     int     `json:"min_complaints"`
+	MinCopies         int     `json:"min_copies"`
 }
 
 // AdminHeldImport defines model for AdminHeldImport.
@@ -3779,6 +3854,12 @@ type ListAdminActionsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// GetDeliverabilityReportParams defines parameters for GetDeliverabilityReport.
+type GetDeliverabilityReportParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListSignupReviewsParams defines parameters for ListSignupReviews.
 type ListSignupReviewsParams struct {
 	// Limit Items per page.
@@ -4849,6 +4930,9 @@ type ServerInterface interface {
 	// StopCampaign Stop a campaign in flight (admin)
 	// (POST /v1/admin/campaigns/{campaign_id}/stop)
 	StopCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
+	// GetDeliverabilityReport Per-customer deliverability report (admin)
+	// (GET /v1/admin/deliverability)
+	GetDeliverabilityReport(w http.ResponseWriter, r *http.Request, params GetDeliverabilityReportParams)
 	// ApproveImport Approve a held import (admin)
 	// (POST /v1/admin/imports/{import_id}/approve)
 	ApproveImport(w http.ResponseWriter, r *http.Request, importId ImportId)
@@ -5606,6 +5690,39 @@ func (siw *ServerInterfaceWrapper) StopCampaign(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.StopCampaign(w, r, campaignId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetDeliverabilityReport operation middleware
+func (siw *ServerInterfaceWrapper) GetDeliverabilityReport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetDeliverabilityReportParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetDeliverabilityReport(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8204,6 +8321,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/approve-signup", wrapper.ApproveSignup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/reject-signup", wrapper.RejectSignup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/test-mode", wrapper.ListTestModeAccounts)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/deliverability", wrapper.GetDeliverabilityReport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/allow-full-sending", wrapper.AllowFullSending)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/set-test-mode", wrapper.SetTestMode)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/credits", wrapper.GrantCredits)

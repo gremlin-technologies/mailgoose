@@ -11,6 +11,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 )
 
 // The admin endpoints (MG-34: OPS-6, CMP-8), for mailgoose staff only.
@@ -224,6 +225,34 @@ func (s *Server) ListTestModeAccounts(w http.ResponseWriter, r *http.Request, _ 
 		found = []admin.AccountSummary{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": found, "next_cursor": nil})
+}
+
+// GetDeliverabilityReport is GET /v1/admin/deliverability (MG-82).
+func (s *Server) GetDeliverabilityReport(w http.ResponseWriter, r *http.Request, _ apigen.GetDeliverabilityReportParams) {
+	if s.requireAdmin(w, r) == nil {
+		return
+	}
+	pr, err := ParsePageRequest(r)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	rep, err := s.Admin.Deliverability(r.Context(), pr.Limit)
+	if err != nil {
+		s.adminError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":        rep.Accounts,
+		"next_cursor": nil,
+		"total":       rep.Total,
+		"early_warning": map[string]any{
+			"complaint_percent":   float64(rep.Warning.ComplaintsPer10k) / 100,
+			"hard_bounce_percent": float64(rep.Warning.HardBouncesPer10k) / 100,
+			"min_complaints":      sending.MinComplaints,
+			"min_copies":          sending.HealthMinRecipients,
+		},
+	})
 }
 
 // AllowFullSending is POST /v1/admin/accounts/{account_id}/allow-full-sending.
