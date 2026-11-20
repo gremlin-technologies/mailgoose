@@ -15,7 +15,7 @@ import (
 // out, the rest waits (an hour by default) for bounces and complaints to
 // come in, then the slice is checked:
 //
-//   - over the pause thresholds (0.3% complaints, 5% hard bounces), the
+//   - over the pause thresholds (0.1% complaints, 3% hard bounces), the
 //     account is paused as for any campaign and the rest never goes: its
 //     credits come back and the campaign ends as cancelled;
 //   - over the early-warning thresholds only (MG-61), the account is
@@ -23,8 +23,9 @@ import (
 //     again against the pause thresholds;
 //   - otherwise the rest goes out as usual.
 //
-// The thresholds apply to the slice whatever its size: the 500-copy floor
-// of the usual check would let every slice through.
+// The thresholds apply to the slice whatever its size, and to a single
+// complaint: the 500-copy floor and two-complaint minimum of the usual check
+// would let every slice through.
 //
 // An account is new for its first 30 days or its first 3 launched
 // campaigns, whichever ends later.

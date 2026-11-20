@@ -20,8 +20,12 @@ func TestOverWarning(t *testing.T) {
 		want bool
 	}{
 		{Rates{Sent: 499, Complaints: 100}, Warning{}, false}, // too small to judge
-		{Rates{Sent: 1000, Complaints: 1}, Warning{}, false},  // 0.1% is the limit, not over it
+		{Rates{Sent: 1000, Complaints: 1}, Warning{}, false},  // 0.1%, but one complaint is chance
 		{Rates{Sent: 1000, Complaints: 2}, Warning{}, true},
+		{Rates{Sent: 4000, Complaints: 2}, Warning{}, false}, // 0.05% is the limit, not over it
+		{Rates{Sent: 4000, Complaints: 3}, Warning{}, true},
+		{Rates{Sent: 1000, Complaints: 1, HardBounces: 20}, Warning{}, false},
+		{Rates{Sent: 1000, Complaints: 1, HardBounces: 21}, Warning{}, true},
 		{Rates{Sent: 1000, HardBounces: 20}, Warning{}, false},
 		{Rates{Sent: 1000, HardBounces: 21}, Warning{}, true},
 		{Rates{Sent: 1000, Complaints: 2}, Warning{ComplaintsPer10k: 20, HardBouncesPer10k: 200}, false},
@@ -62,12 +66,12 @@ func (h *harness) throttles(t *testing.T) []string {
 }
 
 func TestThrottleOnComplaints(t *testing.T) {
-	h := launchedHarness(t, 999)
+	h := launchedHarness(t, 2999)
 	ctx := context.Background()
 	h.markSent(t, h.now)
 	h.eventsFor(t, "complaint", "abuse", 1, h.now)
 	if got := h.checkHealth(t); got.Pause != nil || got.Throttle != nil {
-		t.Fatalf("acted at 0.1%%: %+v", got)
+		t.Fatalf("acted on one complaint: %+v", got)
 	}
 	if _, err := h.db.Exec(ctx, `DELETE FROM send_events`); err != nil {
 		t.Fatal(err)
@@ -76,13 +80,13 @@ func TestThrottleOnComplaints(t *testing.T) {
 	got := h.checkHealth(t)
 	th := got.Throttle
 	if got.Pause != nil || th == nil {
-		t.Fatalf("at 0.2%%: %+v", got)
+		t.Fatalf("at 0.07%%: %+v", got)
 	}
 	if th.AccountID != h.acc || th.AccountName != "Pat's Bakery" || th.OwnerEmail == "" || th.CampaignName != "Bread week" ||
-		th.Rates != (Rates{Sent: 1000, Complaints: 2}) || !th.Until.Equal(h.now.Add(7*24*time.Hour)) {
+		th.Rates != (Rates{Sent: 3000, Complaints: 2}) || !th.Until.Equal(h.now.Add(7*24*time.Hour)) {
 		t.Errorf("throttle = %+v", th)
 	}
-	if !strings.Contains(th.Reason, `0.2% of the people sent "Bread week" marked it as spam, over the 0.1% early-warning limit`) {
+	if !strings.Contains(th.Reason, `0.07% of the people sent "Bread week" marked it as spam, over the 0.05% early-warning limit`) {
 		t.Errorf("reason %q", th.Reason)
 	}
 	if paused, _ := h.paused(t); paused {
@@ -106,14 +110,14 @@ func TestThrottleOnComplaints(t *testing.T) {
 		t.Errorf("logged %s %s %s %s", actor, action, target, details)
 	}
 	// One throttle per campaign.
-	h.eventsFor(t, "bounce", "permanent/General", 30, h.now.Add(time.Second))
+	h.eventsFor(t, "bounce", "permanent/General", 61, h.now.Add(time.Second))
 	if got := h.checkHealth(t); got.Throttle != nil || got.Pause != nil {
 		t.Errorf("acted twice: %+v", got)
 	}
 	// It can still pause it if it gets past the pause thresholds.
 	h.eventsFor(t, "complaint", "other", 4, h.now.Add(2*time.Second))
 	if got := h.checkHealth(t); got.Pause == nil {
-		t.Error("a throttled campaign over 0.3% didn't pause")
+		t.Error("a throttled campaign over 0.1% didn't pause")
 	}
 }
 
@@ -145,7 +149,7 @@ func TestNoThrottleUnder500(t *testing.T) {
 }
 
 func TestThrottleThresholdsConfigured(t *testing.T) {
-	h := launchedHarness(t, 999)
+	h := launchedHarness(t, 2999)
 	h.markSent(t, h.now)
 	h.eventsFor(t, "complaint", "", 2, h.now)
 	ctx := context.Background()
@@ -161,7 +165,7 @@ func TestThrottleThresholdsConfigured(t *testing.T) {
 }
 
 func TestThirdThrottlePauses(t *testing.T) {
-	h := launchedHarness(t, 999)
+	h := launchedHarness(t, 2999)
 	ctx := context.Background()
 	h.markSent(t, h.now)
 	// Two throttles in the last 30 days, one older.
@@ -205,7 +209,7 @@ func TestThirdThrottlePauses(t *testing.T) {
 // throttles sees one another transaction commits while this one waits for
 // the account's lock.
 func TestThirdThrottleSeesConcurrentThrottle(t *testing.T) {
-	h := launchedHarness(t, 999)
+	h := launchedHarness(t, 2999)
 	ctx := context.Background()
 	h.markSent(t, h.now)
 	at := h.now.AddDate(0, 0, -20)
@@ -275,7 +279,7 @@ func TestThirdThrottleSeesConcurrentThrottle(t *testing.T) {
 }
 
 func TestThrottledLimit(t *testing.T) {
-	h := launchedHarness(t, 999)
+	h := launchedHarness(t, 2999)
 	ctx := context.Background()
 	l := Limits{PerSecond: 100, Daily: 10000, NewDaily: 1000}
 	since := h.now.AddDate(0, -3, 0)
@@ -381,7 +385,7 @@ func TestThrottleNotices(t *testing.T) {
 		}
 	}
 	for _, want := range []string{`"Bread week"`, "0.2% of them marked it as spam (2 people)", "0.5% of the addresses don't exist (5 hard bounces)",
-		"lowered to 1,000", "Nov 26, 2026 at 16:05 UTC", "0.1% for spam complaints and 2% for hard bounces"} {
+		"lowered to 1,000", "Nov 26, 2026 at 16:05 UTC", "0.05% for spam complaints and 2% for hard bounces"} {
 		if !strings.Contains(owner.Text, want) {
 			t.Errorf("owner email lacks %q:\n%s", want, owner.Text)
 		}

@@ -50,10 +50,15 @@ func TestRates(t *testing.T) {
 		want bool
 	}{
 		{Rates{Sent: 499, Complaints: 100}, false}, // too small to judge
-		{Rates{Sent: 1000, Complaints: 3}, false},  // 0.3% is the limit, not over it
-		{Rates{Sent: 1000, Complaints: 4}, true},
-		{Rates{Sent: 1000, HardBounces: 50}, false},
-		{Rates{Sent: 1000, HardBounces: 51}, true},
+		{Rates{Sent: 500, Complaints: 1}, false},   // 0.2%, but one complaint is chance
+		{Rates{Sent: 500, Complaints: 2}, true},
+		{Rates{Sent: 2000, Complaints: 2}, false}, // 0.1% is the limit, not over it
+		{Rates{Sent: 2000, Complaints: 3}, true},
+		{Rates{Sent: 1000, HardBounces: 30}, false},
+		{Rates{Sent: 1000, HardBounces: 31}, true},
+		// One complaint doesn't count, so the bounces decide.
+		{Rates{Sent: 500, Complaints: 1, HardBounces: 15}, false},
+		{Rates{Sent: 500, Complaints: 1, HardBounces: 16}, true},
 	}
 	for _, c := range cases {
 		if got := c.r.Unhealthy(); got != c.want {
@@ -118,25 +123,26 @@ func (h *harness) paused(t *testing.T) (bool, string) {
 func TestAutoPauseOnComplaints(t *testing.T) {
 	h := launchedHarness(t, 999)
 	h.markSent(t, h.now)
-	h.eventsFor(t, "complaint", "abuse", 3, h.now)
+	// One complaint is 0.1%, the limit, and only one: not paused.
+	h.eventsFor(t, "complaint", "abuse", 1, h.now)
 	if ap := h.check(t); ap != nil {
-		t.Fatalf("paused at 0.3%%: %+v", ap)
+		t.Fatalf("paused at one complaint: %+v", ap)
 	}
-	// A fourth complaint is 0.4%: paused.
+	// A second is 0.2%: paused.
 	if _, err := h.db.Exec(context.Background(), `DELETE FROM send_events`); err != nil {
 		t.Fatal(err)
 	}
-	h.eventsFor(t, "complaint", "abuse", 4, h.now)
+	h.eventsFor(t, "complaint", "abuse", 2, h.now)
 	ap := h.check(t)
 	if ap == nil {
-		t.Fatal("not paused at 0.4%")
+		t.Fatal("not paused at 0.2%")
 	}
 	if ap.AccountID != h.acc || ap.CampaignName != "Bread week" || ap.AccountName != "Pat's Bakery" ||
-		ap.Rates != (Rates{Sent: 1000, Complaints: 4}) {
+		ap.Rates != (Rates{Sent: 1000, Complaints: 2}) {
 		t.Errorf("pause = %+v", ap)
 	}
 	paused, reason := h.paused(t)
-	if !paused || !strings.Contains(reason, `0.4% of the people sent "Bread week" marked it as spam`) {
+	if !paused || !strings.Contains(reason, `0.2% of the people sent "Bread week" marked it as spam, over the 0.1% limit`) {
 		t.Errorf("paused %v, reason %q", paused, reason)
 	}
 	var actor, action string
@@ -147,7 +153,7 @@ func TestAutoPauseOnComplaints(t *testing.T) {
 	}
 	var d Rates
 	_ = json.Unmarshal(details, &d)
-	if actor != "automatic" || action != "auto_pause" || d.Complaints != 4 {
+	if actor != "automatic" || action != "auto_pause" || d.Complaints != 2 {
 		t.Errorf("logged %s %s %s", actor, action, details)
 	}
 	// Once lifted, the same campaign doesn't pause it again.
@@ -162,19 +168,19 @@ func TestAutoPauseOnComplaints(t *testing.T) {
 func TestAutoPauseOnHardBounces(t *testing.T) {
 	h := launchedHarness(t, 499)
 	h.markSent(t, h.now)
-	h.eventsFor(t, "bounce", "permanent/General", 25, h.now)
+	h.eventsFor(t, "bounce", "permanent/General", 15, h.now)
 	h.eventsFor(t, "bounce", "transient/MailboxFull", 100, h.now.Add(time.Second))
 	if ap := h.check(t); ap != nil {
-		t.Fatalf("paused at 5%% (soft bounces don't count): %+v", ap)
+		t.Fatalf("paused at 3%% (soft bounces don't count): %+v", ap)
 	}
 	if _, err := h.db.Exec(context.Background(), `DELETE FROM send_events WHERE subtype LIKE 'permanent/%'`); err != nil {
 		t.Fatal(err)
 	}
-	h.eventsFor(t, "bounce", "permanent/General", 26, h.now)
+	h.eventsFor(t, "bounce", "permanent/General", 16, h.now)
 	if ap := h.check(t); ap == nil {
-		t.Fatal("not paused at 5.2%")
+		t.Fatal("not paused at 3.2%")
 	}
-	if _, reason := h.paused(t); !strings.Contains(reason, `5.2% of the addresses "Bread week" went to don't exist`) {
+	if _, reason := h.paused(t); !strings.Contains(reason, `3.2% of the addresses "Bread week" went to don't exist (hard bounces), over the 3% limit`) {
 		t.Errorf("reason %q", reason)
 	}
 }
@@ -244,7 +250,7 @@ func TestDailyLimitGrowsWhileClean(t *testing.T) {
 	if got := limit(); got != 40 {
 		t.Fatalf("clean at 15 days: %d, want 40", got)
 	}
-	// Complaints over 0.3% of 500 or more copies in the last 30 days hold
+	// Bounces or complaints over the pause limits on 500 or more copies in the last 30 days hold
 	// it at the new-account limit.
 	h.markSent(t, h.now.AddDate(0, 0, -3))
 	if _, err := h.db.Exec(ctx, `

@@ -18,10 +18,16 @@ import (
 // Account health (CMP-6) and send limits (CMP-7).
 //
 // After a campaign has gone to HealthMinRecipients or more, its account is
-// paused if more than 0.3% of them complained or more than 5% hard
-// bounced. The check runs on every bounce and complaint SES reports, so a
-// campaign that goes bad is stopped while it's still sending, and one whose
-// complaints come in days later is still caught.
+// paused if more than 0.1% of them complained (and at least MinComplaints
+// did) or more than 3% hard bounced. The check runs on every bounce and
+// complaint SES reports, so a campaign that goes bad is stopped while it's
+// still sending, and one whose complaints come in days later is still
+// caught.
+//
+// The thresholds sit at AWS's own: it reviews the whole SES account, which
+// every customer shares, at 0.1% complaints or 5% bounces. A customer over
+// 0.1% is pulling the account towards that review, so it's stopped there
+// (MG-79).
 //
 // An account's daily limit grows with clean history: the new-account
 // limit for its first week, then double that each week (1,000, 2,000,
@@ -32,10 +38,15 @@ const (
 	// HealthMinRecipients is the smallest campaign (copies sent) the
 	// thresholds apply to.
 	HealthMinRecipients = 500
-	// ComplaintsPer10k and HardBouncesPer10k are the thresholds: 0.3% and
-	// 5%, in hundredths of a percent.
-	ComplaintsPer10k  = 30
-	HardBouncesPer10k = 500
+	// MinComplaints is the fewest complaints a campaign's or account's
+	// complaint rate is judged on. At 0.1%, one complaint on any campaign
+	// under 1,000 copies would be over the line; one is chance, two is a
+	// pattern. A new account's slice (MG-62) is judged without it.
+	MinComplaints = 2
+	// ComplaintsPer10k and HardBouncesPer10k are the thresholds: 0.1% and
+	// 3%, in hundredths of a percent.
+	ComplaintsPer10k  = 10
+	HardBouncesPer10k = 300
 	// HealthWindow is how far back an account's history counts for its
 	// limit.
 	HealthWindow = 30 * 24 * time.Hour
@@ -44,6 +55,12 @@ const (
 // over says whether n of sent is over a threshold in hundredths of a
 // percent.
 func over(n, sent, per10k int) bool { return n*10000 > sent*per10k }
+
+// complaintsOver says whether r's complaints are over a threshold in
+// hundredths of a percent, and at least min of them.
+func (r Rates) complaintsOver(per10k, min int) bool {
+	return r.Complaints >= min && over(r.Complaints, r.Sent, per10k)
+}
 
 // LimitSchedule is an account's daily limit by age (CMP-7), before its own
 // limit: newDaily in its first week and while it isn't clean, then doubling
@@ -74,15 +91,18 @@ type Rates struct {
 	Complaints  int `json:"complaints"`
 }
 
-// Unhealthy says whether the rates are over a threshold, on enough copies.
+// Unhealthy says whether the rates are over a threshold, on enough copies
+// and complaints.
 func (r Rates) Unhealthy() bool {
-	return r.Sent >= HealthMinRecipients && r.overPause()
+	return r.Sent >= HealthMinRecipients && r.overPauseFrom(MinComplaints)
 }
 
 // overPause says whether the rates are over a pause threshold, on any
-// number of copies.
-func (r Rates) overPause() bool {
-	return over(r.Complaints, r.Sent, ComplaintsPer10k) || over(r.HardBounces, r.Sent, HardBouncesPer10k)
+// number of copies and complaints, as a slice is judged.
+func (r Rates) overPause() bool { return r.overPauseFrom(1) }
+
+func (r Rates) overPauseFrom(minComplaints int) bool {
+	return r.complaintsOver(ComplaintsPer10k, minComplaints) || over(r.HardBounces, r.Sent, HardBouncesPer10k)
 }
 
 // accountClean says whether an account's last 30 days let its limit grow.
@@ -211,12 +231,14 @@ func percent(n, of int) string {
 
 func pauseReason(ap *AutoPause) string {
 	r := ap.Rates
-	if over(r.Complaints, r.Sent, ComplaintsPer10k) {
-		return fmt.Sprintf("It was paused automatically: %s of the people sent %q marked it as spam, over the 0.3%% limit.",
-			percent(r.Complaints, r.Sent), ap.CampaignName)
+	// A single complaint over the rate pauses a slice but not a full
+	// campaign, so it's named only when the bounces didn't pause it.
+	if r.complaintsOver(ComplaintsPer10k, MinComplaints) || !over(r.HardBounces, r.Sent, HardBouncesPer10k) {
+		return fmt.Sprintf("It was paused automatically: %s of the people sent %q marked it as spam, over the %s limit.",
+			percent(r.Complaints, r.Sent), ap.CampaignName, per10k(ComplaintsPer10k))
 	}
-	return fmt.Sprintf("It was paused automatically: %s of the addresses %q went to don't exist (hard bounces), over the 5%% limit.",
-		percent(r.HardBounces, r.Sent), ap.CampaignName)
+	return fmt.Sprintf("It was paused automatically: %s of the addresses %q went to don't exist (hard bounces), over the %s limit.",
+		percent(r.HardBounces, r.Sent), ap.CampaignName, per10k(HardBouncesPer10k))
 }
 
 // OpsAlert tells mailgoose's operators about automatic pauses (CMP-6): an
