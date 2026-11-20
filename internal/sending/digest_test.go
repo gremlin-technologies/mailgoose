@@ -155,8 +155,8 @@ func TestDigestRates(t *testing.T) {
 	h.markSent(t, h.now.Add(-time.Hour))
 	now := time.Date(2026, 11, 18, 13, 0, 0, 0, time.UTC) // h.now is 12:00
 
-	// One complaint in 1,000 is at the early warning, not over it: a
-	// quiet day.
+	// One complaint in 1,000 is over 0.05%, but the early warning needs at
+	// least two: a quiet day.
 	h.eventsFor(t, "complaint", "", 1, h.now.Add(-30*time.Minute))
 	tx, err := h.db.Begin(ctx)
 	if err != nil {
@@ -189,7 +189,7 @@ func TestDigestRates(t *testing.T) {
 	for _, want := range []string{
 		"- Last 24 hours: 1,000 sent, 3 hard bounces (0.3%), 2 complaints (0.2%). OVER THE EARLY WARNING.",
 		"- Last 30 days: 1,000 sent, 3 hard bounces (0.3%), 2 complaints (0.2%). OVER THE EARLY WARNING.",
-		"Early warning at 0.1% complaints or 2% hard bounces, on 500 or more copies.",
+		"Early warning at 0.05% complaints (and at least 2) or 2% hard bounces, on 500 or more copies.",
 	} {
 		if !strings.Contains(m.Text, want) {
 			t.Errorf("missing %q in:\n%s", want, m.Text)

@@ -469,10 +469,10 @@ func TestSQSHandler(t *testing.T) {
 func TestComplaintsPauseAccount(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	// 1,000 copies of the campaign went out.
+	// 3,000 copies of the campaign went out.
 	if _, err := h.db.Exec(ctx, `
 		INSERT INTO campaign_recipients (account_id, campaign_id, status, sent_at, message_id)
-		SELECT $1, $2, 'sent', now(), 'copy-' || i FROM generate_series(1, 999) i`, h.acc, h.campaign); err != nil {
+		SELECT $1, $2, 'sent', now(), 'copy-' || i FROM generate_series(1, 2999) i`, h.acc, h.campaign); err != nil {
 		t.Fatal(err)
 	}
 	var alerts []sending.AutoPause
@@ -488,20 +488,21 @@ func TestComplaintsPauseAccount(t *testing.T) {
 	}
 	complain(1)
 	if len(throttles) != 0 {
-		t.Fatalf("throttled at 0.1%%: %+v", throttles)
+		t.Fatalf("throttled on one complaint: %+v", throttles)
 	}
-	// Past the 0.1% early warning: throttled (MG-61), once.
+	// Two complaints, past the 0.05% early warning: throttled (MG-61), once.
+	// A third is 0.1%, the pause limit but not over it.
 	for i := 2; i <= 3; i++ {
 		complain(i)
 	}
 	if len(alerts) != 0 {
-		t.Fatalf("paused at 0.3%%: %+v", alerts)
+		t.Fatalf("paused at 0.1%%: %+v", alerts)
 	}
 	if len(throttles) != 1 || throttles[0].AccountID != h.acc || throttles[0].Rates.Complaints != 2 {
 		t.Fatalf("throttles = %+v", throttles)
 	}
 	complain(4)
-	if len(alerts) != 1 || alerts[0].AccountID != h.acc || alerts[0].Rates.Complaints != 4 || alerts[0].Rates.Sent != 1000 {
+	if len(alerts) != 1 || alerts[0].AccountID != h.acc || alerts[0].Rates.Complaints != 4 || alerts[0].Rates.Sent != 3000 {
 		t.Fatalf("alerts = %+v", alerts)
 	}
 	var paused bool

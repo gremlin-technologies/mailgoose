@@ -890,8 +890,10 @@ An account that isn't clean is held at 1,000 until it is. An account's own
 `daily_send_limit` replaces the schedule.
 
 **Automatic pause.** Once a campaign has gone to 500 or more people, its
-account's sending is paused if more than 0.3% of them complained or more
-than 5% hard bounced. The check runs on each complaint and hard bounce, so a
+account's sending is paused if more than 0.1% of them complained (with at
+least 2 complaints, since one is chance) or more than 3% hard bounced. These
+sit at AWS's own review line for the whole SES account (0.1% complaints, 5%
+bounces), which every customer shares. The check runs on each complaint and hard bounce, so a
 campaign is stopped while it's still sending, and one whose complaints come
 days later is still caught. A campaign pauses its account once; after the
 pause is lifted it doesn't pause it again. The account is told why (the
@@ -935,8 +937,8 @@ still holds), imports held for review and sign-ups waiting for review
 (however old), and the platform's campaign complaint and hard-bounce rates
 over 24 hours and 30 days. Each item names the account and the `mailgoose
 admin` commands to act on it. Nothing is sent on a quiet day: no items, and
-neither rate over the early warning (0.1% complaints or 2% hard bounces, on
-500 or more copies, as for one account). A row in `ops_digests` claims each
+neither rate over the early warning (0.05% complaints, from two complaints,
+or 2% hard bounces, on 500 or more copies, as for one account). A row in `ops_digests` claims each
 day, so the digest goes at most once a day however many worker tasks run or
 restart; one started after the hour sends that day's late. With no
 `OPS_ALERT_EMAIL` the job doesn't run.

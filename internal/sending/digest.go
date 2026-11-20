@@ -126,8 +126,8 @@ func (d Digest) Text() string {
 	fmt.Fprintf(&b, "- Last 24 hours: %s\n", rateLine(d.Day, d.Warning))
 	fmt.Fprintf(&b, "- Last 30 days: %s\n", rateLine(d.Month, d.Warning))
 	w := d.Warning.orDefault()
-	fmt.Fprintf(&b, "\nEarly warning at %s complaints or %s hard bounces, on %d or more copies.\n",
-		percent(w.ComplaintsPer10k, 10000), percent(w.HardBouncesPer10k, 10000), HealthMinRecipients)
+	fmt.Fprintf(&b, "\nEarly warning at %s complaints (and at least %d) or %s hard bounces, on %d or more copies.\n",
+		percent(w.ComplaintsPer10k, 10000), MinComplaints, percent(w.HardBouncesPer10k, 10000), HealthMinRecipients)
 	return b.String()
 }
 
