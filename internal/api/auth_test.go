@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -46,5 +47,39 @@ func TestSignupDoesNotRevealExistingAccounts(t *testing.T) {
 	h.ServeHTTP(again, jsonRequest(http.MethodPost, "/v1/signup", signupBody)(t))
 	if first.Code != again.Code || first.Body.String() != again.Body.String() {
 		t.Errorf("new address: %d %s\nactive address: %d %s", first.Code, first.Body, again.Code, again.Body)
+	}
+}
+
+// The session cookie is Secure everywhere except a plain-HTTP request
+// straight to this machine, where WebKit won't keep a Secure cookie (MG-59).
+func TestSecureCookie(t *testing.T) {
+	cases := []struct {
+		host, proto string
+		overTLS     bool
+		want        bool
+	}{
+		{host: "app.mailgoose.app", want: true},
+		{host: "api.staging.mailgoose.app", proto: "https", want: true},
+		{host: "localhost", proto: "http", want: true},
+		{host: "localhost:8080", overTLS: true, want: true},
+		{host: "evil.localhost.example", want: true},
+		{host: "10.0.0.5:8080", want: true},
+		{host: "localhost:8080", want: false},
+		{host: "LOCALHOST", want: false},
+		{host: "127.0.0.1:8080", want: false},
+		{host: "[::1]:8080", want: false},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest(http.MethodPost, "/v1/sessions", nil)
+		r.Host = c.host
+		if c.proto != "" {
+			r.Header.Set("X-Forwarded-Proto", c.proto)
+		}
+		if c.overTLS {
+			r.TLS = &tls.ConnectionState{}
+		}
+		if got := secureCookie(r); got != c.want {
+			t.Errorf("host %q proto %q TLS %v: secure = %v, want %v", c.host, c.proto, c.overTLS, got, c.want)
+		}
 	}
 }

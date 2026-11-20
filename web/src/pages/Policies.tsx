@@ -183,9 +183,11 @@ function VersionLine() {
 export function PolicyPage({ policy }: { policy: Policy }) {
   return (
     <div className="policy">
-      <Link to="/" className="brand auth-brand">
-        mailgoose
-      </Link>
+      <header>
+        <Link to="/" className="brand auth-brand">
+          mailgoose
+        </Link>
+      </header>
       <main className="card policy-card">
         <h1>{policy.title}</h1>
         <VersionLine />
@@ -234,9 +236,11 @@ function PolicyNav({ current }: { current: string }) {
 export function PolicyChangesPage() {
   return (
     <div className="policy">
-      <Link to="/" className="brand auth-brand">
-        mailgoose
-      </Link>
+      <header>
+        <Link to="/" className="brand auth-brand">
+          mailgoose
+        </Link>
+      </header>
       <main className="card policy-card">
         <h1>What changed in our policies</h1>
         <p>

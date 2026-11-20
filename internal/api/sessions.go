@@ -2,8 +2,10 @@ package api
 
 import (
 	"math"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
@@ -48,7 +50,7 @@ func (s *Server) DeleteCurrentSession(w http.ResponseWriter, r *http.Request) {
 	if s.authError(w, r, s.Auth.SignOut(r.Context(), cur.SessionID)) {
 		return
 	}
-	clearSessionCookie(w)
+	clearSessionCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -61,7 +63,7 @@ func (s *Server) DeleteAllSessions(w http.ResponseWriter, r *http.Request) {
 	if s.authError(w, r, s.Auth.SignOutEverywhere(r.Context(), cur.User.ID)) {
 		return
 	}
-	clearSessionCookie(w)
+	clearSessionCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -80,27 +82,47 @@ func (s *Server) currentSession(w http.ResponseWriter, r *http.Request) (*auth.C
 	return c.Session, true
 }
 
-func setSessionCookie(w http.ResponseWriter, token string, expires time.Time) {
-	http.SetCookie(w, &http.Cookie{
+// secureCookie reports whether the session cookie is marked Secure. It always
+// is, except on a plain-HTTP request straight to this machine (the local
+// stack, as the end-to-end test runs it): WebKit won't store a Secure cookie
+// from http://localhost, though Chrome and Firefox do (MG-59). A request
+// through the load balancer carries X-Forwarded-Proto, so it stays Secure.
+func secureCookie(r *http.Request) bool {
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") != "" {
+		return true
+	}
+	host := r.Host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if strings.EqualFold(host, "localhost") {
+		return false
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip == nil || !ip.IsLoopback()
+}
+
+func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expires time.Time) {
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure except on the local stack, see secureCookie.
 		Name:     SessionCookie,
 		Value:    token,
 		Path:     "/",
 		Expires:  expires,
 		MaxAge:   int(time.Until(expires).Seconds()),
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   secureCookie(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }
 
-func clearSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
+func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure except on the local stack, see secureCookie.
 		Name:     SessionCookie,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   secureCookie(r),
 		SameSite: http.SameSiteLaxMode,
 	})
 }

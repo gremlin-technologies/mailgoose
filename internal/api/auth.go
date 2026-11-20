@@ -68,7 +68,7 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	if s.authError(w, r, err) {
 		return
 	}
-	setSessionCookie(w, sess.Token, sess.ExpiresAt)
+	setSessionCookie(w, r, sess.Token, sess.ExpiresAt)
 	writeJSON(w, http.StatusCreated, sessionJSON(sess.Account, sess.User, sess.ExpiresAt))
 }
 

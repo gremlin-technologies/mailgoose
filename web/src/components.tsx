@@ -7,14 +7,16 @@ import type { Failure, Result } from "./api/result";
 export function AuthCard({ title, children, footer }: { title: string; children: ReactNode; footer?: ReactNode }) {
   return (
     <div className="auth">
-      <Link to="/" className="brand auth-brand">
-        mailgoose
-      </Link>
+      <header>
+        <Link to="/" className="brand auth-brand">
+          mailgoose
+        </Link>
+      </header>
       <main className="card">
         <h1>{title}</h1>
         {children}
       </main>
-      {footer && <p className="auth-footer">{footer}</p>}
+      {footer && <footer className="auth-footer">{footer}</footer>}
     </div>
   );
 }

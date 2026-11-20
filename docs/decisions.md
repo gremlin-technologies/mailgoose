@@ -385,8 +385,15 @@ Picked while building MG-59; easy to change.
   Chromium, Firefox, WebKit (standing in for Safari) and Edge on every pull
   request. A check on a real Mac and iPhone is left for the launch
   checklist.
-- **Two fixes it found:** an empty designer column was an empty list, and a
-  heading block with no text was an empty heading.
+- **Fixes it found:** an empty designer column was an empty list, and a
+  heading block with no text was an empty heading. On the sign-in, sign-up
+  and policy pages the logo and footer sat outside any landmark; they're now
+  in a header and footer.
+- **The session cookie isn't Secure on the local stack.** WebKit won't keep a
+  Secure cookie from `http://localhost`, so sign-in failed there. The cookie
+  drops Secure only for a plain-HTTP request straight to localhost or a
+  loopback address with no `X-Forwarded-Proto`; anything through the load
+  balancer, staging and prod included, stays Secure.
 
 ## 2026-11-19: End-to-end tests (MG-58, reversible defaults)
 

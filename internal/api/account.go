@@ -192,7 +192,7 @@ func (s *Server) DeleteAccount(w http.ResponseWriter, r *http.Request, params ap
 	}
 	s.Log.InfoContext(r.Context(), "account deleted", "account_id", c.AccountID)
 	if c.Kind == KindSession {
-		clearSessionCookie(w)
+		clearSessionCookie(w, r)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
