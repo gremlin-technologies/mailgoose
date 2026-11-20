@@ -2,9 +2,11 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
+import { expectAccessible } from "../test/axe";
 import { apiError, fakeApi, renderApp, signedIn } from "../test/render";
 import type { Block, BlockDocument } from "./blocks";
-import { fallbackProblem, insert, link, list, mergeTag, wrap } from "./format";
+import { fallbackProblem, insert, mergeTag } from "./format";
+import { htmlToMd, mdToHtml } from "./richtext";
 
 const emailId = "33333333-3333-4333-8333-333333333333";
 const base = `/v1/emails/${emailId}`;
@@ -84,15 +86,30 @@ const canvas = () => screen.getByRole("list", { name: "Email content" });
 const properties = () => screen.getByRole("complementary", { name: "Properties" });
 const editButton = (name: string) => within(within(canvas()).getByRole("group", { name })).getByRole("button", { name: "Edit" });
 
+const holder = (html: string) => {
+  const el = document.createElement("div");
+  el.innerHTML = html;
+  return el;
+};
+
 describe("text formatting", () => {
-  it("wraps, links, lists and inserts at the selection", () => {
-    expect(wrap("Fresh bread", 6, 11, "**", "bold text")).toEqual({ text: "Fresh **bread**", start: 8, end: 13 });
-    expect(wrap("Hi ", 3, 3, "*", "italic text")).toEqual({ text: "Hi *italic text*", start: 4, end: 15 });
-    expect(link("See the menu", 4, 12, "https://bakery.example")).toMatchObject({ text: "See [the menu](https://bakery.example)" });
-    expect(link("", 0, 0, "https://bakery.example").text).toBe("[https://bakery.example](https://bakery.example)");
-    expect(list("Intro\nbread\ncakes\nEnd", 7, 13, false).text).toBe("Intro\n- bread\n- cakes\nEnd");
-    expect(list("- bread\n- cakes", 0, 15, true).text).toBe("1. bread\n2. cakes");
+  it("inserts at the selection", () => {
     expect(insert("Hi !", 3, 3, "{{first_name}}")).toEqual({ text: "Hi {{first_name}}!", start: 17, end: 17 });
+  });
+
+  it("shows a text block's Markdown as HTML and reads edited HTML back", () => {
+    const md = "Fresh **bread** and [cakes](https://bakery.example).\n\n- One *thing*\n- Two\n\n1. First\n2. Second\n\nLine one\nline two";
+    expect(mdToHtml(md)).toBe(
+      '<p>Fresh <strong>bread</strong> and <a href="https://bakery.example" title="https://bakery.example">cakes</a>.</p>' +
+        "<ul><li>One <em>thing</em></li><li>Two</li></ul><ol><li>First</li><li>Second</li></ol><p>Line one<br>line two</p>",
+    );
+    expect(htmlToMd(holder(mdToHtml(md)))).toBe(md);
+    expect(mdToHtml("")).toBe("<p><br></p>");
+    expect(mdToHtml("<b>&</b> [x](javascript:alert(1))")).toBe("<p>&lt;b&gt;&amp;&lt;/b&gt; [x](javascript:alert(1))</p>");
+    // What browsers leave: divs for lines, spaces inside bold, styles the subset can't say.
+    expect(htmlToMd(holder("One<div>Two <b>bold </b>three</div><div><br></div>"))).toBe("One\n\nTwo **bold** three");
+    expect(htmlToMd(holder('<p><u>plain</u> <b><i>both</i></b> <a href="javascript:x">no</a></p>'))).toBe("plain **both** no");
+    expect(htmlToMd(holder("<p><br></p>"))).toBe("");
   });
 
   it("writes merge tags with fallbacks the API accepts", () => {
@@ -130,6 +147,8 @@ describe("designer properties and autosave", () => {
     await user.click(within(properties()).getByLabelText("Center"));
     await waitFor(() => expect(patches(api.calls, `${base}/blocks/b_heading001`)).toHaveLength(2), slow);
     expect(patches(api.calls, `${base}/blocks/b_heading001`)[1]).toEqual({ version: 4, fields: { level: 3, align: "center" } });
+    // A new size is a new element (h3), which still shows the words.
+    expect(within(canvas()).getByRole("heading", { name: "Summer menu", level: 3 })).toBeTruthy();
   });
 
   it("changes the email's settings, with a merge tag in the subject", async () => {
@@ -161,32 +180,90 @@ describe("designer properties and autosave", () => {
     expect(screen.getByRole("heading", { name: "Spring 2027", level: 1 })).toBeTruthy();
   });
 
-  it("formats a text block in place", async () => {
+  it("types on a text block in place, saving its Markdown", async () => {
     const api = server();
     const user = userEvent.setup();
     renderApp(`/emails/${emailId}`, api.fetch);
     await user.click(await screen.findByText("Fresh bread."));
-    const box = within(canvas()).getByRole("textbox", { name: "Text" }) as HTMLTextAreaElement;
-    box.setSelectionRange(6, 11);
-    await user.click(within(canvas()).getByRole("button", { name: "Bold" }));
-    expect(box.value).toBe("Fresh **bread**.");
-    await user.click(within(canvas()).getByRole("button", { name: "Link" }));
-    const url = within(canvas()).getByLabelText("Link address");
-    await user.clear(url);
-    await user.type(url, "https://bakery.example");
-    box.setSelectionRange(0, 5);
-    await user.click(within(canvas()).getByRole("button", { name: "Add link" }));
-    expect(box.value).toBe("[Fresh](https://bakery.example) **bread**.");
+    // The block is selected, with its formatting buttons, and typed on where it sits.
+    const box = within(canvas()).getByRole("textbox", { name: "Text" });
+    expect(box.getAttribute("contenteditable")).toBe("true");
+    expect(within(canvas()).getByRole("toolbar", { name: "Formatting" })).toBeTruthy();
+    for (const name of ["Bold", "Italic", "Link", "Bulleted list", "Numbered list", "Merge tag"]) {
+      expect(within(canvas()).getByRole("button", { name })).toBeTruthy();
+    }
+    // What the browser's editing leaves behind is read back as Markdown.
+    box.innerHTML = '<p><a href="https://bakery.example">Fresh</a> <b>bread</b>.</p>';
+    fireEvent.input(box);
+    expect(screen.getByRole("status").textContent).toBe("Unsaved changes");
 
     await waitFor(() => expect(patches(api.calls, `${base}/blocks/b_text00001`)).toHaveLength(1), slow);
     expect(patches(api.calls, `${base}/blocks/b_text00001`)[0]).toEqual({
       version: 3,
       fields: { text: "[Fresh](https://bakery.example) **bread**." },
     });
+    // Saving doesn't redraw the words under the caret.
+    expect(within(canvas()).getByText("bread").tagName).toBe("B");
 
-    // Clicking off the block shows it as it'll look.
     await user.click(screen.getByRole("button", { name: "Email settings" }));
-    expect(within(canvas()).getByText("bread").tagName).toBe("STRONG");
+    expect(within(canvas()).queryByRole("toolbar", { name: "Formatting" })).toBeNull();
+  });
+
+  it("types a heading and a button's words on the email", async () => {
+    const api = server();
+    renderApp(`/emails/${emailId}`, api.fetch);
+    const heading = await within(await screen.findByRole("list", { name: "Email content" })).findByRole("heading", { name: "Spring menu" });
+    fireEvent.focus(heading);
+    heading.textContent = "Summer menu";
+    fireEvent.input(heading);
+    // The properties panel follows what's typed on the email.
+    expect((within(properties()).getByLabelText("Heading") as HTMLInputElement).value).toBe("Summer menu");
+    await waitFor(() => expect(patches(api.calls, `${base}/blocks/b_heading001`)).toEqual([{ version: 3, fields: { text: "Summer menu" } }]), slow);
+  });
+
+  it("names an emptied heading so it isn't an empty h1, and drops the name once it has words", async () => {
+    const api = server();
+    renderApp(`/emails/${emailId}`, api.fetch);
+    const heading = await within(await screen.findByRole("list", { name: "Email content" })).findByRole("heading", { name: "Spring menu" });
+    fireEvent.focus(heading);
+    heading.textContent = "";
+    fireEvent.input(heading);
+    // The placeholder is CSS, so without a name the heading would be empty to axe (empty-heading).
+    expect(within(canvas()).getByRole("heading", { name: "Empty heading" })).toBe(heading);
+    await expectAccessible();
+
+    heading.textContent = "Summer";
+    fireEvent.input(heading);
+    expect(within(canvas()).getByRole("heading", { name: "Summer" })).toBe(heading);
+    expect(heading.hasAttribute("aria-label")).toBe(false);
+    await waitFor(() => expect(patches(api.calls, `${base}/blocks/b_heading001`).at(-1)).toMatchObject({ fields: { text: "Summer" } }), slow);
+  });
+
+  it("refuses a link address the saved email would drop", async () => {
+    const api = server();
+    const user = userEvent.setup();
+    renderApp(`/emails/${emailId}`, api.fetch);
+    await user.click(await screen.findByText("Fresh bread."));
+    await user.click(within(canvas()).getByRole("button", { name: "Link" }));
+    const address = within(canvas()).getByLabelText("Link address");
+    for (const bad of ["javascript:alert(1)", "bakery.example"]) {
+      await user.clear(address);
+      await user.type(address, bad);
+      await user.click(within(canvas()).getByRole("button", { name: "Add link" }));
+      expect(within(canvas()).getByRole("alert").textContent).toMatch(/Start the address with https:\/\//);
+      expect(address.getAttribute("aria-invalid")).toBe("true");
+      // The form stays open for a fix, and nothing was made or saved.
+      expect(within(canvas()).getByRole("group", { name: "Add a link" })).toBeTruthy();
+    }
+    expect(patches(api.calls, `${base}/blocks/b_text00001`)).toHaveLength(0);
+
+    // Typing again clears the message; an address that survives a save is accepted.
+    await user.clear(address);
+    expect(within(canvas()).queryByRole("alert")).toBeNull();
+    await user.type(address, "https://bakery.example/menu");
+    await user.click(within(canvas()).getByRole("button", { name: "Add link" }));
+    expect(within(canvas()).queryByRole("alert")).toBeNull();
+    expect(within(canvas()).queryByRole("group", { name: "Add a link" })).toBeNull();
   });
 
   it("picks an image uploaded before", async () => {
