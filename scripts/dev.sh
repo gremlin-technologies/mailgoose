@@ -19,6 +19,10 @@ export MAIL_CAPTURE_DIR="$PWD/.local/mail"
 # launch straight away, as the end-to-end tests do. SIGNUP_REVIEW=all or
 # flagged tries the review.
 export SIGNUP_REVIEW="${SIGNUP_REVIEW:-off}"
+# New accounts start with full sending locally (MG-80), since the end-to-end
+# tests sign up and launch to any address. NEW_ACCOUNTS_TEST_MODE=on tries
+# test mode.
+export NEW_ACCOUNTS_TEST_MODE="${NEW_ACCOUNTS_TEST_MODE:-off}"
 if [ -f web/dist/index.html ]; then
   export WEB_DIR="$PWD/web/dist"
 fi

@@ -52,6 +52,7 @@ func (s *Server) testSendError(w http.ResponseWriter, r *http.Request, err error
 	var notReady *sending.NotReadyError
 	var invalid *sending.InvalidError
 	var recipient *sending.RecipientError
+	var testMode *sending.TestModeError
 	var suppressed *sending.SuppressedError
 	var limit *sending.LimitError
 	var failed *sending.SendError
@@ -71,6 +72,10 @@ func (s *Server) testSendError(w http.ResponseWriter, r *http.Request, err error
 		WriteError(w, Unprocessable("test_recipient_suppressed", suppressed.Address+" "+why+", so tests don't go to it.").
 			WithHint("Send the test to another address, or leave `to` out to send it to yourself.").
 			WithDetails(map[string]any{"address": suppressed.Address}))
+	case errors.As(err, &testMode):
+		WriteError(w, Unprocessable("test_mode", "This account is in test mode, so tests go only to its confirmed test addresses and the owner's own address, and "+testMode.Address+" is neither.").
+			WithHint("Add it with `mailgoose test-addresses add "+testMode.Address+"` and use the link emailed to it, or leave `to` out to send to yourself.").
+			WithDetails(map[string]any{"address": testMode.Address}))
 	case errors.As(err, &recipient):
 		WriteError(w, Unprocessable("test_recipient_not_allowed", "Tests go to the account owner or to addresses on a verified sending domain, and "+recipient.Address+" is neither.").
 			WithHint("Leave `to` out to send to yourself, or verify the address's domain with `mailgoose domain add`.").

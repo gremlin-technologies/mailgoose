@@ -1,4 +1,5 @@
 import { useCallback, useState, type FormEvent } from "react";
+import { Link } from "react-router";
 
 import { useApi } from "../api/context";
 import { attempt, type Failure } from "../api/result";
@@ -33,6 +34,7 @@ export function Settings() {
               setJustSaved(true);
             }}
           />
+          <SendingMode mode={state.data.sending_mode} />
           <DeleteAccount name={state.data.name} />
         </>
       )}
@@ -202,6 +204,23 @@ function SettingsForm({
         </span>
       </div>
     </form>
+  );
+}
+
+/** Whether the account is in test mode (MG-80), with its test addresses. */
+function SendingMode({ mode }: { mode: Account["sending_mode"] }) {
+  return (
+    <div className="panel stack">
+      <h2>Sending</h2>
+      <p>
+        {mode === "test"
+          ? "Test mode: campaigns, tests and form signups reach only your confirmed test addresses and you. Ask mailgoose if you need full sending."
+          : "Full sending: campaigns go to everyone you pick."}
+      </p>
+      <p>
+        <Link to="/test-addresses">Test addresses</Link>
+      </p>
+    </div>
   );
 }
 

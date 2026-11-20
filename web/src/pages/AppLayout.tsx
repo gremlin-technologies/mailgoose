@@ -8,6 +8,7 @@ import { useSession } from "../session";
 import { navPages } from "./nav";
 import { ReviewBanner } from "./ReviewBanner";
 import { TermsGate } from "./TermsGate";
+import { TestModeBanner } from "./TestAddresses";
 
 /** The signed-in app: navigation on the side, the page beside it. */
 export function AppLayout() {
@@ -54,6 +55,7 @@ export function AppLayout() {
       <main className="content">
         <PausedBanner />
         <ReviewBanner />
+        <TestModeBanner />
         <TermsGate>
           <Outlet />
         </TermsGate>

@@ -41,6 +41,8 @@ type Settings struct {
 	// at TermsAcceptedAt; nil if it never accepted any (MG-68).
 	TermsVersion    *string
 	TermsAcceptedAt *time.Time
+	// SendingMode is SendingTest or SendingFull (MG-80).
+	SendingMode string
 }
 
 // TermsNeeded reports whether the account has yet to accept the current
@@ -124,13 +126,14 @@ func (s *Service) UpdateAccountSettings(ctx context.Context, accountID string, u
 }
 
 func readSettings(ctx context.Context, tx pgx.Tx, accountID string, lock bool) (*Settings, error) {
-	q := `SELECT id, name, plan, from_name, from_email, postal_address, time_zone, created_at, terms_version, terms_accepted_at FROM accounts WHERE id = $1`
+	q := `SELECT id, name, plan, from_name, from_email, postal_address, time_zone, created_at, terms_version, terms_accepted_at,
+		sending_mode FROM accounts WHERE id = $1`
 	if lock {
 		q += ` FOR UPDATE`
 	}
 	var st Settings
 	err := tx.QueryRow(ctx, q, accountID).Scan(&st.ID, &st.Name, &st.Plan, &st.FromName, &st.FromEmail, &st.PostalAddress, &st.TimeZone, &st.CreatedAt,
-		&st.TermsVersion, &st.TermsAcceptedAt)
+		&st.TermsVersion, &st.TermsAcceptedAt, &st.SendingMode)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoAccount
 	}

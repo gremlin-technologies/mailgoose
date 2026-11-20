@@ -15,6 +15,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
+	"github.com/gremlin-technologies/mailgoose/internal/testmode"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
 
@@ -62,6 +63,17 @@ func (e *SuppressedError) Error() string {
 
 func (e *RecipientError) Error() string {
 	return e.Address + " isn't the account owner's address or on a verified sending domain of the account"
+}
+
+// TestModeError names a test address refused because the account is in
+// test mode (MG-80) and it's neither the owner's address nor a confirmed
+// test address.
+type TestModeError struct {
+	Address string
+}
+
+func (e *TestModeError) Error() string {
+	return "the account is in test mode, and " + e.Address + " isn't one of its confirmed test addresses"
 }
 
 // LimitError means the test would go over TestsPerDay; RetryAfter is when
@@ -181,7 +193,9 @@ func (s *Service) ownerEmail(ctx context.Context, accountID string) (string, err
 }
 
 // testRecipients checks the addresses a test may go to: the owner's, or
-// any on a verified domain of the account. Repeats count once.
+// any on a verified domain of the account. In test mode (MG-80) they're the
+// owner's and the account's confirmed test addresses instead, whatever
+// their domain. Repeats count once.
 func (s *Service) testRecipients(ctx context.Context, accountID, owner string, to []string) ([]string, error) {
 	if len(to) == 0 {
 		return []string{owner}, nil
@@ -202,8 +216,21 @@ func (s *Service) testRecipients(ctx context.Context, accountID, owner string, t
 	if len(out) > MaxTestRecipients {
 		return nil, &InvalidError{Field: "to", Message: fmt.Sprintf("a test goes to at most %d addresses", MaxTestRecipients)}
 	}
+	gate, err := testmode.Load(ctx, s.DB, accountID)
+	if err != nil {
+		return nil, err
+	}
 	for _, addr := range out {
 		if addr == owner {
+			continue
+		}
+		if gate.Test() {
+			if !gate.Allows(addr) {
+				return nil, &TestModeError{Address: addr}
+			}
+			if err := s.notSuppressed(ctx, accountID, addr); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		err := s.Domains.RequireVerifiedFrom(ctx, accountID, addr)

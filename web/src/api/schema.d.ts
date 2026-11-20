@@ -168,6 +168,115 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/test-addresses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List test addresses
+         * @description The account's test addresses (MG-80), oldest first: at most 5,
+         *     pending ones included, so there's no next page. While the account
+         *     is in test mode (`sending_mode` on the account) it can send only to
+         *     its `confirmed` test addresses and its owner's own sign-in address,
+         *     which is always allowed and isn't listed.
+         */
+        get: operations["listTestAddresses"];
+        put?: never;
+        /**
+         * Add a test address
+         * @description Adds a test address (MG-80) and emails it a link to confirm it; it
+         *     counts once the link is used, within 7 days. An account keeps up to
+         *     5, pending ones included; remove one to free its slot. Addresses
+         *     are compared ignoring case. The owner's own sign-in address is
+         *     always allowed and can't be added.
+         *
+         *     Adding one emails someone, so it needs a full-scope key or a
+         *     sign-in (403 `insufficient_scope` for a draft-scope key). An
+         *     account sends at most 10 confirm emails in any 24 hours, adds and
+         *     resends alike, and removing an address gives none back (429
+         *     `test_address_rate_limited` with `Retry-After`).
+         */
+        post: operations["addTestAddress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/test-addresses/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm a test address
+         * @description Uses the token from a test address's confirm link (MG-80); the web
+         *     app's page at the link calls it. No credentials are needed: the
+         *     token is the proof. Using it again changes nothing and answers the
+         *     same. A token that isn't one is a 400 `invalid_token`; one for no
+         *     address (removed, or replaced by a newer link) a 404
+         *     `test_address_link_not_found`; one older than 7 days a 410
+         *     `test_address_link_expired`.
+         */
+        post: operations["confirmTestAddress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/test-addresses/{test_address_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a test address
+         * @description The address frees its slot, its link stops working, and test mode no longer sends to it.
+         */
+        delete: operations["removeTestAddress"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/test-addresses/{test_address_id}/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend a test address's confirm link
+         * @description Emails a pending test address a new confirm link, good for 7 days;
+         *     the old link stops working. At most once a minute per address (429
+         *     `test_address_resend_too_soon` with `Retry-After`), and it counts
+         *     toward the account's 10 confirm emails in any 24 hours (429
+         *     `test_address_rate_limited`). A confirmed address answers 409
+         *     `test_address_confirmed`. Needs a full-scope key or a sign-in.
+         */
+        post: operations["resendTestAddress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/credits": {
         parameters: {
             query?: never;
@@ -1817,6 +1926,78 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/test-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List accounts in test mode (admin)
+         * @description mailgoose staff only (MG-80): accounts in test mode, oldest first,
+         *     with how many test addresses each has confirmed and pending. Closed
+         *     accounts are left out. At most `limit` of them; there's no next
+         *     page. New accounts start in test mode while the server's
+         *     `NEW_ACCOUNTS_TEST_MODE` setting is on.
+         */
+        get: operations["listTestModeAccounts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/{account_id}/allow-full-sending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Allow full sending (admin)
+         * @description mailgoose staff only (MG-80): takes the account out of test mode,
+         *     so it can send to its whole audience. It doesn't approve a sign-up
+         *     review: an account still waiting for one can't launch to anyone but
+         *     its test addresses until it's approved too. An account with full
+         *     sending already answers 409 `sending_mode_unchanged`.
+         */
+        post: operations["allowFullSending"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/{account_id}/set-test-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put an account in test mode (admin)
+         * @description mailgoose staff only (MG-80): from now on the account sends only to
+         *     its confirmed test addresses and its owner's own address. Copies of
+         *     a campaign already sending to anyone else are skipped, with their
+         *     credits given back. An account in test mode already answers 409
+         *     `sending_mode_unchanged`.
+         */
+        post: operations["setTestMode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/accounts/{account_id}/credits": {
         parameters: {
             query?: never;
@@ -2346,8 +2527,62 @@ export interface components {
             missing_for_send: string[];
             send_limit: components["schemas"]["SendLimit"];
             terms: components["schemas"]["TermsStatus"];
+            sending_mode: components["schemas"]["SendingMode"];
             /** Format: date-time */
             created_at: string;
+        };
+        /**
+         * @description `test` while the account is in test mode (MG-80): it sends only to
+         *     its confirmed test addresses (`listTestAddresses`) and its owner's
+         *     own sign-in address. Launches and test sends to anyone else are
+         *     refused with the code `test_mode`, and its forms take signups only
+         *     from those addresses. mailgoose staff allow `full` sending.
+         * @enum {string}
+         */
+        SendingMode: "test" | "full";
+        TestAddress: {
+            /** Format: uuid */
+            id: string;
+            /** @example qa@example.com */
+            email: string;
+            /**
+             * @description `pending` until the emailed link is used; only `confirmed` addresses can be sent to in test mode.
+             * @enum {string}
+             */
+            status: "pending" | "confirmed";
+            /**
+             * Format: date-time
+             * @description When the latest confirm link was emailed; null once confirmed, or when the email couldn't be sent.
+             */
+            confirm_sent_at: string | null;
+            /**
+             * Format: date-time
+             * @description When the latest confirm link stops working; null once confirmed.
+             */
+            confirm_expires_at: string | null;
+            /** Format: date-time */
+            confirmed_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        TestAddressList: {
+            data: components["schemas"]["TestAddress"][];
+            next_cursor: null;
+        };
+        AddTestAddressRequest: {
+            /** @example qa@example.com */
+            email: string;
+        };
+        ConfirmTestAddressRequest: {
+            /** @description The `token` in the confirm link's query. */
+            token: string;
+        };
+        ConfirmedTestAddress: {
+            email: string;
+            /** @description The account the address now gets test mode's emails from. */
+            account_name: string;
+            /** Format: date-time */
+            confirmed_at: string;
         };
         /**
          * @description How many campaign recipients the account may send to in 24 hours.
@@ -2741,6 +2976,7 @@ export interface components {
              *     tests, but can't launch campaigns or take form signups.
              */
             in_review: boolean;
+            sending_mode: components["schemas"]["SendingMode"];
             /** Format: date-time */
             created_at: string;
         };
@@ -3577,6 +3813,11 @@ export interface components {
              * @description When the account started waiting for review.
              */
             review_at: string | null;
+            sending_mode: components["schemas"]["SendingMode"];
+            /** @description Test addresses whose link was used (MG-80). */
+            test_addresses_confirmed: number;
+            /** @description Test addresses whose link hasn't been used yet. */
+            test_addresses_pending: number;
             /** Format: date-time */
             created_at: string;
         };
@@ -3681,7 +3922,7 @@ export interface components {
             /** @description The admin's address, `mailgoosed` (the server's command line) or `automatic`. */
             actor: string;
             /** @enum {string} */
-            action: "grant_admin" | "revoke_admin" | "pause" | "unpause" | "auto_pause" | "stop_campaign" | "approve_import" | "grant_credits" | "throttle" | "suspend" | "unsuspend" | "auto_suspend" | "approve_signup" | "reject_signup";
+            action: "grant_admin" | "revoke_admin" | "pause" | "unpause" | "auto_pause" | "stop_campaign" | "approve_import" | "grant_credits" | "throttle" | "suspend" | "unsuspend" | "auto_suspend" | "approve_signup" | "reject_signup" | "allow_full_sending" | "set_test_mode";
             /** Format: uuid */
             account_id: string | null;
             /** @description The campaign, import or user acted on. */
@@ -3942,6 +4183,74 @@ export interface components {
             };
         };
         /**
+         * @description `sending_mode_unchanged`: the account is in that sending mode
+         *     already.
+         */
+        SendingModeConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `test_address_exists`: the account has that address already.
+         *     `test_address_limit`: the account has 5 test addresses; remove one
+         *     first. `test_address_confirmed`: the address is confirmed, so
+         *     there's no link to resend.
+         */
+        TestAddressConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `invalid_email`: that isn't an email address.
+         *     `test_address_is_owner`: the owner's own sign-in address is always
+         *     allowed, so it needs no slot.
+         */
+        InvalidTestAddress: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `test_address_email_failed`: the confirm email couldn't be sent. The
+         *     address is kept, pending; resend its link in a minute.
+         */
+        TestAddressEmailFailed: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `test_address_link_expired`: the link is older than 7 days. Resend
+         *     it from the web app or with `mailgoose test-addresses resend`.
+         */
+        TestAddressLinkExpired: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `signup_not_waiting`: the account isn't waiting for its sign-up
          *     review.
          */
@@ -3980,7 +4289,10 @@ export interface components {
          *     or on a verified sending domain; `details.address` names it.
          *     `test_recipient_suppressed`: an address in `to` unsubscribed,
          *     bounced or complained (the owner's own address is never refused);
-         *     `details.address` names it.
+         *     `details.address` names it. `test_mode`: the account is in test
+         *     mode (MG-80) and an address in `to` is neither the owner's nor a
+         *     confirmed test address, whatever its domain; `details.address`
+         *     names it.
          */
         TestNotSendable: {
             headers: {
@@ -4019,7 +4331,9 @@ export interface components {
          *     lists, named in `url`; it also pauses the account's sending),
          *     `untested` (no test since the last change), `send_at_passed`,
          *     `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up
-         *     review), `new_terms_not_accepted` (the terms changed and
+         *     review; not for an account in test mode), `test_mode` (the account is in test mode and the
+         *     campaign reaches anyone but its confirmed test addresses and its owner; `details.recipients`
+         *     and `details.not_test_addresses`), `new_terms_not_accepted` (the terms changed and
          *     the account hasn't accepted the new version; `details.current_version`
          *     and `details.accepted_version`, then `acceptTerms`),
          *     `subscription_past_due` (sending is paused until the paid plan's
@@ -4245,6 +4559,8 @@ export interface components {
         TagId: string;
         /** @description The account's `id`. */
         AccountId: string;
+        /** @description The test address's `id`. */
+        TestAddressId: string;
         /** @description The import's `id`. */
         ImportId: string;
         /** @description The block's `id`. */
@@ -4530,6 +4846,152 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listTestAddresses: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The account's test addresses. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAddressList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    addTestAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddTestAddressRequest"];
+            };
+        };
+        responses: {
+            /** @description The new test address, pending until its link is used. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAddress"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["TestAddressConflict"];
+            422: components["responses"]["InvalidTestAddress"];
+            429: components["responses"]["TooManyRequests"];
+            502: components["responses"]["TestAddressEmailFailed"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    confirmTestAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmTestAddressRequest"];
+            };
+        };
+        responses: {
+            /** @description Confirmed. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfirmedTestAddress"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["TestAddressLinkExpired"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    removeTestAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The test address's `id`. */
+                test_address_id: components["parameters"]["TestAddressId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    resendTestAddress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The test address's `id`. */
+                test_address_id: components["parameters"]["TestAddressId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The test address, with the new link's times. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestAddress"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TestAddressConflict"];
+            429: components["responses"]["TooManyRequests"];
+            502: components["responses"]["TestAddressEmailFailed"];
             503: components["responses"]["ServiceUnavailable"];
         };
     };
@@ -7164,6 +7626,89 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["SignupReviewConflict"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listTestModeAccounts: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The accounts in test mode. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAccountList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    allowFullSending: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AdminAccount"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["SendingModeConflict"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    setTestMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AdminAccount"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["SendingModeConflict"];
             422: components["responses"]["InvalidAdminRequest"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];

@@ -202,11 +202,12 @@ func (s *Service) PollDeviceLogin(ctx context.Context, deviceCode string) (*Devi
 		var suspendedAt *time.Time
 		var suspendedReason *string
 		if err := tx.QueryRow(ctx, `
-			SELECT a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason, coalesce(a.review = 'waiting', false), u.id, u.email, u.created_at
+			SELECT a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason, coalesce(a.review = 'waiting', false),
+			       a.sending_mode, u.id, u.email, u.created_at
 			FROM accounts a JOIN users u ON u.account_id = a.id
 			WHERE a.id = $1 AND u.id = $2`, *accountID, *userID).Scan(
 			&t.Account.ID, &t.Account.Name, &t.Account.Status, &t.Account.Plan, &t.Account.CreatedAt,
-			&suspendedAt, &suspendedReason, &t.Account.InReview, &t.User.ID, &t.User.Email, &t.User.CreatedAt); err != nil {
+			&suspendedAt, &suspendedReason, &t.Account.InReview, &t.Account.SendingMode, &t.User.ID, &t.User.Email, &t.User.CreatedAt); err != nil {
 			return fmt.Errorf("read approver: %w", err)
 		}
 		// A suspended account gets no CLI login (MG-65).
@@ -308,8 +309,8 @@ func (s *Service) Identity(ctx context.Context, accountID, userID string) (*Acco
 		var suspendedAt *time.Time
 		var suspendedReason *string
 		if err := tx.QueryRow(ctx, `SELECT id, name, status, plan, created_at, suspended_at, suspended_reason,
-			coalesce(review = 'waiting', false) FROM accounts WHERE id = $1`, accountID).
-			Scan(&a.ID, &a.Name, &a.Status, &a.Plan, &a.CreatedAt, &suspendedAt, &suspendedReason, &a.InReview); err != nil {
+			coalesce(review = 'waiting', false), sending_mode FROM accounts WHERE id = $1`, accountID).
+			Scan(&a.ID, &a.Name, &a.Status, &a.Plan, &a.CreatedAt, &suspendedAt, &suspendedReason, &a.InReview, &a.SendingMode); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrNoAccount
 			}

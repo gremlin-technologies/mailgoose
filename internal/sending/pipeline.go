@@ -18,6 +18,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
+	"github.com/gremlin-technologies/mailgoose/internal/testmode"
 	"github.com/gremlin-technologies/mailgoose/internal/tracking"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
@@ -598,8 +599,9 @@ type claimed struct {
 }
 
 // claim takes a row for sending. A row that's no longer queued isn't
-// claimed (ok false). One whose contact is gone or no longer subscribed is
-// skipped and its credit given back.
+// claimed (ok false). One whose contact is gone or no longer subscribed,
+// or isn't a test address of an account in test mode (MG-80), is skipped
+// and its credit given back.
 func (p *Pipeline) claim(ctx context.Context, b Batch, id int64) (claimed, bool, error) {
 	var r claimed
 	tx, err := p.DB.Begin(ctx)
@@ -643,8 +645,26 @@ func (p *Pipeline) claim(ctx context.Context, b Batch, id int64) (claimed, bool,
 			return r, false, err
 		}
 	}
-	if contactID == nil || !contacts.CanReceive(status) {
-		if _, err := tx.Exec(ctx, `UPDATE campaign_recipients SET status = 'skipped' WHERE id = $1`, id); err != nil {
+	skip := contactID == nil || !contacts.CanReceive(status)
+	var reason *string
+	if !skip {
+		// In test mode (MG-80) a launch reaching anyone but the test
+		// addresses is refused, so a copy for anyone else should never get
+		// here; if one does, it's skipped, not sent.
+		ok, err := testmode.Allows(ctx, tx, b.AccountID, r.email)
+		if err != nil {
+			return r, false, err
+		}
+		if !ok {
+			skip = true
+			why := "skipped: the account is in test mode and this isn't one of its test addresses"
+			reason = &why
+			p.log().WarnContext(ctx, "test mode: skipped a copy for an address that isn't a test address",
+				"campaign_id", b.CampaignID, "recipient_row", id)
+		}
+	}
+	if skip {
+		if _, err := tx.Exec(ctx, `UPDATE campaign_recipients SET status = 'skipped', error = $2 WHERE id = $1`, id, reason); err != nil {
 			return r, false, err
 		}
 		if _, err := credits.Release(ctx, tx, b.AccountID, creditsRef(b.CampaignID), 1, now); err != nil {

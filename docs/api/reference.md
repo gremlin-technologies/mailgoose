@@ -57,6 +57,7 @@ Servers:
 - [Campaigns](#tag-campaigns)
 - [Signup forms](#tag-forms)
 - [Operator tools (mailgoose staff only)](#tag-admin)
+- [test-addresses](#tag-test-addresses)
 - [Schemas](#schemas)
 
 <a id="tag-health"></a>
@@ -2171,7 +2172,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
-- `422`: `not_ready`: something stops the email being sent; `details.problems` lists each with its `code` (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`, `invalid_html`, `unsafe_link` with the link in `url`), `message` and `hint`. `invalid_test`: `to` has an address that isn't one, or more than 5. `test_recipient_not_allowed`: an address in `to` isn't the owner's or on a verified sending domain; `details.address` names it. `test_recipient_suppressed`: an address in `to` unsubscribed, bounced or complained (the owner's own address is never refused); `details.address` names it. [Error](#schema-error)
+- `422`: `not_ready`: something stops the email being sent; `details.problems` lists each with its `code` (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`, `invalid_html`, `unsafe_link` with the link in `url`), `message` and `hint`. `invalid_test`: `to` has an address that isn't one, or more than 5. `test_recipient_not_allowed`: an address in `to` isn't the owner's or on a verified sending domain; `details.address` names it. `test_recipient_suppressed`: an address in `to` unsubscribed, bounced or complained (the owner's own address is never refused); `details.address` names it. `test_mode`: the account is in test mode (MG-80) and an address in `to` is neither the owner's nor a confirmed test address, whatever its domain; `details.address` names it. [Error](#schema-error)
 - `429`: `test_limit`: the account has sent 50 test emails in the last 24 hours; Retry-After says when enough have aged out. `rate_limited`: the API's request limit. [Error](#schema-error)
 - `502`: `test_send_failed`: the mail provider refused or didn't answer. It still counts toward the day's tests. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
@@ -2220,7 +2221,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `confirmation_required`: nothing was launched. `details.summary` (`campaign_id`, `name`, `subject`, `from`, `reply_to`, `recipient_count`, `send_at`, `credits`, `balance`, `warnings`) is what the person confirms, `details.code` the code that launches it once they say yes, and `details.expires_at` when the code stops working. `campaign_locked`: the campaign isn't a draft and wasn't launched; `details.status` is its status. [Error](#schema-error)
-- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up review), `new_terms_not_accepted` (the terms changed and the account hasn't accepted the new version; `details.current_version` and `details.accepted_version`, then `acceptTerms`), `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, and `credits_short` with `details.needed`, `details.balance` and `details.short`. `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
+- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up review; not for an account in test mode), `test_mode` (the account is in test mode and the campaign reaches anyone but its confirmed test addresses and its owner; `details.recipients` and `details.not_test_addresses`), `new_terms_not_accepted` (the terms changed and the account hasn't accepted the new version; `details.current_version` and `details.accepted_version`, then `acceptTerms`), `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, and `credits_short` with `details.needed`, `details.balance` and `details.short`. `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-cancelcampaign"></a>
@@ -2775,6 +2776,103 @@ Responses:
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
+<a id="op-listtestmodeaccounts"></a>
+
+### List accounts in test mode (admin)
+
+`GET /v1/admin/test-mode`
+
+- Operation: `listTestModeAccounts`
+- CLI: `mailgoose admin test-mode`
+- Needs a `full`-scope key
+
+mailgoose staff only (MG-80): accounts in test mode, oldest first,
+with how many test addresses each has confirmed and pending. Closed
+accounts are left out. At most `limit` of them; there's no next
+page. New accounts start in test mode while the server's
+`NEW_ACCOUNTS_TEST_MODE` setting is on.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `limit` | query | integer |  | Items per page. |
+
+Responses:
+
+- `200`: The accounts in test mode. [AdminAccountList](#schema-adminaccountlist)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-allowfullsending"></a>
+
+### Allow full sending (admin)
+
+`POST /v1/admin/accounts/{account_id}/allow-full-sending`
+
+- Operation: `allowFullSending`
+- CLI: `mailgoose admin allow-full-sending`
+- Needs a `full`-scope key
+
+mailgoose staff only (MG-80): takes the account out of test mode,
+so it can send to its whole audience. It doesn't approve a sign-up
+review: an account still waiting for one can't launch to anyone but
+its test addresses until it's approved too. An account with full
+sending already answers 409 `sending_mode_unchanged`.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `account_id` | path | string (uuid) | yes | The account's `id`. |
+
+Request body (`application/json`, required): [AdminReasonRequest](#schema-adminreasonrequest)
+
+Responses:
+
+- `200`: The account. [AdminAccount](#schema-adminaccount)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `sending_mode_unchanged`: the account is in that sending mode already. [Error](#schema-error)
+- `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-settestmode"></a>
+
+### Put an account in test mode (admin)
+
+`POST /v1/admin/accounts/{account_id}/set-test-mode`
+
+- Operation: `setTestMode`
+- CLI: `mailgoose admin set-test-mode`
+- Needs a `full`-scope key
+
+mailgoose staff only (MG-80): from now on the account sends only to
+its confirmed test addresses and its owner's own address. Copies of
+a campaign already sending to anyone else are skipped, with their
+credits given back. An account in test mode already answers 409
+`sending_mode_unchanged`.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `account_id` | path | string (uuid) | yes | The account's `id`. |
+
+Request body (`application/json`, required): [AdminReasonRequest](#schema-adminreasonrequest)
+
+Responses:
+
+- `200`: The account. [AdminAccount](#schema-adminaccount)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `sending_mode_unchanged`: the account is in that sending mode already. [Error](#schema-error)
+- `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters) or `amount` (not 1 to 1,000,000). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
 <a id="op-grantcredits"></a>
 
 ### Grant credits (admin)
@@ -2896,6 +2994,153 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="tag-test-addresses"></a>
+
+## test-addresses
+
+<a id="op-listtestaddresses"></a>
+
+### List test addresses
+
+`GET /v1/test-addresses`
+
+- Operation: `listTestAddresses`
+- CLI: `mailgoose test-addresses list`, `mailgoose test-addresses remove`, `mailgoose test-addresses resend`
+
+The account's test addresses (MG-80), oldest first: at most 5,
+pending ones included, so there's no next page. While the account
+is in test mode (`sending_mode` on the account) it can send only to
+its `confirmed` test addresses and its owner's own sign-in address,
+which is always allowed and isn't listed.
+
+Responses:
+
+- `200`: The account's test addresses. [TestAddressList](#schema-testaddresslist)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-addtestaddress"></a>
+
+### Add a test address
+
+`POST /v1/test-addresses`
+
+- Operation: `addTestAddress`
+- CLI: `mailgoose test-addresses add`
+- Needs a `full`-scope key
+
+Adds a test address (MG-80) and emails it a link to confirm it; it
+counts once the link is used, within 7 days. An account keeps up to
+5, pending ones included; remove one to free its slot. Addresses
+are compared ignoring case. The owner's own sign-in address is
+always allowed and can't be added.
+
+Adding one emails someone, so it needs a full-scope key or a
+sign-in (403 `insufficient_scope` for a draft-scope key). An
+account sends at most 10 confirm emails in any 24 hours, adds and
+resends alike, and removing an address gives none back (429
+`test_address_rate_limited` with `Retry-After`).
+
+Request body (`application/json`, required): [AddTestAddressRequest](#schema-addtestaddressrequest)
+
+Responses:
+
+- `201`: The new test address, pending until its link is used. [TestAddress](#schema-testaddress)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `409`: `test_address_exists`: the account has that address already. `test_address_limit`: the account has 5 test addresses; remove one first. `test_address_confirmed`: the address is confirmed, so there's no link to resend. [Error](#schema-error)
+- `422`: `invalid_email`: that isn't an email address. `test_address_is_owner`: the owner's own sign-in address is always allowed, so it needs no slot. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `502`: `test_address_email_failed`: the confirm email couldn't be sent. The address is kept, pending; resend its link in a minute. [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-confirmtestaddress"></a>
+
+### Confirm a test address
+
+`POST /v1/test-addresses/confirm`
+
+- Operation: `confirmTestAddress`
+- CLI: `mailgoose test-addresses confirm`
+
+Uses the token from a test address's confirm link (MG-80); the web
+app's page at the link calls it. No credentials are needed: the
+token is the proof. Using it again changes nothing and answers the
+same. A token that isn't one is a 400 `invalid_token`; one for no
+address (removed, or replaced by a newer link) a 404
+`test_address_link_not_found`; one older than 7 days a 410
+`test_address_link_expired`.
+
+Request body (`application/json`, required): [ConfirmTestAddressRequest](#schema-confirmtestaddressrequest)
+
+Responses:
+
+- `200`: Confirmed. [ConfirmedTestAddress](#schema-confirmedtestaddress)
+- `400`: The request is malformed. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `410`: `test_address_link_expired`: the link is older than 7 days. Resend it from the web app or with `mailgoose test-addresses resend`. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-removetestaddress"></a>
+
+### Remove a test address
+
+`DELETE /v1/test-addresses/{test_address_id}`
+
+- Operation: `removeTestAddress`
+- CLI: `mailgoose test-addresses remove`
+
+The address frees its slot, its link stops working, and test mode no longer sends to it.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `test_address_id` | path | string (uuid) | yes | The test address's `id`. |
+
+Responses:
+
+- `204`: Removed.
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-resendtestaddress"></a>
+
+### Resend a test address's confirm link
+
+`POST /v1/test-addresses/{test_address_id}/resend`
+
+- Operation: `resendTestAddress`
+- CLI: `mailgoose test-addresses resend`
+- Needs a `full`-scope key
+
+Emails a pending test address a new confirm link, good for 7 days;
+the old link stops working. At most once a minute per address (429
+`test_address_resend_too_soon` with `Retry-After`), and it counts
+toward the account's 10 confirm emails in any 24 hours (429
+`test_address_rate_limited`). A confirmed address answers 409
+`test_address_confirmed`. Needs a full-scope key or a sign-in.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `test_address_id` | path | string (uuid) | yes | The test address's `id`. |
+
+Responses:
+
+- `200`: The test address, with the new link's times. [TestAddress](#schema-testaddress)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `test_address_exists`: the account has that address already. `test_address_limit`: the account has 5 test addresses; remove one first. `test_address_confirmed`: the address is confirmed, so there's no link to resend. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `502`: `test_address_email_failed`: the confirm email couldn't be sent. The address is kept, pending; resend its link in a minute. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="schemas"></a>
@@ -3281,7 +3526,69 @@ Type: string: one of `pending`, `verified`, `failed`
 | `missing_for_send` | array of string | yes | Settings a campaign can't launch without, such as `postal_address`. Empty when none are missing. |
 | `send_limit` | [SendLimit](#schema-sendlimit) | yes |  |
 | `terms` | [TermsStatus](#schema-termsstatus) | yes |  |
+| `sending_mode` | [SendingMode](#schema-sendingmode) | yes |  |
 | `created_at` | string (date-time) | yes |  |
+
+<a id="schema-sendingmode"></a>
+
+### SendingMode
+
+`test` while the account is in test mode (MG-80): it sends only to
+its confirmed test addresses (`listTestAddresses`) and its owner's
+own sign-in address. Launches and test sends to anyone else are
+refused with the code `test_mode`, and its forms take signups only
+from those addresses. mailgoose staff allow `full` sending.
+
+Type: string: one of `test`, `full`
+
+<a id="schema-testaddress"></a>
+
+### TestAddress
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | yes |  |
+| `email` | string | yes |  |
+| `status` | string: one of `pending`, `confirmed` | yes | `pending` until the emailed link is used; only `confirmed` addresses can be sent to in test mode. |
+| `confirm_sent_at` | string (date-time) or null | yes | When the latest confirm link was emailed; null once confirmed, or when the email couldn't be sent. |
+| `confirm_expires_at` | string (date-time) or null | yes | When the latest confirm link stops working; null once confirmed. |
+| `confirmed_at` | string (date-time) or null | yes |  |
+| `created_at` | string (date-time) | yes |  |
+
+<a id="schema-testaddresslist"></a>
+
+### TestAddressList
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `data` | array of [TestAddress](#schema-testaddress) | yes |  |
+| `next_cursor` | null | yes |  |
+
+<a id="schema-addtestaddressrequest"></a>
+
+### AddTestAddressRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `email` | string | yes |  |
+
+<a id="schema-confirmtestaddressrequest"></a>
+
+### ConfirmTestAddressRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `token` | string | yes | The `token` in the confirm link's query. |
+
+<a id="schema-confirmedtestaddress"></a>
+
+### ConfirmedTestAddress
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `email` | string | yes |  |
+| `account_name` | string | yes | The account the address now gets test mode's emails from. |
+| `confirmed_at` | string (date-time) | yes |  |
 
 <a id="schema-sendlimit"></a>
 
@@ -3625,6 +3932,7 @@ Type: string: one of `grant`, `purchase`, `reserve`, `release`, `spend`, `fee`, 
 | `plan` | string: one of `free`, `paid` | yes |  |
 | `suspension` | [AccountSuspension](#schema-accountsuspension) or null | yes | Set while the account is suspended; null otherwise. |
 | `in_review` | boolean | yes | True while a new account waits for its sign-up review (MG-66). Until it's approved it can build emails, import contacts and send tests, but can't launch campaigns or take form signups. |
+| `sending_mode` | [SendingMode](#schema-sendingmode) | yes |  |
 | `created_at` | string (date-time) | yes |  |
 
 <a id="schema-accountsuspension"></a>
@@ -4493,6 +4801,9 @@ Copies sent, and the recipients who hard bounced or complained.
 | `review` | string or null: one of `waiting`, `approved`, `rejected`, `<nil>` | yes | The sign-up review (MG-66); null for an account that never needed one. |
 | `review_flags` | array of string: one of `disposable_domain`, `ip_burst`, `suspended_ip`, `suspended_domain` | yes | What looked risky at sign-up: a disposable address, more than 3 accounts from its IP in 24 hours, or an IP or company domain shared with a suspended account. Empty when nothing did. |
 | `review_at` | string (date-time) or null | yes | When the account started waiting for review. |
+| `sending_mode` | [SendingMode](#schema-sendingmode) | yes |  |
+| `test_addresses_confirmed` | integer | yes | Test addresses whose link was used (MG-80). |
+| `test_addresses_pending` | integer | yes | Test addresses whose link hasn't been used yet. |
 | `created_at` | string (date-time) | yes |  |
 
 <a id="schema-adminaccountlist"></a>
@@ -4580,7 +4891,7 @@ Type: [AdminAccountSummary](#schema-adminaccountsummary) and object
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
 | `actor` | string | yes | The admin's address, `mailgoosed` (the server's command line) or `automatic`. |
-| `action` | string: one of `grant_admin`, `revoke_admin`, `pause`, `unpause`, `auto_pause`, `stop_campaign`, `approve_import`, `grant_credits`, `throttle`, `suspend`, `unsuspend`, `auto_suspend`, `approve_signup`, `reject_signup` | yes |  |
+| `action` | string: one of `grant_admin`, `revoke_admin`, `pause`, `unpause`, `auto_pause`, `stop_campaign`, `approve_import`, `grant_credits`, `throttle`, `suspend`, `unsuspend`, `auto_suspend`, `approve_signup`, `reject_signup`, `allow_full_sending`, `set_test_mode` | yes |  |
 | `account_id` | string (uuid) or null | yes |  |
 | `target_id` | string or null | yes | The campaign, import or user acted on. |
 | `reason` | string | yes |  |

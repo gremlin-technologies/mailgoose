@@ -24,6 +24,7 @@ type account struct {
 	MissingForSend []string  `json:"missing_for_send"`
 	SendLimit      sendLimit `json:"send_limit"`
 	Terms          terms     `json:"terms"`
+	SendingMode    string    `json:"sending_mode"`
 	CreatedAt      time.Time `json:"created_at"`
 }
 
@@ -260,9 +261,18 @@ func (a *App) printAccount(acct account) {
 		fmt.Fprintf(a.Stdout, "Send limit:  %s\n", acct.SendLimit)
 	}
 	fmt.Fprintf(a.Stdout, "Terms:       %s\n", termsLine(acct.Terms.AcceptedVersion, acct.Terms.AcceptedAt))
+	if acct.SendingMode == "test" {
+		fmt.Fprintln(a.Stdout, "Sending:     TEST MODE: only to your confirmed test addresses and your own address")
+	} else {
+		fmt.Fprintln(a.Stdout, "Sending:     full")
+	}
 	if acct.Terms.AcceptanceNeeded {
 		fmt.Fprintf(a.Stdout, "\nThe terms changed: version %s took effect on %s. Read what changed in the web app at /policies/changes,\n", acct.Terms.CurrentVersion, acct.Terms.CurrentEffective)
 		fmt.Fprintf(a.Stdout, "then accept with `mailgoose account accept-terms --version %s`. Campaigns can't launch until you do.\n", acct.Terms.CurrentVersion)
+	}
+	if acct.SendingMode == "test" {
+		fmt.Fprintln(a.Stdout, "\nThe account is in test mode: campaigns, tests and form signups reach only your confirmed test")
+		fmt.Fprintln(a.Stdout, "addresses (`mailgoose test-addresses list`) and your own address. mailgoose can allow full sending.")
 	}
 	if len(acct.MissingForSend) > 0 {
 		fmt.Fprintf(a.Stdout, "\nCampaigns can't launch until you set: %s\n", strings.Join(acct.MissingForSend, ", "))

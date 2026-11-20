@@ -67,6 +67,9 @@ type Service struct {
 	// OnWaiting, if set, hears of each account that starts waiting for
 	// review, after it's activated; the server emails the operators.
 	OnWaiting func(context.Context, Waiting)
+	// NewAccountSending is the sending mode new accounts start in (MG-80):
+	// SendingTest (the default when empty) or SendingFull.
+	NewAccountSending string
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 	Log *slog.Logger
@@ -111,8 +114,10 @@ type Account struct {
 	// Suspension is set while the account is suspended (MG-65).
 	Suspension *Suspension
 	// InReview is a new account waiting for a person to approve it (MG-66).
-	InReview  bool
-	CreatedAt time.Time
+	InReview bool
+	// SendingMode is SendingTest or SendingFull (MG-80).
+	SendingMode string
+	CreatedAt   time.Time
 }
 
 // Suspension is why and since when an account is suspended.
@@ -241,8 +246,8 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO accounts (name, status, plan, terms_accepted_at, terms_version)
-			VALUES ($1, 'pending', 'free', $2, $3) RETURNING id`, name, now, policy.Current().ID).Scan(&accountID); err != nil {
+			INSERT INTO accounts (name, status, plan, terms_accepted_at, terms_version, sending_mode)
+			VALUES ($1, 'pending', 'free', $2, $3, $4) RETURNING id`, name, now, policy.Current().ID, s.newAccountSending()).Scan(&accountID); err != nil {
 			return fmt.Errorf("create account: %w", err)
 		}
 		if err := recordTerms(ctx, tx, accountID, policy.Current().ID, in.Via, now); err != nil {
@@ -426,7 +431,8 @@ func (s *Service) verify(ctx context.Context, rawEmail, code string, finish func
 	err = tx.QueryRow(ctx, `
 		SELECT c.id, c.code_salt, c.code_hash, c.attempts,
 		       u.id, u.email, u.created_at,
-		       a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason, coalesce(a.review = 'waiting', false)
+		       a.id, a.name, a.status, a.plan, a.created_at, a.suspended_at, a.suspended_reason, coalesce(a.review = 'waiting', false),
+		       a.sending_mode
 		FROM auth_codes c
 		JOIN users u ON u.id = c.user_id
 		JOIN accounts a ON a.id = u.account_id
@@ -436,7 +442,7 @@ func (s *Service) verify(ctx context.Context, rawEmail, code string, finish func
 		FOR UPDATE OF c`, email, now).Scan(&codeID, &salt, &hash, &attempts,
 		&sess.User.ID, &sess.User.Email, &sess.User.CreatedAt,
 		&sess.Account.ID, &sess.Account.Name, &sess.Account.Status, &sess.Account.Plan, &sess.Account.CreatedAt,
-		&suspendedAt, &suspendedReason, &sess.Account.InReview)
+		&suspendedAt, &suspendedReason, &sess.Account.InReview, &sess.Account.SendingMode)
 	sess.Account.Suspension = suspension(suspendedAt, suspendedReason)
 	if errors.Is(err, pgx.ErrNoRows) {
 		// Spend the same time as a real check so the answer's timing doesn't

@@ -4,6 +4,52 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-20: Test mode (MG-80, owner decision; details are reversible defaults)
+
+The owner asked for a test mode that only allows sending to a set of up to 5
+test addresses: internal testing accounts are locked to it by default, and
+full sending is turned on for the people who help test it.
+
+- **Two modes.** Each account's sending mode is `test` or `full`
+  (`accounts.sending_mode`, `sending_mode` on the account in the API).
+  Accounts made before MG-80 keep full sending.
+- **New accounts.** `NEW_ACCOUNTS_TEST_MODE` (`on` or `off`, default `on`)
+  decides whether new accounts start in test mode. **Prod must set it to
+  `off` before launch.** The local stack sets it `off`.
+- **Who test mode sends to.** Confirmed test addresses and the owner's own
+  sign-in address, which is always allowed and takes no slot (it can't be
+  added as a test address). Addresses match ignoring case.
+- **Test addresses.** Up to 5, pending ones included. Each is confirmed by
+  an emailed link (hashed token, valid 7 days; a resend replaces the link and
+  is allowed at most once a minute). Listed, added, resent and removed in
+  the web app, the API (`/v1/test-addresses`) and the CLI (`mailgoose
+  test-addresses`); confirming needs no sign-in. Adding an address and
+  resending its link email someone, so they need a full-scope key or a
+  sign-in; a draft-scope key can list and remove them (changed in review).
+- **Confirm email cap.** An account sends at most 10 confirm emails in any
+  24 hours, adds and resends alike (429 `test_address_rate_limited` with
+  `Retry-After`). Each is logged in `test_address_emails`, which outlives
+  the address, so removing and re-adding addresses can't be used to mail
+  strangers from mailgoose's own sender. A send that fails still counts.
+  The email's subject is fixed ("Confirm a test address on mailgoose");
+  the account's name appears only in the body. (Added in review.)
+- **What test mode refuses.** A launch is refused, not queued (problem code
+  `test_mode`, with how many recipients aren't test addresses). A test send
+  to anyone else is refused (422 `test_mode`); in test mode a test send to a
+  confirmed test address doesn't need a verified-domain address. A queued
+  copy for anyone else is skipped at send time and its credit given back,
+  with the reason in the recipient's `error`. Forms take signups only from
+  test addresses (403 `test_mode`). Every refusal says it's because of test
+  mode.
+- **Sign-up review.** A test-mode account still waiting for its review may
+  launch to its test addresses and take their form signups. Allowing full
+  sending doesn't approve the review (open question below).
+- **Admin.** `mailgoose admin test-mode` lists accounts in test mode (not
+  closed ones); `allow-full-sending` and `set-test-mode` switch one, logged
+  in `admin_actions` as `allow_full_sending` and `set_test_mode`.
+- **Visible.** The web app shows a banner in test mode; `mailgoose account`
+  and `mailgoose admin account` show the mode.
+
 ## 2026-11-20: Import from Mailchimp (owner decision)
 
 Bending Spoons announced on 2026-11-19 that it will buy Mailchimp, closing in
@@ -1924,6 +1970,13 @@ Decided by the owner in the PRD scoping call and follow-ups.
 
 ## Open questions
 
+- Test mode: should the owner's own sign-in address be allowed without
+  taking one of the 5 test-address slots? (Default: yes, always allowed and
+  takes no slot. MG-80.)
+- Test mode and sign-up review: may a test-mode account still waiting for
+  review launch to its test addresses, and should allowing full sending also
+  approve the review? (Default: it may launch to test addresses; allowing
+  full sending doesn't approve the review. MG-80.)
 - Mailchimp import: do imported subscribed contacts skip re-confirmation?
   (Default: yes, once the permission box is ticked, with Mailchimp's opt-in
   and confirm times and IPs in each consent record. MG-70.)

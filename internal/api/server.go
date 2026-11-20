@@ -33,6 +33,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
+	"github.com/gremlin-technologies/mailgoose/internal/testmode"
 	"github.com/gremlin-technologies/mailgoose/internal/tracking"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 	"github.com/gremlin-technologies/mailgoose/internal/version"
@@ -100,6 +101,10 @@ type Server struct {
 	// Admin backs the mailgoose staff tools (OPS-6); nil without a
 	// database, which makes them answer 503.
 	Admin *admin.Service
+	// TestAddresses keeps accounts' test addresses (MG-80); nil without a
+	// database or a system sending domain, which makes their endpoints
+	// answer 503.
+	TestAddresses *testmode.Service
 	// TrustedOrigins are other origins (such as the web app's, when it isn't
 	// served from the API's own origin) allowed to send cookie-authenticated
 	// requests that change something. The API's own origin always is.

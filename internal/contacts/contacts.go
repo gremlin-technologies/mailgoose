@@ -537,6 +537,23 @@ func (s *Service) CountRecipients(ctx context.Context, accountID string, aud Aud
 	return n, err
 }
 
+// RowQuerier is a pool or a transaction.
+type RowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+// CountRecipientsOutside counts the audience's contacts now, and how many
+// of them aren't one of allowed (lower-cased addresses), for test mode
+// (MG-80).
+func CountRecipientsOutside(ctx context.Context, q RowQuerier, accountID string, aud Audience, allowed []string) (total, outside int, err error) {
+	where, args := recipientsWhere(accountID, aud)
+	args = append(args, allowed)
+	err = q.QueryRow(ctx, fmt.Sprintf(`
+		SELECT count(*), count(*) FILTER (WHERE NOT lower(email) = ANY($%d::text[])) FROM contacts WHERE `, len(args))+where,
+		args...).Scan(&total, &outside)
+	return total, outside, err
+}
+
 // SnapshotRecipients fixes a launched campaign's recipients: one
 // campaign_recipients row per contact the audience reaches now, written in
 // tx. It returns how many.
