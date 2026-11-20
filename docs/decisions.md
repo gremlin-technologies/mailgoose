@@ -4,6 +4,26 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-20: Public site at mailgoose.app on GitHub Pages (owner ask; hosting is a reversible default)
+
+The owner asked for a page at https://mailgoose.app that explains the product,
+lightly branded, so AWS sees a real site in the SES production access request.
+It replaces GoDaddy's "coming soon" page.
+
+- **Where it lives.** `site/` in this repository: plain HTML and CSS, no build
+  step. A landing page plus static copies of the four policy pages, generated
+  from `web/src/pages/Policies.tsx` by `scripts/site/policies.mjs` and checked
+  by `web/src/pages/sitePolicies.test.ts`. The policy text is still the
+  placeholder outline.
+- **Hosting (default).** GitHub Pages, deployed by
+  `.github/workflows/pages.yml` on pushes to `main` that touch `site/`. Free
+  for a public repository, HTTPS on the apex, no AWS and no CloudFront, so the
+  CDN and OIDC blocks don't hold it up. DNS stays at GoDaddy: apex `A`/`AAAA`
+  records and a `www` CNAME change; the Microsoft 365 records and the
+  `staging` delegation don't. Owner steps: `docs/public-site.md`.
+- **Not decided here.** Whether the marketing site moves into AWS or another
+  host later, and the final design. This page doesn't need to match it.
+
 ## 2026-11-20: Pause and early-warning limits tightened below AWS's review line (owner decision; numbers are reversible defaults, MG-79)
 
 AWS reviews the whole SES account, which every customer shares, at 0.1%
@@ -31,6 +51,7 @@ numbers below were picked while building MG-79 and are easy to change.
   early warning, two-complaint minimum included.
 - **Account-wide alarms** on SES's own rates are a separate infra change for
   the owner to merge.
+
 
 ## 2026-11-20: Test mode (MG-80, owner decision; details are reversible defaults)
 
