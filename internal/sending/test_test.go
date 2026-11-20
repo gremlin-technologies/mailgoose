@@ -39,7 +39,7 @@ func newHarness(t *testing.T) *harness {
 	h := &harness{db: db, fake: &mail.Fake{}, now: time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)}
 	h.svc = &Service{
 		DB:        db,
-		Campaigns: &campaigns.Service{DB: db},
+		Campaigns: &campaigns.Service{DB: db, Now: func() time.Time { return h.now }},
 		Emails:    &emails.Service{DB: db},
 		Settings:  &auth.Service{DB: db},
 		Domains:   &domains.Service{DB: db},
