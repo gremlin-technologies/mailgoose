@@ -262,3 +262,46 @@ resource "aws_cloudwatch_metric_alarm" "ses_complaint_rate" {
   alarm_actions = local.alarm_actions
   ok_actions    = local.alarm_actions
 }
+
+# Early warnings, under the alarms above: nothing is at risk yet, but the
+# account's rates are climbing towards AWS's review line (MG-81).
+
+resource "aws_cloudwatch_metric_alarm" "ses_bounce_rate_warning" {
+  count = var.ses_reputation_alarms ? 1 : 0
+
+  alarm_name        = "${var.name}-ses-bounce-rate-warning"
+  alarm_description = "Early warning: SES's bounce rate for the AWS account is over ${var.ses_bounce_rate_warning_threshold * 100}%. The alarm level is ${var.ses_bounce_rate_threshold * 100}% and AWS reviews accounts at 5%. Check the abuse digest and recent campaign reports for the account with the most hard bounces before it gets there."
+
+  namespace   = "AWS/SES"
+  metric_name = "Reputation.BounceRate"
+  statistic   = "Maximum"
+  period      = 3600
+
+  evaluation_periods  = 1
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = var.ses_bounce_rate_warning_threshold
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+}
+
+resource "aws_cloudwatch_metric_alarm" "ses_complaint_rate_warning" {
+  count = var.ses_reputation_alarms ? 1 : 0
+
+  alarm_name        = "${var.name}-ses-complaint-rate-warning"
+  alarm_description = "Early warning: SES's complaint rate for the AWS account is over ${var.ses_complaint_rate_warning_threshold * 100}%. The alarm level is ${var.ses_complaint_rate_threshold * 100}% and AWS reviews accounts at 0.1%. Check the abuse digest and recent campaign reports for the account with the most complaints before it gets there."
+
+  namespace   = "AWS/SES"
+  metric_name = "Reputation.ComplaintRate"
+  statistic   = "Maximum"
+  period      = 3600
+
+  evaluation_periods  = 1
+  comparison_operator = "GreaterThanThreshold"
+  threshold           = var.ses_complaint_rate_warning_threshold
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+}

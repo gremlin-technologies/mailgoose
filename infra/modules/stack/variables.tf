@@ -163,7 +163,7 @@ variable "alert_email" {
 }
 
 variable "ses_reputation_alarms" {
-  description = "Alarm on SES's account-wide bounce and complaint rates. Both environments share one AWS account, so only one turns this on."
+  description = "Alarm on SES's account-wide bounce and complaint rates. Both environments share one AWS account, so only one turns this on: staging until prod is running, then prod."
   type        = bool
   default     = false
 }

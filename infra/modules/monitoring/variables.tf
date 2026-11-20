@@ -45,7 +45,7 @@ variable "services" {
 }
 
 variable "ses_reputation_alarms" {
-  description = "Alarm on SES's account-wide bounce and complaint rates. These metrics belong to the AWS account, not an environment, so only one environment (prod) should turn them on."
+  description = "Alarm on SES's account-wide bounce and complaint rates. These metrics belong to the AWS account, not an environment, so only one environment should turn them on (staging until prod is running, then prod)."
   type        = bool
   default     = false
 }
@@ -86,4 +86,26 @@ variable "ses_complaint_rate_threshold" {
   description = "SES complaint rate (0 to 1) to alarm at. AWS reviews an account at 0.1% and may pause sending at 0.5%."
   type        = number
   default     = 0.0008
+}
+
+variable "ses_bounce_rate_warning_threshold" {
+  description = "SES bounce rate (0 to 1) for an early warning, under ses_bounce_rate_threshold."
+  type        = number
+  default     = 0.025
+
+  validation {
+    condition     = var.ses_bounce_rate_warning_threshold > 0 && var.ses_bounce_rate_warning_threshold < 0.05
+    error_message = "The bounce warning must be over 0 and under AWS's 5% review level."
+  }
+}
+
+variable "ses_complaint_rate_warning_threshold" {
+  description = "SES complaint rate (0 to 1) for an early warning, under ses_complaint_rate_threshold."
+  type        = number
+  default     = 0.0005
+
+  validation {
+    condition     = var.ses_complaint_rate_warning_threshold > 0 && var.ses_complaint_rate_warning_threshold < 0.001
+    error_message = "The complaint warning must be over 0 and under AWS's 0.1% review level."
+  }
 }
