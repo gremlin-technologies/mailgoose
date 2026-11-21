@@ -248,22 +248,26 @@ type AccountSummary struct {
 	ReviewAt    *time.Time `json:"review_at"`
 	// Test mode (MG-80): test or full, and how many test addresses are
 	// confirmed and how many wait for their link to be used.
-	SendingMode            string    `json:"sending_mode"`
-	TestAddressesConfirmed int       `json:"test_addresses_confirmed"`
-	TestAddressesPending   int       `json:"test_addresses_pending"`
-	CreatedAt              time.Time `json:"created_at"`
+	SendingMode            string `json:"sending_mode"`
+	TestAddressesConfirmed int    `json:"test_addresses_confirmed"`
+	TestAddressesPending   int    `json:"test_addresses_pending"`
+	// TesterUntil is when a tester account's period ends or ended (MG-86);
+	// nil when it isn't one. Past it, the account doesn't send (MG-107).
+	TesterUntil *time.Time `json:"tester_until"`
+	CreatedAt   time.Time  `json:"created_at"`
 }
 
 const summaryColumns = `a.id, a.name, a.status, a.plan, u.email, a.sending_paused_at, a.sending_paused_reason,
 	a.suspended_at, a.suspended_reason, a.suspended_by, a.review, a.review_flags, a.review_at, a.sending_mode,
 	(SELECT count(*) FILTER (WHERE t.confirmed_at IS NOT NULL) FROM test_addresses t WHERE t.account_id = a.id),
 	(SELECT count(*) FILTER (WHERE t.confirmed_at IS NULL) FROM test_addresses t WHERE t.account_id = a.id),
+	a.tester_until,
 	a.created_at`
 
 func scanSummary(row pgx.Row, a *AccountSummary) error {
 	if err := row.Scan(&a.ID, &a.Name, &a.Status, &a.Plan, &a.OwnerEmail, &a.PausedAt, &a.PauseReason,
 		&a.SuspendedAt, &a.SuspendedReason, &a.SuspendedBy, &a.Review, &a.ReviewFlags, &a.ReviewAt,
-		&a.SendingMode, &a.TestAddressesConfirmed, &a.TestAddressesPending, &a.CreatedAt); err != nil {
+		&a.SendingMode, &a.TestAddressesConfirmed, &a.TestAddressesPending, &a.TesterUntil, &a.CreatedAt); err != nil {
 		return err
 	}
 	if a.ReviewFlags == nil {

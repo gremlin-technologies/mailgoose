@@ -1041,7 +1041,9 @@ more copies). Copies and tests to SES's mailbox simulator
 (`*@simulator.amazonses.com`) use no tester credits, and testers may test to
 them. A launch or test that needs more credits than are left is refused
 (`tester_limit`, nothing queued); at its end the account can't launch or
-test, and copies still queued wait as for a paused account. The web app
+test, and copies still queued wait as for a paused account, including
+batches already on the send queue (the worker hands them back unsent), and
+`mailgoose admin account` and `admin find` show it as not sending. The web app
 shows a banner with the credits left, and `mailgoose account get` the same.
 `mailgoose admin tester revoke <id>` ends it and puts the account in test
 mode. Events for simulator copies never count toward any account's bounce

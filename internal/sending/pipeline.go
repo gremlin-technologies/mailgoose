@@ -80,6 +80,16 @@ const (
 	MaxWaitingBatches = 10
 )
 
+// accountHalted is SQL that's true while the account a can't send campaign
+// copies: its sending is paused, it's suspended (MG-65), or it's a tester
+// account (MG-86) whose period has ended by now, the parameter named. The
+// dispatcher, a worker starting a batch and each copy's claim all use it,
+// so a batch already on the send queue when the period ends sends nothing
+// more and is handed back, as for a pause (MG-107).
+func accountHalted(now string) string {
+	return `(a.sending_paused_at IS NOT NULL OR a.suspended_at IS NOT NULL OR coalesce(a.tester_until <= ` + now + `, false))`
+}
+
 // Batch is one message on the send queue: recipient rows of one campaign.
 type Batch struct {
 	AccountID  string  `json:"account_id"`
@@ -206,7 +216,7 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 	var since time.Time
 	err = tx.QueryRow(ctx, `
 		SELECT q.id, q.account_id, q.campaign_id, c.status, c.slice_state,
-			a.sending_paused_at IS NOT NULL OR a.suspended_at IS NOT NULL OR coalesce(a.tester_until <= $1, false),
+			`+accountHalted("$1")+`,
 			`+ownLimitSQL+`, coalesce(a.activated_at, a.created_at)
 		FROM send_queue q JOIN campaigns c ON c.id = q.campaign_id JOIN accounts a ON a.id = q.account_id
 		WHERE q.done_at IS NULL AND q.run_at <= $1 AND q.id > $2
@@ -500,6 +510,8 @@ func (p *Pipeline) finishIfDone(ctx context.Context, tx pgx.Tx, rowID int64, acc
 // sendable is what a batch needs of its campaign.
 type sendable struct {
 	status string
+	// paused is the account not sending: paused, suspended or a tester
+	// whose period has ended (accountHalted).
 	paused bool
 	copy   launchCopy
 	signer *unsubscribe.Signer
@@ -511,9 +523,9 @@ func (p *Pipeline) loadCampaign(ctx context.Context, b Batch) (*sendable, error)
 	var s sendable
 	var raw []byte
 	err := p.DB.QueryRow(ctx, `
-		SELECT c.status, a.sending_paused_at IS NOT NULL OR a.suspended_at IS NOT NULL, c.launch
+		SELECT c.status, `+accountHalted("$3")+`, c.launch
 		FROM campaigns c JOIN accounts a ON a.id = c.account_id
-		WHERE c.id = $1 AND c.account_id = $2`, b.CampaignID, b.AccountID).Scan(&s.status, &s.paused, &raw)
+		WHERE c.id = $1 AND c.account_id = $2`, b.CampaignID, b.AccountID, p.now()).Scan(&s.status, &s.paused, &raw)
 	if err != nil {
 		return nil, err
 	}
@@ -602,8 +614,10 @@ func (p *Pipeline) sendBatch(ctx context.Context, b Batch, s *sendable, attempt 
 var errHalted = errors.New("sending halted")
 
 // handBack returns a batch's unsent rows when its campaign or account is
-// paused or stopped: they wait, and the dispatcher batches them again once
-// the campaign is sending. A stopped campaign's rows are already skipped.
+// paused or stopped, or its tester period has ended: they wait, and the
+// dispatcher batches them again once the campaign is sending (for an ended
+// tester, once an admin extends it). A stopped campaign's rows are already
+// skipped.
 func (p *Pipeline) handBack(ctx context.Context, b Batch) error {
 	_, err := p.DB.Exec(ctx, `
 		UPDATE campaign_recipients SET enqueued_at = NULL WHERE id = ANY($1) AND campaign_id = $2 AND status = 'queued'`,
@@ -762,20 +776,21 @@ func (p *Pipeline) claim(ctx context.Context, b Batch, id int64) (claimed, bool,
 	defer func() { _ = tx.Rollback(ctx) }()
 	now := p.now()
 	var contactID *string
-	// Only while the campaign is sending and its account isn't paused or
-	// suspended, so a pause, a stop or a suspension takes effect at the
-	// next copy (CMP-8, MG-65).
+	// Only while the campaign is sending and its account isn't paused,
+	// suspended or a tester whose period has ended, so a pause, a stop, a
+	// suspension or the end of a tester period takes effect at the next
+	// copy (CMP-8, MG-65, MG-107).
 	err = tx.QueryRow(ctx, `
 		UPDATE campaign_recipients SET status = 'sending', claimed_at = $3
 		WHERE id = $1 AND campaign_id = $2 AND status = 'queued'
 			AND EXISTS (SELECT 1 FROM campaigns c JOIN accounts a ON a.id = c.account_id
-				WHERE c.id = $2 AND c.status = 'sending' AND a.sending_paused_at IS NULL AND a.suspended_at IS NULL)
+				WHERE c.id = $2 AND c.status = 'sending' AND NOT `+accountHalted("$3")+`)
 		RETURNING contact_id`, id, b.CampaignID, now).Scan(&contactID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		var live bool
 		if err := tx.QueryRow(ctx, `
-			SELECT c.status = 'sending' AND a.sending_paused_at IS NULL AND a.suspended_at IS NULL
-			FROM campaigns c JOIN accounts a ON a.id = c.account_id WHERE c.id = $1`, b.CampaignID).Scan(&live); err != nil &&
+			SELECT c.status = 'sending' AND NOT `+accountHalted("$2")+`
+			FROM campaigns c JOIN accounts a ON a.id = c.account_id WHERE c.id = $1`, b.CampaignID, now).Scan(&live); err != nil &&
 			!errors.Is(err, pgx.ErrNoRows) {
 			return r, false, err
 		}

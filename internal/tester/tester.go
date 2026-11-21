@@ -9,7 +9,8 @@
 // automatically sooner than other accounts (see sending.Rates.TesterUnhealthy). At
 // its end date it stops sending: launches and test sends are refused, and
 // copies still queued then wait, as they do for a paused account, until an
-// admin extends it or the campaign is cancelled.
+// admin extends it or the campaign is cancelled. That includes batches
+// already on the send queue, which the worker hands back unsent (MG-107).
 //
 // Admins make an account a tester with `mailgoose admin tester grant`, which
 // also gives it full sending, and end it with `mailgoose admin tester

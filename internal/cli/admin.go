@@ -50,10 +50,18 @@ type adminAccountSummary struct {
 	ReviewFlags         []string   `json:"review_flags"`
 	ReviewAt            *time.Time `json:"review_at"`
 	// Test mode (MG-80).
-	SendingMode            string    `json:"sending_mode"`
-	TestAddressesConfirmed int       `json:"test_addresses_confirmed"`
-	TestAddressesPending   int       `json:"test_addresses_pending"`
-	CreatedAt              time.Time `json:"created_at"`
+	SendingMode            string `json:"sending_mode"`
+	TestAddressesConfirmed int    `json:"test_addresses_confirmed"`
+	TestAddressesPending   int    `json:"test_addresses_pending"`
+	// TesterUntil is when a tester account's period ends or ended (MG-86).
+	TesterUntil *time.Time `json:"tester_until"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// testerEnded says whether s is a tester account whose period has ended
+// by now, so it sends nothing (MG-107).
+func (s adminAccountSummary) testerEnded(now time.Time) bool {
+	return s.TesterUntil != nil && !now.Before(*s.TesterUntil)
 }
 
 // adminAccount is the API's AdminAccount.
@@ -186,6 +194,8 @@ func (a *App) adminFindCmd() *cobra.Command {
 					sending = "suspended"
 				case s.SendingPausedAt != nil:
 					sending = "paused"
+				case s.testerEnded(time.Now()):
+					sending = "off: tester ended " + s.TesterUntil.Local().Format("2006-01-02")
 				}
 				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.ID, s.Name, s.OwnerEmail, s.Status, s.Plan, sending)
 			}
@@ -217,13 +227,15 @@ func (a *App) printAdminAccount(acc adminAccount) {
 		fmt.Fprintf(w, "Sign-up:      %s\n", review)
 	}
 	fmt.Fprintf(w, "Mode:         %s\n", sendingModeLine(acc.SendingMode, acc.TestAddressesConfirmed, acc.TestAddressesPending))
-	if acc.SendingPausedAt != nil {
-		reason := ""
-		if acc.SendingPausedReason != nil {
-			reason = *acc.SendingPausedReason
-		}
-		fmt.Fprintf(w, "Sending:      PAUSED since %s: %s\n", acc.SendingPausedAt.Local().Format("2006-01-02 15:04"), reason)
-	} else {
+	switch {
+	case acc.SendingPausedAt != nil:
+		fmt.Fprintf(w, "Sending:      PAUSED since %s: %s\n", acc.SendingPausedAt.Local().Format("2006-01-02 15:04"),
+			ptrString(acc.SendingPausedReason))
+	case acc.Tester != nil && acc.Tester.Ended:
+		// An ended tester's copies wait, queued or not (MG-107).
+		fmt.Fprintf(w, "Sending:      OFF: the tester period ended %s; `mailgoose admin tester grant` extends it\n",
+			acc.Tester.Until.Local().Format("2006-01-02 15:04"))
+	default:
 		fmt.Fprintln(w, "Sending:      on")
 	}
 	limit := fmt.Sprint(acc.SendLimit.Daily)

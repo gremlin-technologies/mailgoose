@@ -4220,6 +4220,14 @@ export interface components {
             test_addresses_confirmed: number;
             /** @description Test addresses whose link hasn't been used yet. */
             test_addresses_pending: number;
+            /**
+             * Format: date-time
+             * @description When a tester account's period ends or ended (MG-86); null when
+             *     it isn't a tester. Once it has passed the account sends nothing,
+             *     including batches already on the send queue (MG-107), until an
+             *     admin extends or revokes it.
+             */
+            tester_until: string | null;
             /** Format: date-time */
             created_at: string;
         };
