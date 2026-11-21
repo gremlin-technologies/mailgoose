@@ -84,8 +84,11 @@ function Where() {
   return <div data-testid="location">{loc.pathname + loc.search}</div>;
 }
 
-/** Renders the whole app at path against a fake API. */
-export function renderApp(path: string, fetch: (req: Request) => Promise<Response>) {
+/**
+ * Renders the whole app at path against a fake API. A path can carry
+ * router state, as a link that passes state would.
+ */
+export function renderApp(path: string | { pathname: string; state: unknown }, fetch: (req: Request) => Promise<Response>) {
   rendered = true;
   const api = createApiClient({ baseUrl: "http://mailgoose.test", fetch });
   return render(
