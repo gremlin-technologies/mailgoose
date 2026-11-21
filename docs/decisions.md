@@ -4,6 +4,47 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Social icons (MG-109; reversible defaults)
+
+Asked for by the owner: social links that look like the big builders',
+with the networks' logos instead of plain text links. This replaces MG-21's
+"social links render as text".
+
+- **The icons are ours to serve.** PNGs drawn from Font Awesome Free's
+  brand glyphs (CC BY 4.0, attribution in `internal/socialicons/README.md`),
+  96 pixels so they're sharp at twice their size, committed and served by
+  the API at `PUBLIC_BASE_URL/assets/social/v1/<color>/<network>.png`,
+  cached for a year. A redraw goes in a new version folder, so sent emails
+  keep their icons. No third-party CDN. Without `PUBLIC_BASE_URL` the
+  renderer falls back to text links.
+- **Fields.** `display` (`icons`, `icons_and_text`, `text`; default
+  icons), `color` (`brand`, `dark`, `light`; default brand), `size` (32, 40
+  or 48 pixels; default 32), `spacing` (0 to 48; default 12), `layout`
+  (`horizontal`, wrapping on phones, or `vertical`) and an optional
+  `label` per link (shown with names and used as alt text; default the
+  network's name). Blocks saved before read with these defaults.
+- **Narrower than the issue first proposed, for the networks' brand
+  rules.** Read on each network's own brand page (Nov 21): LinkedIn forbids
+  putting its logo in a circle, Bluesky forbids combining its logo with other
+  design elements, Facebook's logo is already a circle and allows only its
+  blue or white, X only black or white, and only Instagram allows gray. So
+  there's no `icon_style` (no circles or outlines drawn around logos), no
+  gray, `dark` keeps Facebook blue, and the smallest size is 32 pixels
+  (Instagram asks for at least 29). Sizes are pixel numbers rather than
+  small/medium/large.
+- **Open question for the owner: TikTok, YouTube and Threads.** Their
+  brand pages didn't load or don't say whether a logo may link to a profile
+  in an email; TikTok's developer pages restrict logo use. The icons ship
+  for all three (it's how every email builder shows them), but if the owner
+  wants to be strict, they can fall back to text for those three.
+- **Open question for the owner: circles, outlines and gray.** The owner
+  asked for something like Mailchimp's, which offers circles, outlines and
+  gray icons. Offer those for the networks whose brand rules allow them?
+  (Default: no; logos only, in brand, dark or white, at 32 to 48 pixels.
+  MG-109.)
+- **Outlook on Windows** gets a table around the icons (it ignores inline
+  blocks), so it doesn't wrap; everywhere else they wrap on narrow screens.
+
 ## 2026-11-21: Column layouts (MG-110; reversible defaults)
 
 Asked for by the owner: drop in column layouts the way other builders do,
@@ -2695,8 +2736,9 @@ Picked while building MG-22; easy to change.
 
 Picked while building MG-21; easy to change.
 
-- **Social links render as text** ("Instagram · Website"), not icons, until
-  image hosting lands (MG-23). Icons need hosted images.
+- ~~**Social links render as text** ("Instagram · Website"), not icons, until
+  image hosting lands (MG-23). Icons need hosted images.~~ Replaced by the
+  icons of MG-109 (2026-11-21).
 - **HTML emails aren't rendered by the block renderer.** MG-22 validates
   them and adds the postal address footer.
 - **No postal address, no render.** `Compile` refuses an account without

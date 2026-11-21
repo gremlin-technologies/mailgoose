@@ -30,9 +30,12 @@ func doc(t testing.TB, blocks string, settings string) *emails.Document {
 	return d
 }
 
+// assets is where the tests' API serves the social icons.
+const assets = "https://app.mailgoose.test"
+
 func render(t testing.TB, d *emails.Document, r Recipient) Message {
 	t.Helper()
-	tpl, err := Compile(d, Account{PostalAddress: postal})
+	tpl, err := Compile(d, Account{PostalAddress: postal, AssetsURL: assets})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +68,11 @@ var goldenCases = map[string]string{
 		{"id":"four","type":"columns","layout":"1:1:1:1","columns":[
 			{"blocks":[{"id":"f1","type":"text","text":"Rye"}]},{"blocks":[{"id":"f2","type":"text","text":"Spelt"}]},
 			{"blocks":[{"id":"f3","type":"text","text":"Oat"}]},{"blocks":[{"id":"f4","type":"text","text":"Corn"}]}]}`,
-	"social": `{"id":"so","type":"social","align":"center","links":[{"network":"instagram","url":"https://instagram.com/patsbakery"},{"network":"website","url":"https://example.com"}]}`,
+	"social": `{"id":"so","type":"social","align":"center","links":[{"network":"instagram","url":"https://instagram.com/patsbakery"},{"network":"website","url":"https://example.com"}]},
+		{"id":"so2","type":"social","display":"icons_and_text","color":"dark","size":40,"spacing":12,"layout":"vertical","align":"left",
+			"links":[{"network":"facebook","url":"https://facebook.com/patsbakery","label":"Pat's on Facebook"},{"network":"bluesky","url":"https://bsky.app/profile/pats.example"}]},
+		{"id":"so3","type":"social","display":"text","color":"light","size":48,"spacing":0,"align":"right",
+			"links":[{"network":"x","url":"https://x.com/patsbakery"},{"network":"youtube","url":"https://youtube.com/@patsbakery"}]}`,
 	"footer": `{"id":"f","type":"footer","text":"You signed up at [our shop](https://example.com).\nThanks, {{first_name|friend}}!"}`,
 }
 
@@ -79,6 +86,31 @@ func TestGolden(t *testing.T) {
 				golden(t, name+"_"+width+".txt", m.Text)
 			})
 		}
+	}
+}
+
+// TestSocialIcons checks each icon points at the API's own copy, with the
+// link's name as its alt text, and that without an assets URL the links
+// fall back to text.
+func TestSocialIcons(t *testing.T) {
+	d := doc(t, `{"type":"social","color":"light","links":[{"network":"linkedin","url":"https://linkedin.com/company/pats"},{"network":"x","url":"https://x.com/pats","label":"Pat's on X"}]}`, "")
+	html := render(t, d, pat).HTML
+	for _, want := range []string{
+		`<img src="https://app.mailgoose.test/assets/social/v1/light/linkedin.png" alt="LinkedIn" width="32" height="32"`,
+		`<img src="https://app.mailgoose.test/assets/social/v1/light/x.png" alt="Pat&#39;s on X" width="32" height="32"`,
+		`<a href="https://linkedin.com/company/pats"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("html lacks %s", want)
+		}
+	}
+	tpl, err := Compile(d, Account{PostalAddress: postal})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html = tpl.Personalize(pat).HTML
+	if strings.Contains(html, "<img") || !strings.Contains(html, ">LinkedIn</span></a>") {
+		t.Errorf("without an assets URL, want text links:\n%s", html)
 	}
 }
 
@@ -159,6 +191,7 @@ func TestLintReportsTags(t *testing.T) {
 	d := doc(t, `{"id":"h","type":"heading","text":"Hi {{name}}"},
 		{"id":"cols","type":"columns","columns":[{"blocks":[{"id":"t","type":"text","text":"{{email|a}} {{unsubscribe_url|x}} [x](ftp://nope)"}]},{"blocks":[]}]},
 		{"id":"b","type":"button","text":"Go {{first_name|{x}}}","href":"{{unsubscribe_url}}"},
+		{"id":"so","type":"social","links":[{"network":"x","url":"https://x.com/p"},{"network":"x","url":"https://x.com/q","label":"{{name}} on X"}]},
 		{"id":"f","type":"footer","text":"Bye {{first_name"}`, `{"subject":"{{FIRST_NAME}}"}`)
 	errs := Lint(d)
 	var got []string
@@ -171,7 +204,8 @@ func TestLintReportsTags(t *testing.T) {
 		"blocks[1].columns[0].blocks[0].text: {{unsubscribe_url}} takes no fallback; every recipient has one",
 		"blocks[1].columns[0].blocks[0].text: the link [x](ftp://nope) needs a full https:// address",
 		"blocks[2].text: the fallback in {{first_name|{x}} can't contain { or }",
-		`blocks[3].text: "{{first_name" opens a merge tag but never closes it with }}`,
+		"blocks[3].links[1].label: {{name}} isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}} or {{unsubscribe_url}}",
+		`blocks[4].text: "{{first_name" opens a merge tag but never closes it with }}`,
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))

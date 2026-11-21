@@ -61,16 +61,20 @@ var blockFieldFlags = []struct {
 	{"alt", "alt", "an image's alt text", false},
 	{"href", "href", "where an image or button links to", false},
 	{"width", "width", "an image's width in pixels", true},
-	{"color", "color", "a divider's color, like #e4e4e7", false},
+	{"color", "color", "a divider's color, like #e4e4e7, or a social block's icon color: brand, dark or light", false},
 	{"thickness", "thickness", "a divider's thickness in pixels", true},
 	{"height", "height", "a spacer's height in pixels", true},
 	{"background-color", "background_color", "a button's color", false},
 	{"text-color", "text_color", "a button's text color", false},
-	{"layout", "layout", "a columns block's layout: 1, 1:1, 1:1:1, 1:1:1:1, 1:2, 2:1, 1:3 or 3:1", false},
+	{"display", "display", "what a social block shows: icons, icons_and_text or text", false},
+	{"size", "size", "a social block's icon size in pixels: 32, 40 or 48", true},
+	{"spacing", "spacing", "pixels between a social block's links, 0 to 48", true},
+	{"layout", "layout", "a columns block's layout (1, 1:1, 1:1:1, 1:1:1:1, 1:2, 2:1, 1:3 or 3:1) or a social block's (horizontal or vertical)", false},
 }
 
 func addBlockFieldFlags(fs *pflag.FlagSet) {
 	fs.String("data", "", `block fields as a JSON object, like '{"text": "Hi", "level": 2}'; flags override it`)
+	fs.StringArray("link", nil, "a social block's link as network=url, like instagram=https://instagram.com/bakery; repeat it, in order (on update, these replace every link)")
 	for _, f := range blockFieldFlags {
 		if f.isInt {
 			fs.Int(f.flag, 0, f.usage)
@@ -101,6 +105,19 @@ func blockFields(fs *pflag.FlagSet) (map[string]any, error) {
 			v, _ := fs.GetString(f.flag)
 			fields[f.key] = v
 		}
+	}
+	if fs.Changed("link") {
+		flags, _ := fs.GetStringArray("link")
+		links := make([]any, 0, len(flags))
+		for _, l := range flags {
+			network, url, ok := strings.Cut(l, "=")
+			if !ok || strings.TrimSpace(network) == "" || strings.TrimSpace(url) == "" {
+				return nil, usageError(fmt.Sprintf("--link %q isn't network=url.", l),
+					"Give a network and its address, like --link instagram=https://instagram.com/bakery. For a label, use --data.")
+			}
+			links = append(links, map[string]any{"network": strings.TrimSpace(network), "url": strings.TrimSpace(url)})
+		}
+		fields["links"] = links
 	}
 	return fields, nil
 }
@@ -161,6 +178,16 @@ func blockGist(raw json.RawMessage) (typ, id, gist string) {
 	}
 	if l, ok := b["layout"].(string); ok && typ == "columns" {
 		return typ, id, "layout " + l
+	}
+	if links, ok := b["links"].([]any); ok {
+		var networks []string
+		for _, l := range links {
+			if m, ok := l.(map[string]any); ok {
+				n, _ := m["network"].(string)
+				networks = append(networks, n)
+			}
+		}
+		return typ, id, strings.Join(networks, ", ")
 	}
 	return typ, id, ""
 }
@@ -232,13 +259,17 @@ version you read; then it fails with version_conflict if someone saved since.`,
 columns or social. Set its fields with flags, or any fields with --data as
 JSON; flags win over --data. Fields left out take their defaults. A columns
 block's --layout is 1, 1:1 (the default), 1:1:1, 1:1:1:1, 1:2, 2:1, 1:3 or
-3:1, and it starts with that many empty columns unless --data gives them.`,
+3:1, and it starts with that many empty columns unless --data gives them. A
+social block needs at least one --link; it shows each network's icon
+(--display icons) in its own colors (--color brand) at 32 pixels (--size)
+unless told otherwise.`,
 		Example: `  mailgoose email blocks add 3f1c... --type heading --text "Hi"
   mailgoose email blocks add 3f1c... --type button --text "Order now" --href https://bakery.example --after b_k3j9x2m1qa
   mailgoose email blocks add 3f1c... --type columns --index 1
   mailgoose email blocks add 3f1c... --type columns --layout 1:2
   mailgoose email blocks add 3f1c... --type image --src https://bakery.example/bun.png --in b_cols123456 --column 0
-  mailgoose email blocks add 3f1c... --type social --data '{"links": [{"network": "instagram", "url": "https://instagram.com/bakery"}]}'`,
+  mailgoose email blocks add 3f1c... --type social --link instagram=https://instagram.com/bakery --link website=https://bakery.example
+  mailgoose email blocks add 3f1c... --type social --color dark --size 40 --data '{"links": [{"network": "x", "url": "https://x.com/bakery", "label": "Follow us"}]}'`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := emailIDArg(args[0])
@@ -287,7 +318,8 @@ block's --layout is 1, 1:1 (the default), 1:1:1, 1:1:1:1, 1:2, 2:1, 1:3 or
 type can't change; add a new block and remove the old one instead.`,
 		Example: `  mailgoose email blocks update 3f1c... b_k3j9x2m1qa --text "Hello again" --align center
   mailgoose email blocks update 3f1c... b_cols123456 --layout 1:1:1
-  mailgoose email blocks update 3f1c... b_img0000001 --data '{"href": null}'`,
+  mailgoose email blocks update 3f1c... b_img0000001 --data '{"href": null}'
+  mailgoose email blocks update 3f1c... b_social0001 --display icons_and_text --layout vertical`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := emailIDArg(args[0])

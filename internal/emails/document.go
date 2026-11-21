@@ -17,6 +17,7 @@ import (
 	"net/mail"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -179,18 +180,53 @@ func LayoutWidths(layout string) []int {
 	return out
 }
 
-// SocialLink is one network's link in a Social block.
+// SocialLink is one network's link in a Social block. Label is the text
+// shown beside or instead of the icon, and the icon's alt text; empty means
+// the network's name.
 type SocialLink struct {
 	Network string `json:"network"`
 	URL     string `json:"url"`
+	Label   string `json:"label,omitempty"`
 }
 
-// Social is a row of social network icons.
+// Social is a row (or column) of social network icons, each a link
+// (MG-109). Display says whether to show icons, text or both; Color is one
+// of SocialColors; Size the icons' height in pixels; Spacing the gap
+// between links.
 type Social struct {
 	base
-	Links []SocialLink `json:"links"`
-	Align string       `json:"align"`
+	Links   []SocialLink `json:"links"`
+	Display string       `json:"display"`
+	Color   string       `json:"color"`
+	Size    int          `json:"size"`
+	Spacing int          `json:"spacing"`
+	Layout  string       `json:"layout"`
+	Align   string       `json:"align"`
 }
+
+// The social block's choices and defaults (MG-109). A block saved before
+// these fields existed reads with the defaults.
+var (
+	// SocialDisplays are what a social block shows for each link.
+	SocialDisplays = []string{"icons", "icons_and_text", "text"}
+	// SocialColors are the icon styles: each network's own color, black or white.
+	SocialColors = []string{"brand", "dark", "light"}
+	// SocialSizes are the icon sizes in pixels.
+	SocialSizes = []int{32, 40, 48}
+	// SocialLayouts are how a social block lines its links up.
+	SocialLayouts = []string{"horizontal", "vertical"}
+)
+
+const (
+	// DefaultSocialSize is the icon size, in pixels, when none is given.
+	DefaultSocialSize = 32
+	// DefaultSocialSpacing is the gap between links, in pixels, when none is given.
+	DefaultSocialSpacing = 12
+	// MaxSocialSpacing is the widest gap between links, in pixels.
+	MaxSocialSpacing = 48
+	// MaxSocialLabel is the longest name a link may show, in characters.
+	MaxSocialLabel = 50
+)
 
 // Footer is the locked last block. The renderer adds the account's postal
 // address and the unsubscribe link to it; Text is an optional line above
@@ -479,7 +515,8 @@ func (p *parser) block(raw json.RawMessage, path string, nested bool) (Block, er
 		if err := checkLinks(raw, path); err != nil {
 			return nil, err
 		}
-		b = &Social{base: bs, Align: "center"}
+		b = &Social{base: bs, Display: "icons", Color: "brand", Size: DefaultSocialSize,
+			Spacing: DefaultSocialSpacing, Layout: "horizontal", Align: "center"}
 	case TypeFooter:
 		if nested {
 			return nil, docErr(path+".type", "the footer can't go inside a column")
@@ -686,6 +723,27 @@ func checkBlock(b Block, path string) error {
 			if err := linkURL(lp+".url", l.URL, false); err != nil {
 				return err
 			}
+			if strings.ContainsAny(l.Label, "\r\n") {
+				return docErr(lp+".label", "can't contain line breaks")
+			}
+			if utf8.RuneCountInString(l.Label) > MaxSocialLabel {
+				return docErr(lp+".label", "is over %d characters", MaxSocialLabel)
+			}
+		}
+		if !slices.Contains(SocialDisplays, b.Display) {
+			return docErr(path+".display", "must be one of %s", strings.Join(SocialDisplays, ", "))
+		}
+		if !slices.Contains(SocialColors, b.Color) {
+			return docErr(path+".color", "must be one of %s", strings.Join(SocialColors, ", "))
+		}
+		if !slices.Contains(SocialSizes, b.Size) {
+			return docErr(path+".size", "must be 32, 40 or 48 pixels")
+		}
+		if b.Spacing < 0 || b.Spacing > MaxSocialSpacing {
+			return docErr(path+".spacing", "must be 0 to %d pixels", MaxSocialSpacing)
+		}
+		if !slices.Contains(SocialLayouts, b.Layout) {
+			return docErr(path+".layout", "must be horizontal or vertical")
 		}
 		return align(b.Align)
 	case *Footer:

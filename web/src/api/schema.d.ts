@@ -3566,6 +3566,14 @@ export interface components {
             /** @default 24 */
             height: number;
         };
+        /**
+         * @description A row (or column) of links to social profiles, each shown as the
+         *     network's icon, its name, or both. The icons are PNGs the API serves
+         *     at `/assets/social/`, in the network's own colors (`brand`), near
+         *     black (`dark`; Facebook stays blue) or white (`light`, for dark
+         *     backgrounds). A block saved without the style fields reads with
+         *     their defaults.
+         */
         SocialBlock: {
             id: components["schemas"]["BlockId"];
             /**
@@ -3578,7 +3586,37 @@ export interface components {
                 network: "facebook" | "instagram" | "x" | "linkedin" | "youtube" | "tiktok" | "threads" | "bluesky" | "website";
                 /** Format: uri */
                 url: string;
+                /** @description Text shown beside or instead of the icon, and the icon's alt text. Left out, it's the network's name. */
+                label?: string;
             }[];
+            /**
+             * @description Icons only, icons with the link's name, or names only.
+             * @default icons
+             * @enum {string}
+             */
+            display: "icons" | "icons_and_text" | "text";
+            /**
+             * @default brand
+             * @enum {string}
+             */
+            color: "brand" | "dark" | "light";
+            /**
+             * @description The icons' height in pixels.
+             * @default 32
+             * @enum {integer}
+             */
+            size: 32 | 40 | 48;
+            /**
+             * @description Pixels between links.
+             * @default 12
+             */
+            spacing: number;
+            /**
+             * @description In a row (wrapping on narrow screens) or one link a line.
+             * @default horizontal
+             * @enum {string}
+             */
+            layout: "horizontal" | "vertical";
             /** @default center */
             align: components["schemas"]["Align"];
         };

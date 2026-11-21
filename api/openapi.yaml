@@ -6412,8 +6412,15 @@ components:
           default: 24
     SocialBlock:
       type: object
+      description: |
+        A row (or column) of links to social profiles, each shown as the
+        network's icon, its name, or both. The icons are PNGs the API serves
+        at `/assets/social/`, in the network's own colors (`brand`), near
+        black (`dark`; Facebook stays blue) or white (`light`, for dark
+        backgrounds). A block saved without the style fields reads with
+        their defaults.
       additionalProperties: false
-      required: [id, type, links, align]
+      required: [id, type, links, display, color, size, spacing, layout, align]
       properties:
         id:
           $ref: "#/components/schemas/BlockId"
@@ -6436,6 +6443,35 @@ components:
                 type: string
                 format: uri
                 maxLength: 2000
+              label:
+                type: string
+                maxLength: 50
+                description: Text shown beside or instead of the icon, and the icon's alt text. Left out, it's the network's name.
+        display:
+          type: string
+          enum: [icons, icons_and_text, text]
+          default: icons
+          description: Icons only, icons with the link's name, or names only.
+        color:
+          type: string
+          enum: [brand, dark, light]
+          default: brand
+        size:
+          type: integer
+          enum: [32, 40, 48]
+          default: 32
+          description: The icons' height in pixels.
+        spacing:
+          type: integer
+          minimum: 0
+          maximum: 48
+          default: 12
+          description: Pixels between links.
+        layout:
+          type: string
+          enum: [horizontal, vertical]
+          default: horizontal
+          description: In a row (wrapping on narrow screens) or one link a line.
         align:
           $ref: "#/components/schemas/Align"
           default: center

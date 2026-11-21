@@ -11,6 +11,7 @@ import type { Block } from "./blocks";
 import { blockLabels } from "./blocks";
 import { AlignField, ColorField, NumberField, TagField, type Align } from "./fields";
 import { LayoutField } from "./layout";
+import { SocialProperties } from "./social";
 
 export type Settings = components["schemas"]["EmailSettings"];
 type Image = components["schemas"]["Image"];
@@ -160,7 +161,7 @@ function Fieldset({ block, set }: { block: Block; set: (f: Fields) => void }) {
     case "spacer":
       return <NumberField label="Height (pixels)" value={block.height} min={4} max={200} onChange={(v) => v !== null && set({ height: v })} />;
     case "social":
-      return <SocialLinks links={block.links} align={block.align as Align} set={set} />;
+      return <SocialProperties block={block} set={set} />;
     case "footer":
       return (
         <>
@@ -187,54 +188,6 @@ function Fieldset({ block, set }: { block: Block; set: (f: Fields) => void }) {
     default:
       return null;
   }
-}
-
-const networks = ["website", "facebook", "instagram", "x", "linkedin", "youtube", "tiktok", "threads", "bluesky"] as const;
-type Network = (typeof networks)[number];
-type SocialLink = { network: Network; url: string };
-
-function SocialLinks({ links, align, set }: { links: SocialLink[]; align: Align; set: (f: Fields) => void }) {
-  const change = (i: number, l: Partial<SocialLink>) => set({ links: links.map((x, j) => (j === i ? { ...x, ...l } : x)) });
-  return (
-    <>
-      <ul className="stack plain">
-        {links.map((l, i) => (
-          <li key={i} className="row social-row" role="group" aria-label={`Link ${i + 1}`}>
-            <label className="field">
-              <span>Network</span>
-              <select value={l.network} onChange={(e) => change(i, { network: e.target.value as Network })}>
-                {networks.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field grow">
-              <span>Address</span>
-              <input type="url" value={l.url} maxLength={2000} onChange={(e) => change(i, { url: e.target.value.trim() })} />
-            </label>
-            <button
-              type="button"
-              className="button small"
-              disabled={links.length === 1}
-              onClick={() => set({ links: links.filter((_, j) => j !== i) })}
-            >
-              Remove
-            </button>
-          </li>
-        ))}
-      </ul>
-      {links.length < 10 && (
-        <div>
-          <button type="button" className="button small" onClick={() => set({ links: [...links, { network: "website", url: "https://" }] })}>
-            Add a link
-          </button>
-        </div>
-      )}
-      <AlignField value={align} onChange={(v) => set({ align: v })} />
-    </>
-  );
 }
 
 const maxImageBytes = 5 * 1024 * 1024;

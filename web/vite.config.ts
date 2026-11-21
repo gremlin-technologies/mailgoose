@@ -12,6 +12,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       "/v1": "http://localhost:8080",
+      "/assets": "http://localhost:8080",
     },
   },
   build: {
