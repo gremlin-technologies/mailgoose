@@ -110,6 +110,13 @@ func (s *Service) UpdateAccountSettings(ctx context.Context, accountID string, u
 		apply(u.FromEmail, &cur.FromEmail)
 		apply(u.PostalAddress, &cur.PostalAddress)
 		if u.Name.Set {
+			// A name taken before MG-98 stays until it's changed, so the
+			// rest of the settings can still be saved with it.
+			if *u.Name.Value != cur.Name {
+				if err := checkAccountName(*u.Name.Value, "name"); err != nil {
+					return err
+				}
+			}
 			cur.Name = *u.Name.Value
 		}
 		if u.TimeZone.Set {

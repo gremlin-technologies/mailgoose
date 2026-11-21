@@ -26,6 +26,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/argon2"
 
+	"github.com/gremlin-technologies/mailgoose/internal/accountname"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	mgmail "github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/policy"
@@ -207,7 +208,21 @@ func (in SignUpInput) validate() (email, name string, err error) {
 		return "", "", &ValidationError{Code: "invalid_account_name", Field: "account_name",
 			Message: fmt.Sprintf("Account name must be 1 to %d characters on one line.", maxAccountNameLen)}
 	}
+	if err := checkAccountName(name, "account_name"); err != nil {
+		return "", "", err
+	}
 	return email, name, nil
+}
+
+// checkAccountName refuses a name that could pass for someone else on
+// mailgoose's shared sending domain (MG-98), where every email goes out
+// under its account's name: one with an @, one shaped like a domain, or one
+// carrying a well-known brand or a payment term.
+func checkAccountName(name, field string) error {
+	if r := accountname.Check(name); r != nil {
+		return &ValidationError{Code: "account_name_not_allowed", Field: field, Message: r.Message}
+	}
+	return nil
 }
 
 // SignUp creates a pending account and emails a code, or, for an address

@@ -15,7 +15,7 @@ const account = (terms: object) => ({
   postal_address: "Pat's Bakery\n12 Main St",
   time_zone: "UTC",
   missing_for_send: [],
-  send_limit: { daily: 10000, usual: 10000, reason: null, lowered_until: null },
+  send_limit: { daily: 10000, usual: 10000, reason: null, lowered_until: null, needs_domain: false },
   terms: {
     accepted_version: currentPolicyVersion.version,
     accepted_at: "2026-11-19T10:00:00Z",

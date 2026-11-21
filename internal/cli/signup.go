@@ -32,7 +32,11 @@ The code goes to the address's inbox, so a person has to read it and pass it
 on; an agent can't finish a sign-up alone. An address that already has an
 account gets a sign-in code instead, and step 2 signs this CLI in to it.
 Codes last 10 minutes and stop working after 5 wrong tries. Code emails are
-limited to 5 an hour per address and 20 an hour per IP.`,
+limited to 5 an hour per address and 20 an hour per IP.
+
+Email from mailgoose's shared sending domain goes under the account's name,
+so a name with an @, one shaped like a domain, or one carrying a well-known
+brand or a payment term (PayPal, Billing) is refused, with why.`,
 		Example: `  mailgoose signup --email pat@example.com --account-name "Pat's Bakery" --accept-terms
   mailgoose signup --email pat@example.com --code 042917`,
 		Args: cobra.NoArgs,

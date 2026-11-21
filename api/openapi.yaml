@@ -5507,8 +5507,11 @@ components:
         New accounts start low and double each week of clean sending up to
         the usual limit. A campaign whose spam complaints or hard bounces
         pass the early-warning limits (0.05% and 2% by default) lowers it to
-        the new-account limit for 7 days.
-      required: [daily, usual, reason, lowered_until]
+        the new-account limit for 7 days. Where the server has a shared
+        sending domain, an account with no verified domain of its own stays
+        at the new-account limit (`needs_domain`), and one that verifies a
+        domain grows from when it did.
+      required: [daily, usual, reason, lowered_until, needs_domain]
       properties:
         daily:
           type: integer
@@ -5524,6 +5527,13 @@ components:
           type: [string, "null"]
           format: date-time
           description: When a lowered limit lifts; null when it isn't lowered.
+        needs_domain:
+          type: boolean
+          description: |
+            True when `daily` is held at the new-account limit because the
+            account has no verified domain of its own and sends from the
+            shared sending domain: adding a domain (`createDomain`) is how it
+            sends more.
     TermsStatus:
       type: object
       description: |
@@ -5572,10 +5582,19 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+          description: |
+            A new name is checked as at sign-up (`account_name` in
+            `createSignup`): one that could pass for someone else on the
+            shared sending domain is a 422 `account_name_not_allowed`. The
+            current name, sent back unchanged, is never refused.
         from_name:
           type: [string, "null"]
           maxLength: 100
-          description: One line, without quotes or angle brackets. `null` removes it.
+          description: |
+            One line, without quotes or angle brackets. `null` removes it.
+            It's used only for email from a domain verified for the account;
+            email from the shared sending domain goes under the account's
+            name.
         from_email:
           type: [string, "null"]
           format: email
@@ -5931,6 +5950,14 @@ components:
           type: string
           minLength: 1
           maxLength: 100
+          description: |
+            Emails from mailgoose's shared sending domain go out under the
+            account's name, so a name with an `@`, one shaped like a domain
+            (`example.com`), or one carrying a well-known brand or a payment
+            term (`PayPal Support`, `Billing`) is refused with a 422
+            `account_name_not_allowed` whose message says why. Names are
+            compared ignoring case, accents, spaces, punctuation and common
+            lookalike characters.
           examples: [Pat's Bakery]
         accepted_terms:
           type: boolean
@@ -8066,7 +8093,7 @@ components:
       description: |
         The request is well formed but a field is wrong. `code` says which
         problem, such as `invalid_email`, `invalid_account_name`,
-        `terms_not_accepted` or `invalid_code`.
+        `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

@@ -135,12 +135,32 @@ function SettingsForm({
       ) : (
         <p className="muted small">
           Daily send limit: {limit.daily.toLocaleString("en-US")} recipients.{limit.reason ? ` ${limit.reason}` : ""}
+          {limit.needs_domain && (
+            <>
+              {" "}
+              <Link to="/domains">Add your own domain</Link>
+            </>
+          )}
         </p>
       )}
-      <label className="field">
-        <span>Account name</span>
-        <input name="name" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
-      </label>
+      <div className="field">
+        <label htmlFor="account_name">Account name</label>
+        <input
+          id="account_name"
+          name="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={100}
+          required
+          aria-describedby={account.shared_address ? "name-help" : undefined}
+        />
+        {account.shared_address && (
+          <span id="name-help" className="muted small">
+            Emails from mailgoose's shared domain go out under this name. The From name is used only from your own
+            domain.
+          </span>
+        )}
+      </div>
       <div className="grid-2">
         <label className="field">
           <span>Default From name</span>
@@ -224,8 +244,9 @@ function SendingMode({ mode, shared }: { mode: Account["sending_mode"]; shared: 
       </p>
       {shared && (
         <p>
-          Without a domain of your own, your emails go from {shared}, mailgoose's shared domain, with replies to your
-          From address. Your own domain does better.
+          Without a domain of your own, your emails go from {shared}, mailgoose's shared domain, under your account's
+          name, with replies to your From address. Your own domain does better, sends more each day, and lets an email
+          use its own From name.
         </p>
       )}
       <p className="row">

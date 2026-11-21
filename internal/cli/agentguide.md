@@ -64,9 +64,17 @@ mailgoose sender-addresses list --json
 ```
 
 Such mail goes from the account's address on mailgoose's shared domain,
-with replies to their own address. Tests and launch summaries say so; tell
-the person, and suggest adding their own domain, which delivers better and
-looks more trustworthy.
+under the account's name (the email's From name is used only from a verified
+domain), with replies to their own address. Tests and launch summaries say
+so; tell the person, and suggest adding their own domain, which delivers
+better and looks more trustworthy. Until they add one, the account stays at
+the new-account daily limit (1,000): `mailgoose account get` says so, and
+`send_limit.needs_domain` is true in `--json`.
+
+Because of that, an account name with an `@`, one shaped like a domain, or
+one carrying a well-known brand or a payment term is refused at sign-up and
+rename (`account_name_not_allowed`, with why). Ask the person for another
+name; don't try spellings that look the same.
 
 ## 3. Build an email from blocks
 

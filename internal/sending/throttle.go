@@ -167,6 +167,10 @@ type SendLimit struct {
 	Reason *string `json:"reason"`
 	// LoweredUntil is when a throttle lifts; nil when not throttled.
 	LoweredUntil *time.Time `json:"lowered_until"`
+	// NeedsDomain is true when Daily is held at the new-account limit
+	// because the account has no verified domain of its own (MG-98):
+	// adding one is how it sends more.
+	NeedsDomain bool `json:"needs_domain"`
 }
 
 // ForAccount is an account's daily limit (CMP-7, MG-61). own is its own
@@ -178,6 +182,13 @@ type SendLimit struct {
 // lifted: the new-account limit for the first week, then doubling each
 // week up to the usual limit, held at the new-account limit while the last
 // 30 days aren't clean.
+//
+// With shared sending on (MG-98), an account with no verified domain of its
+// own stays at the new-account limit, NeedsDomain set, since everything it
+// sends goes from mailgoose's shared domain. Once it verifies one, the
+// limit grows as above from when it verified its first still-verified
+// domain, if that's later, so a new domain starts at the new-account limit
+// too.
 func (l Limits) ForAccount(ctx context.Context, q querier, accountID string, own *int, since, now time.Time) (SendLimit, error) {
 	out := SendLimit{Usual: l.Daily}
 	reason := func(s string) { out.Reason = &s }
@@ -204,6 +215,25 @@ func (l Limits) ForAccount(ctx context.Context, q querier, accountID string, own
 		reason("Set for this account by mailgoose.")
 		return out, nil
 	}
+	fromDomain := false
+	if l.SharedDomain {
+		var first *time.Time
+		if err := q.QueryRow(ctx, `SELECT min(coalesce(verified_at, created_at)) FROM domains WHERE account_id = $1 AND status = 'verified'`,
+			accountID).Scan(&first); err != nil {
+			return out, err
+		}
+		if first == nil {
+			out.Daily = min(l.NewDaily, l.Daily)
+			out.NeedsDomain = true
+			reason(fmt.Sprintf("Accounts without a verified domain of their own send at most %s a day, from mailgoose's shared domain. "+
+				"Add your own domain to send more: the limit then doubles each week of clean sending, up to %s a day.",
+				thousands(out.Daily), thousands(l.Daily)))
+			return out, nil
+		}
+		if first.After(since) {
+			since, fromDomain = *first, true
+		}
+	}
 	lifted := until != nil && until.After(since)
 	if lifted {
 		since = *until
@@ -227,6 +257,8 @@ func (l Limits) ForAccount(ctx context.Context, q querier, accountID string, own
 			thousands(out.Daily), per10k(ComplaintsPer10k), per10k(HardBouncesPer10k)))
 	case lifted:
 		reason(fmt.Sprintf("Growing again after a lowered limit: it doubles each week of clean sending, up to %s a day.", thousands(l.Daily)))
+	case fromDomain:
+		reason(fmt.Sprintf("Growing from when your domain was verified: it doubles each week of clean sending, up to %s a day.", thousands(l.Daily)))
 	default:
 		reason(fmt.Sprintf("New accounts start at %s a day; it doubles each week of clean sending, up to %s a day.",
 			thousands(l.NewDaily), thousands(l.Daily)))

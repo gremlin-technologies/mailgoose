@@ -92,10 +92,13 @@ func (r *Resolver) SharedAddress(slug string) string {
 //
 //   - From a verified domain of the account, it goes as asked.
 //   - Otherwise, with shared sending on and from a verified sender of the
-//     account, it goes from the account's From name (its name if from has
-//     none) at <sending slug>@<shared domain>, with replies to replyTo, or to
-//     from when there's no replyTo. A replyTo has to be a verified sender
-//     too, or on a verified domain: a *ReplyToError.
+//     account, it goes under the account's own name at
+//     <sending slug>@<shared domain>, with replies to replyTo, or to from
+//     when there's no replyTo. A replyTo has to be a verified sender too, or
+//     on a verified domain: a *ReplyToError. The email's own From name is
+//     used only on a verified domain (MG-98), so a name like "PayPal
+//     Support" can't go out on mailgoose's domain; account names are
+//     checked for that at sign-up and rename (package accountname).
 //   - Otherwise it's domains.ErrFromNotVerified.
 //
 // The owner's own address never goes in From unless its domain is verified
@@ -129,11 +132,7 @@ func (r *Resolver) Resolve(ctx context.Context, accountID string, from mail.Addr
 	if err := r.DB.QueryRow(ctx, `SELECT name, sending_slug FROM accounts WHERE id = $1`, accountID).Scan(&name, &slug); err != nil {
 		return nil, err
 	}
-	s := &Sender{Shared: true, Address: from.Email,
-		From: mail.Address{Name: strings.TrimSpace(from.Name), Email: r.SharedAddress(slug)}}
-	if s.From.Name == "" {
-		s.From.Name = name
-	}
+	s := &Sender{Shared: true, Address: from.Email, From: mail.Address{Name: name, Email: r.SharedAddress(slug)}}
 	s.ReplyTo = []mail.Address{{Email: from.Email}}
 	if replyTo != "" {
 		s.ReplyTo = []mail.Address{{Email: replyTo}}

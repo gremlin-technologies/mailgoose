@@ -900,7 +900,10 @@ up to `ACCOUNT_DAILY_SEND_LIMIT` (10,000). History is clean when the
 account's campaigns over the last 30 days are under both thresholds below
 (judged only once they've gone to 500 or more), and none of them paused it.
 An account that isn't clean is held at 1,000 until it is. An account's own
-`daily_send_limit` replaces the schedule.
+`daily_send_limit` replaces the schedule. With `SHARED_SENDING_DOMAIN` set,
+an account with no verified domain of its own is held at 1,000 (MG-98), and
+one that verifies a domain grows from when it verified its first one (or
+from its own start, if that's later), so a new domain starts low too.
 
 **Automatic pause.** Once a campaign has gone to 500 or more people, its
 account's sending is paused if more than 0.1% of them complained (with at
@@ -1154,14 +1157,31 @@ CLI and the API all encourage one: it delivers better and readers trust it
 more. With `SHARED_SENDING_DOMAIN` set, a From that isn't on a verified
 domain of the account still sends when the account has proved it owns the
 address: its owner's sign-in address, or a confirmed sender address. The
-message then goes from the From name (the account's name if none) at
-`<sending_slug>@<shared domain>`, with Reply-To the From address, or the
+message then goes under the account's name, whatever From name the email or
+account sets (MG-98), at `<sending_slug>@<shared domain>`, with Reply-To the
+From address, or the
 email's own Reply-To when that's a verified sender address or on a verified
 domain too (`unverified_reply_to` otherwise). `internal/senders.Resolver`
 decides this once for test sends, launches, signup confirmations and the
 email check, which warns `shared_domain`. Test results and launch summaries
 say `shared_domain` and the From used, and the web app and CLI show a nudge
 to add the domain.
+
+Because the account's name is what readers see as the sender there, sign-up
+and rename refuse a name that could pass for someone else
+(`account_name_not_allowed`, with why): one with an `@`, one shaped like a
+domain (`paypal.com`), or one carrying a well-known brand or a payment term
+(`PayPal Support`, `Billing Department`). `internal/accountname` compares
+names after folding case, accents, fullwidth forms and invisible characters,
+mapping common lookalikes (Cyrillic and Greek letters, `0` for `o`, `1` and
+`i` for `l`, `rn` for `m`) and ignoring spaces and punctuation; its lists are
+short and easy to change. A name taken before this stays until it's changed.
+
+An account with no verified domain of its own also stays at the new-account
+daily limit (1,000) and doesn't grow, and its send limit says why
+(`needs_domain` in the API, a link to Domains in the web app, the
+`mailgoose domain add` command in `mailgoose account get`). See
+[Account health](#account-health-and-send-limits).
 
 Each account has a `sending_slug`, made from its name when it's created
 (`Pat's Bakery` is `pats-bakery`) and never changed by a rename. A taken or
