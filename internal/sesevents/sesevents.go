@@ -176,6 +176,10 @@ func (s *Service) handle(ctx context.Context, body []byte) (Outcome, error) {
 		}
 		body = []byte(env.Message)
 	}
+	if isValidationNotice(body) {
+		s.log().InfoContext(ctx, "SES event destination validation notice acknowledged")
+		return Ignored, nil
+	}
 	var e event
 	if err := json.Unmarshal(body, &e); err != nil {
 		s.log().WarnContext(ctx, "unreadable SES event dropped", "err", err)
@@ -190,6 +194,15 @@ func (s *Service) handle(ctx context.Context, body []byte) (Outcome, error) {
 	}
 	sum := sha256.Sum256(body)
 	return s.store(ctx, &e, p, hex.EncodeToString(sum[:]))
+}
+
+// validationNotice starts the plain-text message SES sends to an SNS topic
+// when an event destination is created or changed to use it. It isn't an
+// event, so it's acknowledged quietly rather than logged as unreadable.
+const validationNotice = "Successfully validated SNS topic for Amazon SES event publishing"
+
+func isValidationNotice(body []byte) bool {
+	return strings.HasPrefix(strings.TrimSpace(string(body)), validationNotice)
 }
 
 // parse picks out what's stored, or says why the event isn't.
