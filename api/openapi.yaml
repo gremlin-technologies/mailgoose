@@ -4205,6 +4205,11 @@ paths:
         most copies sent. Each row says whether the account is paused,
         suspended, throttled or in test mode. At most `limit` rows; `total`
         counts them all, and there's no next page.
+
+        `send_throughput` (MG-91) is how fast campaign copies went out over
+        the last 24 hours, across every account, against the configured
+        `SEND_RATE_PER_SECOND`: measured from each send batch's run in the
+        worker, SES mailbox simulator copies included.
       tags: [admin]
       x-required-scope: full
       security:
@@ -7629,9 +7634,51 @@ components:
           type: integer
         min_copies:
           type: integer
+    AdminSendThroughput:
+      type: object
+      description: |
+        How fast campaign copies went out over the last 24 hours, across
+        every account (MG-91), from the send batches that sent at least one
+        copy and finished in the window. SES mailbox simulator copies
+        count: they're real SES calls. Rates are rounded to 2 places, and
+        null when no time was spent sending.
+      required: [since, batches, copies, busy_seconds, copies_per_second, batch_seconds, per_batch_copies_per_second,
+        send_rate_per_second]
+      properties:
+        since:
+          type: string
+          format: date-time
+          description: The window's start; it runs to now.
+        batches:
+          type: integer
+        copies:
+          type: integer
+          description: Copies those batches sent.
+        busy_seconds:
+          type: number
+          description: |
+            Seconds when at least one batch was sending (overlapping
+            batches merged). Time between batches isn't counted.
+        copies_per_second:
+          type: [number, "null"]
+          description: |
+            `copies` over `busy_seconds`: the platform's rate while it was
+            sending, to set against `send_rate_per_second`.
+        batch_seconds:
+          type: number
+          description: The batches' send times added up.
+        per_batch_copies_per_second:
+          type: [number, "null"]
+          description: |
+            `copies` over `batch_seconds`: how fast one batch sends. It
+            matches `copies_per_second` when batches don't overlap (one
+            worker); batches that ran at once shared the rate.
+        send_rate_per_second:
+          type: integer
+          description: The configured `SEND_RATE_PER_SECOND`, the most copies a second across every worker.
     AdminDeliverabilityReport:
       type: object
-      required: [data, next_cursor, total, early_warning]
+      required: [data, next_cursor, total, early_warning, send_throughput]
       properties:
         data:
           type: array
@@ -7644,6 +7691,8 @@ components:
           description: Every account in the report, including those over `limit`.
         early_warning:
           $ref: "#/components/schemas/AdminEarlyWarning"
+        send_throughput:
+          $ref: "#/components/schemas/AdminSendThroughput"
     AdminHeldImport:
       type: object
       required: [id, file_name, total_rows, hold_reason, status, list_source, list_source_detail, checks, created_at]

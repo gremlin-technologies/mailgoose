@@ -112,6 +112,11 @@ scope; they only show where an idea came from.
   `FORM_DAILY_SIGNUP_LIMIT` (default 1,000) new contacts in a rolling 24
   hours, counted in Postgres across API tasks; past it the form answers 429
   `form_signup_limit`, and the owner and ops are told once a day per form.
+- Send throughput (Nov 21, MG-91 part 1): each send batch logs its copies
+  sent and seconds at INFO and is recorded for 7 days; `mailgoose admin
+  deliverability` shows the last day's copies a second against
+  `SEND_RATE_PER_SECOND`. A pool for a batch's rows (default 4) waits for
+  the staging numbers.
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API
