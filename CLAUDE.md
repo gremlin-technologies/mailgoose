@@ -127,6 +127,9 @@ scope; they only show where an idea came from.
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API
   changes.
+- Column layouts (Nov 21, MG-110): a columns block has a `layout` (1, 1:1,
+  1:1:1, 1:1:1:1, 1:2, 2:1, 1:3, 3:1; `1:1` when missing). Changing it never
+  drops a column that still holds blocks.
 - Public site and CLI releases (Nov 21): mailgoose.app is served from its own
   public repository, gremlin-technologies/mailgoose-public, so this one can go
   private. The CLI ships from here with GoReleaser to GitHub Releases on

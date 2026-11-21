@@ -97,3 +97,36 @@ func blockOutline(bs []map[string]any) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// TestEmailBlocksColumnLayouts adds columns with --layout and changes it.
+func TestEmailBlocksColumnLayouts(t *testing.T) {
+	h := liveAPI(t)
+	run := func(args ...string) map[string]any {
+		t.Helper()
+		if code := h.run(append(args, "--json")...); code != ExitOK {
+			t.Fatalf("%v: exit %d %s", args, code, h.errOut)
+		}
+		return h.jsonOut(t)
+	}
+	block := func(out map[string]any) map[string]any {
+		return out["block"].(map[string]any)["block"].(map[string]any)
+	}
+
+	id := run("email", "create", "--name", "Layouts")["id"].(string)
+	cols := block(run("email", "blocks", "add", id, "--type", "columns", "--layout", "1:3"))
+	if cols["layout"] != "1:3" || len(cols["columns"].([]any)) != 2 {
+		t.Errorf("added %v", cols)
+	}
+	colsID := cols["id"].(string)
+	wide := block(run("email", "blocks", "update", id, colsID, "--layout", "1:1:1:1"))
+	if wide["layout"] != "1:1:1:1" || len(wide["columns"].([]any)) != 4 {
+		t.Errorf("updated %v", wide)
+	}
+	run("email", "blocks", "add", id, "--type", "spacer", "--in", colsID, "--column", "3")
+	if code := h.run("email", "blocks", "update", id, colsID, "--layout", "1:1"); code != ExitError || !strings.Contains(h.errOut.String(), "column 3") {
+		t.Errorf("dropping a full column: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("email", "blocks", "list", id); code != ExitOK || !strings.Contains(h.out.String(), "layout 1:1:1:1") {
+		t.Errorf("list: exit %d\n%s", code, h.out)
+	}
+}

@@ -379,6 +379,42 @@ func (e CodeSentStatus) Valid() bool {
 	}
 }
 
+// Defines values for ColumnsBlockLayout.
+const (
+	ColumnsBlockLayoutN1    ColumnsBlockLayout = "1"
+	ColumnsBlockLayoutN11   ColumnsBlockLayout = "1:1"
+	ColumnsBlockLayoutN111  ColumnsBlockLayout = "1:1:1"
+	ColumnsBlockLayoutN1111 ColumnsBlockLayout = "1:1:1:1"
+	ColumnsBlockLayoutN12   ColumnsBlockLayout = "1:2"
+	ColumnsBlockLayoutN13   ColumnsBlockLayout = "1:3"
+	ColumnsBlockLayoutN21   ColumnsBlockLayout = "2:1"
+	ColumnsBlockLayoutN31   ColumnsBlockLayout = "3:1"
+)
+
+// Valid indicates whether the value is a known member of the ColumnsBlockLayout enum.
+func (e ColumnsBlockLayout) Valid() bool {
+	switch e {
+	case ColumnsBlockLayoutN1:
+		return true
+	case ColumnsBlockLayoutN11:
+		return true
+	case ColumnsBlockLayoutN111:
+		return true
+	case ColumnsBlockLayoutN1111:
+		return true
+	case ColumnsBlockLayoutN12:
+		return true
+	case ColumnsBlockLayoutN13:
+		return true
+	case ColumnsBlockLayoutN21:
+		return true
+	case ColumnsBlockLayoutN31:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ColumnsBlockType.
 const (
 	ColumnsBlockTypeColumns ColumnsBlockType = "columns"
@@ -1533,6 +1569,8 @@ type AddEmailBlockRequest struct {
 	Block struct {
 		Type string `json:"type"`
 	} `json:"block"`
+
+	// Column Which column of `parent_id`, 0 first (left).
 	Column *int `json:"column,omitempty"`
 	Index  *int `json:"index,omitempty"`
 
@@ -2239,7 +2277,14 @@ type ColumnContentBlock struct {
 	union json.RawMessage
 }
 
-// ColumnsBlock A row of two columns, each holding blocks other than columns and the footer.
+// ColumnsBlock A row of one to four columns, each holding blocks other than columns
+// and the footer. `layout` gives the columns' relative widths: `1`,
+// `1:1`, `1:1:1` and `1:1:1:1` are equal columns, and `1:2`, `2:1`,
+// `1:3` and `3:1` are uneven splits. `columns` must hold one entry per
+// column in the layout; leave it out when adding a block and it starts
+// with that many empty columns. Changing `layout` with an update adds
+// empty columns, or drops the last ones if they're empty (a 422 if one
+// still holds blocks). Columns stack full-width on narrow screens.
 type ColumnsBlock struct {
 	Columns []struct {
 		Blocks []ColumnContentBlock `json:"blocks"`
@@ -2248,9 +2293,13 @@ type ColumnsBlock struct {
 	// Id Stable for the block's life: edits and moves keep it. Leave it out
 	// when adding a block to get a new one (`b_` and ten letters and
 	// digits). Unique within the document.
-	Id   BlockId          `json:"id"`
-	Type ColumnsBlockType `json:"type"`
+	Id     BlockId            `json:"id"`
+	Layout ColumnsBlockLayout `json:"layout"`
+	Type   ColumnsBlockType   `json:"type"`
 }
+
+// ColumnsBlockLayout defines model for ColumnsBlock.Layout.
+type ColumnsBlockLayout string
 
 // ColumnsBlockType defines model for ColumnsBlock.Type.
 type ColumnsBlockType string
@@ -3325,9 +3374,11 @@ type MoveEmailBlockRequest struct {
 	// After Stable for the block's life: edits and moves keep it. Leave it out
 	// when adding a block to get a new one (`b_` and ten letters and
 	// digits). Unique within the document.
-	After  *BlockId `json:"after,omitempty"`
-	Column *int     `json:"column,omitempty"`
-	Index  *int     `json:"index,omitempty"`
+	After *BlockId `json:"after,omitempty"`
+
+	// Column Which column of `parent_id`, 0 first (left).
+	Column *int `json:"column,omitempty"`
+	Index  *int `json:"index,omitempty"`
 
 	// ParentId Stable for the block's life: edits and moves keep it. Leave it out
 	// when adding a block to get a new one (`b_` and ten letters and
