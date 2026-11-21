@@ -69,6 +69,35 @@ func TestAccountSettings(t *testing.T) {
 	}
 }
 
+// A rename to a name that could pass for someone else on the shared
+// domain is refused with why (MG-98); a name taken before that stays, and
+// doesn't stop the other settings being saved.
+func TestRenameRefusesNamesThatPassForOthers(t *testing.T) {
+	ctx := context.Background()
+	db := dbtest.New(t)
+	s := &Service{DB: db}
+	var id string
+	if err := db.QueryRow(ctx, `INSERT INTO accounts (name) VALUES ('PayPal Billing') RETURNING id`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"PayPal Support", "Αpple", "Refunds Team", "news@patsbakery.example", "patsbakery.example"} {
+		_, err := s.UpdateAccountSettings(ctx, id, SettingsUpdate{Name: set(name)})
+		var ve *ValidationError
+		if !errors.As(err, &ve) || ve.Code != "account_name_not_allowed" || ve.Field != "name" || !strings.Contains(ve.Message, "shared domain") {
+			t.Errorf("rename to %q: err = %v; want account_name_not_allowed saying why", name, err)
+		}
+	}
+	// The old name, sent back unchanged, doesn't stop an update.
+	st, err := s.UpdateAccountSettings(ctx, id, SettingsUpdate{Name: set("PayPal Billing"), TimeZone: set("Europe/London")})
+	if err != nil || st.Name != "PayPal Billing" || st.TimeZone != "Europe/London" {
+		t.Fatalf("unchanged name: %+v, %v", st, err)
+	}
+	st, err = s.UpdateAccountSettings(ctx, id, SettingsUpdate{Name: set("Pat's Bakery")})
+	if err != nil || st.Name != "Pat's Bakery" {
+		t.Fatalf("rename to an allowed name: %+v, %v", st, err)
+	}
+}
+
 func TestAccountSettingsValidation(t *testing.T) {
 	cases := []struct {
 		name string

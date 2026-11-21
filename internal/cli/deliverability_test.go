@@ -28,10 +28,13 @@ const deliverabilityReport = `{"data":[
  "last_7_days":{"sent":0,"hard_bounces":0,"complaints":2,"hard_bounce_percent":null,"complaint_percent":null},
  "over_warning":false}],
 "next_cursor":null,"total":7,
-"early_warning":{"complaint_percent":0.05,"hard_bounce_percent":2,"min_complaints":2,"min_copies":500}}`
+"early_warning":{"complaint_percent":0.05,"hard_bounce_percent":2,"min_complaints":2,"min_copies":500},
+"send_throughput":{"since":"2026-11-20T12:00:00Z","batches":42,"copies":4150,"busy_seconds":1037.5,"copies_per_second":4,
+ "batch_seconds":1210.25,"per_batch_copies_per_second":3.43,"send_rate_per_second":10}}`
 
 // TestAdminDeliverability prints the report as a table, worst first as the
-// API sends it, with each account's state, and as JSON (MG-82).
+// API sends it, with each account's state, and the last 24 hours' send
+// throughput (MG-91), and as JSON (MG-82).
 func TestAdminDeliverability(t *testing.T) {
 	var queries []string
 	empty := false
@@ -44,7 +47,9 @@ func TestAdminDeliverability(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		if empty {
 			_, _ = w.Write([]byte(`{"data":[],"next_cursor":null,"total":0,` +
-				`"early_warning":{"complaint_percent":0.05,"hard_bounce_percent":2,"min_complaints":2,"min_copies":500}}`))
+				`"early_warning":{"complaint_percent":0.05,"hard_bounce_percent":2,"min_complaints":2,"min_copies":500},` +
+				`"send_throughput":{"since":"2026-11-20T12:00:00Z","batches":1,"copies":200,"busy_seconds":40.2,"copies_per_second":4.98,` +
+				`"batch_seconds":40.2,"per_batch_copies_per_second":4.98,"send_rate_per_second":10}}`))
 			return
 		}
 		_, _ = w.Write([]byte(deliverabilityReport))
@@ -78,6 +83,8 @@ func TestAdminDeliverability(t *testing.T) {
 	for _, w := range []string{
 		"OVER WARNING: the last 7 days are over 0.05% complaints (and at least 2) or 2% hard bounces, on 500 or more copies.",
 		"Showing the worst 3 of 7 accounts; --limit shows up to 100.",
+		"Throughput, last 24 hours: 4,150 copies in 42 batches over 1037.5 seconds of sending: 4.00 a second (SEND_RATE_PER_SECOND is 10).",
+		"Batches overlapped and shared the rate: one batch sent 3.43 a second (over 1210.2 batch-seconds).",
 	} {
 		if !strings.Contains(out, w) {
 			t.Errorf("output lacks %q:\n%s", w, out)
@@ -106,10 +113,24 @@ func TestAdminDeliverability(t *testing.T) {
 	}
 
 	empty = true
-	if code := h.run("admin", "deliverability"); code != ExitOK || !strings.Contains(h.out.String(), "No account sent campaign email in the last 7 days.") {
+	// Simulator copies are left out of the accounts' rates but count for
+	// throughput, so it shows with no accounts too; batches that didn't
+	// overlap say so once.
+	if code := h.run("admin", "deliverability"); code != ExitOK || !strings.Contains(h.out.String(), "No account sent campaign email in the last 7 days.") ||
+		!strings.Contains(h.out.String(), "Throughput, last 24 hours: 200 copies in 1 batch over 40.2 seconds of sending: 4.98 a second (SEND_RATE_PER_SECOND is 10).") ||
+		strings.Contains(h.out.String(), "overlapped") {
 		t.Errorf("empty: exit %d: %s", code, h.out)
 	}
 	if code := h.run("admin", "deliverability", "extra"); code != ExitUsage {
 		t.Errorf("extra argument: exit %d", code)
+	}
+}
+
+// With no batch in the last 24 hours, the throughput line still names the
+// configured rate (MG-91).
+func TestSendThroughputNoBatches(t *testing.T) {
+	got := sendThroughput{SendRatePerSecond: 10}.lines()
+	if len(got) != 1 || got[0] != "Throughput, last 24 hours: no batch sent a copy (SEND_RATE_PER_SECOND is 10)." {
+		t.Errorf("lines = %q", got)
 	}
 }

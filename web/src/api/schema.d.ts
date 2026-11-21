@@ -2096,8 +2096,47 @@ export interface paths {
          *     most copies sent. Each row says whether the account is paused,
          *     suspended, throttled or in test mode. At most `limit` rows; `total`
          *     counts them all, and there's no next page.
+         *
+         *     `send_throughput` (MG-91) is how fast campaign copies went out over
+         *     the last 24 hours, across every account, against the configured
+         *     `SEND_RATE_PER_SECOND`: measured from each send batch's run in the
+         *     worker, SES mailbox simulator copies included.
          */
         get: operations["getDeliverabilityReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Table sizes (admin)
+         * @description mailgoose staff only (MG-95): the database's table sizes, for
+         *     watching storage grow. Every copy sent is one `campaign_recipients`
+         *     row and one or two `send_events` rows, kept 12 months, so those two
+         *     come first; then the largest other tables. At most `limit` tables;
+         *     `total` counts every table and `total_bytes` adds up all their
+         *     sizes, and there's no next page.
+         *
+         *     `total_bytes` is `pg_total_relation_size`: the table with its
+         *     indexes and TOAST. `row_estimate` is the planner's estimate
+         *     (`pg_class.reltuples`), as fresh as the table's last ANALYZE, and
+         *     null for a table never analysed; it isn't an exact count. The
+         *     change is against the sizes the daily digest job recorded on
+         *     `compared_with_day`, 7 days before today (UTC); it's null where
+         *     there's no record from that day (the job runs only with an ops
+         *     address set, and keeps 8 weeks).
+         */
+        get: operations["getStorageReport"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2891,7 +2930,10 @@ export interface components {
          *     New accounts start low and double each week of clean sending up to
          *     the usual limit. A campaign whose spam complaints or hard bounces
          *     pass the early-warning limits (0.05% and 2% by default) lowers it to
-         *     the new-account limit for 7 days.
+         *     the new-account limit for 7 days. Where the server has a shared
+         *     sending domain, an account with no verified domain of its own stays
+         *     at the new-account limit (`needs_domain`), and one that verifies a
+         *     domain grows from when it did.
          */
         SendLimit: {
             /** @example 1000 */
@@ -2908,6 +2950,13 @@ export interface components {
              * @description When a lowered limit lifts; null when it isn't lowered.
              */
             lowered_until: string | null;
+            /**
+             * @description True when `daily` is held at the new-account limit because the
+             *     account has no verified domain of its own and sends from the
+             *     shared sending domain: adding a domain (`createDomain`) is how it
+             *     sends more.
+             */
+            needs_domain: boolean;
         };
         /**
          * @description Which version of mailgoose's terms the account accepted, and the
@@ -2949,8 +2998,19 @@ export interface components {
             version: string;
         };
         UpdateAccountRequest: {
+            /**
+             * @description A new name is checked as at sign-up (`account_name` in
+             *     `createSignup`): one that could pass for someone else on the
+             *     shared sending domain is a 422 `account_name_not_allowed`. The
+             *     current name, sent back unchanged, is never refused.
+             */
             name?: string;
-            /** @description One line, without quotes or angle brackets. `null` removes it. */
+            /**
+             * @description One line, without quotes or angle brackets. `null` removes it.
+             *     It's used only for email from a domain verified for the account;
+             *     email from the shared sending domain goes under the account's
+             *     name.
+             */
             from_name?: string | null;
             /**
              * Format: email
@@ -3214,7 +3274,16 @@ export interface components {
              * @example pat@example.com
              */
             email: string;
-            /** @example Pat's Bakery */
+            /**
+             * @description Emails from mailgoose's shared sending domain go out under the
+             *     account's name, so a name with an `@`, one shaped like a domain
+             *     (`example.com`), or one carrying a well-known brand or a payment
+             *     term (`PayPal Support`, `Billing`) is refused with a 422
+             *     `account_name_not_allowed` whose message says why. Names are
+             *     compared ignoring case, accents, spaces, punctuation and common
+             *     lookalike characters.
+             * @example Pat's Bakery
+             */
             account_name: string;
             /**
              * @description Must be `true`: the person accepts the current version of the
@@ -3609,7 +3678,7 @@ export interface components {
             signups: number;
             /** @description How many confirm links from the form's confirmation emails have been used. */
             confirmations: number;
-            /** @description Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. */
+            /** @description Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. `signup_cap_reached`: the form has added its daily cap of new contacts (1,000 by default) in the last 24 hours, so its public endpoint answers 429 `form_signup_limit` until older signups age out; the message says when. */
             problems?: components["schemas"]["FormProblem"][];
             /** Format: date-time */
             created_at: string;
@@ -4212,12 +4281,92 @@ export interface components {
             min_complaints: number;
             min_copies: number;
         };
+        /**
+         * @description How fast campaign copies went out over the last 24 hours, across
+         *     every account (MG-91), from the send batches that sent at least one
+         *     copy and finished in the window. SES mailbox simulator copies
+         *     count: they're real SES calls. Rates are rounded to 2 places, and
+         *     null when no time was spent sending.
+         */
+        AdminSendThroughput: {
+            /**
+             * Format: date-time
+             * @description The window's start; it runs to now.
+             */
+            since: string;
+            batches: number;
+            /** @description Copies those batches sent. */
+            copies: number;
+            /**
+             * @description Seconds when at least one batch was sending (overlapping
+             *     batches merged). Time between batches isn't counted.
+             */
+            busy_seconds: number;
+            /**
+             * @description `copies` over `busy_seconds`: the platform's rate while it was
+             *     sending, to set against `send_rate_per_second`.
+             */
+            copies_per_second: number | null;
+            /** @description The batches' send times added up. */
+            batch_seconds: number;
+            /**
+             * @description `copies` over `batch_seconds`: how fast one batch sends. It
+             *     matches `copies_per_second` when batches don't overlap (one
+             *     worker); batches that ran at once shared the rate.
+             */
+            per_batch_copies_per_second: number | null;
+            /** @description The configured `SEND_RATE_PER_SECOND`, the most copies a second across every worker. */
+            send_rate_per_second: number;
+        };
         AdminDeliverabilityReport: {
             data: components["schemas"]["AdminAccountDeliverability"][];
             next_cursor: null;
             /** @description Every account in the report, including those over `limit`. */
             total: number;
             early_warning: components["schemas"]["AdminEarlyWarning"];
+            send_throughput: components["schemas"]["AdminSendThroughput"];
+        };
+        AdminTableSize: {
+            table: string;
+            /**
+             * Format: int64
+             * @description The planner's estimate of its rows (`pg_class.reltuples`), not an
+             *     exact count; null when the table has never been analysed.
+             */
+            row_estimate: number | null;
+            /**
+             * Format: int64
+             * @description Its size with indexes and TOAST (`pg_total_relation_size`).
+             */
+            total_bytes: number;
+            /**
+             * Format: int64
+             * @description Its size as recorded on `compared_with_day`; null with no record from that day.
+             */
+            total_bytes_7_days_ago: number | null;
+            /**
+             * Format: int64
+             * @description `total_bytes` less `total_bytes_7_days_ago` (negative when it
+             *     shrank); null with no record from `compared_with_day`.
+             */
+            change_7_days_bytes: number | null;
+        };
+        AdminStorageReport: {
+            /** @description `campaign_recipients` and `send_events` first, then the largest other tables. */
+            data: components["schemas"]["AdminTableSize"][];
+            next_cursor: null;
+            /** @description Every table in the database, including those over `limit`. */
+            total: number;
+            /**
+             * Format: int64
+             * @description Every table's `total_bytes` added up.
+             */
+            total_bytes: number;
+            /**
+             * Format: date
+             * @description The UTC day, 7 days before today, whose recorded sizes the change is against.
+             */
+            compared_with_day: string;
         };
         AdminHeldImport: {
             /** Format: uuid */
@@ -4481,7 +4630,7 @@ export interface components {
         /**
          * @description The request is well formed but a field is wrong. `code` says which
          *     problem, such as `invalid_email`, `invalid_account_name`,
-         *     `terms_not_accepted` or `invalid_code`.
+         *     `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`.
          */
         ValidationFailed: {
             headers: {
@@ -8312,6 +8461,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminDeliverabilityReport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getStorageReport: {
+        parameters: {
+            query?: {
+                /** @description How many tables to list, `campaign_recipients` and `send_events` included. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The table sizes. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStorageReport"];
                 };
             };
             400: components["responses"]["BadRequest"];

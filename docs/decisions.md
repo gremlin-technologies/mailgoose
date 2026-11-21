@@ -4,6 +4,415 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Table sizes in the CLI and the daily digest (MG-95; details are reversible defaults)
+
+Every copy sent is one `campaign_recipients` row and one or two
+`send_events` rows, kept 12 months, so those two tables are the first
+growth cost (RDS storage, then the 30-day account queries), and nothing
+showed how big they were. The details below were picked while building it
+and are easy to change.
+
+- **Where.** `mailgoose admin storage` (`GET /v1/admin/storage`, admins
+  only): `campaign_recipients` and `send_events` first, then the largest
+  other tables by size, 10 in all by default (`--limit` 1 to 50). `total`
+  and `total_bytes` count every table in the schema.
+- **What.** Size is `pg_total_relation_size` (the table with its indexes
+  and TOAST). Rows are the planner's estimate, `pg_class.reltuples`, shown
+  as an estimate; it's null ("not analysed") for a table never analysed
+  (reltuples -1). No exact `count(*)`: on these tables it would read
+  millions of rows.
+- **History.** A new table, `table_size_snapshots` (migration 00045), gets
+  every table's size and row estimate once a UTC day, written by the daily
+  digest job in the transaction that claims the day, quiet day or not.
+  Rows older than 8 weeks are deleted by the same job. So history exists
+  only where the digest job runs (`OPS_ALERT_EMAIL` set).
+- **The change over 7 days** is today's size less the size recorded on the
+  UTC day exactly 7 days before. With no row from that day (the first week,
+  or a day the job didn't run), the command shows "-", the API null, and
+  the digest says "no size from 7 days ago to compare" rather than a
+  number from another day.
+- **The digest line** is the last line of the digest, one line for both
+  tables: "Storage: campaign_recipients 1.2 GB (+80 MB in 7 days),
+  send_events 640 MB (...)". It doesn't make a quiet day's digest go.
+- **Not here:** the NAT gateway's per-GB cost on SES calls in prod and the
+  SES interface endpoint as the switch past a few million sends a month
+  belong in `infra/README.md`'s cost notes, which the owner merges, so they
+  go with MG-93 or MG-99.
+
+## 2026-11-21: Send throughput is measured per batch; the send pool waits for staging's numbers (MG-91 part 1; details are reversible defaults)
+
+A worker takes one send message at a time (`MaxMessages: 1`) and
+`HandleBatch` sends its rows one after another: claim, pace slot, SES call,
+update. So each copy waits a whole SES round trip plus its database round
+trips, and real throughput may sit well under `SEND_RATE_PER_SECOND` (the
+architecture review guessed 3 to 5 a second against 10; never measured).
+MG-91 measures first. This part adds the measurement; nothing about how a
+batch sends has changed.
+
+- **Logged.** At the end of every batch's send loop the worker logs `send
+  batch finished` at INFO, with `campaign_id`, `account_id`, `attempt`,
+  `rows` (in the batch), `sent`, `skipped` (contact gone or unsubscribed,
+  or left out by test mode), `failed` (marked failed on the last attempt),
+  `ended` (`done`, `halted` for a pause or stop, `retry_later` for an SES
+  "not now", or `error`), `seconds` (wall clock from the loop's start to its
+  end) and `copies_per_second` (`sent` over `seconds`), and the worker's
+  `send_rate_per_second`. No addresses. A batch for a campaign that's
+  already paused or stopped hands its rows back before the loop, as
+  before, and logs nothing.
+- **Recorded.** Each batch that sent at least one copy gets a row in
+  `send_batch_timings` (migration 00044): its start and end, batch size,
+  and copies sent, skipped and failed. The worker prunes rows older than 7
+  days as it writes. Recording is best effort: a failure is logged as a
+  warning and the batch's outcome stands. Deleting an account deletes its
+  rows (they're in `AccountTables`).
+- **Shown.** `mailgoose admin deliverability` (and `send_throughput` in
+  `GET /v1/admin/deliverability`) ends with the last 24 hours across every
+  account: batches, copies, the seconds when at least one batch was sending
+  (overlapping batches merged), copies a second over that time, and the
+  configured `SEND_RATE_PER_SECOND`. It also gives the batches' seconds
+  added up and copies a second over those, which differs only when
+  batches ran at once on several workers and shared the rate. Time between
+  batches (the queue receive, the dispatcher's 2-second tick) isn't in
+  either number; a test campaign's end-to-end rate can be read from the
+  first and last log lines (see below).
+- **SES mailbox simulator copies count** for throughput, since they're real
+  SES calls, though they stay out of the bounce and complaint rates
+  (MG-86). So a simulator-only run shows its throughput even when the
+  report lists no accounts.
+- **What's next (open):** the pool (step 2 of MG-91: a batch's rows sent
+  by a small pool, default 4, each copy taking its own pace slot, keeping
+  `MaxMessages: 1` and "miss one, never send two") is built only if the
+  measured rate is well under `SEND_RATE_PER_SECOND`. The measured numbers
+  are pending the staging run and go in a follow-up entry.
+
+**Measuring on staging** (needs the owner's AWS sign-in; after this is
+deployed):
+
+1. Use an account that's in full sending mode (`mailgoose admin account
+   <id>` says `Mode: full`), not a tester account (MG-86 caps testers at
+   100 copies a day), with at least 400 credits and room for 200 more
+   contacts. Lists of 200 or fewer aren't sliced (MG-62), so each test
+   campaign goes to at most 200.
+2. Make a tag (`mailgoose tags create throughput-test`) and import 200
+   simulator addresses with it: a CSV with an `email` column of
+   `success+tp001@simulator.amazonses.com` to `success+tp200@...`, then
+   `mailgoose import tp.csv --list-source other --list-source-detail "SES
+   mailbox simulator addresses for a send throughput test"
+   --permission-confirmed --tag throughput-test --wait`.
+3. Make a campaign to that tag only (`mailgoose campaign create --name
+   "Throughput test 1" --email <ready email> --tag throughput-test`), send
+   it a test (`mailgoose campaign test <id>`), and launch it (`mailgoose
+   campaign launch <id>`, then `--confirm` with the code once the owner
+   says yes). Repeat once for a second campaign to the same tag, after the
+   first has finished, for 400 copies in all.
+4. Read `mailgoose admin deliverability` (the Throughput line), the worker's
+   `send batch finished` lines (`aws logs filter-log-events --log-group-name
+   /ecs/mailgoose-staging-worker --filter-pattern '{ $.msg = "send batch
+   finished" }'`), and SES's own `MaxSendRate` (`aws sesv2 get-account`).
+   Compare copies a second with `SEND_RATE_PER_SECOND` and with SES's rate.
+
+## 2026-11-21: A daily cap on each form's new signups (MG-92, from the architecture review; reversible defaults)
+
+Form signups were limited only to 10 a minute per IP and 600 a minute per
+form, held in memory in each API task (MG-36), so a botnet that finds a form
+could add tens of thousands of made-up contacts an hour across tasks. With
+double opt-in off they become recipients who bounce and pause the account.
+
+- **Cap (reversible default):** each form adds at most 1,000 new contacts in
+  any rolling 24 hours, set by `FORM_DAILY_SIGNUP_LIMIT` (`0` means no cap).
+  It's counted in Postgres (`form_signups`, one row per counted signup),
+  under the account's row lock that `contacts.SignUp` already takes, so it
+  holds across API tasks. Each form's rows older than a day are pruned as it
+  takes new ones, so a form keeps at most a day's worth.
+- **What counts (reversible default):** a submission that adds a contact.
+  One from an address already on the list (subscribed, unconfirmed,
+  unsubscribed, bounced) doesn't, since it adds nobody and its confirmation
+  emails are already held to one an hour per address. Bots' dropped posts
+  don't either. Consent records aren't counted instead, because deleting a
+  contact deletes them, so deleting bot signups would reopen the form at
+  once. Signups in the day before the migration are copied in.
+- **Past the cap** every submission is refused alike, new address or not, so
+  the answer doesn't tell who's on the list: 429 `form_signup_limit` with
+  `Retry-After` (when enough signups age out), as JSON or the usual page
+  ("Please try again tomorrow"). Nothing is stored and no email goes. Bots
+  still get the success answer. `form get` lists the problem
+  `signup_cap_reached`, saying when it lifts.
+- **Notices (reversible defaults):** the first refusal emails the owner, from
+  `notices@` the system sending domain (`KindSystem`), with what to check and
+  how to turn on double opt-in if it's off, and alerts `OPS_ALERT_EMAIL`.
+  They go at most once in a rolling 24 hours per form, stamped on the form
+  (`signup_cap_noticed_at`) before sending, so two API tasks don't both send.
+  A notice that fails to send is logged and not retried that day.
+- **Unchanged:** the per-IP and per-minute limits stay as they are.
+- **Open for the owner:** an optional captcha per form (the review's other
+  suggestion) is new scope, not built. Whether owners can raise one form's
+  cap is open too; for now it's one value for every form.
+
+## 2026-11-21: The send guard checks the kind of mail from the system domain (MG-90; the zero-kind rule is a reversible default)
+
+`mail.Guard` (2026-11-20, SES send isolation) let any message whose From was
+on the system sending domain through before looking at its account or kind.
+Launches and test sends already need a From on a domain the account
+verified (or the shared domain), and the system domain can't be added as an
+account's domain, so customer mail couldn't reach it; but the guard is meant
+to check every message, and a later path that built a campaign with a
+system From would have sent customer content as `mail.<domain>`.
+
+- **The rule.** From the system domain, the guard lets through only
+  `KindSystem` (sign-in codes, test and sender address confirm links, ops
+  alerts and the daily digest, throttle and suspension notices) and
+  `KindConfirm` (double opt-in confirmations). `KindTest` and
+  `KindCampaign` from it are refused with `ErrNotThisEnvironment`, whatever
+  the account, and the error names the kind. Other domains are checked as
+  before, whatever the kind.
+- **No kind (reversible default).** A message with no kind, or one that
+  isn't one of the four, is refused from the system domain too: it isn't
+  known to be mailgoose's own. Every place that builds a message sets its
+  kind, and `Message.Validate` already refuses an unset one, so no flow
+  relied on it.
+- **Checked.** Every caller that sends from the system domain sets
+  `KindSystem`, and their tests now send through the real guard. Signup
+  confirmations go from the account's domain or the shared domain, not the
+  system domain, so allowing `KindConfirm` there changes nothing today.
+
+## 2026-11-21: The past-due pause doesn't count toward automatic suspension (MG-104, bug fix; reversible default)
+
+An account is suspended on its second automatic pause in 30 days (MG-65),
+counted from the `auto_pause` rows in the admin log. Billing logs its
+past-due pause (`subscription_past_due`) as `auto_pause` too, so one failed
+card and one complaints pause in a month suspended the account.
+
+- **Only sending pauses count** (`suspendOnRepeat` in
+  `internal/sending/suspend.go`): complaints and bounces, an account-level
+  health pause, and an unsafe link at launch. The count leaves out
+  `auto_pause` rows whose details `code` is `subscription_past_due`, so any
+  new kind of sending pause counts without a change here. (Corrected
+  2026-11-21, MG-96: an unsafe-link pause counts as an earlier pause, but it
+  doesn't call `suspendOnRepeat` itself, so it never suspends on its own;
+  whether it should is the open phishing-link question.)
+- **Nothing is rewritten.** Existing rows stay as they are and are read the
+  new way. The past-due pause is still logged as `auto_pause`, and the daily
+  digest, `mailgoose admin log` and `mailgoose admin account` still show it.
+
+## 2026-11-21: A campaign keeps at most 10 batches on the send queue (MG-89; details are reversible defaults)
+
+The dispatcher put up to 2,000 of a campaign's rows on the send queue every
+2-second tick, up to the account's daily room, so a 10,000-copy launch put
+about 100 batches on the queue within seconds. The workers drain it at
+`SEND_RATE_PER_SECOND` (10 by default), so the last batch waited well over
+15 minutes and the send queue's age alarm, meant for a worker that's down,
+stuck or too slow, fired on an ordinary send.
+
+- **The cap** (`MaxWaitingBatches`, `internal/sending/pipeline.go`): a
+  campaign may have 10 batches' worth of rows waiting, meaning enqueued and
+  still `queued` (not yet claimed by a worker) within `RequeueAfter`. A
+  batch is about 10 seconds of sending, so that's about 100 seconds of
+  work per campaign at 10 a second (1,000 copies). The dispatcher tops it up
+  on every tick, in whole batches (no trickle of small ones), so the
+  workers never run dry and a campaign sends at the same rate as before.
+  The account's daily limit, the platform cap (MG-87) and the 2,000-a-tick
+  limit still apply; the smallest room wins. The 2,000 no longer binds
+  (10 batches are at most 1,000) and stays as a backstop.
+- **Rows held back after an SES "not now" (MG-87) count while they wait.**
+  So a throttled campaign puts no more copies in front of SES meanwhile:
+  each waiting campaign tries at most 10 copies a minute, one a batch. They
+  stop counting at the very moment they can be batched again (their
+  `enqueued_at` reaches `RequeueAfter` ago: the count takes later times,
+  the batching earlier or equal ones), so a row is never both counted and
+  waiting to be taken, and the held rows go out a minute later as before.
+- **Recovery is unchanged:** rows whose batch never came stop counting and
+  are batched again after `RequeueAfter` (an hour). If every batch of a
+  campaign is lost, it waits that hour; before, its other rows were already
+  on the queue anyway.
+- **Slices, pauses and finishing are unchanged.** A full queue batches
+  nothing, which the dispatcher already checks against the open rows
+  before it calls a slice out or a campaign done.
+- **The alarm's threshold stays 15 minutes.** The cap is per campaign, so
+  ten or more big campaigns sending at once at 10 a second could still age
+  the queue past it; that's a real backlog for the alarm to report. A
+  platform-wide cap on waiting batches is the follow-up if it fires that
+  way.
+
+## 2026-11-21: Account-level pause on the last 30 days (MG-88; the details are reversible defaults)
+
+The automatic pause (CMP-6, MG-79) judged one campaign at a time, and only
+from 500 copies, so an account sending many campaigns under 500 each was
+never paused automatically once its slicing window (MG-62) was over,
+whatever its rates; its 30-day rates only held its daily limit down. MG-88
+adds a second trigger beside the campaign check, which stays as it is. The
+details below were picked while building it and are easy to change.
+
+- **When.** On every hard bounce and complaint SES reports, after the
+  campaign check, unless that paused the account. The campaign's
+  throttle (MG-61) still happens first, so one event can throttle and then
+  pause.
+- **What's judged.** The account's copies over the last 30 days, counted
+  the way the daily limit's "clean" check counts them, by the same limits:
+  over 0.1% complaints (from 2 complaints) or 3% hard bounces, from 500
+  copies over the 30 days. SES mailbox simulator copies are left out, as
+  everywhere (MG-86).
+- **How.** The same automatic pause as a campaign's: the account is paused,
+  an `auto_pause` is logged as `automatic` (its target the campaign whose
+  event was the last straw, its details the account's rates with
+  `"scope": "account"`), the ops alert goes out, and it counts toward the
+  automatic suspension at the second automatic pause in 30 days (MG-65).
+  No campaign is marked as having paused it, so each can still pause the
+  account on its own later.
+- **Reason.** Account-level in its own words, so `mailgoose admin account`,
+  the digest and the launch refusal read right: "It was paused
+  automatically: over the last 30 days, 0.33% of the people sent this
+  account's campaigns marked them as spam (2 of 600), over the 0.1% limit
+  for an account." (or the hard-bounce version). The ops alert names the
+  window and the campaign of the latest event instead of one campaign's
+  numbers.
+- **An account paused already**, for any reason, keeps its pause and reason,
+  and nothing is logged or sent, so a run of events can't stack up pauses
+  toward a suspension. Two events at once can't both pause it: the account
+  row is locked before the pause, and only when the rates are over the
+  line, so healthy accounts take no extra lock.
+- **Tester accounts** keep their stricter per-campaign pause (MG-86) and
+  get this one too, like the usual campaign limits. With at most 500
+  credits for life it can only fire on a tester's whole budget.
+- **No re-pause loop.** After an admin unpauses an account (an `unpause` by
+  a person), or after any automatic pause logged with a campaign (an
+  `auto_pause` with a `target_id`: a campaign's own pause, and also an
+  account-level pause, which logs the campaign whose event tipped it), only
+  copies sent since then count, and only bounces and
+  complaints on those copies, so late complaints on copies already looked
+  at don't count against new ones. The account needs 500 new copies over
+  the line to be paused again; the reason then says "since sending was last
+  unpaused (date)". An automatic unpause (the plan's payment going through)
+  doesn't restart the window, since nobody looked at the sending. The
+  daily limit's clean check is unchanged and still reads the full 30 days.
+- **Merging.** App-only, no migration, so the reviewer merges.
+
+Open for the owner: whether the account-level line should be stricter than
+the per-campaign one (it's the same 0.1% and 3% now), and whether its
+early warning should throttle an account the same way (not built; a
+throttle still comes only from one campaign of 500 or more).
+
+## 2026-11-21: Shared-domain mail goes under the account's name, and doesn't ramp without a domain (MG-98, owner decision; the lists and normalisation are reversible defaults)
+
+The owner said yes (Nov 21) to closing MG-85's open question 1 ("tighter
+limits for shared-domain senders?"). On the shared sending domain, the From
+was `<the email's From name> <slug@shared domain>`, so an account could send
+as "PayPal Support" from mailgoose's domain, and shared-domain senders grew
+to the same 10,000 a day as accounts with a verified domain.
+
+- **Name (owner decision).** On the shared domain the display name is always
+  the account's name; an email's own From name (or the account's default
+  From name) is used only on a verified domain of the account.
+  `senders.Resolver` does it, so test sends, launches, signup confirmations
+  and the email check agree. The email check's `shared_domain` warning names
+  the account name it goes under.
+- **Refused account names (owner decision; the details are reversible
+  defaults).** Sign-up and rename refuse, with a 422
+  `account_name_not_allowed` whose message says why, a name that contains
+  `@`, one shaped like a domain (two or more labels and a top-level domain of
+  letters, such as `paypal.com`, so `St.Louis` is refused too and `St. Louis`
+  isn't), or one carrying a term on these lists (`internal/accountname`):
+  - Brands refused anywhere in the name, even inside a word: PayPal,
+    Mastercard, American Express, Wells Fargo, Bank of America, Citibank,
+    JPMorgan, Chase Bank, Capital One, Western Union, MoneyGram, Cash App,
+    Venmo, Coinbase, Binance, Apple Pay, Apple ID, Apple Support, iCloud,
+    iTunes, Google Pay, Microsoft, Facebook, Instagram, WhatsApp, LinkedIn,
+    Netflix, DocuSign, QuickBooks, Mailchimp, mailgoose, Mailer Daemon,
+    Postmaster, Amazon Pay, Amazon Prime, Amazon Support.
+  - Brands refused as a word or words of the name ("Amazon Store", not
+    "Amazonia Coffee"): Amazon, Google, Gmail, eBay, Zelle, Stripe, Shopify,
+    Klarna, Afterpay, Revolut, Amex, Intuit, FedEx, DHL, USPS, IRS, HMRC,
+    Yahoo.
+  - Brands that are everyday words, refused only when the name is the brand
+    with at most generic words such as support, team, billing, account,
+    security, service, store, official, the, inc or llc ("Apple Support",
+    not "Big Apple Bagels"): Apple, Chase, Visa, Square, Meta, Discover,
+    Citi, Target, Wise, Uber.
+  - Payment and account-security terms, refused as a word or words: Billing,
+    Invoice(s), Payment(s), Refund(s), Chargeback, Fraud, Wire Transfer, Bank
+    Transfer, Direct Deposit, Tax Refund, Account Security, Security Alert,
+    Account Verification, Verification, Password.
+- **Normalisation (reversible default).** Done in Go, not SQL, so it doesn't
+  depend on the database's encoding (the PR 192 review's point about
+  `translate()`): NFKC then NFKD, combining accents and invisible format
+  characters (zero-width spaces, joiners, soft hyphens) dropped, case
+  folded, the ideographic full stop read as a dot, common lookalikes mapped
+  (Cyrillic and Greek letters that look Latin, `0` to o, `1`, `i` and `|` to
+  l, `3` e, `4` a, `5` and `$` s, `7` t, `8` b, `rn` m, `vv` w), then
+  anything that isn't a letter or digit splits words. A brand spelt across
+  words is caught ("Pay Pal", "P.a.y.P.a.l").
+- **Names taken before this stay** until they're changed: sending the current
+  name back unchanged in an update isn't refused, so the rest of the settings
+  can still be saved. Nothing checks existing accounts' names.
+- **Limit (owner decision).** With `SHARED_SENDING_DOMAIN` set, an account
+  with no verified domain of its own stays at the new-account daily limit
+  (`NEW_ACCOUNT_DAILY_SEND_LIMIT`, 1,000) and doesn't ramp. Its send limit
+  says why, "Add your own domain to send more", with `needs_domain: true` in
+  `GET /v1/account` (and in `mailgoose admin account --json`; corrected
+  2026-11-21, MG-96: the plain admin view doesn't show it), a link to Domains in the
+  web app's Settings, and `mailgoose domain add <your-domain>` in
+  `mailgoose account get`. With the variable unset, nothing changes.
+- **Details picked (reversible defaults):**
+  - "Verified domain" means any domain of the account with status
+    `verified`, whichever From a campaign uses; one that later fails puts the
+    hold back.
+  - Once it has one, the limit grows from when the account verified its
+    first still-verified domain, if that's later than when it started (or
+    than a lifted throttle), so a new domain starts at 1,000 too and doubles
+    each clean week. An account that verified a domain long ago ramps as
+    before.
+  - A throttle (MG-61) still wins, and a limit staff set by hand
+    (`daily_send_limit`, including a tester's 100) still stands over the
+    hold.
+- **The nudge stays** in test results, launch summaries and the email check.
+- **MG-85's open question 1 is closed**; question 2 (which domain is the
+  shared one in prod) stays open.
+
+## 2026-11-21: SES throttling and quota errors wait; a platform daily send cap (MG-87, from the architecture review; details are reversible defaults)
+
+The architecture review (#195, F3) found that any SES error failed a
+campaign's whole tail in about ten minutes: the batch was retried, and on
+the fifth try every unsent copy was marked `failed` and refunded. When SES
+is only saying "not now", that loses copies that would have gone an hour
+later. The SES quota (50,000 a day) belongs to the AWS account, so this
+still matters after prod gets its own account.
+
+- **Which errors wait** (`internal/mail/ses.go`): `TooManyRequestsException`,
+  `LimitExceededException`, `SendingPausedException`,
+  `AccountSuspendedException`, AWS's generic `Throttling` and
+  `ThrottlingException`, and `MessageRejected` whose message says the quota
+  or sending rate is exceeded ("Daily message quota exceeded", "Maximum
+  sending rate exceeded"; matched on "quota exceeded" or "sending rate
+  exceeded", any case). They're marked `mail.ErrRetryLater`, with the SES
+  error still wrapped and the same text. Every other error is unchanged, so
+  it still fails the copy on the fifth try.
+- **What waiting does** (`internal/sending/pipeline.go`): the copy's claim is
+  taken back with no error written, the batch's rows still `queued` are held
+  back, and the batch returns success, so no SQS attempt is used and nothing
+  is failed or refunded. Copies already sent in the batch stay sent. A send
+  cut off by shutdown still keeps its claim, so a copy is never sent twice.
+  One WARN log line per batch, with the campaign id and the error.
+- **Backoff: one minute** (`RetryLaterAfter`). Handing the rows back as a
+  pause does (clearing `enqueued_at`) would have the dispatcher batch them
+  again on its next 2-second tick, asking a throttled SES again and again.
+  Instead the rows are marked as enqueued `RequeueAfter` less a minute ago,
+  so the dispatcher takes them again a minute later, and meanwhile they
+  count against the daily limits as copies on their way. While SES stays
+  over quota, each waiting campaign tries one copy a minute.
+- **Platform daily cap:** `PLATFORM_DAILY_SEND_LIMIT`, default 45,000 (under
+  the 50,000 SES quota, leaving room for sign-in, confirmation and test
+  mail, which it doesn't count); `0` means no cap. The dispatcher counts
+  campaign copies sent in the last 24 hours across every account, plus
+  those enqueued and still on their way, the same way it counts an
+  account's, and enqueues no more than the smaller room. Copies past the cap
+  wait, as for the account's limit. Mailbox simulator copies are counted
+  too, which errs on the safe side. Migration 00042 adds an index on
+  `sent_at` so the count stays cheap. Two dispatchers running at the same
+  moment could each fill the last of the room, so the cap can be passed by
+  up to one tick's worth; the 5,000 of headroom covers that.
+- **Infra follow-ups (MG-93, #202):** the CloudWatch alarm on SES sends
+  nearing the quota, and reading the real quota from SES `GetAccount`
+  instead of a configured number.
+
 ## 2026-11-21: More paths wait for the owner's merge (owner decision, "fine for now")
 
 From the architecture review (#195, F2; ticket MG-97, #206). Every merge to
@@ -145,9 +554,11 @@ address.
   - Locally (`scripts/dev.sh`, `make run-api`, `compose.yaml`) the shared
     domain is `shared.localhost`.
 - **Open questions for the owner:**
-  1. **Tighter limits for shared-domain senders?** Default: the same send
+  1. ~~**Tighter limits for shared-domain senders?** Default: the same send
      limits, review and test mode as any other account for now; nothing extra
-     is built.
+     is built.~~ Closed Nov 21 (MG-98, above): mail there goes under the
+     account's name, and accounts without a verified domain stay at the
+     new-account limit.
   2. **Which domain is the shared one?** Default: `SHARED_SENDING_DOMAIN`
      stays unset in prod, so prod is unchanged. Staging gets a subdomain of
      `staging.mailgoose.app` (assumed `shared.staging.mailgoose.app`) in a
@@ -219,7 +630,9 @@ while building it and are easy to change.
   start, so credits used stay used; a grant after a revoke starts afresh. At
   its end the account can't launch or test, and copies still queued wait, as
   for a paused account, rather than being skipped; an admin extends or
-  revokes it.
+  revokes it. (Corrected 2026-11-21, MG-96: the dispatcher holds them, but
+  batches already on the send queue still go out, and the admin views say
+  "Sending: on"; filed as MG-107, #225.)
 - **Credits.** 500 for its life by default (`--credits` 1 to 10,000),
   counted from its start: campaign copies queued, sending or sent, and test
   sends. A skipped or failed copy gives its credit back. They're counted
@@ -830,7 +1243,8 @@ as the ticket says.
 - **Unsuspend** restores sign-in and sending only. Keys stay revoked, stopped
   campaigns stay stopped, and a pause stays until `mailgoose admin unpause`.
 - **Automatic suspension** happens in the same transaction as the second
-  automatic pause in 30 days, counted from the `auto_pause` log. Its actor is
+  automatic pause in 30 days, counted from the `auto_pause` log (sending
+  pauses only, not the past-due one, since MG-104). Its actor is
   `automatic`, logged as `auto_suspend`. Other triggers call the same
   `sending.Suspend`.
 - **Appeals** go by replying to the suspension email, whose Reply-To is
@@ -2599,6 +3013,10 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - Which address takes suspension appeals? (Default: `ABUSE_EMAIL`, else
   `abuse@` the system sending domain, which has to be a real mailbox or
   alias. MG-65.)
+- Send a batch's rows with a small pool (MG-91 step 2)? (Default: not yet;
+  built only if staging's measured copies a second are well under
+  `SEND_RATE_PER_SECOND`. The numbers are pending the staging run, see
+  2026-11-21.)
 - Which vendor checks links for phishing and malware? (Default: Google Web
   Risk, licensed for commercial use and free up to 100,000 lookups a month.
   MG-64.)

@@ -39,7 +39,7 @@ func TestWaitingAccountTestsButCantLaunch(t *testing.T) {
 
 func TestSignupWaitingAlert(t *testing.T) {
 	fake := &mail.Fake{}
-	a := &OpsAlert{Mail: fake, From: mail.Address{Name: "mailgoose", Email: "alerts@mail.mailgoose.test"}, To: "ops@example.com",
+	a := &OpsAlert{Mail: &mail.Guard{Sender: fake, System: "mail.mailgoose.test"}, From: mail.Address{Name: "mailgoose", Email: "alerts@mail.mailgoose.test"}, To: "ops@example.com",
 		Log: slog.New(slog.DiscardHandler)}
 	a.SignupWaiting(context.Background(), auth.Waiting{AccountID: "acc-1", AccountName: "Pat's Bakery", Email: "pat@mailinator.com",
 		Flags: []string{auth.FlagDisposableDomain, auth.FlagIPBurst}})

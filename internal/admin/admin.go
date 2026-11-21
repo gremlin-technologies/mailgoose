@@ -704,23 +704,47 @@ type Deliverability struct {
 	Total int
 	// Warning is the early warning OverWarning was judged by.
 	Warning sending.Warning
+	// Throughput is how fast copies went out over the last 24 hours,
+	// against the configured rate (MG-91).
+	Throughput sending.Throughput
 }
 
 // Deliverability is every account that sent campaign email in the last 7
 // days, or had a hard bounce or complaint reported in them, with its rates
 // over 24 hours and 7 days, worst first: at most limit (1 to
-// MaxDeliverabilityRows) of them (MG-82).
+// MaxDeliverabilityRows) of them (MG-82); and the last 24 hours' send
+// throughput (MG-91).
 func (s *Service) Deliverability(ctx context.Context, limit int) (*Deliverability, error) {
 	limit = min(max(limit, 1), MaxDeliverabilityRows)
 	w := s.Warning
 	if w.ComplaintsPer10k <= 0 || w.HardBouncesPer10k <= 0 {
 		w = sending.DefaultWarning
 	}
-	all, err := sending.DeliverabilityReport(ctx, s.DB, s.now(), w)
+	now := s.now()
+	all, err := sending.DeliverabilityReport(ctx, s.DB, now, w)
 	if err != nil {
 		return nil, err
 	}
-	return &Deliverability{Accounts: all[:min(limit, len(all))], Total: len(all), Warning: w}, nil
+	tp, err := sending.SendThroughput(ctx, s.DB, now, s.Limits.PerSecond)
+	if err != nil {
+		return nil, err
+	}
+	return &Deliverability{Accounts: all[:min(limit, len(all))], Total: len(all), Warning: w, Throughput: tp}, nil
+}
+
+// Storage is the database's table sizes (MG-95): campaign_recipients and
+// send_events first, then the largest other tables, at most limit (1 to
+// sending.MaxStorageTables; 0 is sending.DefaultStorageTables) of them,
+// each with its size 7 days before where the digest job recorded one.
+func (s *Service) Storage(ctx context.Context, limit int) (*sending.StorageReport, error) {
+	if limit == 0 {
+		limit = sending.DefaultStorageTables
+	}
+	rep, err := sending.StorageSizes(ctx, s.DB, s.now(), limit)
+	if err != nil {
+		return nil, err
+	}
+	return &rep, nil
 }
 
 // AllowFullSending takes an account out of test mode (MG-80): it can send

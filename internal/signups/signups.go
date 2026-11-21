@@ -1,5 +1,6 @@
 // Package signups takes signup form submissions (FRM-3 to FRM-6): it turns
-// away bots, adds or finds the contact, keeps a consent record (CMP-3),
+// away bots, holds each form to a daily cap of new contacts (MG-92), adds
+// or finds the contact, keeps a consent record (CMP-3),
 // sends the double opt-in email and confirms it.
 package signups
 
@@ -102,6 +103,12 @@ type Service struct {
 	// off.
 	Senders *senders.Resolver
 	Mail    mail.Sender
+	// DailyCap is the most new contacts a form adds in any CapWindow
+	// (MG-92): 0 means DefaultDailyCap, and a negative one no cap.
+	DailyCap int
+	// CapNotices tells the owner and the operators when a form reaches its
+	// cap; nil only logs it.
+	CapNotices *CapNotices
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
 }
@@ -199,9 +206,17 @@ func (s *Service) Submit(ctx context.Context, formID string, sub Submission, bas
 	var token string
 	var su *contacts.SignUpResult
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
+		if err := s.checkCap(ctx, tx, f, now); err != nil {
+			return err
+		}
 		var err error
 		if su, err = contacts.SignUp(ctx, tx, f.AccountID, in); err != nil {
 			return err
+		}
+		if su.Created {
+			if err := s.countSignup(ctx, tx, f.ID, now); err != nil {
+				return err
+			}
 		}
 		var tokenHash []byte
 		var expires *time.Time
@@ -240,6 +255,10 @@ func (s *Service) Submit(ctx context.Context, formID string, sub Submission, bas
 		_, err = tx.Exec(ctx, `UPDATE forms SET signup_count = signup_count + 1 WHERE id = $1`, f.ID)
 		return err
 	})
+	var capped *CapError
+	if errors.As(err, &capped) {
+		s.capReached(ctx, f, capped, now)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -357,6 +376,27 @@ type Problem struct {
 
 // Problems lists what stops a form taking signups; none when it can.
 func (s *Service) Problems(ctx context.Context, f *forms.Form) ([]Problem, error) {
+	var out []Problem
+	from, err := s.fromProblem(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	if from != nil {
+		out = append(out, *from)
+	}
+	capped, err := s.capProblem(ctx, f)
+	if err != nil {
+		return nil, err
+	}
+	if capped != nil {
+		out = append(out, *capped)
+	}
+	return out, nil
+}
+
+// fromProblem is the problem of a double opt-in form that can't send its
+// confirmation emails, or nil.
+func (s *Service) fromProblem(ctx context.Context, f *forms.Form) (*Problem, error) {
 	if !f.DoubleOptIn {
 		return nil, nil
 	}
@@ -365,13 +405,13 @@ func (s *Service) Problems(ctx context.Context, f *forms.Form) ([]Problem, error
 		return nil, err
 	}
 	if s.senders().SharedOn() {
-		return []Problem{{Code: "no_verified_from",
+		return &Problem{Code: "no_verified_from",
 			Message: "Signups are refused: the form uses double opt-in, and the account's From address is neither on a verified domain nor a verified sender address, so the confirmation email can't be sent.",
-			Hint:    "Set the From to your own address with `mailgoose account update --from-email you@example.com` and verify it with `mailgoose sender-addresses add` (your sign-in address needs no link); or, better for deliverability, verify its domain with `mailgoose domain add <domain>`."}}, nil
+			Hint:    "Set the From to your own address with `mailgoose account update --from-email you@example.com` and verify it with `mailgoose sender-addresses add` (your sign-in address needs no link); or, better for deliverability, verify its domain with `mailgoose domain add <domain>`."}, nil
 	}
-	return []Problem{{Code: "no_verified_from",
+	return &Problem{Code: "no_verified_from",
 		Message: "Signups are refused: the form uses double opt-in, and the account has no From address on a verified sending domain to send the confirmation email from.",
-		Hint:    "Verify a domain with `mailgoose domain add <domain>` and set the From with `mailgoose account update --from-email you@<domain>`."}}, nil
+		Hint:    "Verify a domain with `mailgoose domain add <domain>` and set the From with `mailgoose account update --from-email you@<domain>`."}, nil
 }
 
 var confirmHTML = template.Must(template.New("confirm").Parse(`<!doctype html>

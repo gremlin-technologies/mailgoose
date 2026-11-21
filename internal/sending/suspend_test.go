@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/gremlin-technologies/mailgoose/internal/billing"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 )
@@ -148,24 +149,51 @@ func TestSuspendCancelsScheduled(t *testing.T) {
 	}
 }
 
-// TestAutoSuspendOnSecondPause: an account paused automatically for the
-// second time in 30 days is suspended; one paused 40 days ago isn't.
+// TestAutoSuspendOnSecondPause: an account paused automatically for its
+// sending the second time in 30 days is suspended, whatever the earlier
+// pause was about; one paused 40 days ago isn't, and neither is one whose
+// earlier pause was the plan's payment going past due (MG-104).
 func TestAutoSuspendOnSecondPause(t *testing.T) {
+	// earlier logs an earlier automatic pause of the account, ago before now.
+	type earlier func(t *testing.T, h *harness, at time.Time)
+	logged := func(details string) earlier {
+		return func(t *testing.T, h *harness, at time.Time) {
+			if _, err := h.db.Exec(context.Background(), `
+				INSERT INTO admin_actions (actor, action, account_id, reason, details, created_at)
+				VALUES ('automatic', 'auto_pause', $1, 'Earlier.', $2, $3)`, h.acc, details, at); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	health := logged(`{"sent": 1000, "hard_bounces": 0, "complaints": 9}`)
+	pastDue := func(t *testing.T, h *harness, at time.Time) {
+		ctx := context.Background()
+		if err := pgx.BeginFunc(ctx, h.db, func(tx pgx.Tx) error {
+			return billing.PauseOverdue(ctx, tx, h.acc, "past_due", at)
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	for _, c := range []struct {
 		name    string
+		before  []earlier
 		ago     time.Duration
 		suspend bool
 	}{
-		{"second in 30 days", 10 * 24 * time.Hour, true},
-		{"first was 40 days ago", 40 * 24 * time.Hour, false},
+		{"second in 30 days", []earlier{logged(`{}`)}, 10 * 24 * time.Hour, true},
+		{"after a complaints pause", []earlier{health}, 10 * 24 * time.Hour, true},
+		{"after an account-level pause", []earlier{logged(`{"scope": "account", "sent": 1000, "hard_bounces": 0, "complaints": 9}`)},
+			10 * 24 * time.Hour, true},
+		{"after an unsafe link", []earlier{logged(`{"unsafe_links": ["https://phish.example/"]}`)}, 10 * 24 * time.Hour, true},
+		{"first was 40 days ago", []earlier{logged(`{}`)}, 40 * 24 * time.Hour, false},
+		{"after the payment went past due", []earlier{pastDue}, 10 * 24 * time.Hour, false},
+		{"past due and a health pause", []earlier{pastDue, health}, 10 * 24 * time.Hour, true},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			h := launchedHarness(t, 999)
 			ctx := context.Background()
-			if _, err := h.db.Exec(ctx, `
-				INSERT INTO admin_actions (actor, action, account_id, reason, created_at) VALUES ('automatic', 'auto_pause', $1, 'Earlier.', $2)`,
-				h.acc, h.now.Add(-c.ago)); err != nil {
-				t.Fatal(err)
+			for i, e := range c.before {
+				e(t, h, h.now.Add(-c.ago+time.Duration(i)*time.Hour))
 			}
 			h.markSent(t, h.now)
 			h.eventsFor(t, "complaint", "abuse", 4, h.now)
@@ -182,6 +210,9 @@ func TestAutoSuspendOnSecondPause(t *testing.T) {
 				if ap.Suspension != nil || at != nil {
 					t.Errorf("suspended: %+v", ap.Suspension)
 				}
+				if h.status(t) == campaigns.StatusCancelled {
+					t.Errorf("status %s", h.status(t))
+				}
 				return
 			}
 			if ap.Suspension == nil || at == nil || ap.Suspension.By != Automatic.Email ||
@@ -196,11 +227,76 @@ func TestAutoSuspendOnSecondPause(t *testing.T) {
 	}
 }
 
+// TestPastDuePauseStillListed: the past-due pause that no longer counts
+// toward suspension (MG-104) is still in the admin log and the digest, and
+// the account stays paused for it.
+func TestPastDuePauseStillListed(t *testing.T) {
+	h := launchedHarness(t, 999)
+	ctx := context.Background()
+	due := h.now.Add(-3 * time.Hour)
+	if err := pgx.BeginFunc(ctx, h.db, func(tx pgx.Tx) error {
+		return billing.PauseOverdue(ctx, tx, h.acc, "past_due", due)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h.markSent(t, h.now)
+	h.eventsFor(t, "complaint", "abuse", 4, h.now)
+	if ap := h.check(t); ap == nil || ap.Suspension != nil {
+		t.Fatalf("pause %+v", ap)
+	}
+	var codes []string
+	rows, err := h.db.Query(ctx, `
+		SELECT coalesce(details->>'code', '') FROM admin_actions WHERE account_id = $1 AND action = 'auto_pause' ORDER BY id`, h.acc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if codes, err = pgx.CollectRows(rows, pgx.RowTo[string]); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(codes, []string{SubscriptionPastDue, ""}) {
+		t.Errorf("auto_pause log codes %q", codes)
+	}
+	var paused bool
+	var code string
+	if err := h.db.QueryRow(ctx, `SELECT sending_paused_at IS NOT NULL, coalesce(sending_paused_code, '') FROM accounts WHERE id = $1`,
+		h.acc).Scan(&paused, &code); err != nil {
+		t.Fatal(err)
+	}
+	if !paused || code != SubscriptionPastDue {
+		t.Errorf("paused %v, code %q", paused, code)
+	}
+	var d Digest
+	if err := pgx.BeginFunc(ctx, h.db, func(tx pgx.Tx) error {
+		var err error
+		d, err = BuildDigest(ctx, tx, h.now, Warning{})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var pastDue int
+	for _, it := range d.Pauses {
+		if it.AccountID == h.acc && strings.Contains(it.What, "payment didn't go through") && strings.Contains(it.What, "Still paused") {
+			pastDue++
+		}
+	}
+	if pastDue != 1 || len(d.Suspensions) != 0 {
+		t.Errorf("digest pauses %+v, suspensions %+v", d.Pauses, d.Suspensions)
+	}
+}
+
+// The code suspendOnRepeat leaves out is the one billing logs.
+func TestPastDueCodeMatchesBilling(t *testing.T) {
+	if SubscriptionPastDue != billing.SubscriptionPastDue {
+		t.Errorf("sending %q, billing %q", SubscriptionPastDue, billing.SubscriptionPastDue)
+	}
+}
+
 func TestSuspendedAlert(t *testing.T) {
 	fake := &mail.Fake{}
 	s := Suspension{AccountID: "acc-1", AccountName: "Pat's Bakery", OwnerEmail: "pat@example.com", Reason: "Sent to a bought list.",
 		By: "staff@example.com", At: time.Date(2026, 11, 19, 10, 0, 0, 0, time.UTC), KeysRevoked: 2, SessionsEnded: 1}
-	a := &OpsAlert{Mail: fake, From: mail.Address{Name: "mailgoose", Email: "alerts@mail.mailgoose.test"}, To: "ops@example.com",
+	// Behind the real guard, as in mailgoosed, so the notices must pass it (MG-90).
+	a := &OpsAlert{Mail: &mail.Guard{Sender: fake, System: "mail.mailgoose.test"}, From: mail.Address{Name: "mailgoose", Email: "alerts@mail.mailgoose.test"}, To: "ops@example.com",
 		AppURL: "https://app.mailgoose.test/", Log: slog.New(slog.DiscardHandler)}
 	a.Suspended(context.Background(), s)
 	sent := fake.Sent()

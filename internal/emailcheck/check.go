@@ -97,9 +97,10 @@ type Input struct {
 	// caller words it; empty uses the domain-only wording.
 	UnverifiedFrom string
 	// SharedFrom is the address the email goes from on the shared sending
-	// domain, and SharedReplyTo where replies go, when it goes from there
+	// domain, SharedName the name it goes under (always the account's,
+	// MG-98), and SharedReplyTo where replies go, when it goes from there
 	// (MG-85); empty otherwise.
-	SharedFrom, SharedReplyTo string
+	SharedFrom, SharedName, SharedReplyTo string
 	// ReplyToProblem is the unverified_reply_to error's message; empty when
 	// the Reply-To is fine.
 	ReplyToProblem string
@@ -141,8 +142,7 @@ func Check(ctx context.Context, in Input, links LinkChecker) Result {
 		c.fail(Issue{Code: UnverifiedFrom, Path: "settings.from_email", Message: msg})
 	case in.SharedFrom != "":
 		c.warn(Issue{Code: SharedDomain, Path: "settings.from_email",
-			Message: fmt.Sprintf("This email goes from %s, mailgoose's shared domain, with replies to %s. Add your own domain for better deliverability and trust.",
-				in.SharedFrom, in.SharedReplyTo)})
+			Message: sharedMessage(in)})
 	}
 	if in.ReplyToProblem != "" {
 		c.fail(Issue{Code: UnverifiedReplyTo, Path: "settings.reply_to", Message: in.ReplyToProblem})
@@ -465,4 +465,16 @@ func clip(s string) string {
 
 func kb(n int) string {
 	return fmt.Sprintf("%.1f KB", float64(n)/1024)
+}
+
+// sharedMessage is the shared_domain warning: where the email goes from,
+// under which name, and that the account's own domain does better.
+func sharedMessage(in Input) string {
+	if in.SharedName == "" {
+		return fmt.Sprintf("This email goes from %s, mailgoose's shared domain, with replies to %s. Add your own domain for better deliverability and trust.",
+			in.SharedFrom, in.SharedReplyTo)
+	}
+	return fmt.Sprintf("This email goes from %s, mailgoose's shared domain, under your account's name (%s), with replies to %s. "+
+		"Add your own domain for better deliverability and trust, and to send under the email's own From name.",
+		in.SharedFrom, in.SharedName, in.SharedReplyTo)
 }

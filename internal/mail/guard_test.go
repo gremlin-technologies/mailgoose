@@ -3,6 +3,7 @@ package mail
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -24,16 +25,17 @@ func TestGuard(t *testing.T) {
 		return Message{From: Address{Email: from}, To: Address{Email: "to@example.com"}, Subject: "Hi", Text: "Hi",
 			Kind: KindCampaign, AccountID: account}
 	}
+	sys := func(m Message) Message { m.Kind = KindSystem; return m }
 
 	tests := []struct {
 		name string
 		m    Message
 		ok   bool
 	}{
-		{"system mail", msg("signin@mail.staging.mailgoose.app", ""), true},
-		{"system domain any case, with an account", msg("alerts@MAIL.staging.mailgoose.app", "acct-1"), true},
-		{"subdomain of the system domain", msg("x@evil.mail.staging.mailgoose.app", ""), false},
-		{"the other environment's system domain", msg("signin@mail.mailgoose.app", ""), false},
+		{"system mail", sys(msg("signin@mail.staging.mailgoose.app", "")), true},
+		{"system domain any case, with an account", sys(msg("alerts@MAIL.staging.mailgoose.app", "acct-1")), true},
+		{"subdomain of the system domain", sys(msg("x@evil.mail.staging.mailgoose.app", "")), false},
+		{"the other environment's system domain", sys(msg("signin@mail.mailgoose.app", "")), false},
 		{"verified domain of the account", msg("news@acme.com", "acct-1"), true},
 		{"subdomain of a verified domain", msg("news@send.acme.com", "acct-1"), true},
 		{"domain the account hasn't verified", msg("news@other.com", "acct-1"), false},
@@ -98,6 +100,67 @@ func TestGuard(t *testing.T) {
 		err := g.Check(ctx, msg("news@acme.com", "acct-1"))
 		if !errors.Is(err, context.Canceled) || errors.Is(err, ErrNotThisEnvironment) {
 			t.Fatalf("err = %v, want context.Canceled only", err)
+		}
+	})
+}
+
+// TestGuardSystemDomainKinds: only mailgoose's own mail and double opt-in
+// confirmations go from the system domain; a test send or a campaign from it,
+// or a message whose kind is unset or unknown, is refused, with or without an
+// account and even when the account has verified that domain (MG-90).
+func TestGuardSystemDomainKinds(t *testing.T) {
+	verifiedCalls := 0
+	verifyAll := func(context.Context, string, string) error { verifiedCalls++; return nil }
+	tests := []struct {
+		kind Kind
+		ok   bool
+	}{
+		{KindSystem, true},
+		{KindConfirm, true},
+		{KindTest, false},
+		{KindCampaign, false},
+		{"", false},
+		{"promo", false},
+	}
+	for _, tt := range tests {
+		for _, account := range []string{"", "acct-1"} {
+			t.Run(fmt.Sprintf("%q/account=%q", tt.kind, account), func(t *testing.T) {
+				fake := &Fake{}
+				g := &Guard{Sender: fake, System: "mail.staging.mailgoose.app", Verified: verifyAll,
+					Shared: "shared.staging.mailgoose.app", SharedSender: func(context.Context, string, string, []string) error { return nil }}
+				m := Message{From: Address{Name: "mailgoose", Email: "signin@Mail.Staging.Mailgoose.App."}, To: Address{Email: "to@example.com"},
+					ReplyTo: []Address{{Email: "pat@example.com"}}, Subject: "Hi", Text: "Hi", Kind: tt.kind, AccountID: account}
+				err := g.Check(context.Background(), m)
+				if tt.ok {
+					if err != nil {
+						t.Fatalf("refused: %v", err)
+					}
+					return
+				}
+				if !errors.Is(err, ErrNotThisEnvironment) || !strings.Contains(err.Error(), "system domain") {
+					t.Fatalf("err = %v, want ErrNotThisEnvironment for the system domain", err)
+				}
+				if tt.kind == "" && !strings.Contains(err.Error(), "no kind") {
+					t.Errorf("err = %v, want it to say the kind is unset", err)
+				}
+				if _, err := g.Send(context.Background(), m); !errors.Is(err, ErrNotThisEnvironment) || len(fake.Sent()) != 0 {
+					t.Fatalf("Send: err = %v, %d sent", err, len(fake.Sent()))
+				}
+			})
+		}
+	}
+	if verifiedCalls != 0 {
+		t.Errorf("Verified called %d times: the system domain is decided by kind alone", verifiedCalls)
+	}
+
+	t.Run("other domains don't depend on the kind", func(t *testing.T) {
+		g := &Guard{Sender: &Fake{}, System: "mail.staging.mailgoose.app", Verified: verifyAll}
+		for _, k := range []Kind{KindSystem, KindConfirm, KindTest, KindCampaign} {
+			m := Message{From: Address{Email: "news@acme.com"}, To: Address{Email: "to@example.com"}, Subject: "Hi", Text: "Hi",
+				Kind: k, AccountID: "acct-1"}
+			if err := g.Check(context.Background(), m); err != nil {
+				t.Errorf("%s from a verified domain: %v", k, err)
+			}
 		}
 	})
 }

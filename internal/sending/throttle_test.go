@@ -362,6 +362,81 @@ func TestNewAccountLimitReason(t *testing.T) {
 	}
 }
 
+// With shared sending on, an account with no verified domain of its own
+// stays at the new-account limit and is told why; once it verifies one, the
+// limit grows from then (MG-98).
+func TestSharedDomainLimit(t *testing.T) {
+	h := launchedHarness(t, 1)
+	ctx := context.Background()
+	on := Limits{PerSecond: 100, Daily: 10000, NewDaily: 1000, SharedDomain: true}
+	off := Limits{PerSecond: 100, Daily: 10000, NewDaily: 1000}
+	since := h.now.AddDate(0, -3, 0)
+	at := func(l Limits, own *int) SendLimit {
+		t.Helper()
+		got, err := l.ForAccount(ctx, h.db, h.acc, own, since, h.now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	verified := func(status string, at *time.Time) {
+		t.Helper()
+		if _, err := h.db.Exec(ctx, `UPDATE domains SET status = $2, verified_at = $3 WHERE account_id = $1 AND name = 'patsbakery.com'`,
+			h.acc, status, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Three clean months but no verified domain: held at 1,000, saying why.
+	verified("failed", nil)
+	got := at(on, nil)
+	if got.Daily != 1000 || got.Usual != 10000 || !got.NeedsDomain || got.LoweredUntil != nil || got.Reason == nil ||
+		!strings.Contains(*got.Reason, "without a verified domain of their own send at most 1,000 a day") ||
+		!strings.Contains(*got.Reason, "Add your own domain to send more") {
+		t.Fatalf("no domain: %+v %s", got, deref(got.Reason))
+	}
+	// The dispatcher holds it there too.
+	if n, err := h.pipeline(on).dailyLimit(ctx, h.db, h.acc, nil, since, h.now); err != nil || n != 1000 {
+		t.Errorf("dispatcher limit %d, %v", n, err)
+	}
+	if got, err := on.Account(ctx, h.db, h.acc, h.now); err != nil || got.Daily != 1000 || !got.NeedsDomain {
+		t.Errorf("Account: %+v %v", got, err)
+	}
+	// With shared sending off, nothing changes.
+	if got := at(off, nil); got.Daily != 10000 || got.NeedsDomain {
+		t.Errorf("shared sending off: %+v", got)
+	}
+	// A limit staff set still stands.
+	own := 5000
+	if got := at(on, &own); got.Daily != 5000 || got.NeedsDomain {
+		t.Errorf("own limit: %+v", got)
+	}
+	// A domain still pending doesn't count.
+	verified("pending", nil)
+	if got := at(on, nil); got.Daily != 1000 || !got.NeedsDomain {
+		t.Errorf("pending domain: %+v", got)
+	}
+
+	// Verified two days ago: the ramp starts from then.
+	two := h.now.AddDate(0, 0, -2)
+	verified("verified", &two)
+	got = at(on, nil)
+	if got.Daily != 1000 || got.NeedsDomain || got.Reason == nil || !strings.Contains(*got.Reason, "Growing from when your domain was verified") {
+		t.Errorf("just verified: %+v %s", got, deref(got.Reason))
+	}
+	eight := h.now.AddDate(0, 0, -8)
+	verified("verified", &eight)
+	if got := at(on, nil); got.Daily != 2000 || got.NeedsDomain {
+		t.Errorf("verified a week ago: %+v", got)
+	}
+	// Verified long ago: the account's own history counts, as before.
+	long := h.now.AddDate(0, -6, 0)
+	verified("verified", &long)
+	if got := at(on, nil); got.Daily != 10000 || got.Reason != nil || got.NeedsDomain {
+		t.Errorf("verified long ago: %+v", got)
+	}
+}
+
 func TestThrottleNotices(t *testing.T) {
 	fake := &mail.Fake{}
 	quiet := slog.New(slog.DiscardHandler)
@@ -369,8 +444,10 @@ func TestThrottleNotices(t *testing.T) {
 	th := Throttle{AccountID: "acc-1", AccountName: "Pat's Bakery", OwnerEmail: "pat@example.com", CampaignID: "c-1",
 		CampaignName: "Bread week", Rates: Rates{Sent: 1000, Complaints: 2, HardBounces: 5}, Warning: DefaultWarning,
 		Reason: "Lowered automatically.", Until: until}
-	n := &Notices{Mail: fake, From: mail.Address{Name: "mailgoose", Email: "notices@mail.localhost"}, NewDaily: 1000, Log: quiet,
-		Ops: &OpsAlert{Mail: fake, From: mail.Address{Email: "alerts@mail.localhost"}, To: "ops@example.com", Log: quiet}}
+	// Behind the real guard, as in mailgoosed, so notices must pass it (MG-90).
+	guarded := &mail.Guard{Sender: fake, System: "mail.localhost"}
+	n := &Notices{Mail: guarded, From: mail.Address{Name: "mailgoose", Email: "notices@mail.localhost"}, NewDaily: 1000, Log: quiet,
+		Ops: &OpsAlert{Mail: guarded, From: mail.Address{Email: "alerts@mail.localhost"}, To: "ops@example.com", Log: quiet}}
 	n.Throttled(context.Background(), th)
 	sent := fake.Sent()
 	if len(sent) != 2 {

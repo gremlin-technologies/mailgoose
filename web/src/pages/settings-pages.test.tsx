@@ -213,6 +213,7 @@ describe("settings send limit", () => {
             usual: 10000,
             reason: "Lowered automatically: 0.2% marked it as spam.",
             lowered_until: "2026-11-26T10:00:00Z",
+            needs_domain: false,
           },
           created_at: "2026-11-18T10:00:00Z",
         },
@@ -221,6 +222,39 @@ describe("settings send limit", () => {
     renderApp("/settings", api.fetch);
     expect(await screen.findByText("Your daily send limit is lowered to 1,000.")).toBeTruthy();
     expect(screen.getByText(/0.2% marked it as spam/)).toBeTruthy();
+  });
+});
+
+describe("settings send limit without a domain", () => {
+  it("says the limit grows only with a domain of the account's own, and links to Domains (MG-98)", async () => {
+    const reason =
+      "Accounts without a verified domain of their own send at most 1,000 a day, from mailgoose's shared domain. Add your own domain to send more: the limit then doubles each week of clean sending, up to 10,000 a day.";
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/account": () => ({
+        status: 200,
+        body: {
+          id: "7c1d0f7e-8f43-4a8e-9d35-2b8a7c6e1a10",
+          name: "Pat's Bakery",
+          plan: "free",
+          from_name: null,
+          from_email: null,
+          postal_address: "12 Main St",
+          time_zone: "UTC",
+          missing_for_send: [],
+          sending_mode: "full",
+          sending_slug: "pats-bakery",
+          shared_address: "pats-bakery@shared.mailgoose.test",
+          send_limit: { daily: 1000, usual: 10000, reason, lowered_until: null, needs_domain: true },
+          created_at: "2026-11-18T10:00:00Z",
+        },
+      }),
+    });
+    renderApp("/settings", api.fetch);
+    expect(await screen.findByText(/Add your own domain to send more/)).toBeTruthy();
+    const link = screen.getByRole("link", { name: "Add your own domain" });
+    expect(link.getAttribute("href")).toBe("/domains");
+    expect(screen.getByText(/Emails from mailgoose's shared domain go out under this name/)).toBeTruthy();
   });
 });
 
@@ -240,6 +274,7 @@ describe("settings", () => {
       usual: 10000,
       reason: "New accounts start at 1,000 a day; it doubles each week of clean sending, up to 10,000 a day.",
       lowered_until: null,
+      needs_domain: false,
     },
     created_at: "2026-11-18T10:00:00Z",
   };

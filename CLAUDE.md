@@ -24,6 +24,10 @@ already use.
   own public repository, gremlin-technologies/mailgoose-public (moved Nov 21).
 - `docs/releasing.md`: how the CLI is released (GoReleaser, to GitHub Releases
   on mailgoose-public, Homebrew, the AUR and .deb/.rpm).
+- `docs/account-states.md`: the states that hold back an account's sending
+  (sign-up review, test mode, tester accounts, slices, throttles, pauses,
+  suspensions), who sets and clears each, the admin commands, and the rules
+  when two apply at once. Read it before changing any of them.
 
 The PRD, pricing and MVP requirements files are snapshots of Claude Docs; the
 Claude Doc is the live version. In the PRD and pricing files, lines marked
@@ -100,6 +104,23 @@ scope; they only show where an idea came from.
   shared domain, with replies to an address it verified (the owner's sign-in
   address or a confirmed sender address, up to 10). The app nudges toward
   adding a domain. Off in prod for now; details are reversible defaults.
+  MG-98 (Nov 21): there, mail always goes under the account's name (sign-up
+  and rename refuse names with `@`, domain-shaped names, and well-known
+  brands and payment terms), and an account with no verified domain stays at
+  the new-account limit (1,000) until it adds one.
+- SES backpressure (Nov 21, MG-87): SES throttling, quota and
+  paused-sending errors leave copies queued for a minute instead of failing
+  them, and `PLATFORM_DAILY_SEND_LIMIT` (default 45,000) caps campaign
+  copies across all accounts under the SES quota.
+- Form signup cap (Nov 21, MG-92): each form adds at most
+  `FORM_DAILY_SIGNUP_LIMIT` (default 1,000) new contacts in a rolling 24
+  hours, counted in Postgres across API tasks; past it the form answers 429
+  `form_signup_limit`, and the owner and ops are told once a day per form.
+- Send throughput (Nov 21, MG-91 part 1): each send batch logs its copies
+  sent and seconds at INFO and is recorded for 7 days; `mailgoose admin
+  deliverability` shows the last day's copies a second against
+  `SEND_RATE_PER_SECOND`. A pool for a batch's rows (default 4) waits for
+  the staging numbers.
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API

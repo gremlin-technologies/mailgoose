@@ -174,8 +174,13 @@ func serve(ctx context.Context, log *slog.Logger) error {
 			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Senders: srv.Senders, Unsubscribe: srv.Unsubscribe, Mail: sender,
 			Limits: sendLimits(cfg), Slicing: slicing(cfg),
 			LinkSafety: srv.LinkSafety, Alert: alerts.Notify, Log: log.With("component", "sending")}
+		// Each form adds at most FORM_DAILY_SIGNUP_LIMIT new contacts a day
+		// (MG-92); reaching it emails the owner from notices@ and
+		// OPS_ALERT_EMAIL, once a day per form.
 		srv.Signups = &signups.Service{DB: pool, Forms: srv.Forms, Settings: &auth.Service{DB: pool},
-			Domains: srv.Domains, Senders: srv.Senders, Mail: sender}
+			Domains: srv.Domains, Senders: srv.Senders, Mail: sender, DailyCap: formDailyCap(cfg),
+			CapNotices: &signups.CapNotices{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "notices@" + cfg.SystemSendingDomain},
+				Alert: alerts.Notify, Log: log.With("component", "signups")}}
 		// A suspension emails the owner, with ABUSE_EMAIL for appeals, and
 		// OPS_ALERT_EMAIL.
 		srv.Admin = &admin.Service{DB: pool, Sending: srv.Sending, Limits: sendLimits(cfg), Warning: warning(cfg),
@@ -442,8 +447,9 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 // dispatchEvery is how often due campaigns are batched.
 const dispatchEvery = 2 * time.Second
 
-// guardSender checks every message before it goes out: it must be from the
-// system sending domain, or from a domain its account verified in this
+// guardSender checks every message before it goes out: it must be system
+// mail or a confirmation from the system sending domain (never a test send
+// or a campaign, MG-90), or from a domain its account verified in this
 // environment, or from the shared sending domain as its own account's slug
 // with Reply-To addresses that account verified (MG-85). Staging and prod
 // share one AWS account and SES ignores tag conditions on sends, so this
@@ -491,6 +497,15 @@ func healthAlerts(cfg config.Config, sender mail.Sender, log *slog.Logger) (*sen
 	return alert, notices
 }
 
+// formDailyCap is signups.Service.DailyCap for FORM_DAILY_SIGNUP_LIMIT,
+// whose 0 means no cap.
+func formDailyCap(cfg config.Config) int {
+	if cfg.FormDailySignupLimit == 0 {
+		return -1
+	}
+	return cfg.FormDailySignupLimit
+}
+
 func warning(cfg config.Config) sending.Warning {
 	return sending.Warning{ComplaintsPer10k: cfg.EarlyWarningComplaintsPer10k, HardBouncesPer10k: cfg.EarlyWarningHardBouncesPer10k}
 }
@@ -504,6 +519,11 @@ func sendLimits(cfg config.Config) sending.Limits {
 		PerSecond: cfg.SendRatePerSecond,
 		Daily:     cfg.AccountDailySendLimit,
 		NewDaily:  cfg.NewAccountDailySendLimit,
+		// MG-98: with shared sending on, an account without a domain of
+		// its own doesn't grow past NewDaily.
+		SharedDomain: cfg.SharedSendingDomain != "",
+		// The platform cap (MG-87); only the dispatcher reads it.
+		PlatformDaily: cfg.PlatformDailySendLimit,
 	}
 }
 

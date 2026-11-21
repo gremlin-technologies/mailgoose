@@ -219,6 +219,42 @@ func TestSendLimitSettings(t *testing.T) {
 	}
 }
 
+func TestPlatformDailySendLimit(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || cfg.PlatformDailySendLimit != 45000 {
+		t.Fatalf("default = %d, %v; want 45000", cfg.PlatformDailySendLimit, err)
+	}
+	for v, want := range map[string]int{"0": 0, "120000": 120000} {
+		cfg, err = load(env(map[string]string{"PLATFORM_DAILY_SEND_LIMIT": v}))
+		if err != nil || cfg.PlatformDailySendLimit != want {
+			t.Errorf("%q = %d, %v; want %d", v, cfg.PlatformDailySendLimit, err, want)
+		}
+	}
+	for _, bad := range []string{"-1", "lots"} {
+		if _, err := load(env(map[string]string{"PLATFORM_DAILY_SEND_LIMIT": bad})); err == nil {
+			t.Errorf("PLATFORM_DAILY_SEND_LIMIT=%q should be an error", bad)
+		}
+	}
+}
+
+func TestFormDailySignupLimit(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || cfg.FormDailySignupLimit != 1000 {
+		t.Fatalf("default = %d, %v; want 1000", cfg.FormDailySignupLimit, err)
+	}
+	for v, want := range map[string]int{"0": 0, "5000": 5000} {
+		cfg, err = load(env(map[string]string{"FORM_DAILY_SIGNUP_LIMIT": v}))
+		if err != nil || cfg.FormDailySignupLimit != want {
+			t.Errorf("%q = %d, %v; want %d", v, cfg.FormDailySignupLimit, err, want)
+		}
+	}
+	for _, bad := range []string{"-1", "lots"} {
+		if _, err := load(env(map[string]string{"FORM_DAILY_SIGNUP_LIMIT": bad})); err == nil {
+			t.Errorf("FORM_DAILY_SIGNUP_LIMIT=%q should be an error", bad)
+		}
+	}
+}
+
 func TestEarlyWarningSettings(t *testing.T) {
 	cfg, err := load(env(nil))
 	if err != nil || cfg.EarlyWarningComplaintsPer10k != 5 || cfg.EarlyWarningHardBouncesPer10k != 200 {

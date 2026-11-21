@@ -153,6 +153,8 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `SEND_QUEUE_URL`, `SES_EVENTS_QUEUE_URL` | Queues the worker drains. Without `SEND_QUEUE_URL` the worker batches and sends campaigns itself, through a queue in memory (local). |
 | `SEND_RATE_PER_SECOND` | Campaign emails sent a second, across every worker. Default 10. |
 | `ACCOUNT_DAILY_SEND_LIMIT`, `NEW_ACCOUNT_DAILY_SEND_LIMIT` | The most campaign emails an account may send in any 24 hours (10,000 by default), and its limit in its first 7 days (1,000). In between the limit grows on a schedule (see [Account health](#account-health-and-send-limits)). An account's own `daily_send_limit` overrides both. |
+| `PLATFORM_DAILY_SEND_LIMIT` | The most campaign emails sent in any 24 hours across every account together, kept under the SES account's daily quota (50,000). Default 45,000; `0` means no cap. Copies past it wait, as they do for an account's limit. |
+| `FORM_DAILY_SIGNUP_LIMIT` | The most new contacts one signup form adds in any 24 hours, counted in Postgres so it holds across API tasks. Default 1,000; `0` means no cap. Past it the form answers 429 `form_signup_limit`, and the owner and `OPS_ALERT_EMAIL` are told once a day per form (see [Submissions and double opt-in](#submissions-and-double-opt-in)). |
 | `IMPORT_HOLD_RISKY_PERCENT`, `IMPORT_HOLD_INVALID_PERCENT`, `IMPORT_HOLD_SHARED_PERCENT`, `IMPORT_HOLD_SHARED_MIN` | When an import is held for review: role plus disposable addresses over 10% of its valid rows, invalid rows over 5% of all rows, or at least 50% of its addresses, and at least 200, in other accounts' imports. Percentages are 1 to 100. |
 | `OPS_ALERT_EMAIL` | Where to email an alert when an account is paused, throttled or suspended automatically, a sign-up waits for review, or a payment needs refunding or cancelling by hand in Stripe, and the daily abuse digest. Unset, these are only logged (as errors) and no digest is sent. Terraform sets it from `alert_email` (see `infra/README.md`). |
 | `ABUSE_DIGEST_HOUR` | The hour, UTC (0 to 23), the worker emails the daily abuse digest to `OPS_ALERT_EMAIL`. Default 13 (8 AM US Eastern in winter). |
@@ -772,10 +774,14 @@ The send pipeline (`internal/sending/pipeline.go`) takes it from there:
 - **Dispatcher.** Every 2 seconds it takes the due `send_queue` rows (each
   locked by one dispatcher at a time). It starts a `scheduled` campaign at
   its time, then marks the next recipients enqueued, as many as the
-  account's daily limit leaves, and puts them on the send queue in batches
-  of about 10 seconds' sending (10 to 100). It runs in the API when
-  `SEND_QUEUE_URL` is set (only the API's role may send to the queue), and
-  in the worker otherwise.
+  account's daily limit and the platform's daily cap
+  (`PLATFORM_DAILY_SEND_LIMIT`) leave, and puts them on the send queue in
+  batches of about 10 seconds' sending (10 to 100). A campaign has at most
+  10 batches waiting on the queue (enqueued, not yet claimed by a worker),
+  topped up in whole batches every tick, so a big launch sends as fast but
+  doesn't sit on the queue long enough to set off its age alarm. It runs in
+  the API when `SEND_QUEUE_URL` is set (only the API's role may send to the
+  queue), and in the worker otherwise.
 - **Workers.** Each takes one batch at a time and, per recipient, waits for
   the next send slot (`send_pace`, shared by every worker), claims the row
   (`sending`) in its own transaction, renders the copy with its
@@ -789,6 +795,11 @@ The send pipeline (`internal/sending/pipeline.go`) takes it from there:
 - **Failures.** A refused send puts the row back to `queued` and the batch
   is retried. On the fifth try the rows that still fail end `failed` with
   their credits back, and the message goes to the dead-letter queue.
+- **Throttling and quota.** When SES says "not now" (throttling, the
+  sending rate or daily quota exceeded, or sending paused on the AWS
+  account), the copy isn't failed: its row goes back to `queued` with no
+  error, the batch's unsent rows wait a minute before the dispatcher
+  batches them again, and no try is used up.
 - **Finishing.** When no row is `queued` or `sending`, the campaign moves
   to `sent` (or `failed` if nothing went out). A paused account or
   campaign holds its rows until it's resumed.
@@ -893,7 +904,10 @@ up to `ACCOUNT_DAILY_SEND_LIMIT` (10,000). History is clean when the
 account's campaigns over the last 30 days are under both thresholds below
 (judged only once they've gone to 500 or more), and none of them paused it.
 An account that isn't clean is held at 1,000 until it is. An account's own
-`daily_send_limit` replaces the schedule.
+`daily_send_limit` replaces the schedule. With `SHARED_SENDING_DOMAIN` set,
+an account with no verified domain of its own is held at 1,000 (MG-98), and
+one that verifies a domain grows from when it verified its first one (or
+from its own start, if that's later), so a new domain starts low too.
 
 **Automatic pause.** Once a campaign has gone to 500 or more people, its
 account's sending is paused if more than 0.1% of them complained (with at
@@ -905,6 +919,14 @@ days later is still caught. A campaign pauses its account once; after the
 pause is lifted it doesn't pause it again. The account is told why (the
 reason is shown when it tries to launch), the pause is logged, and an alert
 goes to `OPS_ALERT_EMAIL`.
+
+The same limits apply to the account as a whole: once its campaigns have
+gone to 500 or more people over the last 30 days, however small each one
+was, it's paused if they're over either limit together, with a reason that
+says it's the account's last 30 days. An account paused already keeps its
+pause. After an admin unpauses it, or a campaign pauses it, only copies
+sent since then (and their bounces and complaints) count, so the same
+history doesn't pause it again; it needs 500 new copies over the line.
 
 **Pausing mid-send.** A paused account's campaigns stop before their next
 email: the rows not yet sent are handed back and wait, and the campaign
@@ -951,7 +973,22 @@ two complaints, or 2% hard bounces by default), on 500 or more copies, as for
 one account. A row in `ops_digests` claims each
 day, so the digest goes at most once a day however many worker tasks run or
 restart; one started after the hour sends that day's late. With no
-`OPS_ALERT_EMAIL` the job doesn't run.
+`OPS_ALERT_EMAIL` the job doesn't run. Its last line gives the sizes of
+`campaign_recipients` and `send_events` and how much each grew over 7 days
+(see Table sizes below).
+
+**Table sizes.** `mailgoose admin storage` (`GET /v1/admin/storage`) lists
+the database's tables: `campaign_recipients` and `send_events` first (every
+copy sent is one row in the first and one or two in the second, kept 12
+months, so they're the first storage cost), then the largest others. Each
+has its size with indexes and TOAST (`pg_total_relation_size`), the
+planner's row estimate (`pg_class.reltuples`; an estimate as fresh as the
+last ANALYZE, and none for a table never analysed) and its change over 7
+days. The change is against `table_size_snapshots`, where the digest job
+writes every table's size once a UTC day when it claims the day, quiet day
+or not, and keeps 8 weeks; with no row from exactly 7 days before, the
+command and the digest say so. `--limit` (1 to 50, default 10) and
+`--json` (MG-95).
 
 **Per-customer deliverability.** `mailgoose admin deliverability` (`GET
 /v1/admin/deliverability`) lists every account that sent campaign email in
@@ -1035,6 +1072,7 @@ an admin; API keys are refused, even an admin's. Every action takes a
 | `mailgoose admin tester grant <id> [--until] [--credits] [--reason]` | Makes an approved account a [tester account](#account-health-and-send-limits), or extends one, keeping its credits used. |
 | `mailgoose admin tester revoke <id> [--reason]` | Ends a tester account and puts it in test mode. |
 | `mailgoose admin deliverability [--limit]` | Each account's copies sent, hard bounce and complaint rates over 24 hours and 7 days, worst first, with whether it's paused, suspended, throttled or in test mode (see [Per-customer deliverability](#account-health-and-send-limits)). |
+| `mailgoose admin storage [--limit]` | The database's largest tables, `campaign_recipients` and `send_events` first, with row estimates, sizes and their change over 7 days (see [Table sizes](#account-health-and-send-limits)). |
 | `mailgoose admin stop-campaign <id> --reason --yes` | The kill switch: nobody else gets it, unused credits come back, it ends `cancelled`. |
 | `mailgoose admin approve-import <id> --reason` | Lets a held import's contacts be mailed. |
 | `mailgoose admin grant-credits <id> --amount --reason` | Adds up to 1,000,000 credits, lasting 24 months. |
@@ -1101,7 +1139,17 @@ redirects to the form's redirect URL or shows a success page.
   opened (when the script says), gets the normal success answer and is
   dropped. A missing or forged `_mg_ts` is a 400.
 - **Limits:** 10 posts a minute per IP and 600 a minute per form (429 with
-  Retry-After), plus the free plan's contact limit (409 `list_full`).
+  Retry-After), in memory in each API task, plus the free plan's contact
+  limit (409 `list_full`).
+- **Daily cap (MG-92):** a form adds at most `FORM_DAILY_SIGNUP_LIMIT` new
+  contacts (1,000) in any rolling 24 hours, counted in `form_signups` under
+  the account's row lock, so it holds across API tasks. Only a submission
+  that adds a contact counts; past the cap every submission (new address or
+  not) gets 429 `form_signup_limit` with Retry-After, as JSON or a page, and
+  nothing is stored. The first refusal emails the owner (from `notices@`,
+  `KindSystem`) and alerts `OPS_ALERT_EMAIL`, at most once in 24 hours per
+  form (`forms.signup_cap_noticed_at`), and `form get` lists the problem
+  `signup_cap_reached`.
 - **Double opt-in:** a new address is added unconfirmed and gets a
   confirmation email from the account's From on its verified domain, free of
   credits. The link (`/confirm/{token}`, 7 days) shows a page whose button
@@ -1147,14 +1195,31 @@ CLI and the API all encourage one: it delivers better and readers trust it
 more. With `SHARED_SENDING_DOMAIN` set, a From that isn't on a verified
 domain of the account still sends when the account has proved it owns the
 address: its owner's sign-in address, or a confirmed sender address. The
-message then goes from the From name (the account's name if none) at
-`<sending_slug>@<shared domain>`, with Reply-To the From address, or the
+message then goes under the account's name, whatever From name the email or
+account sets (MG-98), at `<sending_slug>@<shared domain>`, with Reply-To the
+From address, or the
 email's own Reply-To when that's a verified sender address or on a verified
 domain too (`unverified_reply_to` otherwise). `internal/senders.Resolver`
 decides this once for test sends, launches, signup confirmations and the
 email check, which warns `shared_domain`. Test results and launch summaries
 say `shared_domain` and the From used, and the web app and CLI show a nudge
 to add the domain.
+
+Because the account's name is what readers see as the sender there, sign-up
+and rename refuse a name that could pass for someone else
+(`account_name_not_allowed`, with why): one with an `@`, one shaped like a
+domain (`paypal.com`), or one carrying a well-known brand or a payment term
+(`PayPal Support`, `Billing Department`). `internal/accountname` compares
+names after folding case, accents, fullwidth forms and invisible characters,
+mapping common lookalikes (Cyrillic and Greek letters, `0` for `o`, `1` and
+`i` for `l`, `rn` for `m`) and ignoring spaces and punctuation; its lists are
+short and easy to change. A name taken before this stays until it's changed.
+
+An account with no verified domain of its own also stays at the new-account
+daily limit (1,000) and doesn't grow, and its send limit says why
+(`needs_domain` in the API, a link to Domains in the web app, the
+`mailgoose domain add` command in `mailgoose account get`). See
+[Account health](#account-health-and-send-limits).
 
 Each account has a `sending_slug`, made from its name when it's created
 (`Pat's Bakery` is `pats-bakery`) and never changed by a rename. A taken or
@@ -1177,7 +1242,10 @@ mailgoose account get   # shows the Shared From
 `mail.Guard` lets mail from the shared domain through only when its From is
 the sending account's own slug and it has at least one Reply-To, each one a
 verified sender of the account or on one of its verified domains. With the
-variable unset, everything behaves as before MG-85.
+variable unset, everything behaves as before MG-85. Mail from the system
+sending domain goes through only when it's mailgoose's own (sign-in codes,
+confirm links, alerts and notices) or a double opt-in confirmation; a test
+send or a campaign from it is refused (MG-90).
 
 **Not yet checked against real AWS.** Before relying on sending domains in
 staging, add one domain there from the owner's machine and confirm IAM allows

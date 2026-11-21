@@ -103,6 +103,23 @@ describe("signing up", () => {
     });
   });
 
+  it("says why an account name is refused", async () => {
+    const message =
+      "An account name can't include \"PayPal\", a well-known brand. Emails sent from mailgoose's shared domain go out under your account's name, so it can't pass for a company or a bank's or shop's own messages. Choose another name.";
+    const api = fakeApi({
+      ...signedOut,
+      "POST /v1/signup": () => ({ status: 422, body: { error: { code: "account_name_not_allowed", message } } }),
+    });
+    const user = userEvent.setup();
+    renderApp("/signup", api.fetch);
+    await user.type(await screen.findByLabelText("Email"), "pat@example.com");
+    await user.type(screen.getByLabelText("Account name"), "PayPal Support");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Email me a code" }));
+    expect(await screen.findByText(message)).toBeTruthy();
+    expect(screen.queryByLabelText("Code")).toBeNull();
+  });
+
   it("won't send the form until the terms are accepted", async () => {
     const api = fakeApi(signedOut);
     const user = userEvent.setup();

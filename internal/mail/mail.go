@@ -15,7 +15,9 @@ import (
 )
 
 // Kind says what a message is for. It travels with the message as an SES tag,
-// so SES events can be routed without a database lookup.
+// so SES events can be routed without a database lookup. The zero value is no
+// kind: Validate refuses it, and Guard refuses it from the system domain, so
+// every message must set one.
 type Kind string
 
 // Kinds of message.
@@ -60,6 +62,19 @@ type Message struct {
 	AccountID  string // empty for mailgoose's own mail
 	CampaignID string // set for campaign sends
 }
+
+// ErrRetryLater marks a send the provider refused for now, not for good:
+// it's throttling, the account's sending rate or daily quota is used up, or
+// sending is paused on the provider's side (MG-87). The same message can be
+// sent later. errors.Is finds it; the provider's own error is still wrapped
+// and gives the error its text.
+var ErrRetryLater = errors.New("the mail provider asked to retry later")
+
+// retryLater is a provider error marked ErrRetryLater.
+type retryLater struct{ err error }
+
+func (e *retryLater) Error() string   { return e.err.Error() }
+func (e *retryLater) Unwrap() []error { return []error{ErrRetryLater, e.err} }
 
 // Sender sends a message and returns the provider's message ID.
 type Sender interface {

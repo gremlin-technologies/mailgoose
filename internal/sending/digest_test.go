@@ -16,7 +16,7 @@ import (
 func (h *harness) digestJob(now *time.Time) *DigestJob {
 	return &DigestJob{
 		DB:    h.db,
-		Alert: &OpsAlert{Mail: h.fake, From: mail.Address{Email: "alerts@mail.example"}, To: "ops@example.com", Log: slog.New(slog.DiscardHandler)},
+		Alert: &OpsAlert{Mail: &mail.Guard{Sender: h.fake, System: "mail.example"}, From: mail.Address{Email: "alerts@mail.example"}, To: "ops@example.com", Log: slog.New(slog.DiscardHandler)},
 		Hour:  13,
 		Now:   func() time.Time { return *now },
 		Log:   slog.New(slog.DiscardHandler),

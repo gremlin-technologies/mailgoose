@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -233,6 +234,43 @@ func TestUnpauseKeepsPastDue(t *testing.T) {
 	}
 	if a.PausedAt != nil {
 		t.Errorf("still paused: %+v", a.AccountSummary)
+	}
+}
+
+// The past-due pause, which no longer counts toward an automatic
+// suspension (MG-104), still shows in the account view and the admin log
+// beside a health pause.
+func TestAccountShowsPastDuePause(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if err := pgx.BeginFunc(ctx, h.db, func(tx pgx.Tx) error {
+		return billing.PauseOverdue(ctx, tx, h.acc, "past_due", h.now.Add(-2*time.Hour))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.Exec(ctx, `
+		INSERT INTO admin_actions (actor, action, account_id, reason, details, created_at)
+		VALUES ('automatic', 'auto_pause', $1, 'It was paused automatically: too many complaints.', '{"complaints": 9}', $2)`,
+		h.acc, h.now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	a, err := h.svc.GetAccount(ctx, h.acc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.PausedAt == nil || a.PauseReason == nil || *a.PauseReason == "" || a.SuspendedAt != nil {
+		t.Fatalf("account = %+v", a.AccountSummary)
+	}
+	if want := "payment didn't go through"; !strings.Contains(*a.PauseReason, want) {
+		t.Errorf("reason %q, want %q in it", *a.PauseReason, want)
+	}
+	acts, err := h.svc.ListActions(ctx, h.acc, 0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(acts) != 2 || acts[0].Action != ActionAutoPause || acts[1].Action != ActionAutoPause ||
+		!strings.Contains(string(acts[1].Details), billing.SubscriptionPastDue) {
+		t.Errorf("actions = %+v", acts)
 	}
 }
 

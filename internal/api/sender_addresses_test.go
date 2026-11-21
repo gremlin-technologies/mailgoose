@@ -179,11 +179,14 @@ func sharedServer(t *testing.T) *Server {
 	s := authServer(t)
 	r := &senders.Resolver{DB: s.DB.(*pgxpool.Pool), Domains: s.Domains, Shared: sharedDomain}
 	s.Senders, s.Sending.Senders, s.Signups.Senders = r, r, r
+	s.Sending.Limits.SharedDomain = true
 	return s
 }
 
 // sharedCampaign is addedCampaign on an account that has no domain of its
 // own, with its owner's sign-in address as the From and a postal address.
+// The account is named Pat's Bakery, and its default From name and the
+// email's are a brand's, which the shared domain never uses (MG-98).
 func sharedCampaign(t *testing.T, h http.Handler) {
 	t.Helper()
 	addedCampaign(t, h)
@@ -191,9 +194,10 @@ func sharedCampaign(t *testing.T, h http.Handler) {
 	v, _ := testDBs.Load(t)
 	db := v.(*pgxpool.Pool)
 	for _, q := range []string{
-		`UPDATE accounts SET from_name = 'Pat''s Bakery', from_email = 'key@example.com', postal_address = '12 Main St'
+		`UPDATE accounts SET name = 'Pat''s Bakery', from_name = 'PayPal Support', from_email = 'key@example.com', postal_address = '12 Main St'
 			WHERE id = (SELECT account_id FROM campaigns WHERE id = $1)`,
-		`UPDATE emails SET document = document #- '{settings,from_email}' WHERE id = (SELECT email_id FROM campaigns WHERE id = $1)`,
+		`UPDATE emails SET document = jsonb_set(document #- '{settings,from_email}', '{settings,from_name}', '"PayPal Billing"')
+			WHERE id = (SELECT email_id FROM campaigns WHERE id = $1)`,
 	} {
 		if _, err := db.Exec(t.Context(), q, id); err != nil {
 			t.Fatalf("%s: %v", q, err)
@@ -281,8 +285,9 @@ func TestSenderAddressesThroughTheAPI(t *testing.T) {
 
 // TestSharedSendingThroughTheAPI: with shared sending on, an account with no
 // domain of its own sends tests and launches from its slug on the shared
-// domain, with replies to its verified address, and is nudged to add its
-// domain (MG-85).
+// domain, with replies to its verified address, under the account's name
+// whatever From name the email or account sets (MG-98), and is nudged to
+// add its domain (MG-85).
 func TestSharedSendingThroughTheAPI(t *testing.T) {
 	srv := sharedServer(t)
 	h := srv.Handler()
@@ -326,6 +331,9 @@ func TestSharedSendingThroughTheAPI(t *testing.T) {
 	if errs, warns := a.codes(); errs != "" || !strings.Contains(warns, "shared_domain") {
 		t.Errorf("check: errors %q, warnings %q", errs, warns)
 	}
+	if !strings.Contains(rec.Body.String(), "under your account's name (Pat's Bakery)") || strings.Contains(rec.Body.String(), "PayPal") {
+		t.Errorf("check doesn't say which name it goes under: %s", rec.Body)
+	}
 
 	// The launch summary says so too.
 	addedContact(t, h)
@@ -354,7 +362,7 @@ func TestSharedSendingThroughTheAPI(t *testing.T) {
 		id).Scan(&cp.From, &cp.ReplyTo); err != nil {
 		t.Fatal(err)
 	}
-	if cp.From.Email != shared || len(cp.ReplyTo) != 1 || cp.ReplyTo[0].Email != "key@example.com" {
+	if cp.From.Email != shared || cp.From.Name != "Pat's Bakery" || len(cp.ReplyTo) != 1 || cp.ReplyTo[0].Email != "key@example.com" {
 		t.Errorf("the launched copy goes from %+v, reply-to %+v", cp.From, cp.ReplyTo)
 	}
 }

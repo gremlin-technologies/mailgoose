@@ -56,12 +56,28 @@ const (
 	// before the dispatcher puts it in a new batch, in case the first was
 	// lost. A row sent by both batches is still sent once.
 	RequeueAfter = time.Hour
+	// RetryLaterAfter is how long a batch's unsent rows wait when the mail
+	// provider asks to retry later (MG-87: throttling, quota, paused
+	// sending) before the dispatcher batches them again, so a throttled
+	// provider isn't asked again on every dispatcher tick.
+	RetryLaterAfter = time.Minute
 	// NewAccountDays is how long an account counts as new for its daily
 	// limit (CMP-7).
 	NewAccountDays = 7
 	// maxEnqueuePerTick caps one campaign's rows enqueued per tick, so a
-	// big campaign doesn't hold one transaction for long.
+	// big campaign doesn't hold one transaction for long. MaxWaitingBatches
+	// keeps a campaign under it at every rate today (10 batches of at most
+	// MaxBatch); it stays as a backstop.
 	maxEnqueuePerTick = 2000
+	// MaxWaitingBatches is how many batches' worth of a campaign's rows may
+	// wait on the send queue at once (MG-89): enqueued and not yet claimed.
+	// A batch is about ten seconds of sending, so this is a minute or two
+	// of work per campaign, and the dispatcher tops it up every tick, so
+	// the workers never run dry. Without it a big launch put all of its
+	// batches on the queue in seconds, and the last of them waited long
+	// enough to set off the send queue's age alarm (15 minutes) on an
+	// ordinary send.
+	MaxWaitingBatches = 10
 )
 
 // Batch is one message on the send queue: recipient rows of one campaign.
@@ -85,6 +101,15 @@ type Limits struct {
 	// NewDaily its limit in that week. An account's own daily_send_limit
 	// overrides both.
 	Daily, NewDaily int
+	// SharedDomain is true when shared sending is on (SHARED_SENDING_DOMAIN,
+	// MG-85). An account with no verified domain of its own then stays at
+	// NewDaily, and one that has one grows from when it verified its first
+	// (MG-98).
+	SharedDomain bool
+	// PlatformDaily is the most campaign copies sent in 24 hours across
+	// every account together, kept under the SES account's daily quota
+	// (MG-87). Zero means no platform cap.
+	PlatformDaily int
 }
 
 // Pipeline runs the dispatcher and the workers' batches.
@@ -275,10 +300,16 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 }
 
 // nextBatches marks the campaign's next rows enqueued, as many as the
-// account's daily limit allows, and returns them in batches; only rows in
+// account's daily limit, the platform's daily cap and the campaign's
+// room on the send queue allow, and returns them in batches; only rows in
 // its slice when sliceOnly. Rows enqueued long ago whose batch never came
 // are taken again.
 func (p *Pipeline) nextBatches(ctx context.Context, tx pgx.Tx, accountID, campaignID string, limit int, sliceOnly bool, now time.Time) ([]Batch, error) {
+	size := p.BatchSize()
+	room, err := p.queueRoom(ctx, tx, accountID, campaignID, size, now)
+	if err != nil || room <= 0 {
+		return nil, err
+	}
 	var used int
 	if err := tx.QueryRow(ctx, `
 		SELECT (SELECT count(*) FROM campaign_recipients WHERE account_id = $1 AND sent_at > $2)
@@ -287,7 +318,20 @@ func (p *Pipeline) nextBatches(ctx context.Context, tx pgx.Tx, accountID, campai
 		accountID, now.Add(-24*time.Hour), now.Add(-RequeueAfter)).Scan(&used); err != nil {
 		return nil, err
 	}
-	room := min(limit-used, maxEnqueuePerTick)
+	room = min(room, limit-used, maxEnqueuePerTick)
+	if platform := p.Limits.PlatformDaily; platform > 0 && room > 0 {
+		// The same count across every account (MG-87): copies past the
+		// cap wait, as they do for the account's limit.
+		var all int
+		if err := tx.QueryRow(ctx, `
+			SELECT (SELECT count(*) FROM campaign_recipients WHERE sent_at > $1)
+				+ (SELECT count(*) FROM campaign_recipients
+					WHERE status IN ('queued', 'sending') AND enqueued_at IS NOT NULL AND enqueued_at > $2)`,
+			now.Add(-24*time.Hour), now.Add(-RequeueAfter)).Scan(&all); err != nil {
+			return nil, err
+		}
+		room = min(room, platform-all)
+	}
 	if room <= 0 {
 		return nil, nil
 	}
@@ -307,7 +351,6 @@ func (p *Pipeline) nextBatches(ctx context.Context, tx pgx.Tx, accountID, campai
 		return nil, err
 	}
 	slices.Sort(ids)
-	size := p.BatchSize()
 	var out []Batch
 	for len(ids) > 0 {
 		n := min(size, len(ids))
@@ -315,6 +358,35 @@ func (p *Pipeline) nextBatches(ctx context.Context, tx pgx.Tx, accountID, campai
 		ids = ids[n:]
 	}
 	return out, nil
+}
+
+// queueRoom is how many more of a campaign's rows may go on the send
+// queue (MG-89): MaxWaitingBatches batches' worth, less its rows enqueued
+// and still queued (not yet claimed) within RequeueAfter, in whole
+// batches, so topping up doesn't send a trickle of small ones.
+//
+// Rows held back after the mail provider asked to retry later (MG-87)
+// count while they wait, as they do against the daily limits, so a
+// throttled campaign doesn't put more copies in front of the provider
+// meanwhile. They stop counting at the very moment they can be batched
+// again (enqueued_at reaches RequeueAfter ago: the count takes later
+// times, the batching earlier or equal ones), so a row is never both
+// counted and waiting to be taken; being taken in id order, held rows
+// usually go before rows never enqueued. Rows of a batch that never came
+// stop counting at the same moment, so a lost batch holds the campaign up
+// no longer than RequeueAfter.
+func (p *Pipeline) queueRoom(ctx context.Context, tx pgx.Tx, accountID, campaignID string, size int, now time.Time) (int, error) {
+	// account_id lets campaign_recipients_in_flight answer: it holds only
+	// the rows on their way, where the campaign's own index holds all of
+	// its unsent rows.
+	var waiting int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM campaign_recipients
+		WHERE account_id = $1 AND campaign_id = $2 AND status = 'queued' AND enqueued_at IS NOT NULL AND enqueued_at > $3`,
+		accountID, campaignID, now.Add(-RequeueAfter)).Scan(&waiting); err != nil {
+		return 0, err
+	}
+	return (MaxWaitingBatches*size - waiting) / size * size, nil
 }
 
 // failStaleClaims marks rows claimed longer than ClaimTimeout ago failed
@@ -468,7 +540,9 @@ func (p *Pipeline) loadCampaign(ctx context.Context, b Batch) (*sendable, error)
 // HandleBatch sends a batch. attempt counts from 1. It returns an error to
 // have the batch tried again; on the last attempt, rows that fail to send
 // are marked failed with their credits given back, and the error is still
-// returned so the message goes to the dead-letter queue.
+// returned so the message goes to the dead-letter queue. When the mail
+// provider asks to retry later (MG-87), the unsent rows wait for the
+// dispatcher to batch them again and it returns nil, so no attempt is used.
 func (p *Pipeline) HandleBatch(ctx context.Context, b Batch, attempt int) error {
 	s, err := p.loadCampaign(ctx, b)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -480,19 +554,38 @@ func (p *Pipeline) HandleBatch(ctx context.Context, b Batch, attempt int) error 
 	if s.status != campaigns.StatusSending || s.paused {
 		return p.handBack(ctx, b)
 	}
+	run := p.startRun()
+	err = p.sendBatch(ctx, b, s, attempt, run)
+	p.endRun(ctx, b, attempt, run, err)
+	return err
+}
+
+// sendBatch sends a live campaign's batch, counting what it did in run.
+func (p *Pipeline) sendBatch(ctx context.Context, b Batch, s *sendable, attempt int, run *batchRun) error {
 	var lastErr error
 	for _, id := range b.IDs {
-		err := p.sendOne(ctx, b, s, id)
+		did, err := p.sendOne(ctx, b, s, id)
+		run.count(did)
 		var se *sendFailed
 		switch {
 		case err == nil:
 		case errors.Is(err, errHalted):
 			// Paused or stopped partway through the batch.
+			run.ended = "halted"
 			return p.handBack(ctx, b)
+		case errors.Is(err, errRetryLater):
+			// The provider is throttling or over its quota (MG-87): nothing
+			// failed, so the rest waits for a later batch without using an
+			// attempt, and the message is done with.
+			run.ended = "retry_later"
+			p.log().WarnContext(ctx, "the mail provider asked to retry later; the batch's unsent copies wait",
+				"campaign_id", b.CampaignID, "retry_after", RetryLaterAfter, "err", err)
+			return p.holdBack(ctx, b)
 		case errors.As(err, &se) && attempt >= MaxAttempts:
 			if err := p.markFailed(ctx, b, id, se.err); err != nil {
 				return err
 			}
+			run.failed++
 			lastErr = err
 		default:
 			return err
@@ -518,6 +611,23 @@ func (p *Pipeline) handBack(ctx context.Context, b Batch) error {
 	return err
 }
 
+// errRetryLater is a copy not sent because the mail provider asked to
+// retry later (mail.ErrRetryLater); its claim was taken back.
+var errRetryLater = errors.New("the mail provider asked to retry later")
+
+// holdBack returns a batch's unsent rows when the mail provider asked to
+// retry later. Unlike handBack, they aren't batched again at once: they're
+// marked as enqueued RetryLaterAfter short of RequeueAfter ago, so the
+// dispatcher takes them again after RetryLaterAfter, and meanwhile they
+// count against the daily limits as rows on their way. Rows already sent
+// or claimed by another worker are left alone.
+func (p *Pipeline) holdBack(ctx context.Context, b Batch) error {
+	_, err := p.DB.Exec(ctx, `
+		UPDATE campaign_recipients SET enqueued_at = $3 WHERE id = ANY($1) AND campaign_id = $2 AND status = 'queued'`,
+		b.IDs, b.CampaignID, p.now().Add(RetryLaterAfter-RequeueAfter))
+	return err
+}
+
 // sendFailed is a copy the mail provider refused: its claim was taken back,
 // so it can be tried again.
 type sendFailed struct{ err error }
@@ -525,25 +635,55 @@ type sendFailed struct{ err error }
 func (e *sendFailed) Error() string { return "send: " + e.err.Error() }
 func (e *sendFailed) Unwrap() error { return e.err }
 
+// copyOutcome is what sendOne did with a row.
+type copyOutcome int
+
+const (
+	// notSent: the row wasn't sent here (already sent or claimed, or the
+	// send failed or was put off), or the batch stopped.
+	notSent copyOutcome = iota
+	sentCopy
+	// skippedCopy: its contact left, or test mode left it out (claim).
+	skippedCopy
+)
+
 // sendOne sends one row's copy, if it's still waiting.
-func (p *Pipeline) sendOne(ctx context.Context, b Batch, s *sendable, id int64) error {
+func (p *Pipeline) sendOne(ctx context.Context, b Batch, s *sendable, id int64) (copyOutcome, error) {
 	r, ok, err := p.claim(ctx, b, id)
-	if err != nil || !ok {
-		return err
+	if err != nil {
+		return notSent, err
 	}
+	if !ok {
+		if r.skipped {
+			return skippedCopy, nil
+		}
+		return notSent, nil
+	}
+	went, err := p.send(ctx, b, s, id, r)
+	if went {
+		// Out, even if it wasn't recorded (err): it took its slot and its
+		// SES call, so it counts for throughput.
+		return sentCopy, err
+	}
+	return notSent, err
+}
+
+// send sends a claimed row's copy and records it. went says whether the
+// copy was handed to the mail provider, recorded or not.
+func (p *Pipeline) send(ctx context.Context, b Batch, s *sendable, id int64, r claimed) (went bool, _ error) {
 	// Only a copy that will really go out waits for a send slot, so
 	// skipped rows and rows already sent (a redelivery) don't use one.
 	if err := p.paceWait(ctx); err != nil {
 		// Nothing was sent: the claim goes back for a later attempt.
 		if _, rerr := p.DB.Exec(context.WithoutCancel(ctx), `
 			UPDATE campaign_recipients SET status = 'queued', claimed_at = NULL WHERE id = $1 AND status = 'sending'`, id); rerr != nil {
-			return errors.Join(err, rerr)
+			return false, errors.Join(err, rerr)
 		}
-		return err
+		return false, err
 	}
 	url, err := s.signer.URL(strings.TrimRight(p.BaseURL, "/"), r.contactID, b.CampaignID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	m := s.copy.Template.Personalize(render.Recipient{Email: r.email, FirstName: r.first, LastName: r.last, UnsubscribeURL: url})
 	if s.links != nil {
@@ -571,16 +711,25 @@ func (p *Pipeline) sendOne(ctx context.Context, b Batch, s *sendable, id int64) 
 		if ctx.Err() != nil {
 			// Shutting down mid-send: it may have gone out, so the claim
 			// stays and the row ends failed rather than sent twice.
-			return ctx.Err()
+			return false, ctx.Err()
+		}
+		if errors.Is(sendErr, mail.ErrRetryLater) {
+			// Not now (MG-87): take the claim back with no error recorded,
+			// since the copy hasn't failed.
+			if _, err := p.DB.Exec(context.WithoutCancel(ctx), `
+				UPDATE campaign_recipients SET status = 'queued', claimed_at = NULL WHERE id = $1 AND status = 'sending'`, id); err != nil {
+				return false, err
+			}
+			return false, fmt.Errorf("%w: %w", errRetryLater, sendErr)
 		}
 		// Refused: take the claim back so a later attempt can send it.
 		_, err := p.DB.Exec(context.WithoutCancel(ctx), `
 			UPDATE campaign_recipients SET status = 'queued', claimed_at = NULL, error = $2 WHERE id = $1 AND status = 'sending'`,
 			id, truncate(sendErr.Error(), 500))
 		if err != nil {
-			return err
+			return false, err
 		}
-		return &sendFailed{err: sendErr}
+		return false, &sendFailed{err: sendErr}
 	}
 	_, err = p.DB.Exec(context.WithoutCancel(ctx), `
 		UPDATE campaign_recipients SET status = 'sent', sent_at = $2, message_id = $3, error = NULL
@@ -591,11 +740,13 @@ func (p *Pipeline) sendOne(ctx context.Context, b Batch, s *sendable, id int64) 
 		p.log().ErrorContext(ctx, "a sent copy wasn't recorded", "campaign_id", b.CampaignID,
 			"recipient_row", id, "message_id", messageID, "err", err)
 	}
-	return err
+	return true, err
 }
 
 type claimed struct {
 	contactID, email, first, last string
+	// skipped is a row claim skipped rather than claimed.
+	skipped bool
 }
 
 // claim takes a row for sending. A row that's no longer queued isn't
@@ -670,7 +821,11 @@ func (p *Pipeline) claim(ctx context.Context, b Batch, id int64) (claimed, bool,
 		if _, err := credits.Release(ctx, tx, b.AccountID, creditsRef(b.CampaignID), 1, now); err != nil {
 			return r, false, err
 		}
-		return r, false, tx.Commit(ctx)
+		if err := tx.Commit(ctx); err != nil {
+			return r, false, err
+		}
+		r.skipped = true
+		return r, false, nil
 	}
 	r.contactID, r.first, r.last = *contactID, trimmed(first), trimmed(last)
 	return r, true, tx.Commit(ctx)

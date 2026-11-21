@@ -69,7 +69,7 @@ func (s *Server) CheckEmail(w http.ResponseWriter, r *http.Request, id string) {
 		case err == nil:
 			in.FromVerified = true
 			if sender.Shared {
-				in.SharedFrom = sender.From.Email
+				in.SharedFrom, in.SharedName = sender.From.Email, sender.From.Name
 				in.SharedReplyTo = sender.ReplyTo[0].Email
 			}
 		case errors.Is(err, domains.ErrFromNotVerified):

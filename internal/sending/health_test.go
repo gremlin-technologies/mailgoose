@@ -211,7 +211,9 @@ func TestOpsAlert(t *testing.T) {
 	if len(fake.Sent()) != 0 {
 		t.Error("emailed with no ops address")
 	}
-	a := &OpsAlert{Mail: fake, From: mail.Address{Name: "mailgoose", Email: "alerts@mail.localhost"}, To: "ops@example.com", Log: quiet}
+	// Behind the real guard, as in mailgoosed, so alerts must pass it (MG-90).
+	a := &OpsAlert{Mail: &mail.Guard{Sender: fake, System: "mail.localhost"}, From: mail.Address{Name: "mailgoose", Email: "alerts@mail.localhost"},
+		To: "ops@example.com", Log: quiet}
 	a.AutoPaused(context.Background(), ap)
 	s, ok := fake.Last()
 	if !ok || s.Message.To.Email != "ops@example.com" || s.Message.Kind != mail.KindSystem ||

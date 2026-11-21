@@ -31,8 +31,9 @@ func newHarness(t *testing.T) *harness {
 	db := dbtest.New(t)
 	h := &harness{db: db, mail: &mgmail.Fake{}, clk: &clock{t: time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)}}
 	h.svc = &Service{
-		DB:   db,
-		Mail: h.mail,
+		DB: db,
+		// Behind the real guard, as in mailgoosed, so codes must pass it (MG-90).
+		Mail: &mgmail.Guard{Sender: h.mail, System: "mail.test.example"},
 		From: mgmail.Address{Name: "mailgoose", Email: "signin@mail.test.example"},
 		Now:  h.clk.now,
 	}
@@ -125,6 +126,12 @@ func TestSignUpValidation(t *testing.T) {
 		{"no dot in domain", SignUpInput{Email: "pat@localhost", AccountName: "Pat", AcceptedTerms: true}, "invalid_email"},
 		{"empty name", SignUpInput{Email: "pat@example.com", AccountName: "  ", AcceptedTerms: true}, "invalid_account_name"},
 		{"long name", SignUpInput{Email: "pat@example.com", AccountName: strings.Repeat("x", 101), AcceptedTerms: true}, "invalid_account_name"},
+		// MG-98: names that could pass for someone else on the shared domain.
+		{"brand name", SignUpInput{Email: "pat@example.com", AccountName: "PayPal Support", AcceptedTerms: true}, "account_name_not_allowed"},
+		{"lookalike brand", SignUpInput{Email: "pat@example.com", AccountName: "Pаy-Pa1", AcceptedTerms: true}, "account_name_not_allowed"},
+		{"payment term", SignUpInput{Email: "pat@example.com", AccountName: "Billing Department", AcceptedTerms: true}, "account_name_not_allowed"},
+		{"name with @", SignUpInput{Email: "pat@example.com", AccountName: "pat@example.com", AcceptedTerms: true}, "account_name_not_allowed"},
+		{"domain-shaped name", SignUpInput{Email: "pat@example.com", AccountName: "patsbakery.com", AcceptedTerms: true}, "account_name_not_allowed"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -132,6 +139,9 @@ func TestSignUpValidation(t *testing.T) {
 			var ve *ValidationError
 			if !errors.As(err, &ve) || ve.Code != tt.code {
 				t.Fatalf("err = %v, want %s", err, tt.code)
+			}
+			if ve.Code == "account_name_not_allowed" && (ve.Field != "account_name" || !strings.Contains(ve.Message, "shared domain")) {
+				t.Errorf("refusal = %+v; want it on account_name, saying why", ve)
 			}
 		})
 	}

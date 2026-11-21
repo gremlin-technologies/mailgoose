@@ -1444,7 +1444,10 @@ type AccountSettings struct {
 	// New accounts start low and double each week of clean sending up to
 	// the usual limit. A campaign whose spam complaints or hard bounces
 	// pass the early-warning limits (0.05% and 2% by default) lowers it to
-	// the new-account limit for 7 days.
+	// the new-account limit for 7 days. Where the server has a shared
+	// sending domain, an account with no verified domain of its own stays
+	// at the new-account limit (`needs_domain`), and one that verifies a
+	// domain grows from when it did.
 	SendLimit SendLimit `json:"send_limit"`
 
 	// SendingMode `test` while the account is in test mode (MG-80): it sends only to
@@ -1571,7 +1574,10 @@ type AdminAccount struct {
 	// New accounts start low and double each week of clean sending up to
 	// the usual limit. A campaign whose spam complaints or hard bounces
 	// pass the early-warning limits (0.05% and 2% by default) lowers it to
-	// the new-account limit for 7 days.
+	// the new-account limit for 7 days. Where the server has a shared
+	// sending domain, an account with no verified domain of its own stays
+	// at the new-account limit (`needs_domain`), and one that verifies a
+	// domain grows from when it did.
 	SendLimit SendLimit `json:"send_limit"`
 
 	// SendingMode `test` while the account is in test mode (MG-80): it sends only to
@@ -1760,6 +1766,13 @@ type AdminDeliverabilityReport struct {
 	EarlyWarning AdminEarlyWarning `json:"early_warning"`
 	NextCursor   any               `json:"next_cursor"`
 
+	// SendThroughput How fast campaign copies went out over the last 24 hours, across
+	// every account (MG-91), from the send batches that sent at least one
+	// copy and finished in the window. SES mailbox simulator copies
+	// count: they're real SES calls. Rates are rounded to 2 places, and
+	// null when no time was spent sending.
+	SendThroughput AdminSendThroughput `json:"send_throughput"`
+
 	// Total Every account in the report, including those over `limit`.
 	Total int `json:"total"`
 }
@@ -1820,6 +1833,73 @@ type AdminRates struct {
 type AdminReasonRequest struct {
 	// Reason Why, for the admin log (and, for a pause, the account). At most 500 characters.
 	Reason string `json:"reason"`
+}
+
+// AdminSendThroughput How fast campaign copies went out over the last 24 hours, across
+// every account (MG-91), from the send batches that sent at least one
+// copy and finished in the window. SES mailbox simulator copies
+// count: they're real SES calls. Rates are rounded to 2 places, and
+// null when no time was spent sending.
+type AdminSendThroughput struct {
+	// BatchSeconds The batches' send times added up.
+	BatchSeconds float32 `json:"batch_seconds"`
+	Batches      int     `json:"batches"`
+
+	// BusySeconds Seconds when at least one batch was sending (overlapping
+	// batches merged). Time between batches isn't counted.
+	BusySeconds float32 `json:"busy_seconds"`
+
+	// Copies Copies those batches sent.
+	Copies int `json:"copies"`
+
+	// CopiesPerSecond `copies` over `busy_seconds`: the platform's rate while it was
+	// sending, to set against `send_rate_per_second`.
+	CopiesPerSecond *float32 `json:"copies_per_second"`
+
+	// PerBatchCopiesPerSecond `copies` over `batch_seconds`: how fast one batch sends. It
+	// matches `copies_per_second` when batches don't overlap (one
+	// worker); batches that ran at once shared the rate.
+	PerBatchCopiesPerSecond *float32 `json:"per_batch_copies_per_second"`
+
+	// SendRatePerSecond The configured `SEND_RATE_PER_SECOND`, the most copies a second across every worker.
+	SendRatePerSecond int `json:"send_rate_per_second"`
+
+	// Since The window's start; it runs to now.
+	Since time.Time `json:"since"`
+}
+
+// AdminStorageReport defines model for AdminStorageReport.
+type AdminStorageReport struct {
+	// ComparedWithDay The UTC day, 7 days before today, whose recorded sizes the change is against.
+	ComparedWithDay openapi_types.Date `json:"compared_with_day"`
+
+	// Data `campaign_recipients` and `send_events` first, then the largest other tables.
+	Data       []AdminTableSize `json:"data"`
+	NextCursor any              `json:"next_cursor"`
+
+	// Total Every table in the database, including those over `limit`.
+	Total int `json:"total"`
+
+	// TotalBytes Every table's `total_bytes` added up.
+	TotalBytes int64 `json:"total_bytes"`
+}
+
+// AdminTableSize defines model for AdminTableSize.
+type AdminTableSize struct {
+	// Change7DaysBytes `total_bytes` less `total_bytes_7_days_ago` (negative when it
+	// shrank); null with no record from `compared_with_day`.
+	Change7DaysBytes *int64 `json:"change_7_days_bytes"`
+
+	// RowEstimate The planner's estimate of its rows (`pg_class.reltuples`), not an
+	// exact count; null when the table has never been analysed.
+	RowEstimate *int64 `json:"row_estimate"`
+	Table       string `json:"table"`
+
+	// TotalBytes Its size with indexes and TOAST (`pg_total_relation_size`).
+	TotalBytes int64 `json:"total_bytes"`
+
+	// TotalBytes7DaysAgo Its size as recorded on `compared_with_day`; null with no record from that day.
+	TotalBytes7DaysAgo *int64 `json:"total_bytes_7_days_ago"`
 }
 
 // AdminThrottle defines model for AdminThrottle.
@@ -2873,7 +2953,7 @@ type Form struct {
 	Id     string      `json:"id"`
 	Name   string      `json:"name"`
 
-	// Problems Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from.
+	// Problems Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. `signup_cap_reached`: the form has added its daily cap of new contacts (1,000 by default) in the last 24 hours, so its public endpoint answers 429 `form_signup_limit` until older signups age out; the message says when.
 	Problems *[]FormProblem `json:"problems,omitempty"`
 
 	// RedirectUrl Where people go after signing up, instead of seeing the success message.
@@ -3392,13 +3472,22 @@ type RescheduleCampaignRequest struct {
 // New accounts start low and double each week of clean sending up to
 // the usual limit. A campaign whose spam complaints or hard bounces
 // pass the early-warning limits (0.05% and 2% by default) lowers it to
-// the new-account limit for 7 days.
+// the new-account limit for 7 days. Where the server has a shared
+// sending domain, an account with no verified domain of its own stays
+// at the new-account limit (`needs_domain`), and one that verifies a
+// domain grows from when it did.
 type SendLimit struct {
 	// Daily Examples: 1000
 	Daily int `json:"daily"`
 
 	// LoweredUntil When a lowered limit lifts; null when it isn't lowered.
 	LoweredUntil *time.Time `json:"lowered_until"`
+
+	// NeedsDomain True when `daily` is held at the new-account limit because the
+	// account has no verified domain of its own and sends from the
+	// shared sending domain: adding a domain (`createDomain`) is how it
+	// sends more.
+	NeedsDomain bool `json:"needs_domain"`
 
 	// Reason Why `daily` is under `usual` (or set by mailgoose); null at the usual limit.
 	Reason *string `json:"reason"`
@@ -3472,7 +3561,16 @@ type SignupRequest struct {
 	// the time. Anything else is a 422 `terms_not_accepted`.
 	AcceptedTerms bool `json:"accepted_terms"`
 
-	// AccountName Examples: Pat's Bakery
+	// AccountName Emails from mailgoose's shared sending domain go out under the
+	// account's name, so a name with an `@`, one shaped like a domain
+	// (`example.com`), or one carrying a well-known brand or a payment
+	// term (`PayPal Support`, `Billing`) is refused with a 422
+	// `account_name_not_allowed` whose message says why. Names are
+	// compared ignoring case, accents, spaces, punctuation and common
+	// lookalike characters.
+	//
+	//
+	// Examples: Pat's Bakery
 	AccountName string `json:"account_name"`
 
 	// Email Examples: pat@example.com
@@ -3723,8 +3821,16 @@ type UpdateAccountRequest struct {
 	FromEmail *string `json:"from_email,omitempty"`
 
 	// FromName One line, without quotes or angle brackets. `null` removes it.
+	// It's used only for email from a domain verified for the account;
+	// email from the shared sending domain goes under the account's
+	// name.
 	FromName *string `json:"from_name,omitempty"`
-	Name     *string `json:"name,omitempty"`
+
+	// Name A new name is checked as at sign-up (`account_name` in
+	// `createSignup`): one that could pass for someone else on the
+	// shared sending domain is a 422 `account_name_not_allowed`. The
+	// current name, sent back unchanged, is never refused.
+	Name *string `json:"name,omitempty"`
 
 	// PostalAddress Up to 8 lines separated by `\n`; blank lines are dropped. `null` removes it.
 	PostalAddress *string `json:"postal_address,omitempty"`
@@ -4046,6 +4152,12 @@ type GetDeliverabilityReportParams struct {
 type ListSignupReviewsParams struct {
 	// Limit Items per page.
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// GetStorageReportParams defines parameters for GetStorageReport.
+type GetStorageReportParams struct {
+	// Limit How many tables to list, `campaign_recipients` and `send_events` included.
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListTestModeAccountsParams defines parameters for ListTestModeAccounts.
@@ -5139,6 +5251,9 @@ type ServerInterface interface {
 	// ListSignupReviews List sign-ups waiting for review (admin)
 	// (GET /v1/admin/signups)
 	ListSignupReviews(w http.ResponseWriter, r *http.Request, params ListSignupReviewsParams)
+	// GetStorageReport Table sizes (admin)
+	// (GET /v1/admin/storage)
+	GetStorageReport(w http.ResponseWriter, r *http.Request, params GetStorageReportParams)
 	// ListTestModeAccounts List accounts in test mode (admin)
 	// (GET /v1/admin/test-mode)
 	ListTestModeAccounts(w http.ResponseWriter, r *http.Request, params ListTestModeAccountsParams)
@@ -6049,6 +6164,39 @@ func (siw *ServerInterfaceWrapper) ListSignupReviews(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListSignupReviews(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetStorageReport operation middleware
+func (siw *ServerInterfaceWrapper) GetStorageReport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetStorageReportParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetStorageReport(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8688,6 +8836,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/reject-signup", wrapper.RejectSignup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/test-mode", wrapper.ListTestModeAccounts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/deliverability", wrapper.GetDeliverabilityReport)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/storage", wrapper.GetStorageReport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/allow-full-sending", wrapper.AllowFullSending)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/set-test-mode", wrapper.SetTestMode)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/grant-tester", wrapper.GrantTester)

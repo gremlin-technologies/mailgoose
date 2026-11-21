@@ -49,6 +49,14 @@ type Config struct {
 	AccountDailySendLimit int
 	// NewAccountDailySendLimit is that limit in an account's first week.
 	NewAccountDailySendLimit int
+	// PlatformDailySendLimit is the most campaign copies sent in 24 hours
+	// across every account together, under the SES account's daily quota
+	// (MG-87): PLATFORM_DAILY_SEND_LIMIT, default 45000; 0 means no cap.
+	PlatformDailySendLimit int
+	// FormDailySignupLimit is the most new contacts one signup form adds
+	// in 24 hours, across every API task (MG-92): FORM_DAILY_SIGNUP_LIMIT,
+	// default 1000; 0 means no cap.
+	FormDailySignupLimit int
 	// EarlyWarningComplaintsPer10k and EarlyWarningHardBouncesPer10k are
 	// the early-warning thresholds that throttle an account (MG-61), in
 	// hundredths of a percent, from EARLY_WARNING_COMPLAINT_PERCENT
@@ -243,6 +251,16 @@ func load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("%s must be 1 or more", name))
 		}
 	}
+	platformLimit, err := intEnv(getenv, "PLATFORM_DAILY_SEND_LIMIT", 45000)
+	errs = append(errs, err)
+	if platformLimit < 0 {
+		errs = append(errs, errors.New("PLATFORM_DAILY_SEND_LIMIT must be 0 (no cap) or more"))
+	}
+	formSignupLimit, err := intEnv(getenv, "FORM_DAILY_SIGNUP_LIMIT", 1000)
+	errs = append(errs, err)
+	if formSignupLimit < 0 {
+		errs = append(errs, errors.New("FORM_DAILY_SIGNUP_LIMIT must be 0 (no cap) or more"))
+	}
 
 	// The early-warning thresholds must sit under the 0.1% and 3% that
 	// pause an account (sending.ComplaintsPer10k and HardBouncesPer10k), or
@@ -313,6 +331,8 @@ func load(getenv func(string) string) (Config, error) {
 		SendRatePerSecond:        sendRate,
 		AccountDailySendLimit:    dailyLimit,
 		NewAccountDailySendLimit: newDailyLimit,
+		PlatformDailySendLimit:   platformLimit,
+		FormDailySignupLimit:     formSignupLimit,
 		OpsAlertEmail:            strings.TrimSpace(getenv("OPS_ALERT_EMAIL")),
 		AbuseDigestHour:          digestHour,
 

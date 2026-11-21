@@ -23,17 +23,20 @@ import (
 //   - the platform's complaint and hard-bounce rates over 24 hours and 30
 //     days;
 //   - the accounts whose own rates over the last 7 days are over the early
-//     warning, on enough copies and complaints to judge (MG-82).
+//     warning, on enough copies and complaints to judge (MG-82);
+//   - one line with the sizes of campaign_recipients and send_events and
+//     how much they grew over 7 days (MG-95).
 //
 // Each item names the account and the `mailgoose admin` command to act on
 // it. Nothing goes on a quiet day: no items, no account over the early
 // warning, and the platform's rates under it (on enough copies to judge, as
-// for one account).
+// for one account). The storage line alone doesn't make a day loud.
 //
 // A row in ops_digests claims each UTC day, so the digest goes at most once
 // a day across restarts and worker tasks. The claim is committed before the
 // email goes: a crash in between loses that day's digest rather than
-// sending it twice.
+// sending it twice. The same transaction writes the day's table sizes to
+// table_size_snapshots, quiet day or not, for the 7-day change.
 
 // DigestWindow is how far back the digest looks for throttles, pauses and
 // suspensions, and for the short platform rates.
@@ -77,6 +80,8 @@ type Digest struct {
 	// AccountsOver counts them all.
 	Accounts     []AccountDeliverability
 	AccountsOver int
+	// Storage is the tracked tables' sizes (MG-95).
+	Storage StorageReport
 }
 
 // Items is how many items the digest lists, rates aside.
@@ -167,6 +172,7 @@ func (d Digest) Text() string {
 	fmt.Fprintf(&b, "- Last 30 days: %s\n", rateLine(d.Month, d.Warning))
 	fmt.Fprintf(&b, "\nEarly warning at %s complaints (and at least %d) or %s hard bounces, on %d or more copies.\n",
 		percent(w.ComplaintsPer10k, 10000), MinComplaints, percent(w.HardBouncesPer10k, 10000), HealthMinRecipients)
+	fmt.Fprintf(&b, "\n%s\n", storageLine(d.Storage))
 	return b.String()
 }
 
@@ -381,6 +387,10 @@ func BuildDigest(ctx context.Context, q digestQuerier, now time.Time, w Warning)
 			d.Accounts = append(d.Accounts, a)
 		}
 	}
+
+	if d.Storage, err = StorageSizes(ctx, q, now, len(TrackedTables)); err != nil {
+		return d, err
+	}
 	return d, nil
 }
 
@@ -475,6 +485,9 @@ func (j *DigestJob) RunOnce(ctx context.Context) (bool, error) {
 		return false, nil
 	}
 	if err != nil {
+		return false, err
+	}
+	if err := RecordTableSizes(ctx, tx, now); err != nil {
 		return false, err
 	}
 	d, err := BuildDigest(ctx, tx, now, j.Warning)
