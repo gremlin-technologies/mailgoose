@@ -161,28 +161,6 @@ code {
   outline-offset: 2px;
 }
 
-.brand {
-  color: var(--text);
-  font-weight: 700;
-  font-size: 1.1875rem;
-  letter-spacing: -0.03em;
-  text-decoration: none;
-}
-
-.brand:hover {
-  text-decoration: none;
-}
-
-.brand::after {
-  content: "";
-  display: inline-block;
-  width: 0.38em;
-  height: 0.38em;
-  margin-left: 0.1em;
-  border-radius: 50%;
-  background: var(--brand-mark);
-}
-
 .muted {
   color: var(--muted);
 }
@@ -236,10 +214,6 @@ code {
   align-items: center;
   padding: 12vh 1rem 3rem;
   gap: 1.5rem;
-}
-
-.auth-brand {
-  font-size: 1.375rem;
 }
 
 .card {
@@ -509,8 +483,29 @@ progress {
   border-right: 1px solid var(--border);
 }
 
-.sidebar .brand {
+/* The logo (Wordmark in components.tsx): the goose head and the word. Its
+   <picture> swaps in the light-text version in dark mode. */
+.brand-logo {
+  display: flex;
+  align-self: flex-start;
+  border-radius: var(--radius-sm);
+}
+
+.sidebar .brand-logo {
   padding: 0 0.625rem;
+}
+
+.wordmark {
+  display: block;
+  width: auto;
+}
+
+.wordmark-menu {
+  height: 1.75rem;
+}
+
+.wordmark-page {
+  height: 2.25rem;
 }
 
 .account {

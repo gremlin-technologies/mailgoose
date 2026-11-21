@@ -52,7 +52,7 @@ background pair against WCAG 2.2 AA, in both modes.
 | `--accent` | `#5562a3` | Primary button, links, focus, active icon |
 | `--accent-hover` | `#47528a` | Primary hover |
 | `--accent-soft` / `-text` | `#eff1fb` / `#3f4a85` | Selected choice, info badge, next step |
-| `--brand-mark` | `#f68a3f` | The dot in the wordmark. Decoration only. |
+| `--brand-mark` | `#f68a3f` | Beak orange. Unused since the logo replaced the text wordmark (Nov 21); kept for decoration only. |
 
 Status colors (`good`, `warn`, `error`, `danger`) are unchanged in role and
 used only for badges, notices and destructive actions.
@@ -83,7 +83,10 @@ the app; the mascot keeps them.
 
 ## Components
 
-- **Side menu.** 240px, on `--surface-subtle`. The wordmark, then an account
+- **Logo.** `Wordmark` in `components.tsx`: `brand/wordmark.png`, with the
+  light-text version in dark mode. 28px tall in the side menu, 36px above the
+  sign-in and policy cards.
+- **Side menu.** 240px, on `--surface-subtle`. The logo, then an account
   box, then the menu in three runs: Dashboard on its own, **Marketing**
   (Emails, Campaigns, Contacts, Tags, Signup forms) and **Account** (Domains,
   API keys, Credits and billing, Settings). The selected page is a white pill
@@ -155,7 +158,14 @@ asks for its details first, and the HTML email editor keeps its old layout.
   sign-in page, empty states and the 404 page.
 - **Toasts, menus and dialogs** don't exist yet; `--shadow-pop` is ready for
   them.
-- **The public site** in `site/` has its own stylesheet and was not restyled.
+
+## The public site
+
+`site/` (mailgoose.app) uses these tokens too: `scripts/site/tokens.mjs`
+copies the `:root` blocks into `site/assets/tokens.css`, and
+`web/src/pages/siteTokens.test.ts` fails if they drift. After changing a token
+here, run `node scripts/site/tokens.mjs`. The site's own stylesheet,
+`site/assets/site.css`, follows the same rules, a size up for a landing page.
 
 ## Open questions
 

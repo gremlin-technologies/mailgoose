@@ -4,7 +4,7 @@ import { NavLink, Outlet } from "react-router";
 
 import type { Failure } from "../api/result";
 import { PausedBanner } from "../billing/PausedBanner";
-import { FailureNotice } from "../components";
+import { FailureNotice, Wordmark } from "../components";
 import { useSession } from "../session";
 import { navGroups } from "./nav";
 import { ReviewBanner } from "./ReviewBanner";
@@ -26,8 +26,8 @@ export function AppLayout() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <NavLink to="/" className="brand">
-          mailgoose
+        <NavLink to="/" className="brand-logo">
+          <Wordmark size="menu" />
         </NavLink>
         {session && (
           <p className="account" title={session.user.email}>

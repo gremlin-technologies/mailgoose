@@ -57,7 +57,7 @@ func TestWebAppBuildsAndServes(t *testing.T) {
 	if len(assets) < 2 {
 		t.Fatalf("index.html should load a script and a stylesheet from /assets, found %v", assets)
 	}
-	for _, path := range append([]string{"/favicon.svg"}, firsts(assets)...) {
+	for _, path := range append([]string{"/favicon-32.png", "/brand/wordmark.png"}, firsts(assets)...) {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		if rec.Code != http.StatusOK {
