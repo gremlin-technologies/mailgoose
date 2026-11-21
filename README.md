@@ -916,6 +916,14 @@ pause is lifted it doesn't pause it again. The account is told why (the
 reason is shown when it tries to launch), the pause is logged, and an alert
 goes to `OPS_ALERT_EMAIL`.
 
+The same limits apply to the account as a whole: once its campaigns have
+gone to 500 or more people over the last 30 days, however small each one
+was, it's paused if they're over either limit together, with a reason that
+says it's the account's last 30 days. An account paused already keeps its
+pause. After an admin unpauses it, or a campaign pauses it, only copies
+sent since then (and their bounces and complaints) count, so the same
+history doesn't pause it again; it needs 500 new copies over the line.
+
 **Pausing mid-send.** A paused account's campaigns stop before their next
 email: the rows not yet sent are handed back and wait, and the campaign
 carries on where it stopped when the account is unpaused.
