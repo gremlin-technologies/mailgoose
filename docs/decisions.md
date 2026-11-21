@@ -4,6 +4,50 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Staging deploys on merge from CodeBuild, not GitHub OIDC (owner ask; the route is a recommended, reversible default)
+
+The owner asked what it takes to deploy staging automatically on merge.
+
+- **Confirmed against AWS's published policies (Nov 21):** the managed
+  service control policy of both the Free Tier and the Paid Plan carries
+  `DenyIAMRestrictedActions`, which denies `iam:*Provider*` on every resource
+  with no exception. That is `iam:CreateOpenIDConnectProvider`, so upgrading
+  to the Paid plan does not lift it. AWS says neither policy can be modified;
+  the only documented way out is activating advanced features, which needs the
+  Paid plan first, cannot be reversed, removes the spend limit for good and
+  makes the owner the administrator of the AWS organization. Matches the
+  explicit deny seen on Nov 17 (policy p-6tzxgdae) and the Nov 18 entry below.
+- **Recommended route, built behind `enable_codebuild_deploy`:** a CodeBuild
+  project in the account (`infra/modules/codebuild-deploy`). A GitHub webhook
+  filtered to `PUSH` on `^refs/heads/main$` starts it, so only merged code
+  runs with its role, and pull requests (including from forks of this public
+  repository) never do. It reaches GitHub through a CodeConnections connection
+  (a GitHub App), runs `scripts/ci/codebuild-deploy.sh` and then the same
+  `scripts/ci/deploy-ecs.sh`, and posts its result as a check on the commit.
+  CodeBuild, CodeConnections, ECR and ECS are all on the Free plan's service
+  list and allowed by its policy. No AWS keys exist anywhere. Its role gets the
+  same permissions as the GitHub deploy role (now shared in
+  `infra/modules/deploy-policy`), plus its log group and the connection.
+- **Ruled out:** a CodeBuild-hosted GitHub Actions runner (any workflow in a
+  public repository, including a fork's pull request, could ask for the runner
+  and its AWS role; CodeBuild's runner webhooks can't filter by branch), an IAM
+  user with access keys in GitHub (long-lived keys), IAM Roles Anywhere (not on
+  the plan's service list, and its private key would live in GitHub anyway).
+- **Overlapping merges:** up to two builds run at once; each checks that its
+  commit is still `main`'s head right before it deploys and stops quietly if
+  not, so the newer merge wins.
+- **After every deploy (both routes, and by hand):** `deploy-ecs.sh` waits
+  for `/readyz` to answer 200 with the new commit when `READYZ_URL` and
+  `EXPECT_COMMIT` are set, and fails the deploy otherwise.
+- **Cost (inferred, check the AWS calculator):** a deploy takes about 10
+  build minutes on ARM small. AWS's free tier covers 100 minutes a month on
+  that size; past it the ARM small rate is roughly a third of a cent a
+  minute, so a few cents a deploy, paid from the credits.
+- **Not decided here:** whether to activate advanced features later and
+  switch to `.github/workflows/deploy-staging.yml` with OIDC (still dormant,
+  now also checks `/readyz`), and how prod deploys. Prod moves to its own AWS
+  account before beta, where the same module works unchanged.
+
 ## 2026-11-21: Public site restyled to match the app, and new logos (owner ask; the details are reversible defaults)
 
 The owner asked for another design pass on mailgoose.app so it matches the
@@ -2265,10 +2309,10 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - How does prod get DNS? Default is to delegate only `api`, `app` and `mail`
   (see 2026-11-18); awaiting the owner's confirmation and the GoDaddy step.
   (Blocks MG-60.)
-- How does CI deploy without AWS keys in GitHub while the AWS project blocks
-  the OIDC role? Activate advanced features, or run a self-hosted runner or
-  CodeBuild in the account; default is manual `make push-ecr`. (See
-  2026-11-17 and 2026-11-18. Blocks MG-52.)
+- Keep CodeBuild for CI deploys, or activate advanced features (irreversible)
+  and switch to GitHub OIDC? Default: CodeBuild deploys staging on every push
+  to `main` (2026-11-21). Prod's deploy route is open until it has its own
+  account.
 - Launch confirm: how far may the audience grow between the summary and
   the confirm before the code is refused? (Default: a tenth of the
   summary's count, rounded up. Other options: refuse any growth, or allow

@@ -154,6 +154,17 @@ variable "github_deploy_subjects" {
   type        = list(string)
 }
 
+variable "enable_codebuild_deploy" {
+  description = "Deploy this environment from a CodeBuild project on every push to codebuild_deploy_branch. Needs the GitHub connection from infra/global, Available. Don't turn on together with enable_github_deploy and its workflow, or each merge deploys twice."
+  type        = bool
+  default     = false
+}
+
+variable "codebuild_deploy_branch" {
+  type    = string
+  default = "main"
+}
+
 # --- monitoring ---
 
 variable "alert_email" {

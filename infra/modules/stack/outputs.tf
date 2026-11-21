@@ -43,6 +43,10 @@ output "github_deploy_role_arn" {
   value = one(module.deploy_role[*].role_arn)
 }
 
+output "codebuild_deploy_project" {
+  value = one(module.codebuild_deploy[*].project_name)
+}
+
 output "images_bucket" {
   value = module.images.bucket_name
 }

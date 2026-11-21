@@ -408,6 +408,44 @@ module "deploy_role" {
   ]
 }
 
+# --- CodeBuild deploy (instead of GitHub OIDC while the AWS project denies it) ---
+
+data "aws_codestarconnections_connection" "github" {
+  count = var.enable_codebuild_deploy ? 1 : 0
+
+  name = "${var.project}-github" # made in infra/global
+}
+
+module "codebuild_deploy" {
+  source = "../codebuild-deploy"
+  count  = var.enable_codebuild_deploy ? 1 : 0
+
+  name                  = "${local.name}-deploy"
+  github_repository     = var.github_repository
+  branch                = var.codebuild_deploy_branch
+  github_connection_arn = data.aws_codestarconnections_connection.github[0].arn
+
+  ecr_repository_name = var.ecr_repository
+  cluster_name        = aws_ecs_cluster.this.name
+  api_service_name    = module.api.service_name
+  worker_service_name = module.worker.service_name
+  readyz_url          = "https://${var.hostnames[0]}/readyz"
+  log_retention_days  = var.log_retention_days
+
+  ecr_repository_arns  = [data.aws_ecr_repository.app.arn]
+  ecs_service_arns     = [module.api.service_arn, module.worker.service_arn]
+  run_task_cluster_arn = aws_ecs_cluster.this.arn
+  run_task_definition_arns = [
+    "arn:aws:ecs:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:task-definition/${module.api.task_definition_family}:*",
+  ]
+  pass_role_arns = [
+    module.api.task_role_arn,
+    module.api.execution_role_arn,
+    module.worker.task_role_arn,
+    module.worker.execution_role_arn,
+  ]
+}
+
 # --- Monitoring (OPS-4) ---
 
 module "monitoring" {

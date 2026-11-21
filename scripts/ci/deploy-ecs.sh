@@ -8,13 +8,18 @@
 # 3. Points each service at its new revision and waits for it to settle. The
 #    services have a deployment circuit breaker with rollback, so a bad image
 #    makes the wait fail instead of taking the service down.
+# 4. If READYZ_URL is set, waits for it to answer 200, and, if EXPECT_COMMIT is
+#    set too, to report that commit, so a deploy that "settled" on the old
+#    image still fails.
 #
 # Needs only what infra/modules/github-deploy-role grants. Required env:
 #   CLUSTER       ECS cluster name, e.g. mailgoose-staging
 #   IMAGE         full image reference, e.g. <registry>/mailgoose:<tag>
 #   API_SERVICE   e.g. mailgoose-staging-api (service and task family share a name)
 #   WORKER_SERVICE
-# Optional: STARTED_BY (<= 36 chars, shown on the migration task).
+# Optional: STARTED_BY (<= 36 chars, shown on the migration task),
+#   READYZ_URL (e.g. https://api.staging.mailgoose.app/readyz),
+#   EXPECT_COMMIT (the commit the image was built from; short or full).
 set -euo pipefail
 
 : "${CLUSTER:?}" "${IMAGE:?}" "${API_SERVICE:?}" "${WORKER_SERVICE:?}"
@@ -68,4 +73,23 @@ echo "Migrations applied"
 aws ecs update-service --cluster "$CLUSTER" --service "$API_SERVICE" --task-definition "$api_td" >/dev/null
 aws ecs update-service --cluster "$CLUSTER" --service "$WORKER_SERVICE" --task-definition "$worker_td" >/dev/null
 aws ecs wait services-stable --cluster "$CLUSTER" --services "$API_SERVICE" "$WORKER_SERVICE"
+
+if [ -n "${READYZ_URL:-}" ]; then
+  echo "Checking $READYZ_URL"
+  for attempt in $(seq 1 20); do
+    body="$(curl -fsS --max-time 5 "$READYZ_URL" 2>/dev/null || true)"
+    commit="$(jq -r '.commit // empty' <<<"$body" 2>/dev/null || true)"
+    if [ -n "$body" ] && { [ -z "${EXPECT_COMMIT:-}" ] ||
+      { [ -n "$commit" ] && { [[ "$EXPECT_COMMIT" == "$commit"* ]] || [[ "$commit" == "$EXPECT_COMMIT"* ]]; }; }; }; then
+      echo "Ready: $body"
+      break
+    fi
+    if [ "$attempt" = 20 ]; then
+      echo "$READYZ_URL did not answer ready${EXPECT_COMMIT:+ with commit $EXPECT_COMMIT} (last answer: ${body:-none})" >&2
+      exit 1
+    fi
+    sleep 6
+  done
+fi
+
 echo "Deployed $IMAGE to $CLUSTER"
