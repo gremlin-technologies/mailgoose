@@ -98,6 +98,10 @@ scope; they only show where an idea came from.
   shared domain, with replies to an address it verified (the owner's sign-in
   address or a confirmed sender address, up to 10). The app nudges toward
   adding a domain. Off in prod for now; details are reversible defaults.
+- SES backpressure (Nov 21, MG-87): SES throttling, quota and
+  paused-sending errors leave copies queued for a minute instead of failing
+  them, and `PLATFORM_DAILY_SEND_LIMIT` (default 45,000) caps campaign
+  copies across all accounts under the SES quota.
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API
