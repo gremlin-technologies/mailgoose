@@ -139,7 +139,9 @@ bounce and complaint rates and the database's table sizes, stop a campaign
 in flight, approve a held import and grant credits.
 They need you signed in with ` + "`mailgoose login`" + ` as an admin; API keys
 are refused. Every action takes --reason and is logged with who did it
-(` + "`mailgoose admin log`" + `).`,
+(` + "`mailgoose admin log`" + `).
+
+Account states and how they interact: docs/account-states.md`,
 	}
 	cmd.AddCommand(a.adminFindCmd(), a.adminAccountCmd(), a.adminPauseCmd(true), a.adminPauseCmd(false),
 		a.adminSuspendCmd(true), a.adminSuspendCmd(false), a.adminSignupsCmd(), a.adminReviewCmd(true), a.adminReviewCmd(false),
