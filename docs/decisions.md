@@ -4,6 +4,33 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Reports and segments (M12, MG-111 to MG-116): opens are a normal number (owner, confirmed); three defaults (recommended)
+
+The owner asked for per-campaign reports of opens, clicks and bounces, and
+for segments on engagement (did open or click a given email, never opened,
+never clicked), built through the usual ticket queue after the Mailchimp
+import. The tickets are issues #250 to #255.
+
+- **Opens are shown as a normal number** (the owner, confirmed). Opens come
+  from a tracking pixel, and some mail apps load it without anyone reading
+  the email (Apple Mail Privacy Protection, some security scanners), so open
+  rates run high. The owner's words: "let's de-emphasize the estimate part
+  of it." So opens show as a plain count and share, with no "estimated"
+  label, everywhere: the campaign list, the report page, `mailgoose campaign
+  report`, filters and segments. The reason they run high goes in a quiet
+  help line or tooltip at most. Machine opens aren't detected or left out:
+  "opened" filters count every recorded open. Clicks remain the reliable
+  signal. This replaces the "(estimated)" label from MG-38 and MG-48 (the
+  report page entry of 2026-11-19) and REP-1's "labeled as estimated"; MG-111
+  makes the change on the report page and in the CLI.
+- **How far back "never" looks** (recommended): as far as raw events are kept
+  (12 months), over campaigns sent with tracking on that the contact got. A
+  contact who got none of those isn't "never opened".
+- **Combining conditions** (recommended): every condition must match (AND);
+  no OR or nesting at first.
+- **When a segment is worked out** (recommended): at launch, or at the send
+  time of a scheduled campaign, then fixed, as tag audiences are today.
+
 ## 2026-11-21: Social icons (MG-109; reversible defaults)
 
 Asked for by the owner: social links that look like the big builders',
