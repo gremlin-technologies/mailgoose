@@ -444,8 +444,10 @@ func TestThrottleNotices(t *testing.T) {
 	th := Throttle{AccountID: "acc-1", AccountName: "Pat's Bakery", OwnerEmail: "pat@example.com", CampaignID: "c-1",
 		CampaignName: "Bread week", Rates: Rates{Sent: 1000, Complaints: 2, HardBounces: 5}, Warning: DefaultWarning,
 		Reason: "Lowered automatically.", Until: until}
-	n := &Notices{Mail: fake, From: mail.Address{Name: "mailgoose", Email: "notices@mail.localhost"}, NewDaily: 1000, Log: quiet,
-		Ops: &OpsAlert{Mail: fake, From: mail.Address{Email: "alerts@mail.localhost"}, To: "ops@example.com", Log: quiet}}
+	// Behind the real guard, as in mailgoosed, so notices must pass it (MG-90).
+	guarded := &mail.Guard{Sender: fake, System: "mail.localhost"}
+	n := &Notices{Mail: guarded, From: mail.Address{Name: "mailgoose", Email: "notices@mail.localhost"}, NewDaily: 1000, Log: quiet,
+		Ops: &OpsAlert{Mail: guarded, From: mail.Address{Email: "alerts@mail.localhost"}, To: "ops@example.com", Log: quiet}}
 	n.Throttled(context.Background(), th)
 	sent := fake.Sent()
 	if len(sent) != 2 {

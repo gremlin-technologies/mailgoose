@@ -1215,7 +1215,10 @@ mailgoose account get   # shows the Shared From
 `mail.Guard` lets mail from the shared domain through only when its From is
 the sending account's own slug and it has at least one Reply-To, each one a
 verified sender of the account or on one of its verified domains. With the
-variable unset, everything behaves as before MG-85.
+variable unset, everything behaves as before MG-85. Mail from the system
+sending domain goes through only when it's mailgoose's own (sign-in codes,
+confirm links, alerts and notices) or a double opt-in confirmation; a test
+send or a campaign from it is refused (MG-90).
 
 **Not yet checked against real AWS.** Before relying on sending domains in
 staging, add one domain there from the owner's machine and confirm IAM allows

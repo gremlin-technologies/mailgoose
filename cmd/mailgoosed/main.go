@@ -442,8 +442,9 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 // dispatchEvery is how often due campaigns are batched.
 const dispatchEvery = 2 * time.Second
 
-// guardSender checks every message before it goes out: it must be from the
-// system sending domain, or from a domain its account verified in this
+// guardSender checks every message before it goes out: it must be system
+// mail or a confirmation from the system sending domain (never a test send
+// or a campaign, MG-90), or from a domain its account verified in this
 // environment, or from the shared sending domain as its own account's slug
 // with Reply-To addresses that account verified (MG-85). Staging and prod
 // share one AWS account and SES ignores tag conditions on sends, so this

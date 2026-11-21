@@ -295,7 +295,8 @@ func TestSuspendedAlert(t *testing.T) {
 	fake := &mail.Fake{}
 	s := Suspension{AccountID: "acc-1", AccountName: "Pat's Bakery", OwnerEmail: "pat@example.com", Reason: "Sent to a bought list.",
 		By: "staff@example.com", At: time.Date(2026, 11, 19, 10, 0, 0, 0, time.UTC), KeysRevoked: 2, SessionsEnded: 1}
-	a := &OpsAlert{Mail: fake, From: mail.Address{Name: "mailgoose", Email: "alerts@mail.mailgoose.test"}, To: "ops@example.com",
+	// Behind the real guard, as in mailgoosed, so the notices must pass it (MG-90).
+	a := &OpsAlert{Mail: &mail.Guard{Sender: fake, System: "mail.mailgoose.test"}, From: mail.Address{Name: "mailgoose", Email: "alerts@mail.mailgoose.test"}, To: "ops@example.com",
 		AppURL: "https://app.mailgoose.test/", Log: slog.New(slog.DiscardHandler)}
 	a.Suspended(context.Background(), s)
 	sent := fake.Sent()

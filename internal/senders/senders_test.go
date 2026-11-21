@@ -30,8 +30,10 @@ func newHarness(t *testing.T) *harness {
 	ctx := context.Background()
 	db := dbtest.New(t)
 	h := &harness{db: db, fake: &mail.Fake{}, now: time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC)}
-	h.svc = &Service{DB: db, Mail: h.fake, From: mail.Address{Name: "mailgoose", Email: "signin@mail.mailgoose.test"},
-		Now: func() time.Time { return h.now }}
+	// Behind the real guard, as in mailgoosed, so confirm links must pass it (MG-90).
+	h.svc = &Service{DB: db, Mail: &mail.Guard{Sender: h.fake, System: "mail.mailgoose.test"},
+		From: mail.Address{Name: "mailgoose", Email: "signin@mail.mailgoose.test"},
+		Now:  func() time.Time { return h.now }}
 	if err := db.QueryRow(ctx, `INSERT INTO accounts (name, status, sending_mode) VALUES ('Pat''s Bakery', 'active', 'full') RETURNING id`).Scan(&h.acc); err != nil {
 		t.Fatal(err)
 	}
