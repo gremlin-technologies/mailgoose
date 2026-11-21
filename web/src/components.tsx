@@ -3,13 +3,28 @@ import { Link } from "react-router";
 
 import type { Failure, Result } from "./api/result";
 
+/**
+ * The logo: the goose's head and the word (docs/brand.md), with light text in
+ * dark mode. `size` sets its height in CSS: "menu" for the side menu, "page"
+ * above the sign-in and policy cards.
+ */
+export function Wordmark({ size }: { size: "menu" | "page" }) {
+  const [width, height] = size === "menu" ? [116, 28] : [149, 36];
+  return (
+    <picture>
+      <source srcSet="/brand/wordmark-light.png" media="(prefers-color-scheme: dark)" />
+      <img className={`wordmark wordmark-${size}`} src="/brand/wordmark.png" width={width} height={height} alt="mailgoose" />
+    </picture>
+  );
+}
+
 /** The centred card the sign-up, sign-in and CLI approval pages use. */
 export function AuthCard({ title, children, footer }: { title: string; children: ReactNode; footer?: ReactNode }) {
   return (
     <div className="auth">
       <header>
-        <Link to="/" className="brand auth-brand">
-          mailgoose
+        <Link to="/" className="brand-logo">
+          <Wordmark size="page" />
         </Link>
       </header>
       <main className="card">

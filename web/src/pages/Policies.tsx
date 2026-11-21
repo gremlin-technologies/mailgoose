@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 
+import { Wordmark } from "../components";
 import { currentPolicyVersion, policyChangesPath, policyVersions } from "../policyVersions.gen";
 
 /**
@@ -184,8 +185,8 @@ export function PolicyPage({ policy }: { policy: Policy }) {
   return (
     <div className="policy">
       <header>
-        <Link to="/" className="brand auth-brand">
-          mailgoose
+        <Link to="/" className="brand-logo">
+          <Wordmark size="page" />
         </Link>
       </header>
       <main className="card policy-card">
@@ -237,8 +238,8 @@ export function PolicyChangesPage() {
   return (
     <div className="policy">
       <header>
-        <Link to="/" className="brand auth-brand">
-          mailgoose
+        <Link to="/" className="brand-logo">
+          <Wordmark size="page" />
         </Link>
       </header>
       <main className="card policy-card">

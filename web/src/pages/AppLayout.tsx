@@ -4,7 +4,7 @@ import { NavLink, Outlet } from "react-router";
 
 import type { Failure } from "../api/result";
 import { PausedBanner } from "../billing/PausedBanner";
-import { FailureNotice } from "../components";
+import { FailureNotice, Wordmark } from "../components";
 import { useSession } from "../session";
 import { navGroups } from "./nav";
 import { ReviewBanner } from "./ReviewBanner";
@@ -27,10 +27,7 @@ export function AppLayout() {
     <div className="app">
       <aside className="sidebar">
         <NavLink to="/" className="brand-logo">
-          <picture>
-            <source srcSet="/brand/wordmark-light.png" media="(prefers-color-scheme: dark)" />
-            <img src="/brand/wordmark.png" width={116} height={28} alt="mailgoose" />
-          </picture>
+          <Wordmark size="menu" />
         </NavLink>
         {session && (
           <p className="account" title={session.user.email}>
