@@ -116,9 +116,13 @@ scope; they only show where an idea came from.
   and merges it only when all of these hold: CI is green; the PR meets the
   acceptance criteria of its ticket (or, for a PR with no ticket, does what its
   description says); it follows the rules in this file. Anything else goes back
-  to the author with review comments. PRs that touch `infra/` or
-  `.github/workflows/` are reviewed the same way but left for the owner to merge
-  (the owner's call, Nov 18).
+  to the author with review comments. PRs that touch `infra/`,
+  `.github/workflows/`, `scripts/ci/`, the `Dockerfile`, the `Makefile` or
+  `compose.yaml` are reviewed the same way but left for the owner to merge
+  (the owner's call, Nov 18; the last four added Nov 21, since each reaches
+  the staging deploy). The reviewer checks the diff's file list before it
+  merges, and merges only PRs opened from a branch of this repository by the
+  owner or the project's own agents, never from a fork or another author.
 - **AWS keys stay local.** No agent in the cloud holds AWS credentials.
   Staging deploys run from CodeBuild inside the AWS account on every merge to
   `main` (GitHub OIDC is blocked by AWS's plan policy), so no agent holds AWS
