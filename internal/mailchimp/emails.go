@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +33,15 @@ const (
 	DefaultCampaigns = 10
 	// MaxCampaigns is the most one import brings.
 	MaxCampaigns = 100
+	// MaxTemplates is the most templates one import makes emails of, in
+	// file order; TemplatesLeftOut lists the rest.
+	MaxTemplates = 100
+	// MaxImportImages is the most distinct images one import fetches, the
+	// same as an account can keep (images.MaxPerAccount).
+	MaxImportImages = 1000
+	// maxImageNotes is the most image_not_copied warnings one email gets
+	// about single images; the rest are counted in one more for each reason.
+	maxImageNotes = 10
 )
 
 // Where an imported email came from.
@@ -74,16 +84,27 @@ type ImportedEmail struct {
 	EmailID string `json:"email_id"`
 }
 
-// PlanEmails converts a bundle's templates and its newest campaigns
-// (campaigns of them, 0 for DefaultCampaigns, at most MaxCampaigns), without
-// fetching or writing anything. Copying images can still add a warning.
+// PlanEmails converts a bundle's first MaxTemplates templates and its newest
+// campaigns (campaigns of them, 0 for DefaultCampaigns, at most
+// MaxCampaigns), without fetching or writing anything. Copying images can
+// still add a warning.
 func PlanEmails(b *Bundle, campaigns int) []EmailPlan {
 	var out []EmailPlan
-	for _, t := range b.Templates {
+	for _, t := range b.Templates[:min(len(b.Templates), MaxTemplates)] {
 		out = append(out, plan(EmailFromTemplate, t.Path, emailName(t.Name, "", "", "Mailchimp template"), t.HTML, ""))
 	}
 	for _, c := range NewestCampaigns(b, campaigns) {
 		out = append(out, plan(EmailFromCampaign, c.Path, emailName(c.Title, c.Subject, c.Name, "Mailchimp campaign"), c.HTML, c.Subject))
+	}
+	return out
+}
+
+// TemplatesLeftOut is the files of the templates past MaxTemplates, which an
+// import doesn't make emails of.
+func TemplatesLeftOut(b *Bundle) []string {
+	var out []string
+	for _, t := range b.Templates[min(len(b.Templates), MaxTemplates):] {
+		out = append(out, t.Path)
 	}
 	return out
 }
@@ -94,6 +115,10 @@ func plan(from, file, name, src, subject string) EmailPlan {
 	conv := ConvertHTML(strings.ToValidUTF8(src, "\uFFFD"), strings.ToValidUTF8(subject, "\uFFFD"), "")
 	p := EmailPlan{From: from, File: file, Name: name, Subject: clipRunes(conv.Subject, 200),
 		PreviewText: clipRunes(conv.PreviewText, 200), Images: len(conv.Images), conv: conv}
+	if len(conv.HTML) > emails.MaxHTMLBytes {
+		// The email is made empty, so none of its images is copied.
+		p.Images = 0
+	}
 	p.Errors = slices.Clone(conv.Errors)
 	p.Warnings = slices.Clone(conv.Warnings)
 	p.check(conv.HTML)
@@ -175,10 +200,18 @@ type EmailImporter struct {
 	Fetch Fetcher
 }
 
+// Reasons an image isn't fetched at all.
+var (
+	errAccountImagesFull = errors.New("the account has as many images as it can keep")
+	errNoImageStorage    = errors.New("image storage isn't set up here")
+	errImportImages      = fmt.Errorf("one import copies at most %s images", thousands(MaxImportImages))
+)
+
 // Import makes the emails PlanEmails lists, copying their Mailchimp-hosted
 // images into the account's image storage. Each email is made even when its
 // checks fail, with the errors listed; only a failure to store one stops the
-// import.
+// import. It fetches at most MaxImportImages images, none for an email too
+// large to keep, and none once the account can keep no more.
 func (im *EmailImporter) Import(ctx context.Context, accountID string, b *Bundle, campaigns int) ([]ImportedEmail, error) {
 	fetch := im.Fetch
 	if fetch == nil {
@@ -186,24 +219,44 @@ func (im *EmailImporter) Import(ctx context.Context, accountID string, b *Bundle
 	}
 	copied := map[string]string{} // image address as written -> new address
 	failed := map[string]error{}
+	var stop error // once set, no more images are fetched
+	if im.Images == nil {
+		stop = errNoImageStorage
+	}
+	fetches := 0
 	var out []ImportedEmail
 	for _, p := range PlanEmails(b, campaigns) {
 		h := p.conv.HTML
 		// The plan's checks were on the HTML before relinking; check again.
 		p.Errors, p.Warnings = slices.Clone(p.conv.Errors), slices.Clone(p.conv.Warnings)
-		for _, src := range p.conv.Images {
-			if _, done := copied[src]; !done && failed[src] == nil {
-				if u, err := im.copyImage(ctx, accountID, src, fetch); err != nil {
-					failed[src] = err
-				} else {
-					copied[src] = u
+		if len(h) <= emails.MaxHTMLBytes {
+			var notCopied []imageFailure
+			for _, src := range p.conv.Images {
+				if _, done := copied[src]; done {
+					continue
 				}
+				err := failed[src]
+				switch {
+				case err != nil:
+				case stop != nil:
+					err = stop
+				case fetches >= MaxImportImages:
+					err = errImportImages
+				default:
+					fetches++
+					u, cerr := im.copyImage(ctx, accountID, src, fetch)
+					if cerr == nil {
+						copied[src] = u
+						continue
+					}
+					err, failed[src] = cerr, cerr
+					if errors.Is(cerr, errAccountImagesFull) {
+						stop = cerr
+					}
+				}
+				notCopied = append(notCopied, imageFailure{src, err})
 			}
-			if _, ok := copied[src]; !ok {
-				p.Warnings = append(p.Warnings, Note{Code: NoteImageNotCopied, Message: fmt.Sprintf(
-					"the image %s couldn't be copied (%s), so it still loads from Mailchimp; upload it and change its link before you leave Mailchimp",
-					shortURL(src), failed[src])})
-			}
+			p.Warnings = append(p.Warnings, imageNotes(notCopied)...)
 		}
 		h = relink(h, copied)
 		p.check(h)
@@ -262,13 +315,68 @@ func (im *EmailImporter) copyImage(ctx context.Context, accountID, src string, f
 	var unsupported *images.UnsupportedError
 	switch {
 	case errors.Is(err, images.ErrTooMany):
-		return "", errors.New("the account has as many images as it can keep")
+		return "", errAccountImagesFull
 	case errors.Is(err, images.ErrTooLarge), errors.Is(err, images.ErrEmpty), errors.As(err, &unsupported):
 		return "", err
 	case err != nil:
 		return "", fmt.Errorf("store image: %w", err)
 	}
 	return img.URL, nil
+}
+
+type imageFailure struct {
+	src string
+	err error
+}
+
+// imageNotes are the image_not_copied warnings for an email's images that
+// weren't copied: one for each of the first maxImageNotes, then one for each
+// reason counting the rest, the first few reasons alone.
+func imageNotes(fs []imageFailure) []Note {
+	var notes []Note
+	for _, f := range fs[:min(len(fs), maxImageNotes)] {
+		notes = append(notes, Note{Code: NoteImageNotCopied, Message: fmt.Sprintf(
+			"the image %s couldn't be copied (%s), so it still loads from Mailchimp; upload it and change its link before you leave Mailchimp",
+			shortURL(f.src), f.err)})
+	}
+	if len(fs) <= maxImageNotes {
+		return notes
+	}
+	const maxReasons = 3
+	var reasons []string
+	counts := map[string]int{}
+	other := 0
+	for _, f := range fs[maxImageNotes:] {
+		r := f.err.Error()
+		if counts[r] == 0 && len(reasons) == maxReasons {
+			other++
+			continue
+		}
+		if counts[r] == 0 {
+			reasons = append(reasons, r)
+		}
+		counts[r]++
+	}
+	for _, r := range reasons {
+		notes = append(notes, Note{Code: NoteImageNotCopied, Message: fmt.Sprintf(
+			"%s more of this email's Mailchimp images weren't copied (%s), so they still load from Mailchimp; upload them and change their links before you leave Mailchimp",
+			thousands(counts[r]), r)})
+	}
+	if other > 0 {
+		notes = append(notes, Note{Code: NoteImageNotCopied, Message: fmt.Sprintf(
+			"%s more of this email's Mailchimp images weren't copied, for other reasons, so they still load from Mailchimp; upload them and change their links before you leave Mailchimp",
+			thousands(other))})
+	}
+	return notes
+}
+
+// thousands is n with thousands separators.
+func thousands(n int) string {
+	s := strconv.Itoa(n)
+	for i := len(s) - 3; i > 0; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return s
 }
 
 // shortURL is an image address short enough for a note.

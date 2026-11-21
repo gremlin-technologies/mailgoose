@@ -5,7 +5,6 @@ import (
 	"html"
 	"net/url"
 	"regexp"
-	"slices"
 	"strings"
 )
 
@@ -83,7 +82,9 @@ var (
 	// imageRef finds image addresses in src and background attributes and
 	// in CSS url(...).
 	imageRef = regexp.MustCompile(`(?i)(?:\b(?:src|background)\s*=\s*["']?|url\(\s*["']?)(https?://[^\s"'()<>]+)`)
-	hrefRef  = regexp.MustCompile(`(?i)\bhref\s*=\s*["']?(https?://[^\s"'<>]+)`)
+	// hrefTag finds links whose whole address is one merge tag.
+	hrefTag = regexp.MustCompile(`(?i)\bhref\s*=\s*(?:"\s*\*\|([^|*\r\n"]{1,200})\|\*\s*"|'\s*\*\|([^|*\r\n']{1,200})\|\*\s*'|\*\|([^|*\r\n\s>]{1,200})\|\*)`)
+	hrefRef = regexp.MustCompile(`(?i)\bhref\s*=\s*["']?(https?://[^\s"'<>]+)`)
 )
 
 // ImageHost reports whether host serves Mailchimp-hosted images
@@ -116,6 +117,12 @@ func ConvertHTML(src, subject, preview string) *Conversion {
 	c.Subject = convertText(subject, "", removed, c, "subject")
 	c.PreviewText = convertText(preview, c.Subject, removed, c, "preview text")
 
+	// Tags that are a link's whole address leave it empty when taken out.
+	linkTags := map[string]bool{}
+	for _, m := range hrefTag.FindAllStringSubmatch(src, -1) {
+		linkTags[strings.ToUpper(strings.TrimSpace(m[1]+m[2]+m[3]))] = true
+	}
+
 	conditionals := 0
 	firstConditional := 0
 	out := mergeTag.ReplaceAllStringFunc(src, func(m string) string {
@@ -135,8 +142,11 @@ func ConvertHTML(src, subject, preview string) *Conversion {
 		}
 		if !removed[tag] {
 			removed[tag] = true
-			c.Warnings = append(c.Warnings, Note{Code: NoteRemovedTag,
-				Message: fmt.Sprintf("Mailchimp's %s merge tag has no match in mailgoose, so it was taken out", m)})
+			msg := fmt.Sprintf("Mailchimp's %s merge tag has no match in mailgoose, so it was taken out", m)
+			if linkTags[tag] {
+				msg += "; a link was left empty, so give it an address or remove it"
+			}
+			c.Warnings = append(c.Warnings, Note{Code: NoteRemovedTag, Message: msg})
 		}
 		return ""
 	})
@@ -149,10 +159,12 @@ func ConvertHTML(src, subject, preview string) *Conversion {
 
 	out = startTag.ReplaceAllStringFunc(out, func(t string) string { return mcAttr.ReplaceAllString(t, "") })
 
+	seen := map[string]bool{}
 	for _, m := range imageRef.FindAllStringSubmatch(out, -1) {
-		if ImageHost(hostOf(m[1])) && !slices.Contains(c.Images, m[1]) {
+		if !seen[m[1]] && ImageHost(hostOf(m[1])) {
 			c.Images = append(c.Images, m[1])
 		}
+		seen[m[1]] = true
 	}
 	tracking := 0
 	for _, m := range hrefRef.FindAllStringSubmatch(out, -1) {

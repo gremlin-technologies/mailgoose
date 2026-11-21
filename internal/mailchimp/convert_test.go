@@ -45,6 +45,10 @@ func TestConvertHTMLMergeTags(t *testing.T) {
 	if got := codes(c.Warnings); !slices.Equal(got, []string{NoteRemovedTag, NoteRemovedTag}) {
 		t.Errorf("warnings %v", c.Warnings)
 	}
+	// Only the tag that was a link's whole address says it left the link empty.
+	if strings.Contains(c.Warnings[0].Message, "link was left empty") || !strings.Contains(c.Warnings[1].Message, "link was left empty") {
+		t.Errorf("warnings %v", c.Warnings)
+	}
 	if len(c.Errors) != 0 {
 		t.Errorf("errors %v", c.Errors)
 	}
