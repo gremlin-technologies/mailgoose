@@ -2590,6 +2590,103 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/imports/mailchimp/connect:
+    post:
+      operationId: connectMailchimp
+      summary: Start connecting a Mailchimp account
+      description: |
+        Returns a link to Mailchimp's page where the person lets mailgoose
+        read their Mailchimp account. Open it in a browser signed in to this
+        mailgoose account: Mailchimp sends the browser back to mailgoose,
+        which connects the account only when that browser's session is this
+        account's. The link works once, for 10 minutes; a new one replaces it.
+
+        Mailchimp's access doesn't expire and isn't limited, so mailgoose
+        keeps it for at most 24 hours, only reads with it, and forgets it
+        once the import is done or on `disconnectMailchimp`.
+
+        Answers 503 `mailchimp_not_configured` where connecting isn't set up;
+        uploading Mailchimp's export (`createMailchimpBundle`) still works.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The link to open.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailchimpConnect"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/imports/mailchimp/connection:
+    get:
+      operationId: getMailchimpConnection
+      summary: Get the connected Mailchimp account
+      description: |
+        Whether a Mailchimp account is connected, which one, and when
+        mailgoose forgets it. The access itself is never returned.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      responses:
+        "200":
+          description: "The connection, or `connected: false`."
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailchimpConnection"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/imports/mailchimp/disconnect:
+    post:
+      operationId: disconnectMailchimp
+      summary: Forget the connected Mailchimp account
+      description: |
+        Deletes mailgoose's access to the connected Mailchimp account now,
+        and any unused connect link. Answers `connected: false` even when
+        nothing was connected. To remove mailgoose from the Mailchimp account
+        as well, do that in Mailchimp's own settings.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Nothing is connected now.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailchimpConnection"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/forms:
     get:
       operationId: listForms
@@ -5474,6 +5571,48 @@ components:
       examples:
         - permission_confirmed: true
           campaigns: 10
+    MailchimpConnect:
+      type: object
+      additionalProperties: false
+      required: [authorize_url, expires_at]
+      properties:
+        authorize_url:
+          type: string
+          format: uri
+          description: Mailchimp's page to open, in a browser signed in to this mailgoose account.
+        expires_at:
+          type: string
+          format: date-time
+          description: When the link stops working.
+      examples:
+        - authorize_url: "https://login.mailchimp.com/oauth2/authorize?client_id=123456789012&redirect_uri=https%3A%2F%2Fmailgoose.app%2Foauth%2Fmailchimp%2Fcallback&response_type=code&state=Zx8..."
+          expires_at: "2026-11-21T12:10:00Z"
+    MailchimpConnection:
+      type: object
+      additionalProperties: false
+      required: [connected, account_name, data_center, connected_at, expires_at]
+      properties:
+        connected:
+          type: boolean
+        account_name:
+          type: [string, "null"]
+          description: The Mailchimp account's name, as Mailchimp gives it.
+        data_center:
+          type: [string, "null"]
+          description: The Mailchimp data center the account is on, such as us21.
+        connected_at:
+          type: [string, "null"]
+          format: date-time
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: When mailgoose forgets the access, if the import hasn't already.
+      examples:
+        - connected: true
+          account_name: "Riverside Bakery"
+          data_center: us21
+          connected_at: "2026-11-21T12:02:00Z"
+          expires_at: "2026-11-22T12:02:00Z"
     MailchimpBundle:
       type: object
       additionalProperties: false

@@ -3736,6 +3736,29 @@ type MailchimpBundle struct {
 // MailchimpBundleStatus defines model for MailchimpBundle.Status.
 type MailchimpBundleStatus string
 
+// MailchimpConnect Examples: {"authorize_url":"https://login.mailchimp.com/oauth2/authorize?client_id=123456789012\u0026redirect_uri=https%3A%2F%2Fmailgoose.app%2Foauth%2Fmailchimp%2Fcallback\u0026response_type=code\u0026state=Zx8...","expires_at":"2026-11-21T12:10:00Z"}
+type MailchimpConnect struct {
+	// AuthorizeUrl Mailchimp's page to open, in a browser signed in to this mailgoose account.
+	AuthorizeUrl string `json:"authorize_url"`
+
+	// ExpiresAt When the link stops working.
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// MailchimpConnection Examples: {"account_name":"Riverside Bakery","connected":true,"connected_at":"2026-11-21T12:02:00Z","data_center":"us21","expires_at":"2026-11-22T12:02:00Z"}
+type MailchimpConnection struct {
+	// AccountName The Mailchimp account's name, as Mailchimp gives it.
+	AccountName *string    `json:"account_name"`
+	Connected   bool       `json:"connected"`
+	ConnectedAt *time.Time `json:"connected_at"`
+
+	// DataCenter The Mailchimp data center the account is on, such as us21.
+	DataCenter *string `json:"data_center"`
+
+	// ExpiresAt When mailgoose forgets the access, if the import hasn't already.
+	ExpiresAt *time.Time `json:"expires_at"`
+}
+
 // MailchimpContactsPreview defines model for MailchimpContactsPreview.
 type MailchimpContactsPreview struct {
 	// DroppedFields Columns that aren't imported.
@@ -6116,6 +6139,15 @@ type ServerInterface interface {
 	// ConfirmMailchimpBundle Import an uploaded Mailchimp export
 	// (POST /v1/imports/mailchimp/bundles/{bundle_id}/confirm)
 	ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request, bundleId BundleId)
+	// ConnectMailchimp Start connecting a Mailchimp account
+	// (POST /v1/imports/mailchimp/connect)
+	ConnectMailchimp(w http.ResponseWriter, r *http.Request)
+	// GetMailchimpConnection Get the connected Mailchimp account
+	// (GET /v1/imports/mailchimp/connection)
+	GetMailchimpConnection(w http.ResponseWriter, r *http.Request)
+	// DisconnectMailchimp Forget the connected Mailchimp account
+	// (POST /v1/imports/mailchimp/disconnect)
+	DisconnectMailchimp(w http.ResponseWriter, r *http.Request)
 	// GetImport Get an import
 	// (GET /v1/imports/{import_id})
 	GetImport(w http.ResponseWriter, r *http.Request, importId ImportId)
@@ -8795,6 +8827,48 @@ func (siw *ServerInterfaceWrapper) ConfirmMailchimpBundle(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// ConnectMailchimp operation middleware
+func (siw *ServerInterfaceWrapper) ConnectMailchimp(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConnectMailchimp(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMailchimpConnection operation middleware
+func (siw *ServerInterfaceWrapper) GetMailchimpConnection(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMailchimpConnection(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DisconnectMailchimp operation middleware
+func (siw *ServerInterfaceWrapper) DisconnectMailchimp(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DisconnectMailchimp(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetImport operation middleware
 func (siw *ServerInterfaceWrapper) GetImport(w http.ResponseWriter, r *http.Request) {
 
@@ -9593,6 +9667,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/imports/mailchimp/bundles/{bundle_id}", wrapper.DeleteMailchimpBundle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/mailchimp/bundles/{bundle_id}", wrapper.GetMailchimpBundle)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/mailchimp/bundles/{bundle_id}/confirm", wrapper.ConfirmMailchimpBundle)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/mailchimp/connect", wrapper.ConnectMailchimp)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/mailchimp/connection", wrapper.GetMailchimpConnection)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/mailchimp/disconnect", wrapper.DisconnectMailchimp)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/forms", wrapper.ListForms)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/forms", wrapper.CreateForm)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/forms/{form_id}", wrapper.DeleteForm)

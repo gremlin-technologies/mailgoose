@@ -417,6 +417,16 @@ func TestWebRiskKey(t *testing.T) {
 	}
 }
 
+func TestMailchimpOAuthApp(t *testing.T) {
+	cfg, err := load(env(map[string]string{"APP_SECRETS_JSON": `{"MAILCHIMP_CLIENT_ID":"123","MAILCHIMP_CLIENT_SECRET":" s3cret "}`}))
+	if err != nil || cfg.MailchimpClientID != "123" || cfg.MailchimpClientSecret != "s3cret" {
+		t.Errorf("from the secret: %q %q %v", cfg.MailchimpClientID, cfg.MailchimpClientSecret, err)
+	}
+	if cfg, _ := load(env(nil)); cfg.MailchimpClientID != "" || cfg.MailchimpClientSecret != "" {
+		t.Errorf("unset: %q %q", cfg.MailchimpClientID, cfg.MailchimpClientSecret)
+	}
+}
+
 func TestMailchimpImportMaxContacts(t *testing.T) {
 	cfg, err := load(env(nil))
 	if err != nil || cfg.MailchimpImportMaxContacts != 250000 {

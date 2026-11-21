@@ -89,6 +89,7 @@ func authServerTB(t testing.TB) *Server {
 	s.Reports = &reports.Service{DB: db}
 	s.Images = &images.Service{DB: db, Store: &images.Memory{}, BaseURL: testImagesURL}
 	s.Mailchimp = &mailchimp.Store{DB: db}
+	s.MailchimpConnections = &mailchimp.Connections{DB: db}
 	s.Billing = &billing.Service{DB: db, Stripe: &fakeStripe{}, WebhookSecret: testWebhookSecret,
 		Packs: billing.DefaultPacks, BaseURL: "https://app.mailgoose.test"}
 	return s

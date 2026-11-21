@@ -296,7 +296,7 @@ func (j *EmailJob) Run(ctx context.Context, log *slog.Logger, poll time.Duration
 			if n, err := j.Store.Prune(ctx); err != nil && ctx.Err() == nil {
 				log.ErrorContext(ctx, "pruning Mailchimp uploads failed", "err", err)
 			} else if n > 0 {
-				log.InfoContext(ctx, "deleted expired Mailchimp uploads", "count", n)
+				log.InfoContext(ctx, "deleted expired Mailchimp uploads and connections", "count", n)
 			}
 			pruned = time.Now()
 		}
@@ -314,10 +314,15 @@ func (j *EmailJob) Run(ctx context.Context, log *slog.Logger, poll time.Duration
 	}
 }
 
-// Prune deletes unconfirmed uploads past their expiry.
+// Prune deletes unconfirmed uploads past their expiry, and Mailchimp
+// connections (MG-73) past theirs.
 func (s *Store) Prune(ctx context.Context) (int64, error) {
 	tag, err := s.DB.Exec(ctx, `DELETE FROM mailchimp_bundles WHERE confirmed_at IS NULL AND expires_at <= $1`, s.now())
-	return tag.RowsAffected(), err
+	if err != nil {
+		return 0, err
+	}
+	n, err := pruneConnections(ctx, s.DB, s.now())
+	return tag.RowsAffected() + n, err
 }
 
 // RunNext makes the emails of one confirmed upload, carrying on from the

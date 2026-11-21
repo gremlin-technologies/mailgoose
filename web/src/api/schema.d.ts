@@ -1329,6 +1329,81 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/imports/mailchimp/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start connecting a Mailchimp account
+         * @description Returns a link to Mailchimp's page where the person lets mailgoose
+         *     read their Mailchimp account. Open it in a browser signed in to this
+         *     mailgoose account: Mailchimp sends the browser back to mailgoose,
+         *     which connects the account only when that browser's session is this
+         *     account's. The link works once, for 10 minutes; a new one replaces it.
+         *
+         *     Mailchimp's access doesn't expire and isn't limited, so mailgoose
+         *     keeps it for at most 24 hours, only reads with it, and forgets it
+         *     once the import is done or on `disconnectMailchimp`.
+         *
+         *     Answers 503 `mailchimp_not_configured` where connecting isn't set up;
+         *     uploading Mailchimp's export (`createMailchimpBundle`) still works.
+         */
+        post: operations["connectMailchimp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/imports/mailchimp/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get the connected Mailchimp account
+         * @description Whether a Mailchimp account is connected, which one, and when
+         *     mailgoose forgets it. The access itself is never returned.
+         */
+        get: operations["getMailchimpConnection"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/imports/mailchimp/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Forget the connected Mailchimp account
+         * @description Deletes mailgoose's access to the connected Mailchimp account now,
+         *     and any unused connect link. Answers `connected: false` even when
+         *     nothing was connected. To remove mailgoose from the Mailchimp account
+         *     as well, do that in Mailchimp's own settings.
+         */
+        post: operations["disconnectMailchimp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/forms": {
         parameters: {
             query?: never;
@@ -2842,6 +2917,47 @@ export interface components {
             campaigns: number;
             /** @description Confirming the same export again with this key returns the import already made. */
             idempotency_key?: string;
+        };
+        /**
+         * @example {
+         *       "authorize_url": "https://login.mailchimp.com/oauth2/authorize?client_id=123456789012&redirect_uri=https%3A%2F%2Fmailgoose.app%2Foauth%2Fmailchimp%2Fcallback&response_type=code&state=Zx8...",
+         *       "expires_at": "2026-11-21T12:10:00Z"
+         *     }
+         */
+        MailchimpConnect: {
+            /**
+             * Format: uri
+             * @description Mailchimp's page to open, in a browser signed in to this mailgoose account.
+             */
+            authorize_url: string;
+            /**
+             * Format: date-time
+             * @description When the link stops working.
+             */
+            expires_at: string;
+        };
+        /**
+         * @example {
+         *       "connected": true,
+         *       "account_name": "Riverside Bakery",
+         *       "data_center": "us21",
+         *       "connected_at": "2026-11-21T12:02:00Z",
+         *       "expires_at": "2026-11-22T12:02:00Z"
+         *     }
+         */
+        MailchimpConnection: {
+            connected: boolean;
+            /** @description The Mailchimp account's name, as Mailchimp gives it. */
+            account_name: string | null;
+            /** @description The Mailchimp data center the account is on, such as us21. */
+            data_center: string | null;
+            /** Format: date-time */
+            connected_at: string | null;
+            /**
+             * Format: date-time
+             * @description When mailgoose forgets the access, if the import hasn't already.
+             */
+            expires_at: string | null;
         };
         /**
          * @example {
@@ -7815,6 +7931,80 @@ export interface operations {
             403: components["responses"]["CrossOrigin"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["MailchimpRefused"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    connectMailchimp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The link to open. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailchimpConnect"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getMailchimpConnection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The connection, or `connected: false`. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailchimpConnection"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    disconnectMailchimp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Nothing is connected now. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailchimpConnection"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

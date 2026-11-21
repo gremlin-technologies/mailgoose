@@ -231,3 +231,73 @@ func TestImportMailchimpDelete(t *testing.T) {
 		t.Errorf("out %q, seen %v", h.out, *seen)
 	}
 }
+
+func TestImportMailchimpConnect(t *testing.T) {
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1/imports/mailchimp/connect":
+			_, _ = w.Write([]byte(`{"authorize_url":"https://login.mailchimp.com/oauth2/authorize?client_id=1&state=abc","expires_at":"2026-11-21T12:10:00Z"}`))
+		case "/v1/imports/mailchimp/connection":
+			_, _ = w.Write([]byte(`{"connected":true,"account_name":"Riverside\u001b[31m Bakery","data_center":"us21","connected_at":"2026-11-21T12:02:00Z","expires_at":"2026-11-22T12:02:00Z"}`))
+		case "/v1/imports/mailchimp/disconnect":
+			_, _ = w.Write([]byte(`{"connected":false,"account_name":null,"data_center":null,"connected_at":null,"expires_at":null}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_fullkey"
+
+	if code := h.run("import", "mailchimp", "connect"); code != ExitOK {
+		t.Fatalf("connect exit %d: %s", code, h.errOut)
+	}
+	if out := h.out.String(); !strings.Contains(out, "https://login.mailchimp.com/oauth2/authorize?client_id=1&state=abc") ||
+		!strings.Contains(out, "signed in to mailgoose") {
+		t.Errorf("connect output:\n%s", out)
+	}
+	if code := h.run("import", "mailchimp", "connect", "--json"); code != ExitOK {
+		t.Fatalf("connect --json exit %d", code)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(h.out.Bytes(), &got); err != nil || got["authorize_url"] == nil {
+		t.Errorf("json = %s (%v)", h.out, err)
+	}
+	if code := h.run("import", "mailchimp", "connection"); code != ExitOK {
+		t.Fatalf("connection exit %d", code)
+	}
+	if out := h.out.String(); !strings.Contains(out, `"Riverside[31m Bakery" (us21) is connected`) || strings.Contains(out, "\x1b") {
+		t.Errorf("connection output: %q", out)
+	}
+	if code := h.run("import", "mailchimp", "disconnect"); code != ExitOK {
+		t.Fatalf("disconnect exit %d", code)
+	}
+	if out := h.out.String(); !strings.Contains(out, "No Mailchimp account is connected") {
+		t.Errorf("disconnect output:\n%s", out)
+	}
+	want := []string{"POST /v1/imports/mailchimp/connect", "POST /v1/imports/mailchimp/connect",
+		"GET /v1/imports/mailchimp/connection", "POST /v1/imports/mailchimp/disconnect"}
+	if strings.Join(seen, ",") != strings.Join(want, ",") {
+		t.Errorf("requests = %v", seen)
+	}
+}
+
+func TestImportMailchimpConnectNotSetUp(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"code":"mailchimp_not_configured","message":"Connecting a Mailchimp account isn't set up here.","hint":"Upload Mailchimp's export instead: ` + "`mailgoose import mailchimp upload <file>`" + `."}}`))
+	}))
+	t.Cleanup(srv.Close)
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_fullkey"
+	if code := h.run("import", "mailchimp", "connect"); code == ExitOK {
+		t.Fatal("connect succeeded")
+	}
+	if e := h.errOut.String(); !strings.Contains(e, "isn't set up here") || !strings.Contains(e, "mailgoose import mailchimp upload") {
+		t.Errorf("stderr: %s", e)
+	}
+}
