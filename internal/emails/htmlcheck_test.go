@@ -90,3 +90,16 @@ func TestHTMLErrorMessage(t *testing.T) {
 		t.Errorf("%q", e.Error())
 	}
 }
+
+func TestHTMLMailchimpTag(t *testing.T) {
+	src := "<html><body>\n<p>Hi *|FNAME|*</p>*|IF:X|*\n<a href=\"{{unsubscribe_url}}\">u</a></body></html>"
+	errs, _ := CheckHTML(src)
+	if len(errs) != 1 || errs[0].Code != HTMLMailchimpTag || errs[0].Line != 2 ||
+		!strings.HasPrefix(errs[0].Message, "*|FNAME|* (and 1 more) is a Mailchimp merge tag") {
+		t.Errorf("%+v", errs)
+	}
+	// An asterisk or a pipe on its own is fine.
+	if errs, _ := CheckHTML("<p>a * b | c *| d</p><a href=\"{{unsubscribe_url}}\">u</a>"); len(errs) != 0 {
+		t.Errorf("%+v", errs)
+	}
+}

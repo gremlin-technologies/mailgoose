@@ -7340,7 +7340,7 @@ components:
           type: string
           enum: [malformed_markup, script, form, iframe, embedded_object, external_stylesheet,
             event_handler, javascript_url, data_url, redirect, missing_unsubscribe, merge_tag_link,
-            too_large, unsupported_css]
+            too_large, mailchimp_merge_tag, unsupported_css]
         message:
           type: string
     EmailCheck:
