@@ -175,9 +175,11 @@ const (
 	AdminActionActionAutoSuspend      AdminActionAction = "auto_suspend"
 	AdminActionActionGrantAdmin       AdminActionAction = "grant_admin"
 	AdminActionActionGrantCredits     AdminActionAction = "grant_credits"
+	AdminActionActionGrantTester      AdminActionAction = "grant_tester"
 	AdminActionActionPause            AdminActionAction = "pause"
 	AdminActionActionRejectSignup     AdminActionAction = "reject_signup"
 	AdminActionActionRevokeAdmin      AdminActionAction = "revoke_admin"
+	AdminActionActionRevokeTester     AdminActionAction = "revoke_tester"
 	AdminActionActionSetTestMode      AdminActionAction = "set_test_mode"
 	AdminActionActionStopCampaign     AdminActionAction = "stop_campaign"
 	AdminActionActionSuspend          AdminActionAction = "suspend"
@@ -203,11 +205,15 @@ func (e AdminActionAction) Valid() bool {
 		return true
 	case AdminActionActionGrantCredits:
 		return true
+	case AdminActionActionGrantTester:
+		return true
 	case AdminActionActionPause:
 		return true
 	case AdminActionActionRejectSignup:
 		return true
 	case AdminActionActionRevokeAdmin:
+		return true
+	case AdminActionActionRevokeTester:
 		return true
 	case AdminActionActionSetTestMode:
 		return true
@@ -1429,6 +1435,9 @@ type AccountSettings struct {
 	// in each is on the web app's `/policies/changes` page.
 	Terms TermsStatus `json:"terms"`
 
+	// Tester The account's tester state when it's a tester account (MG-86); null otherwise.
+	Tester *TesterStatus `json:"tester"`
+
 	// TimeZone An IANA time zone name.
 	//
 	// Examples: America/Chicago
@@ -1544,6 +1553,9 @@ type AdminAccount struct {
 	// TestAddressesPending Test addresses whose link hasn't been used yet.
 	TestAddressesPending int `json:"test_addresses_pending"`
 
+	// Tester Its tester state (MG-86); null when it isn't a tester account.
+	Tester *TesterStatus `json:"tester"`
+
 	// Throttles Its early-warning throttles in the last 30 days, newest first.
 	Throttles []AdminThrottle `json:"throttles"`
 }
@@ -1588,6 +1600,9 @@ type AdminAccountDeliverability struct {
 
 	// SuspendedAt When it was suspended; null when it isn't.
 	SuspendedAt *time.Time `json:"suspended_at"`
+
+	// TesterUntil When its tester account (MG-86) ends, or ended; null when it isn't a tester account.
+	TesterUntil *time.Time `json:"tester_until"`
 
 	// ThrottledUntil When its early-warning throttle lifts; null when it isn't throttled.
 	ThrottledUntil *time.Time `json:"throttled_until"`
@@ -2175,7 +2190,7 @@ type ContactData struct {
 		// address is on an earlier row. `exists`: the account already has the
 		// contact, which is left as it is. `suppressed`: the address
 		// unsubscribed, bounced or complained before. `over_limit`: a free
-		// account was full.
+		// account, or a tester account (MG-86), was full.
 		Reason SkipReason `json:"reason"`
 		Row    int        `json:"row"`
 	} `json:"skipped_rows"`
@@ -2855,6 +2870,18 @@ type GrantCreditsRequest struct {
 	Reason string `json:"reason"`
 }
 
+// GrantTesterRequest defines model for GrantTesterRequest.
+type GrantTesterRequest struct {
+	// Credits Its sends for its life, counted from when it first became a tester. Left out, it's 500.
+	Credits *int `json:"credits,omitempty"`
+
+	// Reason Why, for the admin log. At most 500 characters.
+	Reason string `json:"reason"`
+
+	// Until When it stops sending; at most 366 days away. Left out, it's 30 days from now.
+	Until *time.Time `json:"until,omitempty"`
+}
+
 // HeadingBlock defines model for HeadingBlock.
 type HeadingBlock struct {
 	Align Align `json:"align"`
@@ -3360,7 +3387,7 @@ type SignupRequest struct {
 // address is on an earlier row. `exists`: the account already has the
 // contact, which is left as it is. `suppressed`: the address
 // unsubscribed, bounced or complained before. `over_limit`: a free
-// account was full.
+// account, or a tester account (MG-86), was full.
 type SkipReason string
 
 // SkippedRow defines model for SkippedRow.
@@ -3373,7 +3400,7 @@ type SkippedRow struct {
 	// address is on an earlier row. `exists`: the account already has the
 	// contact, which is left as it is. `suppressed`: the address
 	// unsubscribed, bounced or complained before. `over_limit`: a free
-	// account was full.
+	// account, or a tester account (MG-86), was full.
 	Reason SkipReason `json:"reason"`
 
 	// Row The row's line in the file, where the header is 1.
@@ -3532,6 +3559,34 @@ type TestSendResult struct {
 
 	// To Who each copy went to.
 	To []string `json:"to"`
+}
+
+// TesterStatus A tester account (MG-86) is one of the people invited to try
+// mailgoose before launch. It sends real campaigns within tight
+// limits: `credits` sends for its life (campaign copies and test sends
+// alike; SES mailbox simulator addresses, `*@simulator.amazonses.com`,
+// use none), 100 campaign copies a day, 500 contacts and a stricter
+// automatic pause. A launch or test send that needs more than `left`,
+// or comes after `until`, is refused with the code `tester_limit` and
+// nothing is sent.
+type TesterStatus struct {
+	// Credits Examples: 500
+	Credits int `json:"credits"`
+
+	// Ended Whether `until` has passed.
+	Ended bool `json:"ended"`
+
+	// Left Examples: 380
+	Left int `json:"left"`
+
+	// StartedAt When it became a tester; credits are counted from then.
+	StartedAt time.Time `json:"started_at"`
+
+	// Until When it stops sending.
+	Until time.Time `json:"until"`
+
+	// Used Campaign copies queued, sending or sent, and test sends, since `started_at`, leaving out simulator addresses.
+	Used int `json:"used"`
 }
 
 // TextBlock defines model for TextBlock.
@@ -3810,6 +3865,9 @@ type TestNotSendable = Error
 // TestSendFailed defines model for TestSendFailed.
 type TestSendFailed = Error
 
+// TesterConflict defines model for TesterConflict.
+type TesterConflict = Error
+
 // TooManyRequests defines model for TooManyRequests.
 type TooManyRequests = Error
 
@@ -4043,11 +4101,17 @@ type ApproveSignupJSONRequestBody = AdminReasonRequest
 // GrantCreditsJSONRequestBody defines body for GrantCredits for application/json ContentType.
 type GrantCreditsJSONRequestBody = GrantCreditsRequest
 
+// GrantTesterJSONRequestBody defines body for GrantTester for application/json ContentType.
+type GrantTesterJSONRequestBody = GrantTesterRequest
+
 // PauseAccountJSONRequestBody defines body for PauseAccount for application/json ContentType.
 type PauseAccountJSONRequestBody = AdminReasonRequest
 
 // RejectSignupJSONRequestBody defines body for RejectSignup for application/json ContentType.
 type RejectSignupJSONRequestBody = AdminReasonRequest
+
+// RevokeTesterJSONRequestBody defines body for RevokeTester for application/json ContentType.
+type RevokeTesterJSONRequestBody = AdminReasonRequest
 
 // SetTestModeJSONRequestBody defines body for SetTestMode for application/json ContentType.
 type SetTestModeJSONRequestBody = AdminReasonRequest
@@ -4906,12 +4970,18 @@ type ServerInterface interface {
 	// GrantCredits Grant credits (admin)
 	// (POST /v1/admin/accounts/{account_id}/credits)
 	GrantCredits(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// GrantTester Make an account a tester account (admin)
+	// (POST /v1/admin/accounts/{account_id}/grant-tester)
+	GrantTester(w http.ResponseWriter, r *http.Request, accountId AccountId)
 	// PauseAccount Pause an account's sending (admin)
 	// (POST /v1/admin/accounts/{account_id}/pause)
 	PauseAccount(w http.ResponseWriter, r *http.Request, accountId AccountId)
 	// RejectSignup Reject a sign-up (admin)
 	// (POST /v1/admin/accounts/{account_id}/reject-signup)
 	RejectSignup(w http.ResponseWriter, r *http.Request, accountId AccountId)
+	// RevokeTester End a tester account (admin)
+	// (POST /v1/admin/accounts/{account_id}/revoke-tester)
+	RevokeTester(w http.ResponseWriter, r *http.Request, accountId AccountId)
 	// SetTestMode Put an account in test mode (admin)
 	// (POST /v1/admin/accounts/{account_id}/set-test-mode)
 	SetTestMode(w http.ResponseWriter, r *http.Request, accountId AccountId)
@@ -5458,6 +5528,32 @@ func (siw *ServerInterfaceWrapper) GrantCredits(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// GrantTester operation middleware
+func (siw *ServerInterfaceWrapper) GrantTester(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GrantTester(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // PauseAccount operation middleware
 func (siw *ServerInterfaceWrapper) PauseAccount(w http.ResponseWriter, r *http.Request) {
 
@@ -5501,6 +5597,32 @@ func (siw *ServerInterfaceWrapper) RejectSignup(w http.ResponseWriter, r *http.R
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RejectSignup(w, r, accountId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RevokeTester operation middleware
+func (siw *ServerInterfaceWrapper) RevokeTester(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "account_id" -------------
+	var accountId AccountId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "account_id", r.PathValue("account_id"), &accountId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "account_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RevokeTester(w, r, accountId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8324,6 +8446,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/deliverability", wrapper.GetDeliverabilityReport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/allow-full-sending", wrapper.AllowFullSending)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/set-test-mode", wrapper.SetTestMode)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/grant-tester", wrapper.GrantTester)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/revoke-tester", wrapper.RevokeTester)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/credits", wrapper.GrantCredits)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/campaigns/{campaign_id}/stop", wrapper.StopCampaign)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/imports/{import_id}/approve", wrapper.ApproveImport)

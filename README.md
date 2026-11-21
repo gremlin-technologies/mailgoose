@@ -983,6 +983,26 @@ to its test addresses and take their signups; allowing full sending doesn't
 approve the review. `mailgoose admin test-mode` lists accounts in test mode,
 and `allow-full-sending` and `set-test-mode` switch one.
 
+**Tester accounts** (MG-86) are for people invited to try mailgoose before
+launch. An admin makes one with `mailgoose admin tester grant <id>
+[--until <date>] [--credits <n>]`, which also gives it full sending. Until
+its end (30 days by default, at most 366) it sends real campaigns within
+tight limits: 500 credits for its life (campaign copies and test sends
+alike), at most 500 counted contacts on any plan (adds and imports stop
+there), at most 100 campaign copies a day, and a stricter auto-pause (2
+complaints on a campaign, or over 2% hard bounces with at least 3 on 20 or
+more copies). Copies and tests to SES's mailbox simulator
+(`*@simulator.amazonses.com`) use no tester credits, and testers may test to
+them. A launch or test that needs more credits than are left is refused
+(`tester_limit`, nothing queued); at its end the account can't launch or
+test, and copies still queued wait as for a paused account. The web app
+shows a banner with the credits left, and `mailgoose account get` the same.
+`mailgoose admin tester revoke <id>` ends it and puts the account in test
+mode. Events for simulator copies never count toward any account's bounce
+and complaint rates, pauses or the deliverability report, as SES leaves
+them out too; they still show in the campaign's own report and change their
+contact.
+
 ### Admin tools
 
 mailgoose staff use `mailgoose admin` (the `/v1/admin/*` endpoints). They
@@ -1005,6 +1025,8 @@ an admin; API keys are refused, even an admin's. Every action takes a
 | `mailgoose admin test-mode` | Accounts in test mode, oldest first, with their confirmed and pending test addresses. |
 | `mailgoose admin allow-full-sending <id> [--reason]` | Takes one out of [test mode](#account-health-and-send-limits): it can send to its whole audience. Doesn't approve a sign-up review. |
 | `mailgoose admin set-test-mode <id> [--reason]` | Puts one in test mode; copies already queued for anyone else are skipped. |
+| `mailgoose admin tester grant <id> [--until] [--credits] [--reason]` | Makes an approved account a [tester account](#account-health-and-send-limits), or extends one, keeping its credits used. |
+| `mailgoose admin tester revoke <id> [--reason]` | Ends a tester account and puts it in test mode. |
 | `mailgoose admin deliverability [--limit]` | Each account's copies sent, hard bounce and complaint rates over 24 hours and 7 days, worst first, with whether it's paused, suspended, throttled or in test mode (see [Per-customer deliverability](#account-health-and-send-limits)). |
 | `mailgoose admin stop-campaign <id> --reason --yes` | The kill switch: nobody else gets it, unused credits come back, it ends `cancelled`. |
 | `mailgoose admin approve-import <id> --reason` | Lets a held import's contacts be mailed. |

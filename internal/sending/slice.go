@@ -126,7 +126,7 @@ func SliceRates(ctx context.Context, q querier, campaignID string) (Rates, error
 				AND e.recipient_id = r.id AND e.type = 'bounce' AND e.subtype LIKE 'permanent/%')),
 			count(*) FILTER (WHERE EXISTS (SELECT 1 FROM send_events e WHERE e.campaign_id = r.campaign_id
 				AND e.recipient_id = r.id AND e.type = 'complaint'))
-		FROM campaign_recipients r WHERE r.campaign_id = $1 AND r.in_slice`, campaignID).
+		FROM campaign_recipients r WHERE r.campaign_id = $1 AND r.in_slice AND NOT r.simulated`, campaignID).
 		Scan(&r.Sent, &r.HardBounces, &r.Complaints)
 	return r, err
 }
@@ -171,7 +171,7 @@ func (p *Pipeline) releaseSlice(ctx context.Context, tx pgx.Tx, rowID int64, acc
 	}
 	switch {
 	case paused || r.overPause():
-		h, err := autoPause(ctx, tx, campaignID, r, now)
+		h, err := autoPause(ctx, tx, campaignID, r, now, pauseReason)
 		if err != nil {
 			return false, Health{}, err
 		}

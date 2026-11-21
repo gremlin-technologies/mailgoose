@@ -12,6 +12,18 @@ import (
 // matching SES event, and SES never delivers it to anyone.
 const SimulatorDomain = "simulator.amazonses.com"
 
+// IsSimulator says whether address is on SES's mailbox simulator. Such
+// mail never reaches anyone, and SES leaves it out of the account's bounce
+// and complaint rates, so mailgoose leaves it out of its own (MG-86).
+func IsSimulator(address string) bool {
+	_, domain, ok := strings.Cut(strings.ToLower(strings.TrimSpace(address)), "@")
+	return ok && domain == SimulatorDomain
+}
+
+// SimulatorSQL is a SQL test for a simulator address in the column it's
+// formatted with, as IsSimulator tests one: fmt.Sprintf(SimulatorSQL, "email").
+const SimulatorSQL = `(split_part(lower(%s), '@', 2) = '` + SimulatorDomain + `')`
+
 // Simulator plays SES's mailbox simulator for the fake sender. It sends
 // through Sender as usual; after a send to a simulator address, it builds
 // the event SES would publish to the ses-events queue and hands it to

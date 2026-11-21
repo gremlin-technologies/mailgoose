@@ -24,6 +24,64 @@ below.
   API, database or CLI change; other open tabs follow it. Keeping it on the
   account instead would mean a field on `/v1/account` and a CLI flag.
 
+## 2026-11-21: Tester accounts (MG-86, owner decision; limits and details are reversible defaults)
+
+The owner asked for a tester mode: accounts for people invited to try
+mailgoose before launch, held to a 500-credit budget "and any other
+safeguards we think are necessary". It's separate from test mode (MG-80),
+which keeps an account to its own test addresses; a tester sends real
+campaigns to people who agreed to get them. The details below were picked
+while building it and are easy to change.
+
+- **Who.** Admins grant it with `mailgoose admin tester grant <id>`
+  (`POST /v1/admin/accounts/{id}/grant-tester`), only to an account whose
+  sign-up was approved or never held (MG-66) and that isn't suspended. A
+  grant gives full sending. `mailgoose admin tester revoke` ends it and puts
+  the account in test mode. Both are logged with a reason.
+- **How long.** 30 days unless `--until` names an end (a date means the end
+  of that day, UTC), at most 366 days. A second grant extends it, keeping its
+  start, so credits used stay used; a grant after a revoke starts afresh. At
+  its end the account can't launch or test, and copies still queued wait, as
+  for a paused account, rather than being skipped; an admin extends or
+  revokes it.
+- **Credits.** 500 for its life by default (`--credits` 1 to 10,000),
+  counted from its start: campaign copies queued, sending or sent, and test
+  sends. A skipped or failed copy gives its credit back. They're counted
+  apart from the credit ledger, which still debits the account's own
+  credits as for anyone; the tester budget is a cap on top. A launch whose
+  audience needs more than are left is refused with `tester_limit` (when the
+  summary is asked for and again at the confirm, with the account row
+  locked), and so is a test send; nothing is queued or sent.
+- **Contacts.** At most 500 counted contacts, whatever the plan; adds and
+  CSV imports stop there. The Mailchimp import (MG-69 to MG-78) isn't built
+  yet; it has to go through the same check.
+- **Daily cap.** At most 100 campaign copies a day (the account's own lower
+  limit, if any, stays), with the reason shown in its send limit.
+- **Stricter pause.** A tester's campaign is paused, and the account with
+  it, at 2 complaints on the campaign at any size, or with 20 or more copies
+  at over 2% hard bounces and at least 3 of them. Other accounts' limits
+  (MG-79) still apply too.
+- **SES mailbox simulator.** Copies and test sends to
+  `*@simulator.amazonses.com` use no tester credits, and testers may test to
+  them without a verified domain. For every account, events for simulator
+  copies are marked `simulated` and left out of bounce and complaint rates,
+  auto-pauses, throttles and the deliverability report, because SES leaves
+  them out of the AWS account's reputation. They still show in the
+  campaign's own report and still change their contact (a simulated bounce
+  marks the contact bounced), so a tester sees what a bounce does. They
+  count toward the 100-a-day cap and the 50-a-day test cap, and the ledger
+  debits them as for any copy.
+- **Where it shows.** A banner across the web app ("Tester account: N of 500
+  credits left", or that it has ended), the same in `mailgoose account get`
+  and `GET /v1/account` (`tester`), the admin account view, and "tester
+  until" in the deliverability report.
+- **Merging.** App-only, so the reviewer merges; no infra change.
+
+Proposals for the owner, not built: a pause that looks at a tester's whole
+life, not one campaign; leaving simulator copies out of the daily cap and
+the ledger; a `mailgoose admin tester list`; an email a few days before a
+tester account ends; and a link in the banner for reporting bugs.
+
 ## 2026-11-21: Staging deploys on merge from CodeBuild, not GitHub OIDC (owner ask; the route is a recommended, reversible default)
 
 The owner asked what it takes to deploy staging automatically on merge.

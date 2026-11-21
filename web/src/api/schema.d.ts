@@ -811,8 +811,9 @@ export interface paths {
          *     to the account. An address that was deleted after it unsubscribed,
          *     bounced or complained comes back with that status, whatever
          *     `status` asks for, so it isn't mailed again by mistake. A free
-         *     account holds at most 500 counted contacts (unconfirmed and
-         *     subscribed); one more gets 402 `contact_limit`.
+         *     account, or a tester account (MG-86) on any plan, holds at most 500
+         *     counted contacts (unconfirmed and subscribed); one more gets 402
+         *     `contact_limit`.
          */
         post: operations["createContact"];
         delete?: never;
@@ -2031,6 +2032,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/accounts/{account_id}/grant-tester": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make an account a tester account (admin)
+         * @description mailgoose staff only (MG-86): makes the account a tester account,
+         *     or sets a new end and credits for one already. A tester account
+         *     gets full sending and sends real campaigns within its limits (see
+         *     `TesterStatus`) until `until`, 30 days from now unless given. Its
+         *     credits are counted from when it first became a tester, so a
+         *     second grant extends it rather than starting afresh. Only an
+         *     account whose sign-up was approved, or never held for review, and
+         *     that isn't suspended can be one.
+         */
+        post: operations["grantTester"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/admin/accounts/{account_id}/revoke-tester": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * End a tester account (admin)
+         * @description mailgoose staff only (MG-86): ends the account's tester state and
+         *     puts it in test mode (MG-80), so from now on it sends only to its
+         *     confirmed test addresses and its owner's own address; copies of a
+         *     campaign already sending to anyone else are skipped, with their
+         *     credits given back. `allowFullSending` makes it a customer
+         *     afterwards. An account that isn't a tester answers 409 `not_tester`.
+         */
+        post: operations["revokeTester"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/accounts/{account_id}/credits": {
         parameters: {
             query?: never;
@@ -2368,7 +2421,7 @@ export interface components {
          *     address is on an earlier row. `exists`: the account already has the
          *     contact, which is left as it is. `suppressed`: the address
          *     unsubscribed, bounced or complained before. `over_limit`: a free
-         *     account was full.
+         *     account, or a tester account (MG-86), was full.
          * @enum {string}
          */
         SkipReason: "invalid_email" | "invalid_row" | "duplicate" | "exists" | "suppressed" | "over_limit";
@@ -2561,8 +2614,40 @@ export interface components {
             send_limit: components["schemas"]["SendLimit"];
             terms: components["schemas"]["TermsStatus"];
             sending_mode: components["schemas"]["SendingMode"];
+            /** @description The account's tester state when it's a tester account (MG-86); null otherwise. */
+            tester: components["schemas"]["TesterStatus"] | null;
             /** Format: date-time */
             created_at: string;
+        };
+        /**
+         * @description A tester account (MG-86) is one of the people invited to try
+         *     mailgoose before launch. It sends real campaigns within tight
+         *     limits: `credits` sends for its life (campaign copies and test sends
+         *     alike; SES mailbox simulator addresses, `*@simulator.amazonses.com`,
+         *     use none), 100 campaign copies a day, 500 contacts and a stricter
+         *     automatic pause. A launch or test send that needs more than `left`,
+         *     or comes after `until`, is refused with the code `tester_limit` and
+         *     nothing is sent.
+         */
+        TesterStatus: {
+            /**
+             * Format: date-time
+             * @description When it became a tester; credits are counted from then.
+             */
+            started_at: string;
+            /**
+             * Format: date-time
+             * @description When it stops sending.
+             */
+            until: string;
+            /** @example 500 */
+            credits: number;
+            /** @description Campaign copies queued, sending or sent, and test sends, since `started_at`, leaving out simulator addresses. */
+            used: number;
+            /** @example 380 */
+            left: number;
+            /** @description Whether `until` has passed. */
+            ended: boolean;
         };
         /**
          * @description `test` while the account is in test mode (MG-80): it sends only to
@@ -3801,6 +3886,17 @@ export interface components {
             /** @description Why, for the admin log (and, for a pause, the account). At most 500 characters. */
             reason: string;
         };
+        GrantTesterRequest: {
+            /**
+             * Format: date-time
+             * @description When it stops sending; at most 366 days away. Left out, it's 30 days from now.
+             */
+            until?: string;
+            /** @description Its sends for its life, counted from when it first became a tester. Left out, it's 500. */
+            credits?: number;
+            /** @description Why, for the admin log. At most 500 characters. */
+            reason: string;
+        };
         GrantCreditsRequest: {
             /** Format: int64 */
             amount: number;
@@ -3879,6 +3975,11 @@ export interface components {
             sending_mode: components["schemas"]["SendingMode"];
             /**
              * Format: date-time
+             * @description When its tester account (MG-86) ends, or ended; null when it isn't a tester account.
+             */
+            tester_until: string | null;
+            /**
+             * Format: date-time
              * @description When its sending was paused; null when it isn't.
              */
             sending_paused_at: string | null;
@@ -3955,6 +4056,8 @@ export interface components {
             rates: components["schemas"]["AdminRates"];
         };
         AdminAccount: components["schemas"]["AdminAccountSummary"] & {
+            /** @description Its tester state (MG-86); null when it isn't a tester account. */
+            tester: components["schemas"]["TesterStatus"] | null;
             /** @description The latest version of the terms the account accepted; null if it never accepted one. */
             terms_version: string | null;
             /**
@@ -4015,7 +4118,7 @@ export interface components {
             /** @description The admin's address, `mailgoosed` (the server's command line) or `automatic`. */
             actor: string;
             /** @enum {string} */
-            action: "grant_admin" | "revoke_admin" | "pause" | "unpause" | "auto_pause" | "stop_campaign" | "approve_import" | "grant_credits" | "throttle" | "suspend" | "unsuspend" | "auto_suspend" | "approve_signup" | "reject_signup" | "allow_full_sending" | "set_test_mode";
+            action: "grant_admin" | "revoke_admin" | "pause" | "unpause" | "auto_pause" | "stop_campaign" | "approve_import" | "grant_credits" | "throttle" | "suspend" | "unsuspend" | "auto_suspend" | "approve_signup" | "reject_signup" | "allow_full_sending" | "set_test_mode" | "grant_tester" | "revoke_tester";
             /** Format: uuid */
             account_id: string | null;
             /** @description The campaign, import or user acted on. */
@@ -4045,7 +4148,9 @@ export interface components {
         };
         /**
          * @description `invalid_admin_request`: `details.field` is `reason` (missing, or over
-         *     500 characters) or `amount` (not 1 to 1,000,000).
+         *     500 characters), `amount` (not 1 to 1,000,000), or for a tester
+         *     grant `until` (passed, or over 366 days away) or `credits` (not 1 to
+         *     10,000).
          */
         InvalidAdminRequest: {
             headers: {
@@ -4105,9 +4210,10 @@ export interface components {
             };
         };
         /**
-         * @description `contact_limit`: a free account holds at most 500 counted contacts
-         *     (unconfirmed and subscribed). `details.limit` is the limit and
-         *     `details.count` the counted contacts now. Paid accounts have no cap.
+         * @description `contact_limit`: a free account, or a tester account (MG-86) on any
+         *     plan, holds at most 500 counted contacts (unconfirmed and
+         *     subscribed). `details.limit` is the limit and `details.count` the
+         *     counted contacts now. Other paid accounts have no cap.
          */
         ContactLimit: {
             headers: {
@@ -4276,6 +4382,21 @@ export interface components {
             };
         };
         /**
+         * @description `signup_not_approved`: the account's sign-up review (MG-66) waits
+         *     or was rejected, so it can't be a tester. `account_suspended`: the
+         *     account is suspended. `not_tester`: revoking an account that isn't
+         *     a tester account.
+         */
+        TesterConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `sending_mode_unchanged`: the account is in that sending mode
          *     already.
          */
@@ -4385,7 +4506,11 @@ export interface components {
          *     `details.address` names it. `test_mode`: the account is in test
          *     mode (MG-80) and an address in `to` is neither the owner's nor a
          *     confirmed test address, whatever its domain; `details.address`
-         *     names it.
+         *     names it. `tester_limit`: a tester account (MG-86) has ended, or the
+         *     test needs more tester credits than are left (simulator addresses
+         *     need none); `details` has `needed`, `credits`, `used`, `left`,
+         *     `until` and `ended`. A tester account may also test to SES mailbox
+         *     simulator addresses (`*@simulator.amazonses.com`).
          */
         TestNotSendable: {
             headers: {
@@ -4430,8 +4555,10 @@ export interface components {
          *     the account hasn't accepted the new version; `details.current_version`
          *     and `details.accepted_version`, then `acceptTerms`),
          *     `subscription_past_due` (sending is paused until the paid plan's
-         *     payment goes through), `no_recipients`, and `credits_short` with `details.needed`,
-         *     `details.balance` and `details.short`. `invalid_confirmation`: the
+         *     payment goes through), `no_recipients`, `credits_short` with `details.needed`,
+         *     `details.balance` and `details.short`, and `tester_limit` (a tester account, MG-86, that has
+         *     ended, or whose campaign needs more tester credits than are left; `details.needed`,
+         *     `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`). `invalid_confirmation`: the
          *     code can't be used; `details.reason` is `no_code`, `expired`,
          *     `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the
          *     campaign now reaches more than a tenth more contacts than the
@@ -7831,6 +7958,60 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["SendingModeConflict"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    grantTester: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantTesterRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AdminAccount"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TesterConflict"];
+            422: components["responses"]["InvalidAdminRequest"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    revokeTester: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The account's `id`. */
+                account_id: components["parameters"]["AccountId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminReasonRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["AdminAccount"];
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["TesterConflict"];
             422: components["responses"]["InvalidAdminRequest"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];

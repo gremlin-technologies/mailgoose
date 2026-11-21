@@ -68,6 +68,11 @@ func (s *Server) adminError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, admin.ErrSendingModeUnchanged):
 		WriteError(w, Conflict("sending_mode_unchanged", "The account is in that sending mode already, so nothing changed.").
 			WithHint("`mailgoose admin account <account-id>` shows its mode."))
+	case errors.Is(err, admin.ErrNotApproved):
+		WriteError(w, Conflict("signup_not_approved", "The account's sign-up review is waiting or was rejected, so it can't be a tester account.").
+			WithHint("Approve it first with `mailgoose admin approve-signup <account-id>`."))
+	case errors.Is(err, admin.ErrNotTester):
+		WriteError(w, Conflict("not_tester", "The account isn't a tester account, so nothing changed."))
 	case errors.Is(err, admin.ErrNotHeld):
 		WriteError(w, Conflict("import_not_held", "The import isn't waiting for approval, so nothing changed."))
 	case errors.As(err, &st):
@@ -263,6 +268,36 @@ func (s *Server) AllowFullSending(w http.ResponseWriter, r *http.Request, id api
 // SetTestMode is POST /v1/admin/accounts/{account_id}/set-test-mode.
 func (s *Server) SetTestMode(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
 	s.pauseOrUnpause(w, r, id, s.Admin.SetTestMode)
+}
+
+// GrantTester is POST /v1/admin/accounts/{account_id}/grant-tester (MG-86).
+func (s *Server) GrantTester(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
+	a := s.requireAdmin(w, r)
+	if a == nil || !validUUID(w, "account_id", id) {
+		return
+	}
+	var req apigen.GrantTesterRequest
+	if err := DecodeJSON(w, r, &req); err != nil {
+		WriteError(w, err)
+		return
+	}
+	credits := 0
+	if req.Credits != nil {
+		if credits = *req.Credits; credits == 0 {
+			credits = -1 // 0 is "the default" inside; a 0 sent is out of range.
+		}
+	}
+	out, err := s.Admin.GrantTester(r.Context(), *a, id, req.Until, credits, req.Reason)
+	if err != nil {
+		s.adminError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, adminAccountJSON(out))
+}
+
+// RevokeTester is POST /v1/admin/accounts/{account_id}/revoke-tester (MG-86).
+func (s *Server) RevokeTester(w http.ResponseWriter, r *http.Request, id apigen.AccountId) {
+	s.pauseOrUnpause(w, r, id, s.Admin.RevokeTester)
 }
 
 func (s *Server) pauseOrUnpause(w http.ResponseWriter, r *http.Request, id string,

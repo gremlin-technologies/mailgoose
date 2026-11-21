@@ -10,6 +10,7 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
+	"github.com/gremlin-technologies/mailgoose/internal/tester"
 )
 
 // TestCampaign is POST /v1/campaigns/{campaign_id}/test.
@@ -56,6 +57,7 @@ func (s *Server) testSendError(w http.ResponseWriter, r *http.Request, err error
 	var suppressed *sending.SuppressedError
 	var limit *sending.LimitError
 	var failed *sending.SendError
+	var short *tester.ShortError
 	switch {
 	case err == nil:
 		return false
@@ -85,6 +87,11 @@ func (s *Server) testSendError(w http.ResponseWriter, r *http.Request, err error
 		w.Header().Set("Retry-After", strconv.Itoa(secs))
 		WriteError(w, TooManyRequests("test_limit", fmt.Sprintf("This account has sent %d test emails in the last 24 hours, and the limit is %d.", limit.Sent, sending.TestsPerDay)).
 			WithHint(fmt.Sprintf("Wait %s (see Retry-After), or send to fewer addresses.", wait(secs))))
+	case errors.As(err, &short):
+		st := short.Status
+		WriteError(w, Unprocessable("tester_limit", short.Message()).WithHint(short.Hint()).
+			WithDetails(map[string]any{"needed": short.Needed, "credits": st.Credits, "used": st.Used, "left": st.Left,
+				"until": st.Until, "ended": st.Ended}))
 	case errors.As(err, &failed):
 		s.Log.ErrorContext(r.Context(), "test send failed", "err", failed.Err)
 		WriteError(w, &Error{Status: http.StatusBadGateway, Code: "test_send_failed",

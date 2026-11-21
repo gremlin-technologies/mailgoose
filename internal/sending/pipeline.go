@@ -181,8 +181,8 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 	var since time.Time
 	err = tx.QueryRow(ctx, `
 		SELECT q.id, q.account_id, q.campaign_id, c.status, c.slice_state,
-			a.sending_paused_at IS NOT NULL OR a.suspended_at IS NOT NULL, a.daily_send_limit,
-			coalesce(a.activated_at, a.created_at)
+			a.sending_paused_at IS NOT NULL OR a.suspended_at IS NOT NULL OR coalesce(a.tester_until <= $1, false),
+			`+ownLimitSQL+`, coalesce(a.activated_at, a.created_at)
 		FROM send_queue q JOIN campaigns c ON c.id = q.campaign_id JOIN accounts a ON a.id = q.account_id
 		WHERE q.done_at IS NULL AND q.run_at <= $1 AND q.id > $2
 		ORDER BY q.id LIMIT 1

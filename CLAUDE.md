@@ -78,6 +78,11 @@ scope; they only show where an idea came from.
   `docs/brand/wordmark.png` (head and word; light-text version for dark mode)
   in the app's side menu and the site header, `docs/brand/goose.png` wherever
   the goose stands alone, the head as favicon. See `docs/brand.md`.
+- Tester accounts (Nov 21, MG-86): admins make invited testers tester
+  accounts (`mailgoose admin tester grant|revoke`): full sending within 500
+  credits for life, 500 contacts, 100 copies a day and a stricter pause,
+  for 30 days by default. SES mailbox simulator copies are free for testers
+  and left out of every account's rates.
 - UI look (Nov 20): white pages, near-black text, the periwinkle blue only for
   actions and state, hairline-and-shadow depth, 120ms transitions, Lucide icons
   in the side menu. See `docs/design-system.md`. Light by default (Nov 21):

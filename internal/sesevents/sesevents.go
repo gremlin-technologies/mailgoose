@@ -284,9 +284,10 @@ func (s *Service) store(ctx context.Context, e *event, p *parsed, key string) (O
 	// The send record, for campaign mail.
 	var recipientID *int64
 	var accountID, campaignID, contactID *string
+	var simulated bool
 	err = tx.QueryRow(ctx, `
-		SELECT id, account_id, campaign_id, contact_id FROM campaign_recipients WHERE message_id = $1 LIMIT 1`,
-		e.Mail.MessageID).Scan(&recipientID, &accountID, &campaignID, &contactID)
+		SELECT id, account_id, campaign_id, contact_id, simulated FROM campaign_recipients WHERE message_id = $1 LIMIT 1`,
+		e.Mail.MessageID).Scan(&recipientID, &accountID, &campaignID, &contactID, &simulated)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return "", err
 	}
@@ -311,34 +312,40 @@ func (s *Service) store(ctx context.Context, e *event, p *parsed, key string) (O
 		// so a bounce or complaint still reaches the contact.
 		if c := e.tag(mail.TagCampaign); uuidPattern.MatchString(c) && len(p.addresses) > 0 {
 			err := tx.QueryRow(ctx, `
-				SELECT r.id, r.campaign_id, r.contact_id FROM campaign_recipients r
+				SELECT r.id, r.campaign_id, r.contact_id, r.simulated FROM campaign_recipients r
 				JOIN contacts ct ON ct.id = r.contact_id
 				WHERE r.account_id = $1 AND r.campaign_id = $2 AND ct.email = ANY($3) LIMIT 1`,
-				*accountID, c, normalize(p.addresses)).Scan(&recipientID, &campaignID, &contactID)
+				*accountID, c, normalize(p.addresses)).Scan(&recipientID, &campaignID, &contactID, &simulated)
 			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 				return "", err
 			}
 		}
 	}
+	// Mail to SES's mailbox simulator (MG-86) is marked: SES leaves it out
+	// of the account's rates, so it never pauses or throttles an account.
+	// It still changes its contact, so a bounce test shows what a bounce
+	// does.
+	if recipientID == nil {
+		simulated = allSimulator(p.addresses)
+	}
 	var id int64
 	err = tx.QueryRow(ctx, `
-		INSERT INTO send_events (event_key, account_id, campaign_id, recipient_id, message_id, kind, type, subtype, occurred_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, ''), $9)
+		INSERT INTO send_events (event_key, account_id, campaign_id, recipient_id, message_id, kind, type, subtype, occurred_at, simulated)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, nullif($8, ''), $9, $10)
 		ON CONFLICT (event_key) DO NOTHING RETURNING id`,
-		key, accountID, campaignID, recipientID, e.Mail.MessageID, kind, p.typ, p.subtype, p.at).Scan(&id)
+		key, accountID, campaignID, recipientID, e.Mail.MessageID, kind, p.typ, p.subtype, p.at, simulated).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Duplicate, tx.Commit(ctx)
 	}
 	if err != nil {
 		return "", err
 	}
-
 	// A campaign's hard bounces and complaints can pause its account
 	// (CMP-6), or throttle it (MG-61). This comes before the contact changes so locks are taken
 	// campaign, then account, then contact: the order launch (campaign,
 	// account) and signups (account, contact) use.
 	var health sending.Health
-	if campaignID != nil && (p.typ == TypeComplaint || p.typ == TypeBounce && p.hard) {
+	if campaignID != nil && !simulated && (p.typ == TypeComplaint || p.typ == TypeBounce && p.hard) {
 		if health, err = sending.CheckCampaign(ctx, tx, *campaignID, s.now(), s.Warning); err != nil {
 			return "", err
 		}
@@ -378,6 +385,17 @@ func (s *Service) contactsFor(ctx context.Context, tx pgx.Tx, kind string, accou
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+// allSimulator says whether every address is an SES mailbox simulator
+// address, and there's at least one.
+func allSimulator(addresses []string) bool {
+	for _, a := range addresses {
+		if !mail.IsSimulator(a) {
+			return false
+		}
+	}
+	return len(addresses) > 0
 }
 
 // normalize lowercases and trims addresses, as contacts store them.

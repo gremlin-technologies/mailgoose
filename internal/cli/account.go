@@ -25,7 +25,38 @@ type account struct {
 	SendLimit      sendLimit `json:"send_limit"`
 	Terms          terms     `json:"terms"`
 	SendingMode    string    `json:"sending_mode"`
-	CreatedAt      time.Time `json:"created_at"`
+	// Tester is the account's tester state (MG-86); nil when it isn't one.
+	Tester    *testerStatus `json:"tester"`
+	CreatedAt time.Time     `json:"created_at"`
+}
+
+// testerStatus is the API's TesterStatus.
+type testerStatus struct {
+	StartedAt time.Time `json:"started_at"`
+	Until     time.Time `json:"until"`
+	Credits   int       `json:"credits"`
+	Used      int       `json:"used"`
+	Left      int       `json:"left"`
+	Ended     bool      `json:"ended"`
+}
+
+// line is the state for the account's owner: "Tester account: 380 of 500
+// credits left, until Dec 21, 2026", or that it has ended.
+func (t testerStatus) line() string {
+	if t.Ended {
+		return "Tester account: ended " + t.Until.Local().Format("Jan 2, 2006") + ", so it can't send"
+	}
+	return fmt.Sprintf("Tester account: %d of %d credits left, until %s", t.Left, t.Credits, t.Until.Local().Format("Jan 2, 2006"))
+}
+
+// adminLine is the state for an admin: credits used and left, and the end.
+func (t testerStatus) adminLine() string {
+	end := "until " + t.Until.Local().Format("2006-01-02 15:04")
+	if t.Ended {
+		end = "ENDED " + t.Until.Local().Format("2006-01-02 15:04")
+	}
+	return fmt.Sprintf("%d of %d credits used, %d left, %s (since %s)", t.Used, t.Credits, t.Left, end,
+		t.StartedAt.Local().Format("2006-01-02"))
 }
 
 // terms is the API's TermsStatus.
@@ -265,6 +296,12 @@ func (a *App) printAccount(acct account) {
 		fmt.Fprintln(a.Stdout, "Sending:     TEST MODE: only to your confirmed test addresses and your own address")
 	} else {
 		fmt.Fprintln(a.Stdout, "Sending:     full")
+	}
+	if acct.Tester != nil {
+		fmt.Fprintf(a.Stdout, "Tester:      %s\n", acct.Tester.line())
+		if !acct.Tester.Ended {
+			fmt.Fprintln(a.Stdout, "             Sends to *@simulator.amazonses.com use no credits.")
+		}
 	}
 	if acct.Terms.AcceptanceNeeded {
 		fmt.Fprintf(a.Stdout, "\nThe terms changed: version %s took effect on %s. Read what changed in the web app at /policies/changes,\n", acct.Terms.CurrentVersion, acct.Terms.CurrentEffective)
