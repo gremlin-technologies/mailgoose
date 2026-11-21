@@ -4512,11 +4512,23 @@ Some or all settings. Fields left out keep their values.
 
 ### SocialBlock
 
+A row (or column) of links to social profiles, each shown as the
+network's icon, its name, or both. The icons are PNGs the API serves
+at `/assets/social/`, in the network's own colors (`brand`), near
+black (`dark`; Facebook stays blue) or white (`light`, for dark
+backgrounds). A block saved without the style fields reads with
+their defaults.
+
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id` | [BlockId](#schema-blockid) | yes |  |
 | `type` | string | yes |  |
 | `links` | array of object | yes |  |
+| `display` | string: one of `icons`, `icons_and_text`, `text` | yes | Icons only, icons with the link's name, or names only. |
+| `color` | string: one of `brand`, `dark`, `light` | yes |  |
+| `size` | integer: one of `32`, `40`, `48` | yes | The icons' height in pixels. |
+| `spacing` | integer | yes | Pixels between links. |
+| `layout` | string: one of `horizontal`, `vertical` | yes | In a row (wrapping on narrow screens) or one link a line. |
 | `align` | [Align](#schema-align) | yes |  |
 
 <a id="schema-footerblock"></a>

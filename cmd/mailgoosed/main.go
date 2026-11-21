@@ -172,7 +172,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		}
 		srv.Sending = &sending.Service{DB: pool, Campaigns: srv.Campaigns, Emails: srv.Emails,
 			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Senders: srv.Senders, Unsubscribe: srv.Unsubscribe, Mail: sender,
-			Limits: sendLimits(cfg), Slicing: slicing(cfg),
+			AssetsURL: cfg.PublicBaseURL, Limits: sendLimits(cfg), Slicing: slicing(cfg),
 			LinkSafety: srv.LinkSafety, Alert: alerts.Notify, Log: log.With("component", "sending")}
 		// Each form adds at most FORM_DAILY_SIGNUP_LIMIT new contacts a day
 		// (MG-92); reaching it emails the owner from notices@ and

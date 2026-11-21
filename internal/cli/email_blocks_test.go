@@ -97,3 +97,46 @@ func blockOutline(bs []map[string]any) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// TestEmailBlocksSocial adds a social block with --link and the style
+// flags, then changes them.
+func TestEmailBlocksSocial(t *testing.T) {
+	h := liveAPI(t)
+	run := func(args ...string) map[string]any {
+		t.Helper()
+		if code := h.run(append(args, "--json")...); code != ExitOK {
+			t.Fatalf("%v: exit %d %s", args, code, h.errOut)
+		}
+		return h.jsonOut(t)
+	}
+	block := func(out map[string]any) map[string]any {
+		return out["block"].(map[string]any)["block"].(map[string]any)
+	}
+
+	id := run("email", "create", "--name", "Social")["id"].(string)
+	b := block(run("email", "blocks", "add", id, "--type", "social",
+		"--link", "instagram=https://instagram.com/bakery", "--link", "website=https://bakery.example/?a=b"))
+	links, _ := json.Marshal(b["links"])
+	if string(links) != `[{"network":"instagram","url":"https://instagram.com/bakery"},{"network":"website","url":"https://bakery.example/?a=b"}]` ||
+		b["display"] != "icons" || b["color"] != "brand" || b["size"].(float64) != 32 || b["layout"] != "horizontal" {
+		t.Errorf("added %v", b)
+	}
+	social := b["id"].(string)
+	b = block(run("email", "blocks", "update", id, social, "--display", "icons_and_text", "--color", "light", "--size", "48",
+		"--spacing", "8", "--layout", "vertical", "--link", "x=https://x.com/bakery"))
+	links, _ = json.Marshal(b["links"])
+	if string(links) != `[{"network":"x","url":"https://x.com/bakery"}]` || b["display"] != "icons_and_text" || b["color"] != "light" ||
+		b["size"].(float64) != 48 || b["spacing"].(float64) != 8 || b["layout"] != "vertical" {
+		t.Errorf("updated %v", b)
+	}
+
+	if code := h.run("email", "blocks", "list", id); code != ExitOK || !strings.Contains(h.out.String(), "x") {
+		t.Errorf("list: exit %d\n%s", code, h.out)
+	}
+	if code := h.run("email", "blocks", "update", id, social, "--link", "instagram"); code != ExitUsage || !strings.Contains(h.errOut.String(), "network=url") {
+		t.Errorf("bad --link: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("email", "blocks", "update", id, social, "--size", "24"); code != ExitError || !strings.Contains(h.errOut.String(), "32, 40 or 48") {
+		t.Errorf("bad --size: exit %d %s", code, h.errOut)
+	}
+}

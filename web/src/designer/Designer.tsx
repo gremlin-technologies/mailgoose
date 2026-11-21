@@ -52,6 +52,7 @@ import { backLabel, SaveAndExit, useReturnTo } from "./exit";
 import { HtmlEditor } from "./HtmlEditor";
 import { InlineText, RichText } from "./inline";
 import { base64, BlockProperties, EmailProperties, type Settings } from "./properties";
+import { networkNames, networks, SocialCanvas, type Network } from "./social";
 
 type Email = components["schemas"]["Email"];
 
@@ -679,15 +680,7 @@ function BlockView({
     case "spacer":
       return <div className="canvas-spacer" style={{ height: block.height }} />;
     case "social":
-      return (
-        <p className="canvas-social" style={align(block.align)}>
-          {block.links.map((l) => (
-            <span key={l.network + l.url} title={l.url}>
-              {l.network}
-            </span>
-          ))}
-        </p>
-      );
+      return <SocialCanvas block={block} />;
     case "footer":
       return (
         <div className="canvas-footer">
@@ -699,8 +692,6 @@ function BlockView({
       return null;
   }
 }
-
-const networks = ["website", "facebook", "instagram", "x", "linkedin", "youtube", "tiktok", "threads", "bluesky"] as const;
 
 /** What an image, button or social block needs before it can be added. */
 function Details({
@@ -721,7 +712,7 @@ function Details({
   const [url, setUrl] = useState("");
   const [alt, setAlt] = useState("");
   const [text, setText] = useState("");
-  const [network, setNetwork] = useState<(typeof networks)[number]>("website");
+  const [network, setNetwork] = useState<Network>("website");
   const [uploading, setUploading] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -786,10 +777,10 @@ function Details({
         <>
           <label className="field">
             <span>Network</span>
-            <select value={network} onChange={(e) => setNetwork(e.target.value as (typeof networks)[number])}>
+            <select value={network} onChange={(e) => setNetwork(e.target.value as Network)}>
               {networks.map((n) => (
                 <option key={n} value={n}>
-                  {n}
+                  {networkNames[n]}
                 </option>
               ))}
             </select>

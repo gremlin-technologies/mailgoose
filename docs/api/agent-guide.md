@@ -101,6 +101,10 @@ with `email blocks move`, remove it with `email blocks remove`. Put blocks
 side by side with a `columns` block and `--in <columns-id> --column 0`.
 Upload a picture first with `mailgoose image upload photo.jpg --json` and use
 its `url` as an image block's `--src`.
+Link to social profiles with a `social` block, which shows each network's
+icon: `--type social --link instagram=https://instagram.com/... --link
+website=https://...`, styled with `--display`, `--color`, `--size`,
+`--spacing` and `--layout`.
 
 Then set the subject and sender:
 
