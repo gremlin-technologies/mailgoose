@@ -21,8 +21,9 @@ it, and nothing else. Nothing in this Terraform touches the apex, `www`,
 - **Staging:** one zone, `staging.mailgoose.app`, created by `global`
   (`hosted_zone_name`). GoDaddy has an NS record for `staging` pointing at it
   (`terraform output hosted_zone_name_servers` in `global`). Everything staging
-  creates lives in it: `api.staging`, `app.staging`, `mail.staging`, DKIM,
-  MAIL FROM, DMARC.
+  creates lives in it: `api.staging`, `app.staging`, `mail.staging`, the
+  shared sending domain `shared.staging` (MG-85), and their DKIM, MAIL FROM
+  and DMARC records.
 - **Prod:** three zones, created by `prod-dns`, because the names are not under
   one subdomain:
 
@@ -504,6 +505,13 @@ export AWS_REGION=us-east-2
   (SES ignores tags on sends, `docs/decisions.md` 2026-11-20): before every
   send the app checks the From domain is the system sending domain or one the
   account verified in this environment, and refuses the message otherwise.
+- **The shared sending domain** (MG-85, `SHARED_SENDING_DOMAIN`) is in
+  Terraform, like the system sending domain: `shared_sending_domain` on the
+  stack makes its SES identity, DKIM, MAIL FROM and DMARC records and sets
+  the variable on the API and worker. The app lets mail from it through only
+  as the account's own sending slug with a verified Reply-To. Staging sets it
+  to `shared.staging.mailgoose.app`; prod leaves it unset, so shared sending
+  is off there. See "Shared sending domain" below.
 - **Every send passes the configuration set** (`SES_CONFIGURATION_SET`) so events
   reach the events queue.
 - **Uploaded images** go in `IMAGES_BUCKET` and are served from
@@ -514,6 +522,48 @@ export AWS_REGION=us-east-2
   as long as the object says.
 - Containers run with a read-only root filesystem; write temp files to a mounted
   volume or memory if needed.
+
+## Shared sending domain (MG-85)
+
+Accounts without a verified domain of their own send from
+`<sending slug>@<shared sending domain>`, with replies to an address they
+verified. Shared sending is on in an environment only when its root sets
+`shared_sending_domain`; it is the same SES setup as the system sending
+domain, with the same configuration set, so its bounces and complaints reach
+the events worker. Its reputation is shared by every account that uses it.
+
+To go live in staging (the variable is already set in `envs/staging`):
+
+1. From a machine signed in to AWS, in `infra/envs/staging`:
+   `terraform plan`, check it adds one SES identity
+   (`shared.staging.mailgoose.app`), its MAIL FROM, six Route 53 records
+   (three DKIM CNAMEs, `bounce.shared.staging` MX and TXT, and
+   `_dmarc.shared.staging`) and new API and worker task definitions (the
+   new variable), and changes nothing else; then `terraform apply`.
+2. Wait for SES to show the identity verified, DKIM and MAIL FROM both
+   successful (usually minutes):
+   `aws sesv2 get-email-identity --email-identity shared.staging.mailgoose.app --region us-east-2`
+   should show `"VerifiedForSendingStatus": true`, DKIM `"Status": "SUCCESS"`
+   and `"MailFromDomainStatus": "SUCCESS"`.
+3. Deploy staging (a merge to main once CodeBuild deploys, or the manual
+   deploy in "How deploys work"). The deploy copies the latest task
+   definitions, so the running tasks get `SHARED_SENDING_DOMAIN` then. The
+   image must include the app change (MG-85, migration 00041); an older
+   image ignores the variable.
+4. Check it: in a staging account with no domain, send a test from the
+   owner's own address. It should arrive from
+   `<sending slug>@shared.staging.mailgoose.app`, with Reply-To the owner's
+   address, and pass SPF, DKIM and DMARC in the message's headers.
+
+For prod: pick the shared domain first (an open question in
+`docs/decisions.md`; the recommendation is a separately registered domain, so
+a reputation problem on it can't reach `mailgoose.app` or its sign-in mail).
+It needs a Route 53 zone (add it to `zone_overrides`), then the same steps
+with `shared_sending_domain` set in `envs/prod`.
+
+To turn shared sending off again, remove `shared_sending_domain` and apply.
+The identity and its records are destroyed, so SES refuses mail from the
+domain at once; the variable leaves the running tasks at the next deploy.
 
 ## Alarms
 

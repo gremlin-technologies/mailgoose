@@ -15,6 +15,23 @@ variable "zone_id" {
   type        = string
 }
 
+variable "shared_sending_domain" {
+  description = <<-EOT
+    mailgoose's shared sending domain (MG-85): customers without a verified
+    domain of their own send from <their sending slug>@ this domain, with
+    replies to an address they verified. Must differ from sending_domain.
+    Empty (the default) creates nothing and leaves shared sending off.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "shared_zone_id" {
+  description = "Route 53 zone that holds shared_sending_domain. Needed only when it's set."
+  type        = string
+  default     = ""
+}
+
 variable "mail_from_subdomain" {
   description = "Custom MAIL FROM subdomain so SPF aligns with the sending domain."
   type        = string

@@ -7,7 +7,7 @@ data "aws_caller_identity" "current" {}
 # Every name that needs DNS records, and the zone each one lives in. In staging
 # they all share one delegated zone; prod delegates api, app and mail separately.
 locals {
-  dns_names     = concat(var.hostnames, [var.sending_domain])
+  dns_names     = concat(var.hostnames, [var.sending_domain], compact([var.shared_sending_domain]))
   zone_name_for = { for n in local.dns_names : n => lookup(var.zone_overrides, n, var.zone_name) }
 }
 
@@ -154,6 +154,9 @@ module "email" {
   sending_domain     = var.sending_domain
   zone_id            = data.aws_route53_zone.this[local.zone_name_for[var.sending_domain]].zone_id
   dmarc_report_email = var.dmarc_report_email
+
+  shared_sending_domain = var.shared_sending_domain
+  shared_zone_id        = var.shared_sending_domain == "" ? "" : data.aws_route53_zone.this[local.zone_name_for[var.shared_sending_domain]].zone_id
 }
 
 # --- Edge ---
@@ -205,7 +208,10 @@ locals {
     SES_IDENTITY_TAG      = "Environment=${var.environment}" # tag every customer identity the app creates
     PUBLIC_BASE_URL       = "https://${var.hostnames[0]}"
     }, {
-    for k, v in { OPS_ALERT_EMAIL = var.alert_email } : k => v if v != ""
+    for k, v in {
+      OPS_ALERT_EMAIL       = var.alert_email
+      SHARED_SENDING_DOMAIN = var.shared_sending_domain
+    } : k => v if v != ""
   })
 
   # The API also serves image uploads, so only it gets the image bucket.

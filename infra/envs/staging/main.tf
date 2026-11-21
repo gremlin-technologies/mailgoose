@@ -6,6 +6,10 @@ module "stack" {
   zone_name      = "staging.${var.domain}"
   hostnames      = ["api.staging.${var.domain}", "app.staging.${var.domain}"]
   sending_domain = "mail.staging.${var.domain}"
+  # Customers without a domain of their own send from here (MG-85), with
+  # replies to an address they verified. Prod leaves it unset for now (see
+  # docs/decisions.md, 2026-11-21), so shared sending is off there.
+  shared_sending_domain = "shared.staging.${var.domain}"
 
   dmarc_report_email = var.dmarc_report_email
   initial_image_tag  = var.initial_image_tag
