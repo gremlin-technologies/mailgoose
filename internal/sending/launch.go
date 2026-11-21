@@ -72,9 +72,11 @@ type Summary struct {
 	ReplyTo    []mail.Address
 	// SharedDomain is true when the campaign goes from the shared sending
 	// domain (MG-85); Sender is then the verified address it was set to go
-	// from.
+	// from. DefaultFrom is true when neither the email nor the account set
+	// a From, so Sender is the owner's sign-in address by default (MG-108).
 	SharedDomain    bool
 	Sender          string
+	DefaultFrom     bool
 	RecipientCount  int
 	SendAt          *time.Time
 	Credits         int
@@ -245,7 +247,7 @@ func (s *Service) summarize(ctx context.Context, accountID string, c *campaigns.
 		problems = append(problems, tp...)
 		sum = &Summary{
 			CampaignID: c.ID, Name: c.Name, Subject: p.Email.Document.Settings.Subject,
-			From: p.From, ReplyTo: p.ReplyTo, SharedDomain: p.Shared, Sender: p.Sender, RecipientCount: n, SendAt: c.SendAt,
+			From: p.From, ReplyTo: p.ReplyTo, SharedDomain: p.Shared, Sender: p.Sender, DefaultFrom: p.DefaultFrom, RecipientCount: n, SendAt: c.SendAt,
 			Credits: n, Balance: bal, CampaignVersion: c.Version, EmailVersion: p.Email.Version,
 			Warnings: p.warnings,
 		}

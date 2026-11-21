@@ -62,7 +62,15 @@ type Sender struct {
 	// From itself, or, when Shared, the verified sender that replies go to
 	// unless the email names its own Reply-To.
 	Address string
+	// Default is true when neither the email nor the account set a From,
+	// so Address is the owner's sign-in address by default (MG-108).
+	Default bool
 }
+
+// ErrNoFrom is Resolve's refusal of an email with no From, on an account
+// with no default From, where no default applies: shared sending is off,
+// or the account has a verified domain of its own (MG-108).
+var ErrNoFrom = errors.New("there's no From address")
 
 // Resolver works out who a customer's email goes from (MG-85). Launches,
 // test sends, signup confirmations and the email check all use it, so they
@@ -103,8 +111,56 @@ func (r *Resolver) SharedAddress(slug string) string {
 //
 // The owner's own address never goes in From unless its domain is verified
 // for the account.
+//
+// An empty from.Email (no From on the email or the account) takes
+// DefaultFrom, the owner's sign-in address, and then goes as that address
+// would, from the shared domain, with Default set (MG-108). Where no
+// default applies it's ErrNoFrom, as before.
 func (r *Resolver) Resolve(ctx context.Context, accountID string, from mail.Address, replyTo string) (*Sender, error) {
 	replyTo = strings.TrimSpace(replyTo)
+	from.Email = strings.TrimSpace(from.Email)
+	var defaulted bool
+	if from.Email == "" {
+		d, err := r.DefaultFrom(ctx, accountID)
+		if err != nil {
+			return nil, err
+		}
+		if d == "" {
+			return nil, ErrNoFrom
+		}
+		from.Email, defaulted = d, true
+	}
+	s, err := r.resolve(ctx, accountID, from, replyTo)
+	if s != nil {
+		s.Default = defaulted
+	}
+	return s, err
+}
+
+// DefaultFrom is the address an email with no From, on an account with no
+// default From, goes as (MG-108): with shared sending on and no verified
+// domain on the account, the owner's own sign-in address. It's "" when
+// shared sending is off or the account has a verified domain, where a
+// missing From is still refused. It's worked out each time the From is
+// read, not stored, so adding a domain or turning shared sending off
+// takes effect at once.
+func (r *Resolver) DefaultFrom(ctx context.Context, accountID string) (string, error) {
+	if !r.SharedOn() {
+		return "", nil
+	}
+	var email *string
+	err := r.DB.QueryRow(ctx, `
+		SELECT CASE WHEN EXISTS (SELECT 1 FROM domains WHERE account_id = $1 AND status = 'verified') THEN NULL
+		       ELSE (SELECT email FROM users WHERE account_id = $1 ORDER BY created_at, id LIMIT 1) END`,
+		accountID).Scan(&email)
+	if err != nil || email == nil {
+		return "", err
+	}
+	return strings.TrimSpace(*email), nil
+}
+
+// resolve is Resolve for a From that's set.
+func (r *Resolver) resolve(ctx context.Context, accountID string, from mail.Address, replyTo string) (*Sender, error) {
 	err := r.Domains.RequireVerifiedFrom(ctx, accountID, from.Email)
 	if err == nil {
 		s := &Sender{From: from, Address: from.Email}

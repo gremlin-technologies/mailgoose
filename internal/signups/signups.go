@@ -344,21 +344,23 @@ func wordingOf(f *forms.Form) wording {
 
 // from is who the account's confirmation emails go from: its From on a
 // verified sending domain, or, with shared sending on, the shared domain
-// for a From that's a verified sender (MG-85). Nil when it has neither.
+// for a From that's a verified sender (MG-85). With no From set, shared
+// sending on and no verified domain, that's the owner's sign-in address on
+// the shared domain, as for a campaign (MG-108). Nil when it has none.
 func (s *Service) from(ctx context.Context, accountID string) (*senders.Sender, error) {
 	st, err := s.Settings.AccountSettings(ctx, accountID)
 	if err != nil {
 		return nil, err
 	}
-	if st.FromEmail == nil || strings.TrimSpace(*st.FromEmail) == "" {
-		return nil, nil
+	addr := mail.Address{Name: st.Name}
+	if st.FromEmail != nil {
+		addr.Email = strings.TrimSpace(*st.FromEmail)
 	}
-	addr := mail.Address{Email: strings.TrimSpace(*st.FromEmail), Name: st.Name}
 	if st.FromName != nil && strings.TrimSpace(*st.FromName) != "" {
 		addr.Name = strings.TrimSpace(*st.FromName)
 	}
 	sender, err := s.senders().Resolve(ctx, accountID, addr, "")
-	if errors.Is(err, domains.ErrFromNotVerified) {
+	if errors.Is(err, domains.ErrFromNotVerified) || errors.Is(err, senders.ErrNoFrom) {
 		return nil, nil
 	}
 	if err != nil {

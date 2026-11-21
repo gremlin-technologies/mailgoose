@@ -172,17 +172,25 @@ function SettingsForm({
             placeholder="Pat's Bakery"
           />
         </label>
-        <label className="field">
-          <span>Default From address</span>
+        <div className="field">
+          <label htmlFor="from_email">Default From address</label>
           <input
+            id="from_email"
             name="from_email"
             type="email"
             value={fromEmail}
             onChange={(e) => setFromEmail(e.target.value)}
             maxLength={254}
-            placeholder="news@example.com"
+            placeholder={account.default_from_email ?? "news@example.com"}
+            aria-describedby={account.default_from_email ? "from-email-help" : undefined}
           />
-        </label>
+          {account.default_from_email && (
+            <span id="from-email-help" className="muted small">
+              Empty: emails without a From of their own go as your sign-in address, {account.default_from_email}, from
+              mailgoose's shared domain.
+            </span>
+          )}
+        </div>
       </div>
       <div className="field">
         <label htmlFor="postal_address">Postal address</label>

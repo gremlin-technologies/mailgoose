@@ -34,6 +34,8 @@ export type Summary = {
   /** True when it goes from mailgoose's shared domain (MG-85); sender is then the person's own address. */
   shared_domain: boolean;
   sender: string | null;
+  /** True when no From was set, so it goes as the owner's sign-in address (sender) by default (MG-108). */
+  default_from: boolean;
 };
 
 export type Confirmation = { summary: Summary; code: string; expires_at: string };
@@ -110,6 +112,7 @@ export function confirmationOf(failure: Failure): Confirmation | undefined {
       warnings: Array.isArray(s.warnings) ? s.warnings.filter(isIssue) : [],
       shared_domain: s.shared_domain === true,
       sender: typeof s.sender === "string" ? s.sender : null,
+      default_from: s.default_from === true,
     },
   };
 }
@@ -120,12 +123,20 @@ function address(a: Address): string {
 
 /**
  * Says a test or launch goes from mailgoose's shared domain because the
- * account has no domain of its own, and points to adding one (MG-85).
+ * account has no domain of its own, and points to adding one (MG-85). With
+ * defaultFrom, the owner's sign-in address, it also says no From was set
+ * (MG-108).
  */
-export function SharedDomainNudge({ from, replyTo }: { from: Address; replyTo: Address[] }) {
+export function SharedDomainNudge({ from, replyTo, defaultFrom }: { from: Address; replyTo: Address[]; defaultFrom?: string }) {
   const replies = replyTo.length ? replyTo.map((a) => a.email).join(", ") : "you";
   return (
     <p className="notice" role="note">
+      {defaultFrom && (
+        <>
+          No From is set on the email or in <Link to="/settings">Settings</Link>, so it goes as your sign-in address,{" "}
+          {defaultFrom}.{" "}
+        </>
+      )}
       Sending from {from.email}, mailgoose's shared domain, with replies to {replies}.{" "}
       <Link to="/domains">Add your own domain</Link> for better deliverability and trust.
     </p>
@@ -237,7 +248,7 @@ export function TestStep({ campaign, onSent }: { campaign: Campaign; onSent: (c:
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure>();
   const [sent, setSent] = useState<string>();
-  const [shared, setShared] = useState<{ from: Address; replyTo: Address[] }>();
+  const [shared, setShared] = useState<{ from: Address; replyTo: Address[]; defaultFrom?: string }>();
   const t = campaign.last_test;
 
   async function send(e: FormEvent) {
@@ -257,7 +268,12 @@ export function TestStep({ campaign, onSent }: { campaign: Campaign; onSent: (c:
     if (!res.ok) return setFailure(res.failure);
     if (!res.data) return;
     setSent(`Sent to ${res.data.to.join(", ")}. ${res.data.sent_today} of ${res.data.daily_limit} test emails used today.`);
-    if (res.data.shared_domain) setShared({ from: res.data.from, replyTo: res.data.reply_to });
+    if (res.data.shared_domain)
+      setShared({
+        from: res.data.from,
+        replyTo: res.data.reply_to,
+        defaultFrom: res.data.default_from && res.data.sender ? res.data.sender : undefined,
+      });
     onSent(res.data.campaign);
   }
 
@@ -289,7 +305,7 @@ export function TestStep({ campaign, onSent }: { campaign: Campaign; onSent: (c:
       ) : (
         <p className="muted small">No test sent yet.</p>
       )}
-      {sent && shared && <SharedDomainNudge from={shared.from} replyTo={shared.replyTo} />}
+      {sent && shared && <SharedDomainNudge from={shared.from} replyTo={shared.replyTo} defaultFrom={shared.defaultFrom} />}
       {failure && <Problems failure={failure} />}
     </li>
   );
@@ -389,7 +405,9 @@ function LaunchSummary({
           {plural(s.credits, "credit")}, of the {s.balance.toLocaleString()} you have
         </dd>
       </dl>
-      {s.shared_domain && <SharedDomainNudge from={s.from} replyTo={s.reply_to} />}
+      {s.shared_domain && (
+        <SharedDomainNudge from={s.from} replyTo={s.reply_to} defaultFrom={s.default_from && s.sender ? s.sender : undefined} />
+      )}
       {s.warnings.length > 0 && (
         <>
           <p>The email check has warnings. They don't stop the launch:</p>

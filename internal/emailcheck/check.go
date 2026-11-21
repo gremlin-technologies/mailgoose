@@ -101,6 +101,10 @@ type Input struct {
 	// MG-98), and SharedReplyTo where replies go, when it goes from there
 	// (MG-85); empty otherwise.
 	SharedFrom, SharedName, SharedReplyTo string
+	// DefaultFrom is true when neither the email nor the account sets a
+	// From, so FromEmail is the owner's sign-in address by default
+	// (MG-108); the shared_domain warning says so.
+	DefaultFrom bool
 	// ReplyToProblem is the unverified_reply_to error's message; empty when
 	// the Reply-To is fine.
 	ReplyToProblem string
@@ -470,6 +474,16 @@ func kb(n int) string {
 // sharedMessage is the shared_domain warning: where the email goes from,
 // under which name, and that the account's own domain does better.
 func sharedMessage(in Input) string {
+	var lead string
+	if in.DefaultFrom {
+		lead = fmt.Sprintf("No From is set on the email or the account, so it goes as your sign-in address, %s. ", in.FromEmail)
+	}
+	return lead + sharedWhere(in)
+}
+
+// sharedWhere is where a shared-domain email goes from, and under which
+// name.
+func sharedWhere(in Input) string {
 	if in.SharedName == "" {
 		return fmt.Sprintf("This email goes from %s, mailgoose's shared domain, with replies to %s. Add your own domain for better deliverability and trust.",
 			in.SharedFrom, in.SharedReplyTo)

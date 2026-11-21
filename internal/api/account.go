@@ -46,8 +46,20 @@ func (s *Server) writeAccount(w http.ResponseWriter, r *http.Request, st *auth.S
 		}
 	}
 	out := accountJSON(st, limit, ts)
-	if a := s.senders().SharedAddress(st.SendingSlug); a != "" {
+	res := s.senders()
+	if a := res.SharedAddress(st.SendingSlug); a != "" {
 		out.SharedAddress = &a
+	}
+	// What a missing From goes as (MG-108), worked out now, not stored.
+	if res.SharedOn() {
+		d, err := res.DefaultFrom(r.Context(), st.ID)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		if d != "" {
+			out.DefaultFromEmail = &d
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

@@ -125,6 +125,10 @@ type Prepared struct {
 	// go from, which replies go to unless it names its own Reply-To.
 	Shared bool
 	Sender string
+	// DefaultFrom is true when neither the email nor the account set a
+	// From, so it goes as the owner's sign-in address (Sender) by default
+	// (MG-108).
+	DefaultFrom bool
 	// PostalAddress is the account's, which the footer shows.
 	PostalAddress string
 	Template      *render.Template
@@ -169,29 +173,30 @@ func (s *Service) Prepare(ctx context.Context, accountID, campaignID string) (*P
 		p.From.Name = n
 	}
 	replyTo := trimmed(doc.Settings.ReplyTo)
-	if p.From.Email == "" {
+	// A missing From defaults to the owner's sign-in address where shared
+	// sending is on and the account has no verified domain (MG-108); the
+	// Resolver says so, and otherwise refuses it with ErrNoFrom.
+	r := s.senders()
+	sender, err := r.Resolve(ctx, accountID, p.From, replyTo)
+	var badReplyTo *senders.ReplyToError
+	switch {
+	case errors.Is(err, senders.ErrNoFrom):
 		problems = append(problems, Problem{Code: MissingFrom, Message: "There's no From address.",
 			Hint: "Set one for the account with `mailgoose account update --from-email you@yourdomain.com`, or on the email."})
-	} else {
-		r := s.senders()
-		sender, err := r.Resolve(ctx, accountID, p.From, replyTo)
-		var badReplyTo *senders.ReplyToError
-		switch {
-		case errors.Is(err, domains.ErrFromNotVerified):
-			problems = append(problems, Problem{Code: UnverifiedFrom,
-				Message: r.UnverifiedMessage(p.From.Email), Hint: r.UnverifiedHint(p.From.Email),
-				Details: r.UnverifiedDetails(p.From.Email)})
-		case errors.As(err, &badReplyTo):
-			problems = append(problems, Problem{Code: UnverifiedReplyTo,
-				Message: "The Reply-To " + badReplyTo.Address + " isn't one of this account's verified sender addresses or on a verified domain, so emails from mailgoose's shared domain can't send replies there.",
-				Hint:    senders.ReplyToHint(badReplyTo.Address)})
-		case err != nil:
-			return nil, err
-		default:
-			p.From, p.ReplyTo, p.Shared = sender.From, sender.ReplyTo, sender.Shared
-			if sender.Shared {
-				p.Sender = sender.Address
-			}
+	case errors.Is(err, domains.ErrFromNotVerified):
+		problems = append(problems, Problem{Code: UnverifiedFrom,
+			Message: r.UnverifiedMessage(p.From.Email), Hint: r.UnverifiedHint(p.From.Email),
+			Details: r.UnverifiedDetails(p.From.Email)})
+	case errors.As(err, &badReplyTo):
+		problems = append(problems, Problem{Code: UnverifiedReplyTo,
+			Message: "The Reply-To " + badReplyTo.Address + " isn't one of this account's verified sender addresses or on a verified domain, so emails from mailgoose's shared domain can't send replies there.",
+			Hint:    senders.ReplyToHint(badReplyTo.Address)})
+	case err != nil:
+		return nil, err
+	default:
+		p.From, p.ReplyTo, p.Shared, p.DefaultFrom = sender.From, sender.ReplyTo, sender.Shared, sender.Default
+		if sender.Shared {
+			p.Sender = sender.Address
 		}
 	}
 	postal := trimmed(st.PostalAddress)

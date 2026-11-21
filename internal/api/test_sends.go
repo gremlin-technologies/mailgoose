@@ -56,7 +56,7 @@ func (s *Server) TestCampaign(w http.ResponseWriter, r *http.Request, id string)
 	}
 	writeJSON(w, http.StatusOK, apigen.TestSendResult{Campaign: out, To: res.To, SentToday: res.SentToday, DailyLimit: sending.TestsPerDay,
 		From: apigen.MailAddress{Name: res.From.Name, Email: res.From.Email}, ReplyTo: replyTo,
-		SharedDomain: res.SharedDomain, Sender: sender})
+		SharedDomain: res.SharedDomain, Sender: sender, DefaultFrom: res.DefaultFrom})
 }
 
 func (s *Server) testSendError(w http.ResponseWriter, r *http.Request, err error) bool {

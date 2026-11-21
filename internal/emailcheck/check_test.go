@@ -222,3 +222,25 @@ func TestTagDecidedLinkRefused(t *testing.T) {
 		t.Errorf("html message %q", m)
 	}
 }
+
+// TestDefaultFromWarning: an email going as the owner's sign-in address by
+// default (MG-108) passes, and its shared_domain warning says no From was
+// set; an explicit one doesn't.
+func TestDefaultFromWarning(t *testing.T) {
+	in := good
+	in.FromEmail = "owner@example.com"
+	in.SharedFrom, in.SharedName, in.SharedReplyTo = "pats-bakery@shared.example", "Pat's Bakery", "owner@example.com"
+	in.Doc = blocksDoc(t, `{"subject":"Spring menu"}`, `{"type":"heading","text":"Hi"},{"type":"footer","text":"You signed up."}`)
+	for _, def := range []bool{true, false} {
+		in.DefaultFrom = def
+		res := Check(context.Background(), in, nil)
+		if !res.OK() || codes(res.Warnings) != "shared_domain@settings.from_email" {
+			t.Fatalf("default %v: errors %s; warnings %s", def, codes(res.Errors), codes(res.Warnings))
+		}
+		msg := res.Warnings[0].Message
+		lead := "No From is set on the email or the account, so it goes as your sign-in address, owner@example.com. This email goes from pats-bakery@shared.example"
+		if strings.HasPrefix(msg, lead) != def || !strings.Contains(msg, "with replies to owner@example.com") {
+			t.Errorf("default %v: %s", def, msg)
+		}
+	}
+}
