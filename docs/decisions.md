@@ -4,6 +4,19 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: `.goreleaser.yaml` waits for the owner's merge too (owner decision)
+
+The owner said yes on Nov 21 to adding `.goreleaser.yaml` to the files only
+the owner merges. It decides which CLI builds ship and where they are
+published (GitHub Releases on mailgoose-public, the Homebrew tap, the AUR),
+alongside the release workflow in `.github/workflows/`, which the owner
+already merges.
+
+- **Owner-merge paths now:** `infra/`, `.github/workflows/`, `scripts/ci/`,
+  the `Dockerfile`, the `Makefile`, `compose.yaml` and `.goreleaser.yaml`.
+  The reviewer still reviews those PRs and leaves them for the owner.
+- `CLAUDE.md`, `docs/mvp-tickets.md` and `docs/releasing.md` say so.
+
 ## 2026-11-21: An ended tester's batches already on the send queue send nothing (MG-107, bug fix; reversible defaults)
 
 When a tester account's period ends (`tester_until` passed, MG-86), the
