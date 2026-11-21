@@ -4,6 +4,62 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Account-level pause on the last 30 days (MG-88; the details are reversible defaults)
+
+The automatic pause (CMP-6, MG-79) judged one campaign at a time, and only
+from 500 copies, so an account sending many campaigns under 500 each was
+never paused automatically once its slicing window (MG-62) was over,
+whatever its rates; its 30-day rates only held its daily limit down. MG-88
+adds a second trigger beside the campaign check, which stays as it is. The
+details below were picked while building it and are easy to change.
+
+- **When.** On every hard bounce and complaint SES reports, after the
+  campaign check, unless that paused the account. The campaign's
+  throttle (MG-61) still happens first, so one event can throttle and then
+  pause.
+- **What's judged.** The account's copies over the last 30 days, counted
+  the way the daily limit's "clean" check counts them, by the same limits:
+  over 0.1% complaints (from 2 complaints) or 3% hard bounces, from 500
+  copies over the 30 days. SES mailbox simulator copies are left out, as
+  everywhere (MG-86).
+- **How.** The same automatic pause as a campaign's: the account is paused,
+  an `auto_pause` is logged as `automatic` (its target the campaign whose
+  event was the last straw, its details the account's rates with
+  `"scope": "account"`), the ops alert goes out, and it counts toward the
+  automatic suspension at the second automatic pause in 30 days (MG-65).
+  No campaign is marked as having paused it, so each can still pause the
+  account on its own later.
+- **Reason.** Account-level in its own words, so `mailgoose admin account`,
+  the digest and the launch refusal read right: "It was paused
+  automatically: over the last 30 days, 0.33% of the people sent this
+  account's campaigns marked them as spam (2 of 600), over the 0.1% limit
+  for an account." (or the hard-bounce version). The ops alert names the
+  window and the campaign of the latest event instead of one campaign's
+  numbers.
+- **An account paused already**, for any reason, keeps its pause and reason,
+  and nothing is logged or sent, so a run of events can't stack up pauses
+  toward a suspension. Two events at once can't both pause it: the account
+  row is locked before the pause, and only when the rates are over the
+  line, so healthy accounts take no extra lock.
+- **Tester accounts** keep their stricter per-campaign pause (MG-86) and
+  get this one too, like the usual campaign limits. With at most 500
+  credits for life it can only fire on a tester's whole budget.
+- **No re-pause loop.** After an admin unpauses an account (an `unpause` by
+  a person), or after any automatic pause for a campaign (an `auto_pause`
+  with a campaign), only copies sent since then count, and only bounces and
+  complaints on those copies, so late complaints on copies already looked
+  at don't count against new ones. The account needs 500 new copies over
+  the line to be paused again; the reason then says "since sending was last
+  unpaused (date)". An automatic unpause (the plan's payment going through)
+  doesn't restart the window, since nobody looked at the sending. The
+  daily limit's clean check is unchanged and still reads the full 30 days.
+- **Merging.** App-only, no migration, so the reviewer merges.
+
+Open for the owner: whether the account-level line should be stricter than
+the per-campaign one (it's the same 0.1% and 3% now), and whether its
+early warning should throttle an account the same way (not built; a
+throttle still comes only from one campaign of 500 or more).
+
 ## 2026-11-21: Shared-domain mail goes under the account's name, and doesn't ramp without a domain (MG-98, owner decision; the lists and normalisation are reversible defaults)
 
 The owner said yes (Nov 21) to closing MG-85's open question 1 ("tighter

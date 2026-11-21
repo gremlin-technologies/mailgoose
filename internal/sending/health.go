@@ -29,6 +29,13 @@ import (
 // 0.1% is pulling the account towards that review, so it's stopped there
 // (MG-79).
 //
+// The same check runs on the account's last 30 days (MG-88), so an account
+// that sends many campaigns under HealthMinRecipients each, none of which
+// is judged alone, is still paused once its copies over the 30 days reach
+// HealthMinRecipients and are over either threshold. After an admin lifts a
+// pause, only copies sent since then count, so the same evidence can't
+// pause it again.
+//
 // An account's daily limit grows with clean history: the new-account
 // limit for its first week, then double that each week (1,000, 2,000,
 // 4,000, 8,000 with the defaults) up to the usual limit. An account isn't
@@ -127,23 +134,40 @@ func (r Rates) overPauseFrom(minComplaints int) bool {
 
 // accountClean says whether an account's last 30 days let its limit grow.
 func accountClean(ctx context.Context, q querier, accountID string, now time.Time) (bool, error) {
-	var r Rates
-	var paused bool
 	since := now.Add(-HealthWindow)
+	r, err := accountRates(ctx, q, accountID, since, false)
+	if err != nil {
+		return false, err
+	}
+	var paused bool
+	if err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM campaigns WHERE account_id = $1 AND auto_paused_at > $2)`,
+		accountID, since).Scan(&paused); err != nil {
+		return false, err
+	}
+	return !paused && !r.Unhealthy(), nil
+}
+
+// accountRates counts an account's campaign copies sent after since, and
+// the recipients who hard bounced or complained after since, leaving out
+// SES mailbox simulator addresses (MG-86). With sentSince, a bounce or
+// complaint counts only on a copy sent after since too, so late events on
+// older copies aren't judged against newer ones.
+func accountRates(ctx context.Context, q querier, accountID string, since time.Time, sentSince bool) (Rates, error) {
+	var r Rates
 	err := q.QueryRow(ctx, `
 		SELECT
 			(SELECT count(*) FROM campaign_recipients WHERE account_id = $1 AND sent_at > $2 AND NOT simulated),
 			(SELECT count(DISTINCT recipient_id) FROM send_events
 				WHERE account_id = $1 AND occurred_at > $2 AND kind = 'campaign' AND NOT simulated
-					AND type = 'bounce' AND subtype LIKE 'permanent/%'),
+					AND type = 'bounce' AND subtype LIKE 'permanent/%'
+					AND (NOT $3::boolean OR recipient_id IN (
+						SELECT id FROM campaign_recipients WHERE account_id = $1 AND sent_at > $2))),
 			(SELECT count(DISTINCT recipient_id) FROM send_events
-				WHERE account_id = $1 AND occurred_at > $2 AND kind = 'campaign' AND NOT simulated AND type = 'complaint'),
-			EXISTS (SELECT 1 FROM campaigns WHERE account_id = $1 AND auto_paused_at > $2)`,
-		accountID, since).Scan(&r.Sent, &r.HardBounces, &r.Complaints, &paused)
-	if err != nil {
-		return false, err
-	}
-	return !paused && !r.Unhealthy(), nil
+				WHERE account_id = $1 AND occurred_at > $2 AND kind = 'campaign' AND NOT simulated AND type = 'complaint'
+					AND (NOT $3::boolean OR recipient_id IN (
+						SELECT id FROM campaign_recipients WHERE account_id = $1 AND sent_at > $2)))`,
+		accountID, since, sentSince).Scan(&r.Sent, &r.HardBounces, &r.Complaints)
+	return r, err
 }
 
 // dailyLimit is an account's daily limit: see Limits.ForAccount.
@@ -152,13 +176,29 @@ func (p *Pipeline) dailyLimit(ctx context.Context, q querier, accountID string, 
 	return l.Daily, err
 }
 
-// AutoPause is an account paused by a campaign's bounces or complaints.
+// AutoPause is an account paused by a campaign's bounces or complaints, or
+// by its own over the last 30 days (MG-88).
 type AutoPause struct {
-	AccountID    string
-	AccountName  string
+	AccountID   string
+	AccountName string
+	// CampaignID and CampaignName are the campaign that paused it; for an
+	// account-level pause, the campaign whose bounce or complaint was the
+	// last straw.
 	CampaignID   string
 	CampaignName string
-	Rates        Rates
+	// Rates are the campaign's, or for an account-level pause the
+	// account's since Since.
+	Rates Rates
+	// Account is set when the account's own rates paused it (MG-88), not
+	// one campaign's.
+	Account bool
+	// Since is where an account-level pause's rates start: 30 days back, or
+	// the account's last unpause by an admin or automatic pause for a
+	// campaign, if later. Zero otherwise.
+	Since time.Time
+	// After is what Since is: "unpause" or "auto_pause", or "" for 30
+	// days back.
+	After string
 	// Reason is what the account's owner is told.
 	Reason string
 	At     time.Time
@@ -195,7 +235,24 @@ type Health struct {
 // An account paused already (by an admin) keeps that pause and its reason;
 // the campaign is still marked and the pause still reported. A campaign
 // throttles its account once too, and may pause it later if it gets worse.
+//
+// When the campaign doesn't pause it, the account's own last 30 days are
+// judged by the same thresholds (MG-88): see checkAccount.
 func CheckCampaign(ctx context.Context, tx pgx.Tx, campaignID string, now time.Time, warn Warning) (Health, error) {
+	h, err := checkCampaign(ctx, tx, campaignID, now, warn)
+	if err != nil || h.Pause != nil {
+		return h, err
+	}
+	ap, err := checkAccount(ctx, tx, campaignID, now)
+	if err != nil {
+		return Health{}, err
+	}
+	h.Pause = ap
+	return h, nil
+}
+
+// checkCampaign is CheckCampaign's check of the campaign alone.
+func checkCampaign(ctx context.Context, tx pgx.Tx, campaignID string, now time.Time, warn Warning) (Health, error) {
 	r, err := CampaignRates(ctx, tx, campaignID)
 	if err != nil {
 		return Health{}, err
@@ -215,6 +272,75 @@ func CheckCampaign(ctx context.Context, tx pgx.Tx, campaignID string, now time.T
 		return throttle(ctx, tx, campaignID, r, now, warn)
 	}
 	return Health{}, nil
+}
+
+// checkAccount pauses the campaign's account, inside tx, if the account's
+// copies over the last HealthWindow are Unhealthy: HealthMinRecipients or
+// more, over 0.1% complaints (at least MinComplaints) or 3% hard bounces
+// (MG-88). That catches an account whose campaigns are each too small to
+// be judged alone. It returns nil when it doesn't pause.
+//
+// An account paused already, for any reason, keeps its pause and reason,
+// and nothing is logged, so a run of events can't stack up automatic
+// pauses towards a suspension. After a pause is lifted by an admin, or
+// after any automatic pause for a campaign, only copies sent since then,
+// and bounces and complaints on them, count: the account needs new
+// evidence to be paused again, not the 30 days that were looked at already.
+// An automatic unpause (a plan payment going through) doesn't count, since
+// nobody looked at the account's sending.
+func checkAccount(ctx context.Context, tx pgx.Tx, campaignID string, now time.Time) (*AutoPause, error) {
+	var accountID, campaignName string
+	if err := tx.QueryRow(ctx, `SELECT account_id, name FROM campaigns WHERE id = $1`, campaignID).
+		Scan(&accountID, &campaignName); err != nil {
+		return nil, err
+	}
+	// Judged once without a lock, so most events, on healthy accounts,
+	// take none. One that would pause locks the account row and judges
+	// again, so two events at once can't both pause it and log two pauses:
+	// the reads after the lock are statements of their own, so they see
+	// what a transaction it waited for committed (see throttle).
+	ap, err := judgeAccount(ctx, tx, accountID, now, false)
+	if ap == nil || err != nil {
+		return nil, err
+	}
+	if ap, err = judgeAccount(ctx, tx, accountID, now, true); ap == nil || err != nil {
+		return nil, err
+	}
+	ap.CampaignID, ap.CampaignName = campaignID, campaignName
+	ap.Reason = accountPauseReason(ap)
+	return ap, pauseAccount(ctx, tx, ap)
+}
+
+// judgeAccount is checkAccount's judgement of the account: the pause to
+// make, without its campaign or reason, or nil. lock locks the account row
+// first.
+func judgeAccount(ctx context.Context, tx pgx.Tx, accountID string, now time.Time, lock bool) (*AutoPause, error) {
+	ap := &AutoPause{AccountID: accountID, Account: true, At: now, Since: now.Add(-HealthWindow)}
+	q := `SELECT sending_paused_at IS NOT NULL FROM accounts WHERE id = $1`
+	if lock {
+		q += ` FOR UPDATE`
+	}
+	var paused bool
+	if err := tx.QueryRow(ctx, q, accountID).Scan(&paused); err != nil || paused {
+		return nil, err
+	}
+	var last *time.Time
+	var after string
+	err := tx.QueryRow(ctx, `
+		SELECT created_at, action FROM admin_actions
+		WHERE account_id = $1 AND created_at > $2 AND created_at <= $3
+			AND (action = 'unpause' AND actor <> 'automatic' OR action = 'auto_pause' AND target_id IS NOT NULL)
+		ORDER BY created_at DESC, id DESC LIMIT 1`, accountID, ap.Since, now).Scan(&last, &after)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+	if last != nil {
+		ap.Since, ap.After = *last, after
+	}
+	if ap.Rates, err = accountRates(ctx, tx, accountID, ap.Since, last != nil); err != nil || !ap.Rates.Unhealthy() {
+		return nil, err
+	}
+	return ap, nil
 }
 
 // autoPause marks the campaign as having paused its account, once, and
@@ -243,10 +369,15 @@ func pauseAccount(ctx context.Context, tx pgx.Tx, ap *AutoPause) error {
 		WHERE id = $1 RETURNING name`, ap.AccountID, ap.At, ap.Reason).Scan(&ap.AccountName); err != nil {
 		return err
 	}
+	var details any = ap.Rates
+	if ap.Account {
+		details = map[string]any{"sent": ap.Rates.Sent, "hard_bounces": ap.Rates.HardBounces,
+			"complaints": ap.Rates.Complaints, "scope": "account", "since": ap.Since}
+	}
 	_, err := tx.Exec(ctx, `
 		INSERT INTO admin_actions (actor, action, account_id, target_id, reason, details, created_at)
 		VALUES ('automatic', 'auto_pause', $1, $2, $3, $4, $5)`,
-		ap.AccountID, ap.CampaignID, ap.Reason, ap.Rates, ap.At)
+		ap.AccountID, ap.CampaignID, ap.Reason, details, ap.At)
 	if err != nil {
 		return err
 	}
@@ -268,6 +399,26 @@ func pauseReason(ap *AutoPause) string {
 	}
 	return fmt.Sprintf("It was paused automatically: %s of the addresses %q went to don't exist (hard bounces), over the %s limit.",
 		percent(r.HardBounces, r.Sent), ap.CampaignName, per10k(HardBouncesPer10k))
+}
+
+// accountPauseReason is pauseReason for an account-level pause (MG-88).
+func accountPauseReason(ap *AutoPause) string {
+	r := ap.Rates
+	window := "over the last 30 days"
+	switch ap.After {
+	case "unpause":
+		window = "since sending was last unpaused (" + ap.Since.UTC().Format("Jan 2, 2006") + ")"
+	case "auto_pause":
+		window = "since it was last paused automatically (" + ap.Since.UTC().Format("Jan 2, 2006") + ")"
+	}
+	if r.complaintsOver(ComplaintsPer10k, MinComplaints) || !over(r.HardBounces, r.Sent, HardBouncesPer10k) {
+		return fmt.Sprintf("It was paused automatically: %s, %s of the people sent this account's campaigns marked them as spam "+
+			"(%s of %s), over the %s limit for an account.",
+			window, percent(r.Complaints, r.Sent), thousands(r.Complaints), thousands(r.Sent), per10k(ComplaintsPer10k))
+	}
+	return fmt.Sprintf("It was paused automatically: %s, %s of the addresses this account's campaigns went to don't exist "+
+		"(hard bounces, %s of %s), over the %s limit for an account.",
+		window, percent(r.HardBounces, r.Sent), thousands(r.HardBounces), thousands(r.Sent), per10k(HardBouncesPer10k))
 }
 
 // testerPauseReason is pauseReason for a tester account's stricter limits.
@@ -305,16 +456,29 @@ func (a *OpsAlert) AutoPaused(ctx context.Context, ap AutoPause) {
 		log = slog.Default()
 	}
 	log.ErrorContext(ctx, "account paused automatically", "account_id", ap.AccountID, "campaign_id", ap.CampaignID,
-		"sent", ap.Rates.Sent, "hard_bounces", ap.Rates.HardBounces, "complaints", ap.Rates.Complaints)
+		"account_level", ap.Account, "sent", ap.Rates.Sent, "hard_bounces", ap.Rates.HardBounces, "complaints", ap.Rates.Complaints)
 	if a.To == "" || a.Mail == nil {
 		if ap.Suspension != nil {
 			a.Suspended(ctx, *ap.Suspension)
 		}
 		return
 	}
+	what := fmt.Sprintf("Campaign %q (%s)", ap.CampaignName, ap.CampaignID)
+	if ap.Account {
+		what = "The account's campaigns since " + ap.Since.UTC().Format("2006-01-02 15:04 UTC")
+		switch ap.After {
+		case "unpause":
+			what += " (when it was last unpaused)"
+		case "auto_pause":
+			what += " (when it was last paused automatically)"
+		default:
+			what += " (30 days)"
+		}
+		what += fmt.Sprintf(", the latest event on %q (%s)", ap.CampaignName, ap.CampaignID)
+	}
 	text := fmt.Sprintf(`Sending is paused for %s (account %s).
 
-Campaign %q (%s): %d sent, %d hard bounces (%s), %d complaints (%s).
+%s: %d sent, %d hard bounces (%s), %d complaints (%s).
 
 %s
 
@@ -322,7 +486,7 @@ Look into it with:
   mailgoose admin account %s
 Lift the pause with:
   mailgoose admin unpause %s --reason "..."
-`, ap.AccountName, ap.AccountID, ap.CampaignName, ap.CampaignID, ap.Rates.Sent,
+`, ap.AccountName, ap.AccountID, what, ap.Rates.Sent,
 		ap.Rates.HardBounces, percent(ap.Rates.HardBounces, ap.Rates.Sent),
 		ap.Rates.Complaints, percent(ap.Rates.Complaints, ap.Rates.Sent), ap.Reason, ap.AccountID, ap.AccountID)
 	_, err := a.Mail.Send(context.WithoutCancel(ctx), mail.Message{
