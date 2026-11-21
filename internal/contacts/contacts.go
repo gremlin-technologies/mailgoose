@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/billing"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 )
 
@@ -89,6 +90,9 @@ type Service struct {
 	// Checks are the thresholds that hold an import for review (MG-63);
 	// zero values take DefaultImportChecks.
 	Checks ImportChecks
+	// Prices are the paid plan's prices, for the plan a Mailchimp import
+	// needs; zero values take billing.DefaultPrices.
+	Prices billing.Prices
 	Now    func() time.Time
 }
 

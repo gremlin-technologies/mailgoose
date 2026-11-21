@@ -27,6 +27,61 @@ layouts; the requirements snapshot keeps its old wording.
   gets fixed widths, and they still stack full width on phones.
 - **Numbering.** `column` positions count from 0, the leftmost, up to 3.
 
+## 2026-11-21: Turning a Mailchimp export into contacts (MG-70; reversible defaults)
+
+`contacts.PreviewMailchimpImport` says what importing a bundle (MG-69) would
+do and writes nothing. `contacts.CreateMailchimpImport`, with the permission
+box ticked, queues it as an import of kind `mailchimp`, which the import
+worker runs like a CSV import: in batches of 1,000, resumable after a stop,
+with the same holds and skip report. The API and CLI come in MG-72. This uses
+the open Mailchimp decisions' defaults (1, 2, 3, 4, 6 and 7, below) and adds
+these, each easy to change:
+
+- **Statuses.** subscribed stays subscribed, with no confirmation email.
+  pending becomes unconfirmed, with no email sent. unsubscribed stays
+  unsubscribed, and cleaned becomes bounced. A member whose GDPR permissions
+  refuse email marketing comes in unsubscribed. Non-subscribed
+  (transactional) and archived members are skipped (`not_subscribed`,
+  `archived`).
+- **One row per address.** An address in several audiences takes the
+  strictest status: cleaned, then unsubscribed, then subscribed, then
+  pending. Its tags are every audience's tags, its groups as
+  `Category: Group`, and `audience: <name>` for each audience when the
+  export has more than one. Names come from the first member that has them.
+  A tag name with a comma or line break, or longer than 50 characters, is
+  renamed and listed in the preview. More than 1,000 different tags refuses
+  the export (`too_many_tags`).
+- **Contacts already here** only gain tags. One that's subscribed or
+  unconfirmed is unsubscribed or bounced when Mailchimp says so; one that
+  unsubscribed, bounced or complained is never put back on the list. An
+  address on the suppression list (a deleted contact) is skipped
+  (`suppressed`).
+- **Consent.** Each new contact's consent record has list source `export`
+  ("Mailchimp"), the file name and, for up to 20 of its audiences, its
+  Mailchimp status, opt-in and confirm times and IPs, and GDPR permissions,
+  as written.
+- **Over the limit.** Suppressions import first. When the subscribed part
+  would take a capped account (free, or a tester) past its contact limit, the
+  import stops with status `waiting`, held for review as
+  `over_contact_limit`, and nothing of that part imported, rather than the
+  first 500. It carries on by itself once the account is on the paid plan and
+  isn't a tester. Its contacts then stay held until an admin approves, like
+  a CSV import over the limit. The preview shows the plan needed and its
+  price.
+- **Holds.** The list checks (MG-63) look at the addresses that would get
+  campaigns and at the rows that aren't addresses. A first import of more
+  than 2,000 such addresses is held, as for a CSV.
+- **Confirming twice.** An idempotency key, by default the hash of the
+  merged rows, makes a second confirm return the import already made. The
+  same key for a different export is refused (`idempotency_key_reused`), and
+  a failed import frees its key.
+- **Skip report.** Skipped rows are listed with the Mailchimp file and row
+  they came from. Rows the reader skipped past its first 1,000 per audience
+  are counted as `invalid_row` but not listed.
+- **Speed.** 100,000 members import in about a minute locally (without
+  `-race`), well under the ticket's five minutes. The test runs only with
+  `MAILGOOSE_SLOW_TESTS=1`.
+
 ## 2026-11-21: Reading Mailchimp's exports (MG-69; reversible defaults)
 
 Picked while building the reader, `internal/mailchimp`. Mailchimp's public
@@ -3312,6 +3367,13 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - Mailchimp import: the OAuth path needs a registered Mailchimp app. (Default:
   the upload path ships first; the owner registers the app before MG-73 goes
   live. MG-73.)
+- Mailchimp import: contacts already in mailgoose. (Default: they only gain
+  tags, and a subscribed or unconfirmed one is unsubscribed or bounced when
+  Mailchimp says so; nothing is put back on the list. MG-70.)
+- Mailchimp import: after an import that waited for the paid plan carries
+  on, are its contacts still held for an admin's approval? (Default: yes,
+  like a CSV import over the limit. Other option: release them once the plan
+  covers them. MG-70.)
 - Mailchimp import: which CSV columns are groups. (Default: only the columns
   the customer names; any other column is dropped and listed. MG-69, MG-72.)
 - How does prod get DNS? Default is to delegate only `api`, `app` and `mail`

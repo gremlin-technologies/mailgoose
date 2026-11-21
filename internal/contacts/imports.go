@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -76,7 +77,8 @@ const (
 )
 
 // SkipReasons lists every reason a row can be skipped for.
-var SkipReasons = []string{SkipInvalidEmail, SkipInvalidRow, SkipDuplicate, SkipExists, SkipSuppressed, SkipOverLimit}
+var SkipReasons = []string{SkipInvalidEmail, SkipInvalidRow, SkipDuplicate, SkipExists, SkipSuppressed, SkipOverLimit,
+	SkipNotSubscribed, SkipArchived}
 
 // ErrImportNotFound means no import with that id in the account.
 var ErrImportNotFound = errors.New("import not found")
@@ -120,6 +122,18 @@ type Import struct {
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time
+	// Kind is ImportKindCSV or ImportKindMailchimp.
+	Kind string
+	// ExistingTagged counts addresses of a Mailchimp import that were
+	// already contacts and only gained tags, and ExistingSuppressed those
+	// of them that the import took off the mailing list. UnlistedSkipped
+	// counts skipped rows that aren't listed one by one, and are counted
+	// as invalid_row in SkippedByReason.
+	ExistingTagged     int
+	ExistingSuppressed int
+	UnlistedSkipped    int
+	// Mailchimp is the bundle's summary, for a Mailchimp import.
+	Mailchimp *MailchimpSummary
 }
 
 // ContactStatus is the status the import gives the contacts it adds.
@@ -138,6 +152,9 @@ type SkippedRow struct {
 	// read.
 	Email  string
 	Reason string
+	// Source is where a Mailchimp import's row came from: the export file
+	// and its row there. Empty for a CSV import.
+	Source string
 }
 
 // ImportInput is a new import.
@@ -478,16 +495,19 @@ const importColumns = `i.id, i.account_id, i.file_name, i.status, i.permission_c
 	i.list_source, i.list_source_detail, i.invalid_rows, i.role_addresses, i.disposable_addresses, i.shared_addresses, i.shared_account_id::text,
 	ARRAY(SELECT t.id::text FROM tags t WHERE t.id = ANY(i.tag_ids) ORDER BY lower(t.name), t.id),
 	ARRAY(SELECT t.name FROM tags t WHERE t.id = ANY(i.tag_ids) ORDER BY lower(t.name), t.id),
-	ARRAY(SELECT s.reason || ':' || count(*) FROM import_skips s WHERE s.import_id = i.id GROUP BY s.reason)`
+	ARRAY(SELECT s.reason || ':' || count(*) FROM import_skips s WHERE s.import_id = i.id GROUP BY s.reason),
+	i.kind, i.existing_tagged, i.existing_suppressed, i.unlisted_skipped, i.mailchimp`
 
 func scanImport(row pgx.Row) (*Import, error) {
 	var im Import
 	var tagIDs, tagNames, byReason []string
+	var summary []byte
 	err := row.Scan(&im.ID, &im.AccountID, &im.FileName, &im.Status, &im.PermissionConfirmed, &im.EmailColumn, &im.FirstNameColumn, &im.LastNameColumn,
 		&im.StatusColumn, &im.TagsColumn, &im.TotalRows, &im.ProcessedRows, &im.Imported, &im.Skipped, &im.Review, &im.HoldReason, &im.Error, &im.CreatedAt, &im.StartedAt, &im.FinishedAt,
 		&im.ListSource, &im.ListSourceDetail, &im.Checks.InvalidRows, &im.Checks.RoleAddresses, &im.Checks.DisposableAddresses,
 		&im.Checks.SharedAddresses, &im.Checks.SharedAccountID,
-		&tagIDs, &tagNames, &byReason)
+		&tagIDs, &tagNames, &byReason,
+		&im.Kind, &im.ExistingTagged, &im.ExistingSuppressed, &im.UnlistedSkipped, &summary)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrImportNotFound
 	}
@@ -505,6 +525,13 @@ func scanImport(row pgx.Row) (*Import, error) {
 	for _, rc := range byReason {
 		reason, n, _ := strings.Cut(rc, ":")
 		im.SkippedByReason[reason], _ = strconv.Atoi(n)
+	}
+	im.SkippedByReason[SkipInvalidRow] += im.UnlistedSkipped
+	if summary != nil {
+		im.Mailchimp = &MailchimpSummary{}
+		if err := json.Unmarshal(summary, im.Mailchimp); err != nil {
+			return nil, fmt.Errorf("read import summary: %w", err)
+		}
 	}
 	return &im, nil
 }
@@ -686,7 +713,7 @@ func (s *Service) ListSkippedRows(ctx context.Context, accountID, importID strin
 		return nil, ErrImportNotFound
 	}
 	rows, err := s.DB.Query(ctx, `
-		SELECT row_number, email, reason FROM import_skips WHERE import_id = $1 AND row_number > $2
+		SELECT row_number, email, reason, coalesce(source_row, '') FROM import_skips WHERE import_id = $1 AND row_number > $2
 		ORDER BY row_number LIMIT $3`, importID, afterRow, limit)
 	if err != nil {
 		return nil, err
@@ -695,7 +722,7 @@ func (s *Service) ListSkippedRows(ctx context.Context, accountID, importID strin
 	out := []SkippedRow{}
 	for rows.Next() {
 		var sr SkippedRow
-		if err := rows.Scan(&sr.Row, &sr.Email, &sr.Reason); err != nil {
+		if err := rows.Scan(&sr.Row, &sr.Email, &sr.Reason, &sr.Source); err != nil {
 			return nil, err
 		}
 		out = append(out, sr)
@@ -738,6 +765,7 @@ type importJob struct {
 	// import from before list sources.
 	consent   []byte
 	createdAt time.Time
+	kind      string
 }
 
 // RunNextImport claims the oldest waiting import, or one whose worker
@@ -761,14 +789,18 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 		WHERE id = (
 			SELECT id FROM imports
 			WHERE status = 'queued' OR (status = 'running' AND lease_until < $1)
+				-- A Mailchimp import waiting for a plan that covers it,
+				-- once the account has one.
+				OR (status = 'waiting' AND EXISTS (SELECT 1 FROM accounts a WHERE a.id = imports.account_id
+					AND a.plan <> 'free' AND a.tester_started_at IS NULL))
 			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED)
 		RETURNING id, account_id, lease_token, csv, email_column, first_name_column, last_name_column, status_column, tags_column,
 			tag_ids::text[],
-			permission_confirmed, processed_rows, review, created_at,
+			permission_confirmed, processed_rows, review, created_at, kind,
 			CASE WHEN list_source IS NULL THEN NULL ELSE
 				jsonb_build_object('list_source', list_source, 'list_source_detail', list_source_detail, 'file_name', file_name) END`,
 		now, now.Add(ImportLease)).Scan(&j.id, &j.accountID, &j.token, &j.data, &emailCol, &firstCol, &lastCol, &statusCol, &tagsCol, &j.tagIDs,
-		&permission, &j.processed, &j.review, &j.createdAt, &j.consent)
+		&permission, &j.processed, &j.review, &j.createdAt, &j.kind, &j.consent)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -781,7 +813,11 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 	if permission {
 		j.status = StatusSubscribed
 	}
-	if err := s.runImport(ctx, &j); err != nil {
+	run := s.runImport
+	if j.kind == ImportKindMailchimp {
+		run = s.runMailchimp
+	}
+	if err := run(ctx, &j); err != nil {
 		return true, fmt.Errorf("import %s: %w", j.id, err)
 	}
 	return true, nil
@@ -1157,7 +1193,7 @@ func lowerAll(ss []string) []string {
 var afterImportBatch func(processed int) error
 
 // collect runs a query of one text column and returns its values as a set.
-func collect(ctx context.Context, tx pgx.Tx, q string, args ...any) (map[string]bool, error) {
+func collect(ctx context.Context, tx querier, q string, args ...any) (map[string]bool, error) {
 	rows, err := tx.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
