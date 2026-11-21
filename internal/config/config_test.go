@@ -416,3 +416,19 @@ func TestWebRiskKey(t *testing.T) {
 		t.Errorf("unset: %q", cfg.WebRiskAPIKey)
 	}
 }
+
+func TestMailchimpImportMaxContacts(t *testing.T) {
+	cfg, err := load(env(nil))
+	if err != nil || cfg.MailchimpImportMaxContacts != 250000 {
+		t.Fatalf("default = %d, %v; want 250000", cfg.MailchimpImportMaxContacts, err)
+	}
+	cfg, err = load(env(map[string]string{"MAILCHIMP_IMPORT_MAX_CONTACTS": "1000"}))
+	if err != nil || cfg.MailchimpImportMaxContacts != 1000 {
+		t.Errorf("1000 = %d, %v", cfg.MailchimpImportMaxContacts, err)
+	}
+	for _, bad := range []string{"0", "-5", "lots"} {
+		if _, err := load(env(map[string]string{"MAILCHIMP_IMPORT_MAX_CONTACTS": bad})); err == nil {
+			t.Errorf("MAILCHIMP_IMPORT_MAX_CONTACTS=%q should be an error", bad)
+		}
+	}
+}
