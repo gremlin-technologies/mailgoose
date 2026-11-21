@@ -85,7 +85,9 @@ scope; they only show where an idea came from.
   and left out of every account's rates.
 - UI look (Nov 20): white pages, near-black text, the periwinkle blue only for
   actions and state, hairline-and-shadow depth, 120ms transitions, Lucide icons
-  in the side menu. See `docs/design-system.md`.
+  in the side menu. See `docs/design-system.md`. Light by default (Nov 21):
+  dark mode is a switch in Settings, kept per browser; the public site is
+  light only.
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API

@@ -57,9 +57,14 @@ export function useAutosave({ email, replace, reload, send, handled }: Options) 
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const latest = useRef({ send, handled });
   const flushRef = useRef<() => void>(() => {});
+  // Whether the last edits sent were all saved, and the state as it is now,
+  // for saveNow, which reads them after awaiting.
+  const lastOk = useRef(true);
+  const now = useRef({ drafts, save });
 
   useEffect(() => {
     latest.current = { send, handled };
+    now.current = { drafts, save };
   });
   useEffect(() => {
     version.current = email.version;
@@ -81,6 +86,7 @@ export function useAutosave({ email, replace, reload, send, handled }: Options) 
 
   /** Someone else saved the email: drop what's unsaved here and show theirs. */
   function conflicted() {
+    lastOk.current = false;
     clearTimeout(timer.current);
     unsent.current = {};
     setDrafts({});
@@ -131,9 +137,28 @@ export function useAutosave({ email, replace, reload, send, handled }: Options) 
           return out;
         });
       }
+      lastOk.current = ok;
       if (Object.keys(unsent.current).length) setSave("pending");
       else setSave(ok ? "saved" : "failed");
     });
+  }
+
+  /**
+   * Saves everything now, without waiting for the pause: unsent edits, and
+   * edits whose save failed, which are sent again. Resolves true once all of
+   * it is saved, false when something wasn't (the failure is shown, and the
+   * edits are kept).
+   */
+  async function saveNow(): Promise<boolean> {
+    if (now.current.save === "failed") {
+      for (const [key, fields] of Object.entries(now.current.drafts)) {
+        unsent.current = { ...unsent.current, [key]: { ...fields, ...unsent.current[key] } };
+      }
+    }
+    lastOk.current = true;
+    await flush();
+    await queue.current;
+    return lastOk.current && Object.keys(unsent.current).length === 0;
   }
 
   useEffect(() => {
@@ -160,7 +185,7 @@ export function useAutosave({ email, replace, reload, send, handled }: Options) 
     return ok;
   }
 
-  return { failure, setFailure, busy, drafts, save, edit, flush, run };
+  return { failure, setFailure, busy, drafts, save, edit, flush, run, saveNow };
 }
 
 /** Saves an email's name and settings, given together as fields. */

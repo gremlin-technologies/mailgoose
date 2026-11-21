@@ -1,11 +1,11 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router";
 
 import { useApi } from "../api/context";
 import { attempt } from "../api/result";
 import type { components } from "../api/schema";
 import { FailureNotice, Loading, PageHeader } from "../components";
 import { EMAIL, saveSettings, saveText, useAutosave } from "./autosave";
+import { SaveAndExit } from "./exit";
 import type { Marked } from "./CodeEditor";
 import { byLine, fillSample, issuesOf, maxFileBytes, type HtmlIssue } from "./html";
 import type { Width } from "./Preview";
@@ -58,7 +58,7 @@ export function HtmlEditor({ email, replace, reload }: { email: Email; replace: 
   const [width, setWidth] = useState<Width>("desktop");
   const [fileProblem, setFileProblem] = useState<string>();
 
-  const { failure, drafts, save, edit } = useAutosave({
+  const { failure, drafts, save, edit, saveNow } = useAutosave({
     email,
     replace,
     reload,
@@ -121,9 +121,7 @@ export function HtmlEditor({ email, replace, reload }: { email: Email; replace: 
         <span className={`save-state save-${save}`} role="status">
           {status}
         </span>
-        <Link to="/emails" className="button small">
-          All emails
-        </Link>
+        <SaveAndExit saveNow={saveNow} />
       </PageHeader>
       <FailureNotice failure={failure} />
       <div className="html-body">

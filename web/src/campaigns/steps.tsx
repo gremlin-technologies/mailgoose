@@ -1,12 +1,13 @@
 // The steps before a launch: check the email, send a test, and launch from
 // a summary the person confirms (CAM-2 to CAM-4, DES-12).
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 
 import { useApi } from "../api/context";
 import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
 import { FailureNotice, formatDate } from "../components";
+import type { EditorFrom } from "../designer/exit";
 import { plural, type Campaign } from "./campaign";
 
 type Check = components["schemas"]["EmailCheck"];
@@ -113,6 +114,8 @@ export function CheckStep({ emailId }: { emailId: string | null }) {
   const [result, setResult] = useState<Check>();
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure>();
+  // The editor's "Save and exit" comes back here.
+  const from: EditorFrom = { from: useLocation().pathname };
 
   async function check() {
     if (!emailId) return;
@@ -132,7 +135,11 @@ export function CheckStep({ emailId }: { emailId: string | null }) {
         <button type="button" className="button" onClick={() => void check()} disabled={busy || !emailId}>
           {busy ? "Checking…" : "Check email"}
         </button>
-        {emailId && result && !result.ok && <Link to={`/emails/${emailId}`}>Fix it in the editor</Link>}
+        {emailId && result && !result.ok && (
+          <Link to={`/emails/${emailId}`} state={from}>
+            Fix it in the editor
+          </Link>
+        )}
       </div>
       <FailureNotice failure={failure} />
       {result && (
