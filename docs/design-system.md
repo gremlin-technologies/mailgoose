@@ -136,7 +136,9 @@ What was taken from it:
 What is mailgoose's own:
 
 - **Layout.** The editor takes the whole window (the app's side menu is
-  hidden): a bar with the name, save state and Design / Desktop / Mobile; the
+  hidden): a bar with the name, save state, Design / Desktop / Mobile and
+  a primary "Save and exit" button (MG-83), which saves what's left at once
+  and goes back to the campaign or the email list it came from; the
   block palette on the left; the email in the middle; properties on the right.
   The palette stays visible while a block is selected, so blocks can be added
   without leaving it.
