@@ -88,6 +88,10 @@ release:
     name: mailgoose-public
   prerelease: auto
   name_template: "mailgoose CLI {{ .Tag }}"
+  # The tag lands on mailgoose-public's default branch, so the notes say which
+  # app commit the binaries were built from.
+  header: |
+    Built from app commit {{ .ShortCommit }}.
   footer: |
     Install: see https://mailgoose.app/alpha/ (and, later, the docs at mailgoose.app/docs/).
 
