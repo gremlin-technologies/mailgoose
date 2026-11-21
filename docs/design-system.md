@@ -165,11 +165,13 @@ asks for its details first, and the HTML email editor keeps its old layout.
 
 ## The public site
 
-`site/` (mailgoose.app) uses these tokens too: `scripts/site/tokens.mjs`
-copies the `:root` blocks into `site/assets/tokens.css`, and
-`web/src/pages/siteTokens.test.ts` fails if they drift. After changing a token
-here, run `node scripts/site/tokens.mjs`. The site's own stylesheet,
-`site/assets/site.css`, follows the same rules, a size up for a landing page.
+mailgoose.app lives in its own public repository,
+gremlin-technologies/mailgoose-public, and uses these tokens too:
+`scripts/site/tokens.mjs` copies the light `:root` block into its
+`site/assets/tokens.css`. After changing a token here, run
+`node scripts/site/tokens.mjs` with that repository checked out next to this
+one, and open a PR there (`docs/public-site.md`). The site's own stylesheet
+follows the same rules, a size up for a landing page.
 
 ## Open questions
 

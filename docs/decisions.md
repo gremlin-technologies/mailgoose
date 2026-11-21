@@ -4,6 +4,34 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Public site moved to its own repository; CLI releases through package managers (owner decisions; the details are reversible defaults)
+
+The owner wants this repository private. GitHub Pages on a free personal
+account serves only public repositories, so the site moved out first, and
+`go install` from this repository stops working once it's private, so the CLI
+needs published downloads.
+
+- **The site lives in gremlin-technologies/mailgoose-public (owner decision).**
+  Public, published by its own Pages workflow, custom domain moved there on
+  Nov 21 with no DNS change. It will also hold the knowledge base, under
+  `site/docs/` (owner ask). This repository's `site/`, its Pages workflow and
+  the two tests that checked the site's copies (`siteTokens.test.ts`,
+  `sitePolicies.test.ts`) are gone. Supersedes "Where it lives" in the Nov 20
+  public site entry below.
+- **Generated pages stay generated from here (default).** `scripts/site/*.mjs`
+  now write into a checkout of mailgoose-public next to this one
+  (`SITE_DIR` overrides), and the result goes there as a PR. Nothing checks
+  for drift automatically any more; `tokens.mjs --check` still does by hand.
+- **The CLI ships through package managers (owner ask).** GoReleaser from this
+  repository publishes GitHub Releases on mailgoose-public (tar.gz, zip, .deb,
+  .rpm), a Homebrew cask in gremlin-technologies/homebrew-tap, and the AUR
+  package `mailgoose-bin`. Scoop and winget wait. See `docs/releasing.md`.
+- **Release workflow, run by hand (default).** Actions > Release CLI with a
+  version, or a pushed `v*` tag. Its token is a fine-grained one with Contents
+  write on mailgoose-public and homebrew-tap only; the AUR key is optional.
+- **Keep this repository public until the first release works and the alpha
+  guide points at it (owner's call to flip).**
+
 ## 2026-11-21: Alpha tester guide at mailgoose.app/alpha/ (owner ask; the details are reversible defaults)
 
 The owner asked for a guide for alpha testers: how to test each area of the

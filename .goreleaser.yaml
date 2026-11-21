@@ -1,0 +1,95 @@
+# GoReleaser builds the mailgoose CLI and publishes it where people install it
+# from: GitHub Releases on the public repository, the Homebrew tap, the AUR
+# and .deb/.rpm packages. .github/workflows/release-cli.yml runs it.
+version: 2
+
+project_name: mailgoose
+
+builds:
+  - id: mailgoose
+    main: ./cmd/mailgoose
+    binary: mailgoose
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w
+      - -X github.com/gremlin-technologies/mailgoose/internal/version.Version={{ .Tag }}
+      - -X github.com/gremlin-technologies/mailgoose/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/gremlin-technologies/mailgoose/internal/version.BuildDate={{ .Date }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+
+archives:
+  - id: mailgoose
+    # No version in the name, so releases/latest/download/<name> always works.
+    name_template: "mailgoose_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    # Only the binary: nothing else from this (private) repository goes out.
+    files: [none*]
+
+checksum:
+  name_template: checksums.txt
+
+nfpms:
+  - id: packages
+    package_name: mailgoose
+    file_name_template: "mailgoose_{{ .Os }}_{{ .Arch }}"
+    vendor: Gremlin Technologies
+    homepage: https://mailgoose.app
+    maintainer: Gremlin Technologies <358090380+gremlin-technologies@users.noreply.github.com>
+    description: The mailgoose command line. Design, send and report on email campaigns from your terminal or your AI agent.
+    license: Proprietary
+    formats: [deb, rpm]
+
+homebrew_casks:
+  - name: mailgoose
+    repository:
+      owner: gremlin-technologies
+      name: homebrew-tap
+      token: '{{ index .Env "RELEASE_TOKEN" }}'
+    # Pre-releases, and runs without the token, build the cask but don't push it.
+    skip_upload: '{{ if or (not (index .Env "RELEASE_TOKEN")) .Prerelease }}true{{ else }}false{{ end }}'
+    homepage: https://mailgoose.app
+    description: The mailgoose command line
+    commit_author:
+      name: Gremlin Technologies
+      email: 358090380+gremlin-technologies@users.noreply.github.com
+    binaries: [mailgoose]
+    hooks:
+      pre:
+        # The binaries aren't notarized yet, so let macOS run the one Homebrew installs.
+        install_steps: |
+          # The cask installs on Linux too, where there's no xattr.
+          run "/bin/sh", args: ["-c", "if [ -x /usr/bin/xattr ]; then /usr/bin/xattr -dr com.apple.quarantine \"$0\"; fi", "{{ .StagedPath }}/mailgoose"]
+
+aurs:
+  - name: mailgoose-bin
+    homepage: https://mailgoose.app
+    description: The mailgoose command line
+    maintainers: ["Gremlin Technologies <358090380+gremlin-technologies at users dot noreply dot github dot com>"]
+    license: custom
+    private_key: '{{ index .Env "AUR_KEY" }}'
+    # Pre-releases, and runs before the AUR account's key is set up, build the
+    # package but don't push it.
+    skip_upload: '{{ if or (not (index .Env "AUR_KEY")) .Prerelease }}true{{ else }}false{{ end }}'
+    git_url: ssh://aur@aur.archlinux.org/mailgoose-bin.git
+    commit_author:
+      name: Gremlin Technologies
+      email: 358090380+gremlin-technologies@users.noreply.github.com
+    package: |-
+      install -Dm755 "./mailgoose" "${pkgdir}/usr/bin/mailgoose"
+
+release:
+  github:
+    owner: gremlin-technologies
+    name: mailgoose-public
+  prerelease: auto
+  name_template: "mailgoose CLI {{ .Tag }}"
+  footer: |
+    Install: see https://mailgoose.app/alpha/ (and, later, the docs at mailgoose.app/docs/).
+
+changelog:
+  disable: true

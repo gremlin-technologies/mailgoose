@@ -25,6 +25,9 @@ docs/              PRD, pricing, decisions.
 One container image runs both ECS services. Its entrypoint is `mailgoosed`, and
 ECS passes `serve` or `worker` (see `infra/modules/stack`). The customer CLI is
 a separate binary, so no server code ships to customers.
+Customers install it from GitHub Releases on the public site repository,
+Homebrew or the AUR; see `docs/releasing.md`. The public site at mailgoose.app
+lives in its own repository (`docs/public-site.md`).
 
 ## Run locally
 
