@@ -242,9 +242,9 @@ data "aws_iam_policy_document" "api" {
   # time, so the resource is a wildcard. Staging and prod share one AWS account,
   # so every identity carries an Environment tag and each environment can only
   # create, read, change or delete identities tagged with its own name. SES
-  # ignores tag conditions on sends (decisions, 2026-11-20); whether it honors
-  # them here hasn't been tried yet. infra/README.md has the check, and if it
-  # fails these go the way of SendEmail, with the app's own checks.
+  # ignores tag conditions on sends (decisions, 2026-11-20), but these match:
+  # creating, checking and deleting a domain worked on staging under them
+  # (infra/README.md, "Bringing up staging for testing", step 8).
   statement {
     sid = "CreateCustomerIdentities"
     actions = [

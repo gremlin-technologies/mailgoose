@@ -361,7 +361,8 @@ export AWS_REGION=us-east-2
 6. **The CLI.** `make build` needs the Go version in `go.mod` (1.27). Go 1.21
    or newer fetches it by itself (`GOTOOLCHAIN=auto`, the default), so with
    mise any installed Go works once one is selected, for example
-   `mise use go@1.25`. Then:
+   `mise use go@1.25`, or for one command `MISE_GO_VERSION=1.25.10 make build`
+   (what worked on Nov 20). Then:
    ```sh
    make build
    ./bin/mailgoose config set api-url https://api.staging.mailgoose.app
@@ -381,16 +382,17 @@ export AWS_REGION=us-east-2
 
 8. **Check customer domains work.** Sends no longer rely on tags, but adding,
    checking and deleting a customer's domain still do (`aws:RequestTag` and
-   `aws:ResourceTag` on the SES identity calls), and that hasn't been tried
-   against SES yet. Add a made-up domain, check it, and delete it. The
-   identity stays pending and nothing is sent:
+   `aws:ResourceTag` on the SES identity calls). This passed on Nov 20; run it
+   again after changing those statements. Add a made-up domain, check it, and
+   delete it (the CLI never prompts, so `delete` needs `--yes`). The identity
+   stays pending and nothing is sent:
    ```sh
    ./bin/mailgoose domain add tagcheck-mailgoose.com
    ./bin/mailgoose domain verify tagcheck-mailgoose.com
-   ./bin/mailgoose domain delete tagcheck-mailgoose.com
+   ./bin/mailgoose domain delete tagcheck-mailgoose.com --yes
    ```
-   `add` should print DKIM records, `verify` should say it isn't verified yet,
-   and `delete` should succeed. An error on any of them that the API log
+   `add` should print DKIM records, `verify` should say it isn't verified yet
+   (and exit 1), and `delete` should succeed. An error on any of them that the API log
    (`aws logs tail /ecs/mailgoose-staging-api --since 15m | grep -i AccessDenied`)
    shows as an SES `AccessDenied` means SES ignores tags there too, and those
    statements need the same change as sends.

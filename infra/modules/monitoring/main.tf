@@ -227,7 +227,7 @@ resource "aws_cloudwatch_metric_alarm" "ses_bounce_rate" {
   count = var.ses_reputation_alarms ? 1 : 0
 
   alarm_name        = "${var.name}-ses-bounce-rate"
-  alarm_description = "SES's bounce rate for the AWS account is over ${var.ses_bounce_rate_threshold * 100}%. AWS reviews accounts at 5% and may pause sending at 10%. Find the campaign with the most bounces in its report, and the account sending it."
+  alarm_description = "SES's bounce rate for the AWS account is over ${format("%.4g", var.ses_bounce_rate_threshold * 100)}%. AWS reviews accounts at 5% and may pause sending at 10%. Find the campaign with the most bounces in its report, and the account sending it."
 
   namespace   = "AWS/SES"
   metric_name = "Reputation.BounceRate"
@@ -247,7 +247,7 @@ resource "aws_cloudwatch_metric_alarm" "ses_complaint_rate" {
   count = var.ses_reputation_alarms ? 1 : 0
 
   alarm_name        = "${var.name}-ses-complaint-rate"
-  alarm_description = "SES's complaint rate for the AWS account is over ${var.ses_complaint_rate_threshold * 100}%. AWS reviews accounts at 0.1% and may pause sending at 0.5%. Find the campaign with the most complaints in its report, and the account sending it."
+  alarm_description = "SES's complaint rate for the AWS account is over ${format("%.4g", var.ses_complaint_rate_threshold * 100)}%. AWS reviews accounts at 0.1% and may pause sending at 0.5%. Find the campaign with the most complaints in its report, and the account sending it."
 
   namespace   = "AWS/SES"
   metric_name = "Reputation.ComplaintRate"
@@ -270,7 +270,7 @@ resource "aws_cloudwatch_metric_alarm" "ses_bounce_rate_warning" {
   count = var.ses_reputation_alarms ? 1 : 0
 
   alarm_name        = "${var.name}-ses-bounce-rate-warning"
-  alarm_description = "Early warning: SES's bounce rate for the AWS account is over ${var.ses_bounce_rate_warning_threshold * 100}%. The alarm level is ${var.ses_bounce_rate_threshold * 100}% and AWS reviews accounts at 5%. Check the abuse digest and recent campaign reports for the account with the most hard bounces before it gets there."
+  alarm_description = "Early warning: SES's bounce rate for the AWS account is over ${format("%.4g", var.ses_bounce_rate_warning_threshold * 100)}%. The alarm level is ${format("%.4g", var.ses_bounce_rate_threshold * 100)}% and AWS reviews accounts at 5%. Check the abuse digest and recent campaign reports for the account with the most hard bounces before it gets there."
 
   namespace   = "AWS/SES"
   metric_name = "Reputation.BounceRate"
@@ -290,7 +290,7 @@ resource "aws_cloudwatch_metric_alarm" "ses_complaint_rate_warning" {
   count = var.ses_reputation_alarms ? 1 : 0
 
   alarm_name        = "${var.name}-ses-complaint-rate-warning"
-  alarm_description = "Early warning: SES's complaint rate for the AWS account is over ${var.ses_complaint_rate_warning_threshold * 100}%. The alarm level is ${var.ses_complaint_rate_threshold * 100}% and AWS reviews accounts at 0.1%. Check the abuse digest and recent campaign reports for the account with the most complaints before it gets there."
+  alarm_description = "Early warning: SES's complaint rate for the AWS account is over ${format("%.4g", var.ses_complaint_rate_warning_threshold * 100)}%. The alarm level is ${format("%.4g", var.ses_complaint_rate_threshold * 100)}% and AWS reviews accounts at 0.1%. Check the abuse digest and recent campaign reports for the account with the most complaints before it gets there."
 
   namespace   = "AWS/SES"
   metric_name = "Reputation.ComplaintRate"

@@ -127,13 +127,15 @@ a separate prod AWS account comes before beta.
   staging account that verified `acme.com` sending from `news.acme.com`
   would use prod's identity if prod had verified `news.acme.com`. That needs
   control of `acme.com`'s DNS to set up.
-- **Not changed yet.** Creating, reading, changing and deleting identities
-  keep their tag conditions (`aws:RequestTag` and `aws:ResourceTag`). Whether
-  SES honors those hasn't been tried; `infra/README.md` ("Bringing up staging
-  for testing", step 8) has the check. If SES ignores them too, they get the
-  same change, with the app's existing checks (each environment only touches
-  domains in its own database, and adopts an existing identity only when its
-  Account tag matches).
+- **Not changed.** Creating, reading, changing and deleting identities keep
+  their tag conditions (`aws:RequestTag` and `aws:ResourceTag`). After the
+  fix was applied to staging on Nov 20, the owner added, checked and deleted
+  a made-up domain through the CLI (`infra/README.md`, "Bringing up staging
+  for testing", step 8): every call succeeded with no `AccessDenied`, so SES
+  does match tag conditions on these calls, unlike sends. A call with the
+  wrong environment's tag wasn't tried.
+- **Not tested yet.** A send from a customer's domain, end to end: it needs
+  a domain with real DNS records verified in staging.
 - **Follow-up before beta (owner, Nov 20).** The shared account stays for now,
   but prod must have an AWS account of its own before the first beta
   customer. Shared SES reputation and quotas mean staging's bounces or
