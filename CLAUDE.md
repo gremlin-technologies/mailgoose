@@ -20,8 +20,10 @@ already use.
   palette. UI tickets build their design tokens from it.
 - `docs/design-system.md`: how the web app looks (tokens, components,
   interaction rules) and the research behind it. Read it before changing UI.
-- `site/` and `docs/public-site.md`: the public site at mailgoose.app (plain
-  HTML on GitHub Pages) and how it's set up.
+- `docs/public-site.md`: the public site at mailgoose.app, which lives in its
+  own public repository, gremlin-technologies/mailgoose-public (moved Nov 21).
+- `docs/releasing.md`: how the CLI is released (GoReleaser, to GitHub Releases
+  on mailgoose-public, Homebrew, the AUR and .deb/.rpm).
 
 The PRD, pricing and MVP requirements files are snapshots of Claude Docs; the
 Claude Doc is the live version. In the PRD and pricing files, lines marked
@@ -106,6 +108,11 @@ scope; they only show where an idea came from.
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API
   changes.
+- Public site and CLI releases (Nov 21): mailgoose.app is served from its own
+  public repository, gremlin-technologies/mailgoose-public, so this one can go
+  private. The CLI ships from here with GoReleaser to GitHub Releases on
+  mailgoose-public, a Homebrew tap (gremlin-technologies/homebrew-tap), the
+  AUR (`mailgoose-bin`) and .deb/.rpm files. See `docs/releasing.md`.
 
 ## Working rules
 
