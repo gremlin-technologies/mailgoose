@@ -4,6 +4,45 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: A campaign keeps at most 10 batches on the send queue (MG-89; details are reversible defaults)
+
+The dispatcher put up to 2,000 of a campaign's rows on the send queue every
+2-second tick, up to the account's daily room, so a 10,000-copy launch put
+about 100 batches on the queue within seconds. The workers drain it at
+`SEND_RATE_PER_SECOND` (10 by default), so the last batch waited well over
+15 minutes and the send queue's age alarm, meant for a worker that's down,
+stuck or too slow, fired on an ordinary send.
+
+- **The cap** (`MaxWaitingBatches`, `internal/sending/pipeline.go`): a
+  campaign may have 10 batches' worth of rows waiting, meaning enqueued and
+  still `queued` (not yet claimed by a worker) within `RequeueAfter`. A
+  batch is about 10 seconds of sending, so that's about 100 seconds of
+  work per campaign at 10 a second (1,000 copies). The dispatcher tops it up
+  on every tick, in whole batches (no trickle of small ones), so the
+  workers never run dry and a campaign sends at the same rate as before.
+  The account's daily limit, the platform cap (MG-87) and the 2,000-a-tick
+  limit still apply; the smallest room wins. The 2,000 no longer binds
+  (10 batches are at most 1,000) and stays as a backstop.
+- **Rows held back after an SES "not now" (MG-87) count while they wait.**
+  So a throttled campaign puts no more copies in front of SES meanwhile:
+  each waiting campaign tries at most 10 copies a minute, one a batch. They
+  stop counting at the very moment they can be batched again (their
+  `enqueued_at` reaches `RequeueAfter` ago: the count takes later times,
+  the batching earlier or equal ones), so a row is never both counted and
+  waiting to be taken, and the held rows go out a minute later as before.
+- **Recovery is unchanged:** rows whose batch never came stop counting and
+  are batched again after `RequeueAfter` (an hour). If every batch of a
+  campaign is lost, it waits that hour; before, its other rows were already
+  on the queue anyway.
+- **Slices, pauses and finishing are unchanged.** A full queue batches
+  nothing, which the dispatcher already checks against the open rows
+  before it calls a slice out or a campaign done.
+- **The alarm's threshold stays 15 minutes.** The cap is per campaign, so
+  ten or more big campaigns sending at once at 10 a second could still age
+  the queue past it; that's a real backlog for the alarm to report. A
+  platform-wide cap on waiting batches is the follow-up if it fires that
+  way.
+
 ## 2026-11-21: Account-level pause on the last 30 days (MG-88; the details are reversible defaults)
 
 The automatic pause (CMP-6, MG-79) judged one campaign at a time, and only

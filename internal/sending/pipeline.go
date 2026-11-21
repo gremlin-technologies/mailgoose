@@ -65,8 +65,19 @@ const (
 	// limit (CMP-7).
 	NewAccountDays = 7
 	// maxEnqueuePerTick caps one campaign's rows enqueued per tick, so a
-	// big campaign doesn't hold one transaction for long.
+	// big campaign doesn't hold one transaction for long. MaxWaitingBatches
+	// keeps a campaign under it at every rate today (10 batches of at most
+	// MaxBatch); it stays as a backstop.
 	maxEnqueuePerTick = 2000
+	// MaxWaitingBatches is how many batches' worth of a campaign's rows may
+	// wait on the send queue at once (MG-89): enqueued and not yet claimed.
+	// A batch is about ten seconds of sending, so this is a minute or two
+	// of work per campaign, and the dispatcher tops it up every tick, so
+	// the workers never run dry. Without it a big launch put all of its
+	// batches on the queue in seconds, and the last of them waited long
+	// enough to set off the send queue's age alarm (15 minutes) on an
+	// ordinary send.
+	MaxWaitingBatches = 10
 )
 
 // Batch is one message on the send queue: recipient rows of one campaign.
@@ -289,10 +300,16 @@ func (p *Pipeline) dispatchOne(ctx context.Context, q Queue, after int64) (int64
 }
 
 // nextBatches marks the campaign's next rows enqueued, as many as the
-// account's daily limit and the platform's daily cap allow, and returns
-// them in batches; only rows in its slice when sliceOnly. Rows enqueued
-// long ago whose batch never came are taken again.
+// account's daily limit, the platform's daily cap and the campaign's
+// room on the send queue allow, and returns them in batches; only rows in
+// its slice when sliceOnly. Rows enqueued long ago whose batch never came
+// are taken again.
 func (p *Pipeline) nextBatches(ctx context.Context, tx pgx.Tx, accountID, campaignID string, limit int, sliceOnly bool, now time.Time) ([]Batch, error) {
+	size := p.BatchSize()
+	room, err := p.queueRoom(ctx, tx, accountID, campaignID, size, now)
+	if err != nil || room <= 0 {
+		return nil, err
+	}
 	var used int
 	if err := tx.QueryRow(ctx, `
 		SELECT (SELECT count(*) FROM campaign_recipients WHERE account_id = $1 AND sent_at > $2)
@@ -301,7 +318,7 @@ func (p *Pipeline) nextBatches(ctx context.Context, tx pgx.Tx, accountID, campai
 		accountID, now.Add(-24*time.Hour), now.Add(-RequeueAfter)).Scan(&used); err != nil {
 		return nil, err
 	}
-	room := min(limit-used, maxEnqueuePerTick)
+	room = min(room, limit-used, maxEnqueuePerTick)
 	if platform := p.Limits.PlatformDaily; platform > 0 && room > 0 {
 		// The same count across every account (MG-87): copies past the
 		// cap wait, as they do for the account's limit.
@@ -334,7 +351,6 @@ func (p *Pipeline) nextBatches(ctx context.Context, tx pgx.Tx, accountID, campai
 		return nil, err
 	}
 	slices.Sort(ids)
-	size := p.BatchSize()
 	var out []Batch
 	for len(ids) > 0 {
 		n := min(size, len(ids))
@@ -342,6 +358,35 @@ func (p *Pipeline) nextBatches(ctx context.Context, tx pgx.Tx, accountID, campai
 		ids = ids[n:]
 	}
 	return out, nil
+}
+
+// queueRoom is how many more of a campaign's rows may go on the send
+// queue (MG-89): MaxWaitingBatches batches' worth, less its rows enqueued
+// and still queued (not yet claimed) within RequeueAfter, in whole
+// batches, so topping up doesn't send a trickle of small ones.
+//
+// Rows held back after the mail provider asked to retry later (MG-87)
+// count while they wait, as they do against the daily limits, so a
+// throttled campaign doesn't put more copies in front of the provider
+// meanwhile. They stop counting at the very moment they can be batched
+// again (enqueued_at reaches RequeueAfter ago: the count takes later
+// times, the batching earlier or equal ones), so a row is never both
+// counted and waiting to be taken; being taken in id order, held rows
+// usually go before rows never enqueued. Rows of a batch that never came
+// stop counting at the same moment, so a lost batch holds the campaign up
+// no longer than RequeueAfter.
+func (p *Pipeline) queueRoom(ctx context.Context, tx pgx.Tx, accountID, campaignID string, size int, now time.Time) (int, error) {
+	// account_id lets campaign_recipients_in_flight answer: it holds only
+	// the rows on their way, where the campaign's own index holds all of
+	// its unsent rows.
+	var waiting int
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM campaign_recipients
+		WHERE account_id = $1 AND campaign_id = $2 AND status = 'queued' AND enqueued_at IS NOT NULL AND enqueued_at > $3`,
+		accountID, campaignID, now.Add(-RequeueAfter)).Scan(&waiting); err != nil {
+		return 0, err
+	}
+	return (MaxWaitingBatches*size - waiting) / size * size, nil
 }
 
 // failStaleClaims marks rows claimed longer than ClaimTimeout ago failed
