@@ -775,9 +775,12 @@ The send pipeline (`internal/sending/pipeline.go`) takes it from there:
   its time, then marks the next recipients enqueued, as many as the
   account's daily limit and the platform's daily cap
   (`PLATFORM_DAILY_SEND_LIMIT`) leave, and puts them on the send queue in
-  batches of about 10 seconds' sending (10 to 100). It runs in the API when
-  `SEND_QUEUE_URL` is set (only the API's role may send to the queue), and
-  in the worker otherwise.
+  batches of about 10 seconds' sending (10 to 100). A campaign has at most
+  10 batches waiting on the queue (enqueued, not yet claimed by a worker),
+  topped up in whole batches every tick, so a big launch sends as fast but
+  doesn't sit on the queue long enough to set off its age alarm. It runs in
+  the API when `SEND_QUEUE_URL` is set (only the API's role may send to the
+  queue), and in the worker otherwise.
 - **Workers.** Each takes one batch at a time and, per recipient, waits for
   the next send slot (`send_pace`, shared by every worker), claims the row
   (`sending`) in its own transaction, renders the copy with its
