@@ -4,6 +4,33 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: The send guard checks the kind of mail from the system domain (MG-90; the zero-kind rule is a reversible default)
+
+`mail.Guard` (2026-11-20, SES send isolation) let any message whose From was
+on the system sending domain through before looking at its account or kind.
+Launches and test sends already need a From on a domain the account
+verified (or the shared domain), and the system domain can't be added as an
+account's domain, so customer mail couldn't reach it; but the guard is meant
+to check every message, and a later path that built a campaign with a
+system From would have sent customer content as `mail.<domain>`.
+
+- **The rule.** From the system domain, the guard lets through only
+  `KindSystem` (sign-in codes, test and sender address confirm links, ops
+  alerts and the daily digest, throttle and suspension notices) and
+  `KindConfirm` (double opt-in confirmations). `KindTest` and
+  `KindCampaign` from it are refused with `ErrNotThisEnvironment`, whatever
+  the account, and the error names the kind. Other domains are checked as
+  before, whatever the kind.
+- **No kind (reversible default).** A message with no kind, or one that
+  isn't one of the four, is refused from the system domain too: it isn't
+  known to be mailgoose's own. Every place that builds a message sets its
+  kind, and `Message.Validate` already refuses an unset one, so no flow
+  relied on it.
+- **Checked.** Every caller that sends from the system domain sets
+  `KindSystem`, and their tests now send through the real guard. Signup
+  confirmations go from the account's domain or the shared domain, not the
+  system domain, so allowing `KindConfirm` there changes nothing today.
+
 ## 2026-11-21: The past-due pause doesn't count toward automatic suspension (MG-104, bug fix; reversible default)
 
 An account is suspended on its second automatic pause in 30 days (MG-65),

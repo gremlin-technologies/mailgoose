@@ -21,11 +21,15 @@ var ErrNotThisEnvironment = errors.New("from address is not a sending identity o
 // This check is what keeps staging from sending as a prod customer's domain,
 // and the other way round.
 //
-// A message may go from the system domain, mailgoose's own mail, or from a
-// domain that Verified says its account has verified in this environment's
-// database. Only an environment's own domains service can have verified a
-// domain there, since SES holds one identity per name in the account and
-// adopting another environment's identity is refused.
+// A message may go from the system domain, but only when it is mailgoose's
+// own mail (KindSystem) or a double opt-in confirmation (KindConfirm); a
+// test send or a campaign from it, or a message with no kind or another one,
+// is refused, so customer content never goes out as the system domain
+// (MG-90). Otherwise it may go from a domain that Verified says its account
+// has verified in this environment's database. Only an environment's own
+// domains service can have verified a domain there, since SES holds one
+// identity per name in the account and adopting another environment's
+// identity is refused.
 //
 // With a shared sending domain (MG-85), a message may also go from it, but
 // only as its own account's sending slug and with every Reply-To one the
@@ -33,7 +37,8 @@ var ErrNotThisEnvironment = errors.New("from address is not a sending identity o
 type Guard struct {
 	Sender
 	// System is this environment's system sending domain
-	// (SYSTEM_SENDING_DOMAIN). Mail from exactly that domain is let through.
+	// (SYSTEM_SENDING_DOMAIN). Mail from exactly that domain is let through
+	// when its Kind is KindSystem or KindConfirm, and refused otherwise.
 	System string
 	// Verified returns nil when the domain of from is, or is a subdomain of,
 	// a domain accountID has verified in this environment, and an error
@@ -85,7 +90,10 @@ func (g *Guard) Check(ctx context.Context, m Message) error {
 	}
 	domain := strings.ToLower(strings.TrimSuffix(m.From.Email[at+1:], "."))
 	if g.System != "" && domain == strings.ToLower(strings.TrimSuffix(g.System, ".")) {
-		return nil
+		if systemKind(m.Kind) {
+			return nil
+		}
+		return fmt.Errorf("%w: %s from the system domain %s", ErrNotThisEnvironment, kindName(m.Kind), domain)
 	}
 	shared := g.Shared != "" && domain == strings.ToLower(strings.TrimSuffix(g.Shared, "."))
 	if m.AccountID == "" || (!shared && g.Verified == nil) || (shared && g.SharedSender == nil) {
@@ -136,6 +144,22 @@ func (g *Guard) Check(ctx context.Context, m Message) error {
 	g.passed[key] = now.Add(ttl)
 	g.mu.Unlock()
 	return nil
+}
+
+// systemKind reports whether mail of kind k may go from the system domain:
+// mailgoose's own mail and double opt-in confirmations. Test sends and
+// campaigns carry customer content, and an unset or unknown kind isn't known
+// to be either, so none of them may.
+func systemKind(k Kind) bool {
+	return k == KindSystem || k == KindConfirm
+}
+
+// kindName describes mail of kind k in a refusal, saying so when it's unset.
+func kindName(k Kind) string {
+	if k == "" {
+		return "mail with no kind"
+	}
+	return fmt.Sprintf("%q mail", string(k))
 }
 
 func (g *Guard) now() time.Time {

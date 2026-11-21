@@ -15,7 +15,9 @@ import (
 )
 
 // Kind says what a message is for. It travels with the message as an SES tag,
-// so SES events can be routed without a database lookup.
+// so SES events can be routed without a database lookup. The zero value is no
+// kind: Validate refuses it, and Guard refuses it from the system domain, so
+// every message must set one.
 type Kind string
 
 // Kinds of message.

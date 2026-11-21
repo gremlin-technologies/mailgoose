@@ -31,8 +31,9 @@ func newHarness(t *testing.T) *harness {
 	db := dbtest.New(t)
 	h := &harness{db: db, mail: &mgmail.Fake{}, clk: &clock{t: time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)}}
 	h.svc = &Service{
-		DB:   db,
-		Mail: h.mail,
+		DB: db,
+		// Behind the real guard, as in mailgoosed, so codes must pass it (MG-90).
+		Mail: &mgmail.Guard{Sender: h.mail, System: "mail.test.example"},
 		From: mgmail.Address{Name: "mailgoose", Email: "signin@mail.test.example"},
 		Now:  h.clk.now,
 	}
