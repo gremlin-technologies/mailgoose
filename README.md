@@ -34,7 +34,7 @@ From a fresh clone to a running API, on macOS or Linux:
    Docker.
 2. **Clone and start everything:**
    ```sh
-   git clone https://github.com/gremlin-technologies/mailgoose
+   git clone https://github.com/gremlin-technologies-dev/mailgoose
    cd mailgoose
    make dev
    ```

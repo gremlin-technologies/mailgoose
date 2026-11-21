@@ -73,6 +73,9 @@ scope; they only show where an idea came from.
   mode sends only to up to 5 confirmed test addresses plus the owner's own.
   New accounts start in test mode while `NEW_ACCOUNTS_TEST_MODE` is on (the
   default); prod turns it off before launch. Admins switch accounts.
+- Repository (Nov 21): github.com/gremlin-technologies-dev/mailgoose (moved
+  from the personal account gremlin-technologies). Staging deploys on every
+  merge to main from CodeBuild, since AWS's plan policy blocks GitHub OIDC.
 - Brand (Nov 18): the goose is the mascot and the UI palette comes from it;
   modern and sleek, but simple to use. Logos (Nov 21, the owner's):
   `docs/brand/wordmark.png` (head and word; light-text version for dark mode)

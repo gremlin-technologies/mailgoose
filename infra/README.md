@@ -275,7 +275,8 @@ as the API serves `/images/`; new uploads get CloudFront URLs.
   `mailgoosed migrate up` as a one-off task (a failed migration stops the
   deploy), then registers a new task definition revision and updates both
   services (`scripts/ci/deploy-ecs.sh`). The role trusts only
-  `repo:gremlin-technologies/mailgoose:ref:refs/heads/main`. Prod is not wired
+  `repo:gremlin-technologies-dev/mailgoose:ref:refs/heads/main` (no such role
+  exists yet: it is off in every environment). Prod is not wired
   up yet: its role is off (`enable_github_deploy = false`) and would accept only
   jobs in the GitHub `production` environment, which can require an approval.
 - The ECS services ignore `task_definition` drift so `terraform apply` never
@@ -301,12 +302,19 @@ export AWS_REGION=us-east-2
    terraform apply -var github_connection_ready=false
    terraform output github_connection_status            # "PENDING"
    ```
-2. **Finish it in the console** (needs an owner of the GitHub organization):
-   AWS Console, Region US East (Ohio) > Developer Tools > Settings >
-   Connections > `mailgoose-github` > **Update pending connection** > **Install
-   a new app** > on GitHub, install "AWS Connector for GitHub" on
-   `gremlin-technologies` with **Only select repositories** = `mailgoose` >
-   back in AWS, **Connect**. Then:
+2. **Finish it in the console**, signed in to GitHub as an owner of the
+   `gremlin-technologies-dev` organization: AWS Console, Region US East (Ohio)
+   > Developer Tools > Settings > Connections > `mailgoose-github` > **Update
+   pending connection** > **Install a new app** > on GitHub, pick the
+   `gremlin-technologies-dev` organization (not your own account) and install
+   "AWS Connector for GitHub" with **Only select repositories** = `mailgoose` >
+   back in AWS, pick that installation and **Connect**. The app must be
+   installed on the account that owns the repository. An installation on any
+   other account gives CodeBuild no access to the repository; that is the
+   likely cause of the `OAuthProviderException` ("GitHub API limit reached or
+   permission issue") seen on Nov 21 when creating the webhook.
+   Check on GitHub: the organization's Settings > GitHub Apps lists "AWS
+   Connector for GitHub" with access to `mailgoose`. Then:
    ```sh
    aws codeconnections get-connection --connection-arn "$(terraform output -raw github_connection_arn)" \
      --query Connection.ConnectionStatus --output text   # "AVAILABLE"

@@ -40,8 +40,9 @@ GitHub Pages is free for this repository because it's public.
      `185.199.110.153`, `185.199.111.153`.
    - Add four `AAAA` records, name `@`: `2606:50c0:8000::153`,
      `2606:50c0:8001::153`, `2606:50c0:8002::153`, `2606:50c0:8003::153`.
-   - Set the `CNAME` record named `www` to `gremlin-technologies.github.io`
-     (edit it if it exists, add it if not).
+   - Set the `CNAME` record named `www` to `gremlin-technologies-dev.github.io`
+     (edit it if it exists, add it if not). It was `gremlin-technologies.github.io`
+     until the repository moved to the organization (2026-11-21).
    - **Leave everything else alone**, in particular: the `MX` record, the
      `TXT` records on `@` (SPF and the Microsoft verification), the `CNAME`s
      `autodiscover`, `lyncdiscover`, `sip`, `enterpriseregistration`,
@@ -54,8 +55,8 @@ GitHub Pages is free for this repository because it's public.
 5. **HTTPS.** Tick **Enforce HTTPS** once it's clickable (it stays greyed out
    until GitHub has issued the certificate).
 6. **Optional, recommended:** verify the domain so no other GitHub account can
-   claim it. In the GitHub account settings of `gremlin-technologies` (not the
-   repository): Pages > Add a domain > `mailgoose.app`. Add the `TXT` record
+   claim it. In the settings of the `gremlin-technologies-dev` organization (not
+   the repository): Pages > Add a domain > `mailgoose.app`. Add the `TXT` record
    it shows at GoDaddy, then click Verify.
 
 Check it's live:

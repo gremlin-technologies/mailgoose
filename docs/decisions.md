@@ -62,6 +62,33 @@ life, not one campaign; leaving simulator copies out of the daily cap and
 the ledger; a `mailgoose admin tester list`; an email a few days before a
 tester account ends; and a link in the banner for reporting bugs.
 
+## 2026-11-21: Repository moves to the gremlin-technologies-dev organization (owner decision)
+
+`gremlin-technologies` on GitHub is a personal account, not an organization.
+CodeBuild could not create its webhook (`OAuthProviderException`, "GitHub API
+limit reached or permission issue") on either AWS connection, and the "AWS
+Connector for GitHub" app never showed among that account's installed apps.
+The likely cause (inferred, not confirmed) is that the app was installed on a
+different GitHub account than the one that owns the repository. The owner
+chose to move the repository to a new organization, `gremlin-technologies-dev`,
+and install the app there for `mailgoose` only.
+
+- **Changed with the move:** `github_repository` in `infra/modules/stack`
+  (CodeBuild's source and webhook, and the dormant OIDC trust), the guard in
+  `.github/workflows/deploy-staging.yml`, the clone URL in `README.md`, the
+  connection steps in `infra/README.md`, and the Pages DNS target in
+  `docs/public-site.md` (`www` CNAME to `gremlin-technologies-dev.github.io`).
+- **Not changed:** the Go module path stays `github.com/gremlin-technologies/
+  mailgoose` for now (GitHub redirects the old URL); a rename is a separate
+  change if wanted.
+- **No live AWS role trusts the old name:** the GitHub OIDC provider was never
+  created and `enable_github_deploy` is off in staging and prod.
+- **After the transfer:** the AWS connection needs an installation on the new
+  organization, CodeBuild's source credential has to point at that
+  connection, staging is re-applied, the Pages custom domain is checked, and
+  the Claude GitHub app needs installing on the new organization, or cloud
+  sessions lose access to the repository.
+
 ## 2026-11-21: Staging deploys on merge from CodeBuild, not GitHub OIDC (owner ask; the route is a recommended, reversible default)
 
 The owner asked what it takes to deploy staging automatically on merge.
