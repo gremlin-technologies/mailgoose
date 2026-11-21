@@ -10,6 +10,7 @@ import { useLoad } from "../components";
 import type { Block } from "./blocks";
 import { blockLabels } from "./blocks";
 import { AlignField, ColorField, NumberField, TagField, type Align } from "./fields";
+import { LayoutField } from "./layout";
 import { SocialProperties } from "./social";
 
 export type Settings = components["schemas"]["EmailSettings"];
@@ -175,7 +176,15 @@ function Fieldset({ block, set }: { block: Block; set: (f: Fields) => void }) {
         </>
       );
     case "columns":
-      return <p className="muted small">Two columns hold other blocks. Select a block inside them to change it.</p>;
+      return (
+        <>
+          <LayoutField value={block.layout} onChange={(layout) => set({ layout })} />
+          <p className="muted small">
+            Columns hold other blocks; select one inside to change it. To go to fewer columns, empty the ones on the right first. On phones the
+            columns stack.
+          </p>
+        </>
+      );
     default:
       return null;
   }

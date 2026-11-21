@@ -141,15 +141,43 @@ type Spacer struct {
 	Height int `json:"height"`
 }
 
-// Column is one side of a Columns block.
+// Column is one column of a Columns block.
 type Column struct {
 	Blocks []Block `json:"blocks"`
 }
 
-// Columns is a two-column row with blocks inside each column.
+// Columns is a row of one to four columns with blocks inside each. Layout
+// says how many columns there are and how wide each is.
 type Columns struct {
 	base
+	Layout  string   `json:"layout"`
 	Columns []Column `json:"columns"`
+}
+
+// DefaultColumnLayout is the layout of a columns block that names none
+// (MG-110): two equal columns. A layout gives the columns' relative widths.
+const DefaultColumnLayout = "1:1"
+
+// ColumnLayouts are the layouts a columns block may have, in the order the
+// designer offers them.
+var ColumnLayouts = []string{"1", "1:1", "1:1:1", "1:1:1:1", "1:2", "2:1", "1:3", "3:1"}
+
+// LayoutWidths returns a layout's relative column widths, or nil when it
+// isn't one of ColumnLayouts.
+func LayoutWidths(layout string) []int {
+	known := false
+	for _, l := range ColumnLayouts {
+		known = known || l == layout
+	}
+	if !known {
+		return nil
+	}
+	parts := strings.Split(layout, ":")
+	out := make([]int, len(parts))
+	for i, p := range parts {
+		out[i] = int(p[0] - '0')
+	}
+	return out
 }
 
 // SocialLink is one network's link in a Social block. Label is the text
@@ -512,15 +540,30 @@ func (p *parser) block(raw json.RawMessage, path string, nested bool) (Block, er
 func (p *parser) columns(raw json.RawMessage, path string) (Block, error) {
 	var in struct {
 		base
+		Layout  *string           `json:"layout"`
 		Columns []json.RawMessage `json:"columns"`
 	}
 	if err := strictDecode(raw, &in); err != nil {
 		return nil, decodeErr(path, "columns blocks", err)
 	}
-	if len(in.Columns) != 2 {
-		return nil, docErr(path+".columns", "must hold exactly 2 columns")
+	layout := DefaultColumnLayout
+	if in.Layout != nil {
+		layout = *in.Layout
 	}
-	b := &Columns{base: in.base, Columns: make([]Column, 2)}
+	widths := LayoutWidths(layout)
+	if widths == nil {
+		return nil, docErr(path+".layout", "must be one of %s", strings.Join(ColumnLayouts, ", "))
+	}
+	if in.Columns == nil {
+		// A new columns block with no columns starts with empty ones.
+		for range widths {
+			in.Columns = append(in.Columns, json.RawMessage(`{"blocks":[]}`))
+		}
+	}
+	if len(in.Columns) != len(widths) {
+		return nil, docErr(path+".columns", "must hold %s for the %s layout, not %d", plural(len(widths), "column"), layout, len(in.Columns))
+	}
+	b := &Columns{base: in.base, Layout: layout, Columns: make([]Column, len(widths))}
 	for i, rawCol := range in.Columns {
 		var col struct {
 			Blocks []json.RawMessage `json:"blocks"`
@@ -847,4 +890,12 @@ func jsonKind(goKind string) string {
 	default:
 		return "a " + goKind
 	}
+}
+
+// plural is "1 column" or "3 columns".
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }

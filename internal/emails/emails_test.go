@@ -23,7 +23,7 @@ const everyBlock = `{
     {"id": "bt", "type": "button", "text": "Order", "href": "https://bakery.example/order", "align": "center", "background_color": "#000000", "text_color": "#ffffff"},
     {"id": "d1", "type": "divider", "color": "#cccccc", "thickness": 2},
     {"id": "s1", "type": "spacer", "height": 32},
-    {"id": "c1", "type": "columns", "columns": [
+    {"id": "c1", "type": "columns", "layout": "1:1", "columns": [
       {"blocks": [{"id": "c1a", "type": "text", "text": "Left", "align": "left"}]},
       {"blocks": [{"id": "c1b", "type": "image", "src": "https://cdn.example/x.png", "alt": "", "href": null, "width": null, "align": "center"}]}
     ]},
@@ -137,6 +137,9 @@ func TestDocumentErrors(t *testing.T) {
 		{`{"blocks":[{"type":"columns","columns":[{"blocks":[{"type":"footer"}]},{"blocks":[]}]}]}`, "blocks[0].columns[0].blocks[0].type"},
 		{`{"blocks":[{"type":"columns","columns":[{"blocks":[{"type":"text","text":"x","bold":true}]},{"blocks":[]}]}]}`, "blocks[0].columns[0].blocks[0].bold"},
 		{`{"blocks":[{"type":"columns","columns":[{"blocks":[],"width":50},{"blocks":[]}]}]}`, "blocks[0].columns[0].width"},
+		{`{"blocks":[{"type":"columns","layout":"2:2","columns":[{"blocks":[]},{"blocks":[]}]}]}`, "blocks[0].layout"},
+		{`{"blocks":[{"type":"columns","layout":"1:1:1","columns":[{"blocks":[]},{"blocks":[]}]}]}`, "blocks[0].columns"},
+		{`{"blocks":[{"type":"columns","layout":"1","columns":[]}]}`, "blocks[0].columns"},
 		{`{"blocks":[{"type":"footer"},{"type":"spacer"}]}`, "blocks[0]"},
 		{`{"blocks":[{"id":"a","type":"spacer"},{"id":"a","type":"spacer"}]}`, "blocks[1].id"},
 		{`{"blocks":[{"id":"a b","type":"spacer"}]}`, "blocks[0].id"},

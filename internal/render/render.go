@@ -450,21 +450,50 @@ func (r *renderer) social(b *emails.Social) {
 func (r *renderer) columns(b *emails.Columns, width int) {
 	pad := "8px " + px(padX-colGap)
 	r.w(`<tr><td class="mg-pad" style="padding:`, pad, `;">`+"\n"+`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>`+"\n")
-	colWidth := (width+2*colGap)/len(b.Columns) - 2*colGap
-	share := strconv.Itoa(100/len(b.Columns)) + "%"
-	for _, col := range b.Columns {
-		r.w(`<td class="mg-col" width="`, share, `" valign="top" style="width:`, share, `;padding:0 `, px(colGap), `;">`)
+	for i, outer := range columnWidths(b, width+2*colGap) {
+		col := b.Columns[i]
+		w := strconv.Itoa(outer)
+		r.w(`<td class="mg-col" width="`, w, `" valign="top" style="width:`, w, `px;padding:0 `, px(colGap), `;">`)
 		if len(col.Blocks) == 0 {
 			r.w("&nbsp;</td>\n")
 			continue
 		}
 		r.w("\n" + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">` + "\n")
 		for _, inner := range col.Blocks {
-			r.block(inner, colWidth, false)
+			r.block(inner, outer-2*colGap, false)
 		}
 		r.w("</table></td>\n")
 	}
 	r.w("</tr></table>\n</td></tr>\n")
+}
+
+// columnWidths splits total pixels between a columns block's columns by its
+// layout (MG-110). Each width includes the column's side padding; the last
+// column takes what rounding leaves, so they always add up to total.
+func columnWidths(b *emails.Columns, total int) []int {
+	ratios := emails.LayoutWidths(b.Layout)
+	if len(ratios) != len(b.Columns) {
+		// A document read without a layout check; split evenly.
+		ratios = make([]int, len(b.Columns))
+		for i := range ratios {
+			ratios[i] = 1
+		}
+	}
+	sum := 0
+	for _, r := range ratios {
+		sum += r
+	}
+	out := make([]int, len(ratios))
+	left := total
+	for i, r := range ratios {
+		if i == len(ratios)-1 {
+			out[i] = left
+			break
+		}
+		out[i] = total * r / sum
+		left -= out[i]
+	}
+	return out
 }
 
 func (r *renderer) footer(b *emails.Footer) {

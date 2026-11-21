@@ -121,12 +121,15 @@ scope; they only show where an idea came from.
 - Send throughput (Nov 21, MG-91 part 1): each send batch logs its copies
   sent and seconds at INFO and is recorded for 7 days; `mailgoose admin
   deliverability` shows the last day's copies a second against
-  `SEND_RATE_PER_SECOND`. A pool for a batch's rows (default 4) waits for
-  the staging numbers.
+  `SEND_RATE_PER_SECOND`. Staging measured 9.41 a second against 10 (94%),
+  so the pool for a batch's rows isn't built (MG-91 part 2, Nov 21).
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API
   changes.
+- Column layouts (Nov 21, MG-110): a columns block has a `layout` (1, 1:1,
+  1:1:1, 1:1:1:1, 1:2, 2:1, 1:3, 3:1; `1:1` when missing). Changing it never
+  drops a column that still holds blocks.
 - Social icons (Nov 21, MG-109): the social block shows each network's logo
   as a PNG we serve at `PUBLIC_BASE_URL/assets/social/`, drawn from Font
   Awesome Free (CC BY 4.0), in brand, dark or white, with no circles or gray

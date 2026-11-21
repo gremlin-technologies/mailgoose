@@ -37,8 +37,121 @@ with the networks' logos instead of plain text links. This replaces MG-21's
   in an email; TikTok's developer pages restrict logo use. The icons ship
   for all three (it's how every email builder shows them), but if the owner
   wants to be strict, they can fall back to text for those three.
+- **Open question for the owner: circles, outlines and gray.** The owner
+  asked for something like Mailchimp's, which offers circles, outlines and
+  gray icons. Offer those for the networks whose brand rules allow them?
+  (Default: no; logos only, in brand, dark or white, at 32 to 48 pixels.
+  MG-109.)
 - **Outlook on Windows** gets a table around the icons (it ignores inline
   blocks), so it doesn't wrap; everywhere else they wrap on narrow screens.
+
+## 2026-11-21: Column layouts (MG-110; reversible defaults)
+
+Asked for by the owner: drop in column layouts the way other builders do,
+not only a two-column row. This widens DES-2's "two-column row" to these
+layouts, and DES-2 in `docs/mvp-requirements.md` now says so.
+
+- **Layouts.** A columns block has a `layout`: `1`, `1:1`, `1:1:1`,
+  `1:1:1:1`, `1:2`, `2:1`, `1:3` or `3:1`, each number a column's share
+  of the width. A block without one reads as `1:1`, so every saved email
+  keeps working. Columns still can't hold columns.
+- **Adding one.** Given a layout and no columns, the API makes that many
+  empty columns. The designer's palette has a Columns section with a tile
+  per layout; the CLI takes `--type columns --layout 1:2`.
+- **Changing the layout** (`fields.layout` on update, a picker in the
+  designer's properties, `--layout` in the CLI) adds empty columns on the
+  right when going to more, and drops right-hand columns only when they are
+  empty. If one still holds blocks the change is refused with a message
+  saying which column; nothing is ever dropped silently.
+- **Rendering.** Columns are table cells with pixel widths split by the
+  layout's ratio (the last column takes any rounding remainder), so Outlook
+  gets fixed widths, and they still stack full width on phones.
+- **Numbering.** `column` positions count from 0, the leftmost, up to 3.
+
+## 2026-11-21: Turning Mailchimp templates and campaigns into HTML emails (MG-71; reversible defaults)
+
+`mailchimp.PlanEmails` lists the emails an export would make, with each
+one's errors and warnings, and fetches and writes nothing.
+`mailchimp.EmailImporter.Import` makes them, copying Mailchimp-hosted images
+into the account's image storage. The API and CLI come in MG-72. Each email
+is made even when its checks fail; only a failure to store one stops the
+import. These defaults are each easy to change:
+
+- **Which emails.** The first 100 templates in file order, and the newest 10
+  campaigns (the customer can choose up to 100), newest first by send date,
+  then those with no date in reverse file order. `TemplatesLeftOut` lists
+  the templates past 100, so the preview can name them; the cap keeps one
+  export from making an unbounded number of emails. A campaign is named by its title, else
+  its subject, else its file name; a template by its file name.
+- **Merge tags.** `*|FNAME|*`, `*|LNAME|*`, `*|EMAIL|*` and `*|UNSUB|*`
+  become `{{first_name}}`, `{{last_name}}`, `{{email}}` and
+  `{{unsubscribe_url}}`. `*|MC:SUBJECT|*` and `*|MC_PREVIEW_TEXT|*` become
+  the subject and preview text. The postal address tags are taken out
+  quietly, since mailgoose adds the account's address. Any other tag is
+  taken out with a warning (`mailchimp_tag_removed`), once per tag.
+- **Conditional blocks** (`*|IF:...|*`, `*|INTERESTED:...|*`) are left as
+  written with one error (`mailchimp_conditional`) at the first, since
+  mailgoose has none and only the customer knows which part to keep.
+- **The email checks now refuse Mailchimp merge tags.** Any `*|...|*` left in
+  an HTML email is a new error, `mailchimp_merge_tag`, so a converted email
+  can't go out with tags readers would see as written. This applies to all
+  HTML emails, saved by any route.
+- **Mailchimp editor attributes** (`mc:edit`, `mc:repeatable`,
+  `mc:hideable`) are removed.
+- **Images.** Images on `mcusercontent.com` (and its subdomains) and
+  `gallery.mailchimp.com`, in `src`, `background` and CSS `url()`, are
+  fetched over https only, from public addresses, at most 5 MB, and relinked.
+  Each is fetched once per import, and one import fetches at most 1,000
+  (the account limit). None is fetched for an email too large to keep,
+  once the account reaches its 1,000-image limit, or where image storage
+  isn't set up. One that isn't copied keeps its Mailchimp link with a
+  warning (`image_not_copied`) that says why; an email gets at most 10 of
+  these for single images, then one for each reason that counts the rest.
+  Images on other hosts are left alone.
+- **Empty links.** A removed merge tag that was a link's whole address
+  (`*|ARCHIVE|*`, `*|UPDATE_PROFILE|*`, `*|FORWARD|*`) leaves `href=""`; its
+  warning says the link was left empty.
+- **Tracking links** through `list-manage.com` are kept, with one warning
+  that counts them (`mailchimp_tracking_link`), since their target can't be
+  read without following them.
+- **Too large.** HTML over the 500 KB an email holds makes an empty email
+  with a `too_large` error. Invalid UTF-8 is replaced, and subjects and
+  preview text are cut to 200 characters on one line.
+
+## 2026-11-21: Staging sends at 94% of the configured rate, so the send pool isn't built (MG-91 part 2; decided by the ticket's threshold)
+
+The owner measured send throughput on staging with part 1's runbook (see
+"Send throughput is measured per batch" below), with the SES mailbox
+simulator only, on 2026-11-21 from 20:44:49 to 20:46:16 UTC, at commit
+c5f66ca. `SEND_RATE_PER_SECOND` was 10; SES's `MaxSendRate` was 14 with
+production access on, so SES didn't cap the run. Two campaigns of 200 copies
+each went to the tag `throughput-test`: 400 copies in four batches of 100.
+
+- **Overall:** 400 copies over 42.5 seconds of sending, 9.41 a second, which
+  is 94% of the rate. No batches overlapped.
+- **Per batch:** 8.41, 9.59, 9.87 and 9.96 a second. The slowest was 84%;
+  none was under 80%. The first campaign's first batch was the slowest,
+  perhaps warm-up; one run can't show.
+- **Per campaign, end to end:** 8.95 a second (22.3 seconds) and 9.90 a
+  second (20.2 seconds). A campaign's two batches were about 0.03 seconds
+  apart; launch to the first batch took about 2.2 seconds (the dispatcher's
+  tick and the queue receive).
+- **Outcome:** both campaigns reached `sent` with 200 delivered each, and no
+  skipped or failed copies, bounces, complaints, SES throttles or
+  `retry_later`.
+
+**Decision:** the pool (step 2) was to be built only if the measured rate
+was well under `SEND_RATE_PER_SECOND`, which the runbook put at under 80%.
+It's at 94%, so the pool isn't built and MG-91 is closed: one copy at a
+time keeps up with the pace limit. Measure again (the tag and its 200
+simulator contacts are kept on staging) if `SEND_RATE_PER_SECOND` goes up,
+the send path gains round trips, or the Throughput line in `mailgoose admin
+deliverability` falls well under the rate.
+
+The same run showed that the deliverability report's "OVER WARNING: ..."
+line read like an alert when no account was over the early warning; it was
+the legend. It now says how many of the accounts shown are over it, and says
+so when none are.
 
 ## 2026-11-21: Turning a Mailchimp export into contacts (MG-70; reversible defaults)
 
@@ -481,7 +594,8 @@ batch sends has changed.
   by a small pool, default 4, each copy taking its own pace slot, keeping
   `MaxMessages: 1` and "miss one, never send two") is built only if the
   measured rate is well under `SEND_RATE_PER_SECOND`. The measured numbers
-  are pending the staging run and go in a follow-up entry.
+  are in the follow-up entry, "Staging sends at 94% of the configured
+  rate": no pool.
 
 **Measuring on staging** (needs the owner's AWS sign-in; after this is
 deployed):
@@ -3390,6 +3504,10 @@ Decided by the owner in the PRD scoping call and follow-ups.
   covers them. MG-70.)
 - Mailchimp import: which CSV columns are groups. (Default: only the columns
   the customer names; any other column is dropped and listed. MG-69, MG-72.)
+- Mailchimp import: how many past campaigns come over as emails, and what
+  happens to `*|IF:...|*` blocks. (Default: the newest 10, up to 100 if the
+  customer asks; conditionals are left in with an error to fix by hand.
+  MG-71.)
 - How does prod get DNS? Default is to delegate only `api`, `app` and `mail`
   (see 2026-11-18); awaiting the owner's confirmation and the GoDaddy step.
   (Blocks MG-60.)
@@ -3422,10 +3540,6 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - Which address takes suspension appeals? (Default: `ABUSE_EMAIL`, else
   `abuse@` the system sending domain, which has to be a real mailbox or
   alias. MG-65.)
-- Send a batch's rows with a small pool (MG-91 step 2)? (Default: not yet;
-  built only if staging's measured copies a second are well under
-  `SEND_RATE_PER_SECOND`. The numbers are pending the staging run, see
-  2026-11-21.)
 - Which vendor checks links for phishing and malware? (Default: Google Web
   Risk, licensed for commercial use and free up to 100,000 lookups a month.
   MG-64.)
