@@ -189,9 +189,12 @@ func (r *Resolver) CheckShared(ctx context.Context, accountID, local string, rep
 	return nil
 }
 
-// UnverifiedMessage and UnverifiedHint say what to do about a From that's
-// neither on a verified domain nor, with shared sending on, a verified
-// sender. With shared sending off they keep the domain-only wording.
+// UnverifiedMessage and UnverifiedHint, with UnverifiedDetails, say what to do
+// about a From that's neither on a verified domain nor, with shared sending
+// on, a verified sender. With shared sending off they keep the domain-only
+// wording. The message names no command, so it reads anywhere; the hint
+// names the CLI commands and API routes, and the web app words its own from
+// the problem's code and details (MG-100).
 func (r *Resolver) UnverifiedMessage(email string) string {
 	if r.SharedOn() {
 		return fmt.Sprintf("The From address %s isn't on a verified domain of this account, and isn't one of its verified sender addresses.", email)
@@ -199,13 +202,24 @@ func (r *Resolver) UnverifiedMessage(email string) string {
 	return "The From address " + email + " isn't on a verified sending domain of this account."
 }
 
-// UnverifiedHint is the CLI commands that fix UnverifiedMessage's problem.
+// UnverifiedHint is the CLI commands, and the API routes, that fix
+// UnverifiedMessage's problem. With shared sending on, the owner's own
+// sign-in address is a fix too: it sends from the shared domain as it is.
 func (r *Resolver) UnverifiedHint(email string) string {
 	d := domainOf(email)
 	if r.SharedOn() {
-		return "Verify the address with `mailgoose sender-addresses add " + email + "` and the link emailed to it, to send from mailgoose's shared domain with replies to it; or, better for deliverability, verify its domain with `mailgoose domain add " + d + "` and the DNS records it gives."
+		return "Send from your own sign-in address, which works as it is; or verify this one with `mailgoose sender-addresses add " + email +
+			"` (`POST /v1/sender-addresses`) and the link emailed to it, to send from mailgoose's shared domain with replies to it; or, better for deliverability, verify its domain with `mailgoose domain add " +
+			d + "` (`POST /v1/domains`) and the DNS records it gives."
 	}
-	return "Verify its domain with `mailgoose domain add " + d + "` and the DNS records it gives, or use a From on a verified domain (`mailgoose domain list`)."
+	return "Verify its domain with `mailgoose domain add " + d + "` (`POST /v1/domains`) and the DNS records it gives, or use a From on a verified domain (`mailgoose domain list`)."
+}
+
+// UnverifiedDetails are the unverified_from problem's details: the From
+// (from_email), and whether shared sending is on (shared_sending), so a
+// client can say the fixes in its own words.
+func (r *Resolver) UnverifiedDetails(email string) map[string]any {
+	return map[string]any{"from_email": email, "shared_sending": r.SharedOn()}
 }
 
 // ReplyToHint says what to do about a *ReplyToError.

@@ -4,6 +4,30 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: The unverified-From error says the fixes where it's read (MG-100; the wording is a reversible default)
+
+A test or launch whose From was on no verified domain and wasn't a verified
+sender (MG-85) gave a hint of CLI commands only, which the web app showed as
+it was. It never said that the owner's own sign-in address sends from the
+shared domain as it is, or that the web app has a Sender addresses page.
+
+- **The problem carries details.** `unverified_from` in a `not_ready` answer
+  now has `from_email` (the From) and `shared_sending` (true when
+  `SHARED_SENDING_DOMAIN` is set). The message stays neutral, naming no
+  command.
+- **The hint, read by the CLI and agents,** names `mailgoose
+  sender-addresses add` and `mailgoose domain add` with their API routes
+  (`POST /v1/sender-addresses`, `POST /v1/domains`) and, with shared
+  sending on, says the sign-in address works as it is. With it off, it names
+  only the domain fixes, as before.
+- **The web app words its own** from the code and details: with shared
+  sending on, it names the signed-in owner's address as working as it is,
+  links to Sender addresses and to Domains; off, it links to Domains only.
+  An `unverified_from` without the details still shows the API's message
+  and hint.
+- **The email check's message** (shared sending on) also says the sign-in
+  address sends as it is. Its web rendering has no links yet.
+
 ## 2026-11-21: A sending pause takes over the past-due pause, so the payment doesn't lift it (MG-105, bug fix; reversible defaults)
 
 When an account was already paused for its plan's payment (code

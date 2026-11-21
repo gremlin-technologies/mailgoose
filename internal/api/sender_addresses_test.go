@@ -387,6 +387,17 @@ func TestSharedSendingRefusals(t *testing.T) {
 			!strings.Contains(body, "mailgoose sender-addresses add pat@example.com") || !strings.Contains(body, "mailgoose domain add example.com") {
 			t.Errorf("test: %d %s", rec.Code, body)
 		}
+		// The hint names the sign-in address and the API routes, and the
+		// problem's details let the web app word its own (MG-100).
+		for _, want := range []string{"Send from your own sign-in address, which works as it is", "POST /v1/sender-addresses", "POST /v1/domains",
+			`"from_email":"pat@example.com"`, `"shared_sending":true`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("test: no %q in %s", want, body)
+			}
+		}
+		if rec := do(t, h, bearer(emailPath(http.MethodPost, "/check", ""))(t)); !strings.Contains(rec.Body.String(), "Your own sign-in address sends as it is") {
+			t.Errorf("check: %s", rec.Body)
+		}
 		// Once verified, it sends.
 		addedSenderAddress(t, h)
 		if rec := do(t, h, senderConfirmRequest(t)); rec.Code != http.StatusOK {
@@ -426,7 +437,8 @@ func TestSharedSendingRefusals(t *testing.T) {
 		rec := do(t, h, bearer(campaignTest(""))(t))
 		body := rec.Body.String()
 		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(body, "isn't on a verified sending domain of this account") ||
-			strings.Contains(body, "sender-addresses") {
+			strings.Contains(body, "sender-addresses") || strings.Contains(body, "sign-in") ||
+			!strings.Contains(body, `"shared_sending":false`) || !strings.Contains(body, "POST /v1/domains") {
 			t.Errorf("test: %d %s", rec.Code, body)
 		}
 		rec = do(t, h, bearer(request(http.MethodGet, "/v1/account"))(t))
@@ -434,7 +446,7 @@ func TestSharedSendingRefusals(t *testing.T) {
 			t.Errorf("account: %s", rec.Body)
 		}
 		rec = do(t, h, bearer(emailPath(http.MethodPost, "/check", ""))(t))
-		if !strings.Contains(rec.Body.String(), "isn't on a verified sending domain, so it can't send yet") {
+		if !strings.Contains(rec.Body.String(), "isn't on a verified sending domain, so it can't send yet") || strings.Contains(rec.Body.String(), "sign-in") {
 			t.Errorf("check: %s", rec.Body)
 		}
 	})

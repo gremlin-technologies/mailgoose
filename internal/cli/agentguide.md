@@ -216,8 +216,9 @@ the person turns that off.
   again and redo your change.
 - `rate_limited`: wait for the seconds in the hint, then retry.
 - `unverified_from`: the From is on no verified domain and, where shared
-  sending is on, isn't a verified sender address. The hint names the fixes;
-  confirming an address or adding DNS records is the person's to do.
+  sending is on (`shared_sending`), isn't a verified sender address. The
+  hint names the fixes; there, the person's own sign-in address sends as it
+  is. Confirming an address or adding DNS records is the person's to do.
 - `unverified_reply_to`: on the shared domain, the email's Reply-To must be
   a verified sender address or on a verified domain too.
 - `not_ready` on launch: `details` lists every reason the campaign can't go

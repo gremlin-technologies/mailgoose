@@ -75,7 +75,7 @@ func (s *Server) CheckEmail(w http.ResponseWriter, r *http.Request, id string) {
 		case errors.Is(err, domains.ErrFromNotVerified):
 			if res.SharedOn() {
 				in.UnverifiedFrom = fmt.Sprintf("%s isn't on a verified domain or one of your verified sender addresses, so it can't send yet. "+
-					"Verify the address to send from mailgoose's shared domain, or add its domain.", in.FromEmail)
+					"Your own sign-in address sends as it is; or verify this address to send from mailgoose's shared domain, or add its domain.", in.FromEmail)
 			}
 		case errors.As(err, &badReplyTo):
 			in.FromVerified = true

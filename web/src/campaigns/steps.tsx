@@ -8,11 +8,18 @@ import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
 import { FailureNotice, formatDate } from "../components";
 import type { EditorFrom } from "../designer/exit";
+import { useSession } from "../session";
 import { plural, type Campaign } from "./campaign";
 
 type Check = components["schemas"]["EmailCheck"];
 type CheckIssue = { code: string; message: string; path?: string; line?: number; url?: string };
-type Problem = { code: string; message: string; hint: string };
+type Problem = {
+  code: string;
+  message: string;
+  hint: string;
+  /** unverified_from's From, and whether shared sending is on (MG-100). */
+  unverified?: { from: string; shared: boolean };
+};
 type Address = { name: string; email: string };
 
 export type Summary = {
@@ -41,7 +48,44 @@ export function problemsOf(failure: Failure | undefined): Problem[] {
   if (!Array.isArray(list)) return [];
   return list
     .filter((p): p is Record<string, unknown> => isObject(p) && typeof p.message === "string")
-    .map((p) => ({ code: String(p.code ?? ""), message: p.message as string, hint: typeof p.hint === "string" ? p.hint : "" }));
+    .map((p) => {
+      const problem: Problem = { code: String(p.code ?? ""), message: p.message as string, hint: typeof p.hint === "string" ? p.hint : "" };
+      if (problem.code === "unverified_from" && typeof p.from_email === "string" && typeof p.shared_sending === "boolean") {
+        problem.unverified = { from: p.from_email, shared: p.shared_sending };
+      }
+      return problem;
+    });
+}
+
+/**
+ * The web app's own words for unverified_from (MG-100): where to fix it
+ * here, not the CLI commands the API's hint names. With shared sending on,
+ * the sign-in address sends as it is, and a sender address can be confirmed;
+ * otherwise only a verified domain sends.
+ */
+function UnverifiedFrom({ from, shared }: { from: string; shared: boolean }) {
+  const { state } = useSession();
+  const owner = state.status === "signed-in" ? state.session.user.email : undefined;
+  if (!shared) {
+    return (
+      <>
+        {from} isn't on a verified domain of this account.{" "}
+        <span className="hint">
+          Verify its domain on <Link to="/domains">Domains</Link>, or send from an address on one.
+        </span>
+      </>
+    );
+  }
+  return (
+    <>
+      {from} isn't on a verified domain of this account, or one of its sender addresses.{" "}
+      <span className="hint">
+        Send from your sign-in address{owner ? `, ${owner},` : ","} which works as it is, or confirm {from} on{" "}
+        <Link to="/sender-addresses">Sender addresses</Link>. Your own <Link to="/domains">domain</Link> is better for
+        deliverability.
+      </span>
+    </>
+  );
 }
 
 /** The launch summary and code in a confirmation_required answer; undefined if it isn't one. */
@@ -98,8 +142,14 @@ export function Problems({ failure }: { failure: Failure }) {
       <ul className="problems-list">
         {problems.map((p, i) => (
           <li key={i}>
-            {p.message}
-            {p.hint && <span className="hint"> {p.hint}</span>}
+            {p.unverified ? (
+              <UnverifiedFrom from={p.unverified.from} shared={p.unverified.shared} />
+            ) : (
+              <>
+                {p.message}
+                {p.hint && <span className="hint"> {p.hint}</span>}
+              </>
+            )}
           </li>
         ))}
       </ul>

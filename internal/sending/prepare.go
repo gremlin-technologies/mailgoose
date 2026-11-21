@@ -179,7 +179,8 @@ func (s *Service) Prepare(ctx context.Context, accountID, campaignID string) (*P
 		switch {
 		case errors.Is(err, domains.ErrFromNotVerified):
 			problems = append(problems, Problem{Code: UnverifiedFrom,
-				Message: r.UnverifiedMessage(p.From.Email), Hint: r.UnverifiedHint(p.From.Email)})
+				Message: r.UnverifiedMessage(p.From.Email), Hint: r.UnverifiedHint(p.From.Email),
+				Details: r.UnverifiedDetails(p.From.Email)})
 		case errors.As(err, &badReplyTo):
 			problems = append(problems, Problem{Code: UnverifiedReplyTo,
 				Message: "The Reply-To " + badReplyTo.Address + " isn't one of this account's verified sender addresses or on a verified domain, so emails from mailgoose's shared domain can't send replies there.",
