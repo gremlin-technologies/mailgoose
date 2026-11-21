@@ -49,7 +49,10 @@ homebrew_casks:
     repository:
       owner: gremlin-technologies
       name: homebrew-tap
-      token: '{{ index .Env "RELEASE_TOKEN" }}'
+      # GoReleaser takes a repository token only as a bare {{ .Env.NAME }}.
+      # The release workflow always sets RELEASE_TOKEN, empty when the secret
+      # is missing, and skip_upload below stops the push in that case.
+      token: "{{ .Env.RELEASE_TOKEN }}"
     # Pre-releases, and runs without the token, build the cask but don't push it.
     skip_upload: '{{ if or (not (index .Env "RELEASE_TOKEN")) .Prerelease }}true{{ else }}false{{ end }}'
     homepage: https://mailgoose.app

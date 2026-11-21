@@ -311,3 +311,106 @@ func TestTesterPauseOnBounces(t *testing.T) {
 		t.Errorf("reason %q", why)
 	}
 }
+
+// endsAt is a mail sender that runs end after its n-th send: a tester
+// period that ends while a worker is partway through a batch.
+type endsAt struct {
+	mail.Fake
+	n   int
+	end func()
+}
+
+func (e *endsAt) Send(ctx context.Context, m mail.Message) (string, error) {
+	id, err := e.Fake.Send(ctx, m)
+	if e.n--; e.n == 0 {
+		e.end()
+	}
+	return id, err
+}
+
+// TestTesterEndsMidCampaign: a batch already on the send queue when a
+// tester period ends (MG-107) sends nothing once claimed and hands its rows
+// back, as for a paused account; a period that ends partway through a
+// batch stops it before its next copy; and once an admin extends the
+// period, the rest go out, each once.
+func TestTesterEndsMidCampaign(t *testing.T) {
+	h := launchedHarness(t, 9)
+	ctx := context.Background()
+	h.makeTester(t, 500, h.now.Add(time.Hour))
+	p := h.pipeline(fastLimits)
+	q := &recorded{}
+	waiting := func() int {
+		t.Helper()
+		var n int
+		if err := h.db.QueryRow(ctx, `
+			SELECT count(*) FROM campaign_recipients WHERE campaign_id = $1 AND status = 'queued' AND enqueued_at IS NULL`,
+			h.campaign.ID).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	// Batched while the period runs, claimed after it ends.
+	dispatch(t, p, q)
+	batches := q.take()
+	if len(batches) != 1 || len(batches[0].IDs) != 10 {
+		t.Fatalf("batches %+v", batches)
+	}
+	h.now = h.now.Add(2 * time.Hour)
+	if err := p.HandleBatch(ctx, batches[0], 1); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.fake.Sent()) != 0 || waiting() != 10 {
+		t.Fatalf("after the end: sent %d, %d rows handed back (counts %v)", len(h.fake.Sent()), waiting(), h.counts(t))
+	}
+	dispatch(t, p, q)
+	if b := q.take(); len(b) != 0 {
+		t.Errorf("batched %d again for an ended tester", len(b))
+	}
+	if h.status(t) != campaigns.StatusSending {
+		t.Errorf("campaign %s, want it still sending", h.status(t))
+	}
+
+	// Extended: batched again, and the new end comes after 3 copies of it.
+	until := h.now.Add(time.Hour)
+	h.makeTester(t, 500, until)
+	dispatch(t, p, q)
+	batches = q.take()
+	if len(batches) != 1 || len(batches[0].IDs) != 10 {
+		t.Fatalf("batches after extending %+v", batches)
+	}
+	e := &endsAt{n: 3, end: func() { h.now = until }}
+	p.Mail = e
+	if err := p.HandleBatch(ctx, batches[0], 1); err != nil {
+		t.Fatal(err)
+	}
+	if c := h.counts(t); len(e.Sent()) != 3 || c["sent"] != 3 || c["queued"] != 7 || waiting() != 7 {
+		t.Fatalf("ended mid-batch: sent %d, counts %v, %d handed back", len(e.Sent()), c, waiting())
+	}
+	dispatch(t, p, q)
+	if b := q.take(); len(b) != 0 {
+		t.Errorf("batched %d after the end mid-batch", len(b))
+	}
+
+	// Extended again, the other 7 go out, and nobody gets two.
+	h.makeTester(t, 500, h.now.Add(time.Hour))
+	dispatch(t, p, q)
+	for _, b := range q.take() {
+		if err := p.HandleBatch(ctx, b, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := perAddress(e.Sent())
+	if len(got) != 10 {
+		t.Errorf("%d addresses got mail, want 10", len(got))
+	}
+	for addr, n := range got {
+		if n != 1 {
+			t.Errorf("%s got %d copies", addr, n)
+		}
+	}
+	dispatch(t, p, q)
+	if h.status(t) != campaigns.StatusSent {
+		t.Errorf("campaign %s once all went out", h.status(t))
+	}
+}

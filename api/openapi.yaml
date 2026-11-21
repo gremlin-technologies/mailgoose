@@ -3998,7 +3998,9 @@ paths:
         mailgoose staff only (MG-65): the account can sign in and send
         again. Its API keys and CLI logins stay revoked, so the owner makes
         new ones; its stopped campaigns stay stopped, and a pause stays
-        until it's lifted with `unpauseAccount`. An account that isn't
+        until it's lifted with `unpauseAccount`. A rejected sign-up review
+        stays rejected (MG-106): the account can't launch campaigns or take
+        form signups until `approveSignup`. An account that isn't
         suspended answers 409 `account_not_suspended`.
       tags: [admin]
       x-required-scope: full
@@ -4075,8 +4077,10 @@ paths:
       summary: Approve a sign-up (admin)
       description: |
         mailgoose staff only (MG-66): the account stops waiting for review
-        and can launch campaigns and take form signups. An account that
-        isn't waiting answers 409 `signup_not_waiting`.
+        and can launch campaigns and take form signups. A rejected sign-up
+        can be approved too (MG-106); that doesn't lift its suspension,
+        which `unsuspendAccount` does. An account whose review neither
+        waits nor was rejected answers 409 `signup_not_waiting`.
       tags: [admin]
       x-required-scope: full
       security:
@@ -7550,7 +7554,7 @@ components:
       type: object
       required: [id, name, status, plan, owner_email, sending_paused_at, sending_paused_reason,
         suspended_at, suspended_reason, suspended_by, review, review_flags, review_at, sending_mode,
-        test_addresses_confirmed, test_addresses_pending, created_at]
+        test_addresses_confirmed, test_addresses_pending, tester_until, created_at]
       properties:
         id:
           type: string
@@ -7602,6 +7606,14 @@ components:
         test_addresses_pending:
           type: integer
           description: Test addresses whose link hasn't been used yet.
+        tester_until:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            When a tester account's period ends or ended (MG-86); null when
+            it isn't a tester. Once it has passed the account sends nothing,
+            including batches already on the send queue (MG-107), until an
+            admin extends or revokes it.
         created_at:
           type: string
           format: date-time
@@ -8456,7 +8468,7 @@ components:
     SignupReviewConflict:
       description: |
         `signup_not_waiting`: the account isn't waiting for its sign-up
-        review.
+        review (or, to approve, its review neither waits nor was rejected).
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
@@ -8544,7 +8556,8 @@ components:
         lists, named in `url`; it also pauses the account's sending),
         `untested` (no test since the last change), `send_at_passed`,
         `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up
-        review; not for an account in test mode), `test_mode` (the account is in test mode and the
+        review; not for an account in test mode), `signup_rejected` (the account's sign-up review was
+        rejected and its suspension lifted without approving it; not for an account in test mode), `test_mode` (the account is in test mode and the
         campaign reaches anyone but its confirmed test addresses and its owner; `details.recipients`
         and `details.not_test_addresses`), `new_terms_not_accepted` (the terms changed and
         the account hasn't accepted the new version; `details.current_version`

@@ -20,6 +20,83 @@ the MG-85 apply), which removed the revision a rollback would point at.
 - **Not done:** no automatic clean-up of old revisions. To undo, remove the
   line and apply; revisions kept until then stay until deregistered by hand.
 
+## 2026-11-21: `.goreleaser.yaml` waits for the owner's merge too (owner decision)
+
+The owner said yes on Nov 21 to adding `.goreleaser.yaml` to the files only
+the owner merges. It decides which CLI builds ship and where they are
+published (GitHub Releases on mailgoose-public, the Homebrew tap, the AUR),
+alongside the release workflow in `.github/workflows/`, which the owner
+already merges.
+
+- **Owner-merge paths now:** `infra/`, `.github/workflows/`, `scripts/ci/`,
+  the `Dockerfile`, the `Makefile`, `compose.yaml` and `.goreleaser.yaml`.
+  The reviewer still reviews those PRs and leaves them for the owner.
+- `CLAUDE.md`, `docs/mvp-tickets.md` and `docs/releasing.md` say so.
+
+## 2026-11-21: An ended tester's batches already on the send queue send nothing (MG-107, bug fix; reversible defaults)
+
+When a tester account's period ends (`tester_until` passed, MG-86), the
+dispatcher holds its copies like a paused account's, but batches already on
+the send queue still went out, because the worker checked only the pause and
+the suspension when it started a batch and when it claimed each copy. That
+was up to 10 batches per campaign (MG-89), within the tester's 100-a-day
+limit. `mailgoose admin account` and `admin find` also showed an ended
+tester as "Sending: on". The details below are reversible defaults.
+
+- **The worker treats an ended tester like a paused account.** The
+  dispatcher, a worker starting a batch and the claim of each copy now use
+  one check (paused, suspended, or a tester whose `tester_until` has come,
+  by the same clock). A batch claimed after the end sends nothing and its
+  rows are handed back unsent, waiting as for a pause; a period that ends
+  partway through a batch stops it before its next copy, as a pause
+  mid-batch does. Nothing is skipped or failed, and no credits move: when
+  an admin extends the period (`mailgoose admin tester grant`), the
+  dispatcher batches the rest again and each copy still goes out once.
+  Revoking it puts the account in test mode, whose own rule (MG-80) then
+  skips copies to anyone but its test addresses.
+- **Admin views.** `mailgoose admin account` shows an ended tester as
+  "Sending: OFF: the tester period ended <date>", pointing to `tester
+  grant`, and `admin find` shows "off: tester ended <date>" in its SENDING
+  column. A pause or a suspension is still shown first. For this the admin
+  account summary (`GET /v1/admin/accounts` and every admin account answer)
+  gains `tester_until`, null when the account isn't a tester.
+- **Unchanged:** launches and test sends were already refused at the end
+  (`tester_limit`), the customer's banner and `mailgoose account get`
+  already said it had ended, and no migration is needed.
+
+## 2026-11-21: A rejected sign-up stays held after its suspension is lifted (MG-106, bug fix; reversible defaults)
+
+Only a waiting review held back launches and forms (MG-66), so after
+`mailgoose admin reject-signup` and then `mailgoose admin unsuspend` the
+account launched campaigns and took form signups as if it had been
+approved, while `mailgoose admin tester grant` already refused it with
+`signup_not_approved`. The two now agree. The details below are reversible
+defaults.
+
+- **A rejected review holds the account back like a waiting one**, whatever
+  the suspension state: launches are refused with the problem
+  `signup_rejected` ("This account's sign-up review was rejected ...", at
+  the summary and again at the confirm), and forms answer 403
+  `form_closed`, storing nothing and sending nothing. While the account is
+  also suspended, only `account_suspended` is reported, as before.
+- **Test mode** (MG-80) is treated as for a waiting review: a rejected
+  account in test mode may still launch to its confirmed test addresses and
+  take their form signups, since it reaches no one else. Test sends work as
+  for a waiting account.
+- **`unsuspend` doesn't approve.** It leaves the review rejected, and the CLI
+  says so and points to `mailgoose admin approve-signup`; the admin log
+  records `signup_review: rejected` on the unsuspend.
+- **`approve-signup` takes a rejected sign-up too**, not only a waiting one,
+  and records what the review was (`review_was`). It doesn't lift a
+  suspension: approving one that's still suspended leaves it suspended, and
+  the CLI points to `unsuspend`. `reject-signup` still takes only a waiting
+  review. Approving one that's already approved still answers 409
+  `signup_not_waiting`.
+- **Unchanged:** the web app's review banner and `in_review` on the session
+  still mean waiting only; a rejected account that's been unsuspended sees
+  the reason when it tries to launch. Nothing is migrated: rows already
+  rejected are read the new way.
+
 ## 2026-11-21: Only test copies that may have gone count toward the day's tests (MG-101, bug fix; the details are reversible defaults)
 
 `reserveTests` counted every copy of a test toward the 50 a day (MG-29)

@@ -954,7 +954,9 @@ import contacts and send tests to its own addresses, and sees a note that
 it's being reviewed; it can't launch (`account_in_review`) or take form
 signups. When it confirms its address, `OPS_ALERT_EMAIL` gets an email.
 `mailgoose admin signups` lists waiting accounts with their flags;
-`approve-signup` lets one go, and `reject-signup` suspends it.
+`approve-signup` lets one go, and `reject-signup` suspends it. Lifting that
+suspension (`unsuspend`) leaves the review rejected: the account still can't
+launch (`signup_rejected`) or take form signups until `approve-signup`.
 The local stack (`make dev`) sets `SIGNUP_REVIEW=off` unless you set it, so
 local sign-ups can launch at once.
 
@@ -1039,7 +1041,9 @@ more copies). Copies and tests to SES's mailbox simulator
 (`*@simulator.amazonses.com`) use no tester credits, and testers may test to
 them. A launch or test that needs more credits than are left is refused
 (`tester_limit`, nothing queued); at its end the account can't launch or
-test, and copies still queued wait as for a paused account. The web app
+test, and copies still queued wait as for a paused account, including
+batches already on the send queue (the worker hands them back unsent), and
+`mailgoose admin account` and `admin find` show it as not sending. The web app
 shows a banner with the credits left, and `mailgoose account get` the same.
 `mailgoose admin tester revoke <id>` ends it and puts the account in test
 mode. Events for simulator copies never count toward any account's bounce

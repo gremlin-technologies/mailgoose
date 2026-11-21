@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testAccountID = "3f1c2b4a-5d6e-4f70-8a9b-0c1d2e3f4a5b"
@@ -75,7 +76,7 @@ func TestAdminCommands(t *testing.T) {
 		{[]string{"admin", "signups"}, []string{"WAITING SINCE", testAccountID, "pat@example.com", "disposable_domain, ip_burst"}},
 		{[]string{"admin", "signups", "--json"}, []string{`"review_flags": [`, `"next_cursor": null`}},
 		{[]string{"admin", "account", testAccountID}, []string{"Sign-up:      waiting, flagged disposable_domain, ip_burst"}},
-		{[]string{"admin", "approve-signup", testAccountID}, []string{"Approved Pat's Bakery", "launch campaigns"}},
+		{[]string{"admin", "approve-signup", testAccountID}, []string{"Approved Pat's Bakery", "still suspended", "admin unsuspend"}},
 		{[]string{"admin", "reject-signup", testAccountID, "--reason", "Throwaway address"}, []string{"Rejected Pat's Bakery", "suspended"}},
 		{[]string{"admin", "reject-signup", testAccountID, "--reason", "Throwaway address", "--json"}, []string{`"review": "waiting"`}},
 		{[]string{"admin", "account", testAccountID}, []string{"Mode:         TEST MODE (sends only to its test addresses: 2 confirmed, 1 pending)"}},
@@ -117,6 +118,87 @@ func TestAdminCommands(t *testing.T) {
 	}
 	if b := bodies["/v1/admin/accounts/"+testAccountID+"/reject-signup"]; b["reason"] != "Throwaway address" {
 		t.Errorf("reject body = %v", b)
+	}
+}
+
+// TestAdminEndedTester: an ended tester shows as not sending, with its
+// end date, in `admin find` and `admin account` (MG-107).
+func TestAdminEndedTester(t *testing.T) {
+	summary := `{"id":"` + testAccountID + `","name":"Pat's Bakery","status":"active","plan":"free","owner_email":"pat@example.com",` +
+		`"sending_paused_at":null,"sending_paused_reason":null,"suspended_at":null,"suspended_reason":null,"suspended_by":null,` +
+		`"review":null,"review_flags":[],"review_at":null,"sending_mode":"full","test_addresses_confirmed":0,"test_addresses_pending":0,` +
+		`"tester_until":"2026-11-20T12:00:00Z","created_at":"2026-11-01T09:00:00Z"`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/admin/accounts" {
+			_, _ = w.Write([]byte(`{"data":[` + summary + `}],"next_cursor":null}`))
+			return
+		}
+		_, _ = w.Write([]byte(summary + `,"daily_send_limit":null,"send_limit":{"daily":100,"usual":100,"reason":"Tester accounts send to at most 100 people a day."},` +
+			`"throttles":[],"contacts":12,"credit_balance":900,` +
+			`"tester":{"started_at":"2026-10-21T12:00:00Z","until":"2026-11-20T12:00:00Z","credits":500,"used":120,"left":380,"ended":true},` +
+			`"last_30_days":{"sent":120,"hard_bounces":0,"complaints":0},"held_imports":[],"live_campaigns":[],` +
+			`"terms_version":"2026-11-19","terms_accepted_at":"2026-11-01T09:00:00Z"}`))
+	}))
+	t.Cleanup(srv.Close)
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_abc"
+	until := time.Date(2026, 11, 20, 12, 0, 0, 0, time.UTC).Local()
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"admin", "find", "pat"}, "off: tester ended " + until.Format("2006-01-02")},
+		{[]string{"admin", "account", testAccountID}, "Sending:      OFF: the tester period ended " + until.Format("2006-01-02 15:04")},
+	} {
+		if code := h.run(c.args...); code != ExitOK {
+			t.Fatalf("%v: exit %d: %s", c.args, code, h.errOut)
+		}
+		if !strings.Contains(h.out.String(), c.want) {
+			t.Errorf("%v: output lacks %q:\n%s", c.args, c.want, h.out)
+		}
+		if strings.Contains(h.out.String(), "Sending:      on") {
+			t.Errorf("%v: says sending is on:\n%s", c.args, h.out)
+		}
+	}
+}
+
+// TestAdminUnsuspendRejected: unsuspending a rejected sign-up says the
+// review is still rejected and points to approve-signup, which then says
+// the account can launch (MG-106).
+func TestAdminUnsuspendRejected(t *testing.T) {
+	review := "rejected"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/approve-signup") {
+			review = "approved"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"` + testAccountID + `","name":"Pat's Bakery","status":"active","plan":"free","owner_email":"pat@example.com",` +
+			`"sending_paused_at":null,"sending_paused_reason":null,"suspended_at":null,"suspended_reason":null,"suspended_by":null,` +
+			`"review":"` + review + `","review_flags":[],"review_at":"2026-11-01T09:05:00Z","sending_mode":"full",` +
+			`"test_addresses_confirmed":0,"test_addresses_pending":0,"created_at":"2026-11-01T09:00:00Z"}`))
+	}))
+	t.Cleanup(srv.Close)
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_abc"
+	if code := h.run("admin", "unsuspend", testAccountID, "--reason", "Appeal accepted"); code != ExitOK {
+		t.Fatalf("unsuspend: exit %d: %s", code, h.errOut)
+	}
+	for _, w := range []string{"no longer suspended", "sign-up review is still rejected", "admin approve-signup"} {
+		if !strings.Contains(h.out.String(), w) {
+			t.Errorf("unsuspend output lacks %q:\n%s", w, h.out)
+		}
+	}
+	if strings.Contains(h.out.String(), "still paused") {
+		t.Errorf("unsuspend says paused:\n%s", h.out)
+	}
+	if code := h.run("admin", "approve-signup", testAccountID); code != ExitOK {
+		t.Fatalf("approve: exit %d: %s", code, h.errOut)
+	}
+	if !strings.Contains(h.out.String(), "It can launch campaigns now.") {
+		t.Errorf("approve output:\n%s", h.out)
 	}
 }
 

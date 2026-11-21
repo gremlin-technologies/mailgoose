@@ -50,10 +50,18 @@ type adminAccountSummary struct {
 	ReviewFlags         []string   `json:"review_flags"`
 	ReviewAt            *time.Time `json:"review_at"`
 	// Test mode (MG-80).
-	SendingMode            string    `json:"sending_mode"`
-	TestAddressesConfirmed int       `json:"test_addresses_confirmed"`
-	TestAddressesPending   int       `json:"test_addresses_pending"`
-	CreatedAt              time.Time `json:"created_at"`
+	SendingMode            string `json:"sending_mode"`
+	TestAddressesConfirmed int    `json:"test_addresses_confirmed"`
+	TestAddressesPending   int    `json:"test_addresses_pending"`
+	// TesterUntil is when a tester account's period ends or ended (MG-86).
+	TesterUntil *time.Time `json:"tester_until"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+// testerEnded says whether s is a tester account whose period has ended
+// by now, so it sends nothing (MG-107).
+func (s adminAccountSummary) testerEnded(now time.Time) bool {
+	return s.TesterUntil != nil && !now.Before(*s.TesterUntil)
 }
 
 // adminAccount is the API's AdminAccount.
@@ -186,6 +194,8 @@ func (a *App) adminFindCmd() *cobra.Command {
 					sending = "suspended"
 				case s.SendingPausedAt != nil:
 					sending = "paused"
+				case s.testerEnded(time.Now()):
+					sending = "off: tester ended " + s.TesterUntil.Local().Format("2006-01-02")
 				}
 				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", s.ID, s.Name, s.OwnerEmail, s.Status, s.Plan, sending)
 			}
@@ -217,13 +227,15 @@ func (a *App) printAdminAccount(acc adminAccount) {
 		fmt.Fprintf(w, "Sign-up:      %s\n", review)
 	}
 	fmt.Fprintf(w, "Mode:         %s\n", sendingModeLine(acc.SendingMode, acc.TestAddressesConfirmed, acc.TestAddressesPending))
-	if acc.SendingPausedAt != nil {
-		reason := ""
-		if acc.SendingPausedReason != nil {
-			reason = *acc.SendingPausedReason
-		}
-		fmt.Fprintf(w, "Sending:      PAUSED since %s: %s\n", acc.SendingPausedAt.Local().Format("2006-01-02 15:04"), reason)
-	} else {
+	switch {
+	case acc.SendingPausedAt != nil:
+		fmt.Fprintf(w, "Sending:      PAUSED since %s: %s\n", acc.SendingPausedAt.Local().Format("2006-01-02 15:04"),
+			ptrString(acc.SendingPausedReason))
+	case acc.Tester != nil && acc.Tester.Ended:
+		// An ended tester's copies wait, queued or not (MG-107).
+		fmt.Fprintf(w, "Sending:      OFF: the tester period ended %s; `mailgoose admin tester grant` extends it\n",
+			acc.Tester.Until.Local().Format("2006-01-02 15:04"))
+	default:
 		fmt.Fprintln(w, "Sending:      on")
 	}
 	limit := fmt.Sprint(acc.SendLimit.Daily)
@@ -347,8 +359,9 @@ why.`
 		op, use, short, long = "unsuspendAccount", "unsuspend", "Lift an account's suspension",
 			`Lets a suspended account sign in and send again. Its API keys and CLI
 logins stay revoked, so the owner makes new ones; stopped campaigns stay
-stopped, and a pause stays until `+"`mailgoose admin unpause`"+`. --reason is
-logged.`
+stopped, and a pause stays until `+"`mailgoose admin unpause`"+`. A rejected
+sign-up stays rejected, so the account can't launch campaigns or take form
+signups until `+"`mailgoose admin approve-signup`"+`. --reason is logged.`
 	}
 	c := calls(op, &cobra.Command{
 		Use:     use + " <account-id> --reason <why>",
@@ -378,6 +391,10 @@ logged.`
 				fmt.Fprintf(a.Stdout, "%s (%s) is no longer suspended. Its old API keys stay revoked.\n", acc.Name, acc.ID)
 				if acc.SendingPausedAt != nil {
 					fmt.Fprintln(a.Stdout, "Its sending is still paused: `mailgoose admin unpause` lifts that.")
+				}
+				if ptrString(acc.Review) == "rejected" {
+					fmt.Fprintln(a.Stdout, "Its sign-up review is still rejected, so it can't launch campaigns or take form signups: "+
+						"`mailgoose admin approve-signup` lifts that.")
 				}
 			}
 			return nil
@@ -446,9 +463,11 @@ suspend) with ` + "`mailgoose admin reject-signup`" + `.`,
 // (MG-66).
 func (a *App) adminReviewCmd(approve bool) *cobra.Command {
 	var reason string
-	op, use, short, long, def := "approveSignup", "approve-signup", "Approve a new account waiting for review",
+	op, use, short, long, def := "approveSignup", "approve-signup", "Approve a sign-up that waits for review or was rejected",
 		`Approves a new account waiting for its sign-up review: it can launch
-campaigns and take form signups from now on. --reason is logged.`, "Sign-up approved."
+campaigns and take form signups from now on. A rejected sign-up can be
+approved too; that doesn't lift its suspension, which
+`+"`mailgoose admin unsuspend`"+` does. --reason is logged.`, "Sign-up approved."
 	if !approve {
 		op, use, short, long, def = "rejectSignup", "reject-signup", "Reject a new account and suspend it",
 			`Rejects a new account waiting for its sign-up review, and suspends it as
@@ -477,9 +496,12 @@ to appeal. --reason is logged and shown to the account as why.`, ""
 				a.printJSON(acc)
 				return nil
 			}
-			if approve {
+			switch {
+			case approve && acc.SuspendedAt != nil:
+				fmt.Fprintf(a.Stdout, "Approved %s (%s). It's still suspended: `mailgoose admin unsuspend` lifts that.\n", acc.Name, acc.ID)
+			case approve:
 				fmt.Fprintf(a.Stdout, "Approved %s (%s). It can launch campaigns now.\n", acc.Name, acc.ID)
-			} else {
+			default:
 				fmt.Fprintf(a.Stdout, "Rejected %s (%s) and suspended it. The owner has been emailed.\n", acc.Name, acc.ID)
 			}
 			return nil
