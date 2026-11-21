@@ -664,6 +664,29 @@ func (t sendThroughput) lines() []string {
 	return out
 }
 
+// earlyWarning is the API's early-warning thresholds (MG-82).
+type earlyWarning struct {
+	ComplaintPercent  float64 `json:"complaint_percent"`
+	HardBouncePercent float64 `json:"hard_bounce_percent"`
+	MinComplaints     int     `json:"min_complaints"`
+	MinCopies         int     `json:"min_copies"`
+}
+
+// line says what OVER WARNING means and how many of the accounts shown are
+// over it, so a report with none doesn't read as an alert.
+func (w earlyWarning) line(over int) string {
+	rule := fmt.Sprintf("the last 7 days are over %s%% complaints (and at least %d) or %s%% hard bounces, on %s or more copies",
+		strconv.FormatFloat(w.ComplaintPercent, 'f', -1, 64), w.MinComplaints,
+		strconv.FormatFloat(w.HardBouncePercent, 'f', -1, 64), thousands(w.MinCopies))
+	switch over {
+	case 0:
+		return "No account shown is over the early warning. OVER WARNING in STATE means " + rule + "."
+	case 1:
+		return "1 account shown is OVER WARNING: " + rule + "."
+	}
+	return fmt.Sprintf("%d accounts shown are OVER WARNING: %s.", over, rule)
+}
+
 // adminDeliverabilityCmd is `mailgoose admin deliverability` (MG-82).
 func (a *App) adminDeliverabilityCmd() *cobra.Command {
 	var limit int
@@ -691,16 +714,11 @@ configured SEND_RATE_PER_SECOND. SES mailbox simulator copies count there
 				path += "?limit=" + strconv.Itoa(limit)
 			}
 			var rep struct {
-				Data         []accountDeliverability `json:"data"`
-				NextCursor   *string                 `json:"next_cursor"`
-				Total        int                     `json:"total"`
-				EarlyWarning struct {
-					ComplaintPercent  float64 `json:"complaint_percent"`
-					HardBouncePercent float64 `json:"hard_bounce_percent"`
-					MinComplaints     int     `json:"min_complaints"`
-					MinCopies         int     `json:"min_copies"`
-				} `json:"early_warning"`
-				SendThroughput sendThroughput `json:"send_throughput"`
+				Data           []accountDeliverability `json:"data"`
+				NextCursor     *string                 `json:"next_cursor"`
+				Total          int                     `json:"total"`
+				EarlyWarning   earlyWarning            `json:"early_warning"`
+				SendThroughput sendThroughput          `json:"send_throughput"`
 			}
 			if err := a.call(cmd.Context(), http.MethodGet, path, nil, &rep, true); err != nil {
 				return err
@@ -729,10 +747,14 @@ configured SEND_RATE_PER_SECOND. SES mailbox simulator copies count there
 			if err := tw.Flush(); err != nil {
 				return err
 			}
-			w := rep.EarlyWarning
-			fmt.Fprintf(a.Stdout, "\nOVER WARNING: the last 7 days are over %s%% complaints (and at least %d) or %s%% hard bounces, on %s or more copies.\n",
-				strconv.FormatFloat(w.ComplaintPercent, 'f', -1, 64), w.MinComplaints,
-				strconv.FormatFloat(w.HardBouncePercent, 'f', -1, 64), thousands(w.MinCopies))
+			over := 0
+			for _, d := range rep.Data {
+				if d.OverWarning {
+					over++
+				}
+			}
+			fmt.Fprintln(a.Stdout)
+			fmt.Fprintln(a.Stdout, rep.EarlyWarning.line(over))
 			if rep.Total > len(rep.Data) {
 				fmt.Fprintf(a.Stdout, "Showing the worst %d of %d accounts; --limit shows up to 100.\n", len(rep.Data), rep.Total)
 			}

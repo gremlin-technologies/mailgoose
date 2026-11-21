@@ -54,6 +54,41 @@ import. These defaults are each easy to change:
   with a `too_large` error. Invalid UTF-8 is replaced, and subjects and
   preview text are cut to 200 characters on one line.
 
+## 2026-11-21: Staging sends at 94% of the configured rate, so the send pool isn't built (MG-91 part 2; decided by the ticket's threshold)
+
+The owner measured send throughput on staging with part 1's runbook (see
+"Send throughput is measured per batch" below), with the SES mailbox
+simulator only, on 2026-11-21 from 20:44:49 to 20:46:16 UTC, at commit
+c5f66ca. `SEND_RATE_PER_SECOND` was 10; SES's `MaxSendRate` was 14 with
+production access on, so SES didn't cap the run. Two campaigns of 200 copies
+each went to the tag `throughput-test`: 400 copies in four batches of 100.
+
+- **Overall:** 400 copies over 42.5 seconds of sending, 9.41 a second, which
+  is 94% of the rate. No batches overlapped.
+- **Per batch:** 8.41, 9.59, 9.87 and 9.96 a second. The slowest was 84%;
+  none was under 80%. The first campaign's first batch was the slowest,
+  perhaps warm-up; one run can't show.
+- **Per campaign, end to end:** 8.95 a second (22.3 seconds) and 9.90 a
+  second (20.2 seconds). A campaign's two batches were about 0.03 seconds
+  apart; launch to the first batch took about 2.2 seconds (the dispatcher's
+  tick and the queue receive).
+- **Outcome:** both campaigns reached `sent` with 200 delivered each, and no
+  skipped or failed copies, bounces, complaints, SES throttles or
+  `retry_later`.
+
+**Decision:** the pool (step 2) was to be built only if the measured rate
+was well under `SEND_RATE_PER_SECOND`, which the runbook put at under 80%.
+It's at 94%, so the pool isn't built and MG-91 is closed: one copy at a
+time keeps up with the pace limit. Measure again (the tag and its 200
+simulator contacts are kept on staging) if `SEND_RATE_PER_SECOND` goes up,
+the send path gains round trips, or the Throughput line in `mailgoose admin
+deliverability` falls well under the rate.
+
+The same run showed that the deliverability report's "OVER WARNING: ..."
+line read like an alert when no account was over the early warning; it was
+the legend. It now says how many of the accounts shown are over it, and says
+so when none are.
+
 ## 2026-11-21: Turning a Mailchimp export into contacts (MG-70; reversible defaults)
 
 `contacts.PreviewMailchimpImport` says what importing a bundle (MG-69) would
@@ -495,7 +530,8 @@ batch sends has changed.
   by a small pool, default 4, each copy taking its own pace slot, keeping
   `MaxMessages: 1` and "miss one, never send two") is built only if the
   measured rate is well under `SEND_RATE_PER_SECOND`. The measured numbers
-  are pending the staging run and go in a follow-up entry.
+  are in the follow-up entry, "Staging sends at 94% of the configured
+  rate": no pool.
 
 **Measuring on staging** (needs the owner's AWS sign-in; after this is
 deployed):
@@ -3439,10 +3475,6 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - Which address takes suspension appeals? (Default: `ABUSE_EMAIL`, else
   `abuse@` the system sending domain, which has to be a real mailbox or
   alias. MG-65.)
-- Send a batch's rows with a small pool (MG-91 step 2)? (Default: not yet;
-  built only if staging's measured copies a second are well under
-  `SEND_RATE_PER_SECOND`. The numbers are pending the staging run, see
-  2026-11-21.)
 - Which vendor checks links for phishing and malware? (Default: Google Web
   Risk, licensed for commercial use and free up to 100,000 lookups a month.
   MG-64.)
