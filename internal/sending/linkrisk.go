@@ -44,7 +44,9 @@ func unsafeLinks(problems []Problem) []string {
 // lists (MG-64), the way bounces and complaints pause it (CMP-6): the
 // pause and its reason, an automatic entry in the admin log, and an alert
 // to the ops address. An account already paused keeps its pause and
-// reason, and nothing more is logged or sent.
+// reason, and nothing more is logged or sent, except for the past-due
+// pause, which this one takes over (MG-105, as pauseAccount does), so the
+// payment going through doesn't lift it.
 func (s *Service) pauseForUnsafeLinks(ctx context.Context, accountID, campaignID string, links []string) {
 	log := s.log().With("account_id", accountID, "campaign_id", campaignID)
 	var accountName, campaignName, reason string
@@ -57,8 +59,10 @@ func (s *Service) pauseForUnsafeLinks(ctx context.Context, accountID, campaignID
 		reason = unsafeLinkReason(campaignName, links)
 		now := s.now()
 		err := tx.QueryRow(ctx, `
-			UPDATE accounts SET sending_paused_at = $2, sending_paused_reason = $3, sending_paused_code = NULL, updated_at = $2
-			WHERE id = $1 AND sending_paused_at IS NULL RETURNING name`, accountID, now, reason).Scan(&accountName)
+			UPDATE accounts SET sending_paused_at = coalesce(sending_paused_at, $2), sending_paused_reason = $3,
+				sending_paused_code = NULL, updated_at = $2
+			WHERE id = $1 AND (sending_paused_at IS NULL OR sending_paused_code = $4) RETURNING name`,
+			accountID, now, reason, SubscriptionPastDue).Scan(&accountName)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil
 		}

@@ -234,7 +234,8 @@ type Health struct {
 // (MG-61), inside tx. A campaign pauses its account once: after someone
 // lifts the pause, more bounces on the same campaign don't pause it again.
 // An account paused already (by an admin) keeps that pause and its reason;
-// the campaign is still marked and the pause still reported. A campaign
+// the campaign is still marked and the pause still reported. A past-due
+// pause is taken over instead (MG-105, see pauseAccount). A campaign
 // throttles its account once too, and may pause it later if it gets worse.
 //
 // When the campaign doesn't pause it, the account's own last 30 days are
@@ -281,9 +282,9 @@ func checkCampaign(ctx context.Context, tx pgx.Tx, campaignID string, now time.T
 // (MG-88). That catches an account whose campaigns are each too small to
 // be judged alone. It returns nil when it doesn't pause.
 //
-// An account paused already, for any reason, keeps its pause and reason,
-// and nothing is logged, so a run of events can't stack up automatic
-// pauses towards a suspension. After a pause is lifted by an admin, or
+// An account paused already, for any reason but the past-due payment
+// (MG-105), keeps its pause and reason, and nothing is logged, so a run of
+// events can't stack up automatic pauses towards a suspension. After a pause is lifted by an admin, or
 // after any automatic pause for a campaign, only copies sent since then,
 // and bounces and complaints on them, count: the account needs new
 // evidence to be paused again, not the 30 days that were looked at already.
@@ -317,12 +318,15 @@ func checkAccount(ctx context.Context, tx pgx.Tx, campaignID string, now time.Ti
 // first.
 func judgeAccount(ctx context.Context, tx pgx.Tx, accountID string, now time.Time, lock bool) (*AutoPause, error) {
 	ap := &AutoPause{AccountID: accountID, Account: true, At: now, Since: now.Add(-HealthWindow)}
-	q := `SELECT sending_paused_at IS NOT NULL FROM accounts WHERE id = $1`
+	// The past-due pause doesn't count as paused here: the payment going
+	// through would lift it, so a pause for the sending takes it over
+	// (MG-105, see pauseAccount).
+	q := `SELECT sending_paused_at IS NOT NULL AND sending_paused_code IS DISTINCT FROM $2 FROM accounts WHERE id = $1`
 	if lock {
 		q += ` FOR UPDATE`
 	}
 	var paused bool
-	if err := tx.QueryRow(ctx, q, accountID).Scan(&paused); err != nil || paused {
+	if err := tx.QueryRow(ctx, q, accountID, SubscriptionPastDue).Scan(&paused); err != nil || paused {
 		return nil, err
 	}
 	var last *time.Time
@@ -362,12 +366,21 @@ func autoPause(ctx context.Context, tx pgx.Tx, campaignID string, r Rates, now t
 }
 
 // pauseAccount pauses ap's account for its campaign and logs it, inside tx.
+//
+// An account paused already keeps its pause and reason (a person's pause,
+// or an earlier sending pause), except the past-due pause: a payment going
+// through lifts that one by itself (MG-105), so this pause takes it over,
+// its reason and its code, and stays until someone lifts it. The past-due
+// state stays on the subscription, and an admin unpause puts the past-due
+// pause back while the payment is still owed.
 func pauseAccount(ctx context.Context, tx pgx.Tx, ap *AutoPause) error {
 	if err := tx.QueryRow(ctx, `
 		UPDATE accounts SET
-			sending_paused_reason = CASE WHEN sending_paused_at IS NULL THEN $3 ELSE sending_paused_reason END,
+			sending_paused_reason = CASE WHEN sending_paused_at IS NULL OR sending_paused_code = $4 THEN $3
+				ELSE sending_paused_reason END,
+			sending_paused_code = CASE WHEN sending_paused_code = $4 THEN NULL ELSE sending_paused_code END,
 			sending_paused_at = coalesce(sending_paused_at, $2)
-		WHERE id = $1 RETURNING name`, ap.AccountID, ap.At, ap.Reason).Scan(&ap.AccountName); err != nil {
+		WHERE id = $1 RETURNING name`, ap.AccountID, ap.At, ap.Reason, SubscriptionPastDue).Scan(&ap.AccountName); err != nil {
 		return err
 	}
 	var details any = ap.Rates

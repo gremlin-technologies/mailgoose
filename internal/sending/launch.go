@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/billing"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
@@ -312,14 +313,14 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 			Hint: "Set a new one with `mailgoose campaign update " + c.ID + " --send-at <time>`, or `--send-at now`."})
 	}
 	var pausedAt, suspendedAt *time.Time
-	var reason, code, suspendedReason, terms *string
+	var reason, code, suspendedReason, terms, subStatus *string
 	var inReview bool
 	var mode string
 	if err := s.DB.QueryRow(ctx, `
 		SELECT sending_paused_at, sending_paused_reason, sending_paused_code, suspended_at, suspended_reason, terms_version,
-		       coalesce(review = 'waiting', false), sending_mode
+		       coalesce(review = 'waiting', false), sending_mode, subscription_status
 		FROM accounts WHERE id = $1`,
-		accountID).Scan(&pausedAt, &reason, &code, &suspendedAt, &suspendedReason, &terms, &inReview, &mode); err != nil {
+		accountID).Scan(&pausedAt, &reason, &code, &suspendedAt, &suspendedReason, &terms, &inReview, &mode, &subStatus); err != nil {
 		return nil, nil, err
 	}
 	if p := termsProblem(trimmed(terms)); p != nil {
@@ -339,6 +340,15 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 		}
 		problems = append(problems, Problem{Code: AccountPaused, Message: msg,
 			Hint: "Reply to the email about the pause, or write to support, to get it lifted."})
+		// A pause for the sending takes over a past-due one (MG-105); the
+		// payment is still owed, so it's listed too, without promising
+		// that paying resumes sending.
+		if billing.Overdue(trimmed(subStatus)) {
+			problems = append(problems, Problem{Code: SubscriptionPastDue,
+				Message: "The paid plan's payment didn't go through either. Once it does, sending stays paused " +
+					"for the reason above until that pause is lifted.",
+				Hint: "Update the card with `mailgoose plan manage`."})
+		}
 	}
 	// An account in test mode can reach only its own test addresses, so
 	// its review doesn't hold it back (MG-80); full sending needs both.

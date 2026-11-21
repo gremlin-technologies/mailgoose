@@ -165,6 +165,10 @@ func (s *Service) applySubscription(ctx context.Context, tx pgx.Tx, e *event, su
 		return "", err
 	}
 
+	// Only a pause still coded as past due is billing's to lift. Any other
+	// pause, including one that took the past-due pause over (a sending
+	// pause or a person's, MG-105), stays when the payment goes through,
+	// and a payment going past due during one doesn't replace it.
 	feePaused := pausedAt != nil && deref(pausedCode) == SubscriptionPastDue
 	switch {
 	case overdueStatuses[sub.Status] && pausedAt == nil:

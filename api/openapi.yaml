@@ -8545,7 +8545,9 @@ components:
         the account hasn't accepted the new version; `details.current_version`
         and `details.accepted_version`, then `acceptTerms`),
         `subscription_past_due` (sending is paused until the paid plan's
-        payment goes through), `no_recipients`, `credits_short` with `details.needed`,
+        payment goes through; listed after `account_paused` when another
+        pause took over the past-due one, which then stays after the
+        payment until it's lifted), `no_recipients`, `credits_short` with `details.needed`,
         `details.balance` and `details.short`, and `tester_limit` (a tester account, MG-86, that has
         ended, or whose campaign needs more tester credits than are left; `details.needed`,
         `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`). `invalid_confirmation`: the

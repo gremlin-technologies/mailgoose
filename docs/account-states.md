@@ -103,6 +103,11 @@ never refuses a launch: copies over it wait for the next day's room.
   third throttle) is still logged as `auto_pause` and still counts toward
   suspension; the 30-day check (MG-88) and the unsafe-link pause add nothing
   to the admin log.
+- The exception is the past-due pause (MG-105): any sending pause landing on
+  it takes it over, with its own reason and no past-due code, and is logged
+  as `auto_pause`. The payment going through then leaves it in place. While
+  the payment is still owed, a refused launch lists `subscription_past_due`
+  after `account_paused`, and the web banner and `plan get` still show it.
 - `admin pause` on a paused account replaces the reason and drops the
   past-due code.
 - The past-due pause is only put on an account that isn't paused. If an
@@ -126,12 +131,8 @@ never refuses a launch: copies over it wait for the next day's room.
 
 ## Known gaps
 
-Found while checking this page against the code; none is fixed yet.
+Found while checking this page against the code, and not fixed yet.
 
-- An automatic sending pause (a campaign's, or a third throttle) on an
-  account already paused for a past-due payment keeps the past-due code, so
-  the payment going through lifts it too. Until that's fixed, look at
-  `admin log` for an `auto_pause` before trusting a payment's unpause.
 - Only a `waiting` review blocks, so unsuspending a rejected sign-up lets it
   launch and take signups as if approved, while `tester grant` still refuses
   it as rejected.

@@ -229,7 +229,8 @@ func TestAutoSuspendOnSecondPause(t *testing.T) {
 
 // TestPastDuePauseStillListed: the past-due pause that no longer counts
 // toward suspension (MG-104) is still in the admin log and the digest, and
-// the account stays paused for it.
+// the account stays paused, now for the complaints, which took the
+// past-due pause over (MG-105).
 func TestPastDuePauseStillListed(t *testing.T) {
 	h := launchedHarness(t, 999)
 	ctx := context.Background()
@@ -262,7 +263,7 @@ func TestPastDuePauseStillListed(t *testing.T) {
 		h.acc).Scan(&paused, &code); err != nil {
 		t.Fatal(err)
 	}
-	if !paused || code != SubscriptionPastDue {
+	if !paused || code != "" {
 		t.Errorf("paused %v, code %q", paused, code)
 	}
 	var d Digest
