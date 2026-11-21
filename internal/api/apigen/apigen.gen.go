@@ -925,6 +925,7 @@ const (
 	HtmlIssueCodeForm               HtmlIssueCode = "form"
 	HtmlIssueCodeIframe             HtmlIssueCode = "iframe"
 	HtmlIssueCodeJavascriptUrl      HtmlIssueCode = "javascript_url"
+	HtmlIssueCodeMailchimpMergeTag  HtmlIssueCode = "mailchimp_merge_tag"
 	HtmlIssueCodeMalformedMarkup    HtmlIssueCode = "malformed_markup"
 	HtmlIssueCodeMergeTagLink       HtmlIssueCode = "merge_tag_link"
 	HtmlIssueCodeMissingUnsubscribe HtmlIssueCode = "missing_unsubscribe"
@@ -950,6 +951,8 @@ func (e HtmlIssueCode) Valid() bool {
 	case HtmlIssueCodeIframe:
 		return true
 	case HtmlIssueCodeJavascriptUrl:
+		return true
+	case HtmlIssueCodeMailchimpMergeTag:
 		return true
 	case HtmlIssueCodeMalformedMarkup:
 		return true

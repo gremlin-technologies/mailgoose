@@ -436,8 +436,10 @@ func TestTooManyColumns(t *testing.T) {
 	// One more is refused, and a very wide header is refused quickly
 	// rather than read column by column.
 	for _, n := range []int{MaxColumns + 1, 1_000_000} {
+		// Only the read is timed, not making the header.
+		data := []byte(wideHeader(n) + "\na@example.com\n")
 		start := time.Now()
-		_, err := read(t, []byte(wideHeader(n)+"\na@example.com\n"), "subscribed.csv", Options{})
+		_, err := read(t, data, "subscribed.csv", Options{})
 		wantRefused(t, err, ErrTooManyColumns)
 		if d := time.Since(start); d > 5*time.Second {
 			t.Errorf("%d columns took %v", n, d)

@@ -5069,7 +5069,7 @@ later. Present only on a campaign launched in a slice.
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `line` | integer | yes | The line it's on, counting from 1. |
-| `code` | string: one of `malformed_markup`, `script`, `form`, `iframe`, `embedded_object`, `external_stylesheet`, `event_handler`, `javascript_url`, `data_url`, `redirect`, `missing_unsubscribe`, `merge_tag_link`, `too_large`, `unsupported_css` | yes |  |
+| `code` | string: one of `malformed_markup`, `script`, `form`, `iframe`, `embedded_object`, `external_stylesheet`, `event_handler`, `javascript_url`, `data_url`, `redirect`, `missing_unsubscribe`, `merge_tag_link`, `too_large`, `mailchimp_merge_tag`, `unsupported_css` | yes |  |
 | `message` | string | yes |  |
 
 <a id="schema-emailcheck"></a>

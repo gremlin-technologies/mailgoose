@@ -33,6 +33,7 @@ const (
 	HTMLNoUnsubscribe      = "missing_unsubscribe"
 	HTMLTagLink            = "merge_tag_link"
 	HTMLTooLarge           = "too_large"
+	HTMLMailchimpTag       = "mailchimp_merge_tag"
 
 	// Warnings
 	HTMLUnsupportedCSS = "unsupported_css"
@@ -97,6 +98,10 @@ var (
 	// unsubscribeHref is a link whose whole address is the unsubscribe tag.
 	unsubscribeHref = regexp.MustCompile(`^\s*\{\{\s*unsubscribe_url\s*\}\}\s*$`)
 	cssImport       = regexp.MustCompile(`(?i)@import\b`)
+	// mailchimpTag is a Mailchimp merge tag, *|NAME|*, which mailgoose
+	// doesn't fill in: an imported email that still has one would show it
+	// to readers as written.
+	mailchimpTag = regexp.MustCompile(`\*\|[^|*\r\n]{1,200}\|\*`)
 )
 
 // Elements with no end tag, and elements whose end tag HTML lets you leave
@@ -149,6 +154,19 @@ func (c *htmlChecker) run(src string) {
 		c.fail(lineAt(src, MaxSendableHTMLBytes), HTMLTooLarge,
 			"the html is %s; the most an email can be is %s, or Gmail clips it and hides the unsubscribe link",
 			kb(len(src)), kb(MaxSendableHTMLBytes))
+	}
+
+	if tags := mailchimpTag.FindAllStringIndex(src, -1); len(tags) > 0 {
+		first := src[tags[0][0]:tags[0][1]]
+		more := ""
+		if n := len(tags) - 1; n == 1 {
+			more = " (and 1 more)"
+		} else if n > 1 {
+			more = fmt.Sprintf(" (and %d more)", n)
+		}
+		c.fail(lineAt(src, tags[0][0]), HTMLMailchimpTag,
+			"%s%s is a Mailchimp merge tag, which mailgoose doesn't fill in, so readers would see it as written; replace it with a mailgoose tag such as {{first_name}} or delete it",
+			clipHref(first), more)
 	}
 
 	z := html.NewTokenizer(strings.NewReader(src))
