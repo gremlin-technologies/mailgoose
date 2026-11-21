@@ -75,7 +75,7 @@ func TestAdminCommands(t *testing.T) {
 		{[]string{"admin", "signups"}, []string{"WAITING SINCE", testAccountID, "pat@example.com", "disposable_domain, ip_burst"}},
 		{[]string{"admin", "signups", "--json"}, []string{`"review_flags": [`, `"next_cursor": null`}},
 		{[]string{"admin", "account", testAccountID}, []string{"Sign-up:      waiting, flagged disposable_domain, ip_burst"}},
-		{[]string{"admin", "approve-signup", testAccountID}, []string{"Approved Pat's Bakery", "launch campaigns"}},
+		{[]string{"admin", "approve-signup", testAccountID}, []string{"Approved Pat's Bakery", "still suspended", "admin unsuspend"}},
 		{[]string{"admin", "reject-signup", testAccountID, "--reason", "Throwaway address"}, []string{"Rejected Pat's Bakery", "suspended"}},
 		{[]string{"admin", "reject-signup", testAccountID, "--reason", "Throwaway address", "--json"}, []string{`"review": "waiting"`}},
 		{[]string{"admin", "account", testAccountID}, []string{"Mode:         TEST MODE (sends only to its test addresses: 2 confirmed, 1 pending)"}},
@@ -117,6 +117,44 @@ func TestAdminCommands(t *testing.T) {
 	}
 	if b := bodies["/v1/admin/accounts/"+testAccountID+"/reject-signup"]; b["reason"] != "Throwaway address" {
 		t.Errorf("reject body = %v", b)
+	}
+}
+
+// TestAdminUnsuspendRejected: unsuspending a rejected sign-up says the
+// review is still rejected and points to approve-signup, which then says
+// the account can launch (MG-106).
+func TestAdminUnsuspendRejected(t *testing.T) {
+	review := "rejected"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/approve-signup") {
+			review = "approved"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"` + testAccountID + `","name":"Pat's Bakery","status":"active","plan":"free","owner_email":"pat@example.com",` +
+			`"sending_paused_at":null,"sending_paused_reason":null,"suspended_at":null,"suspended_reason":null,"suspended_by":null,` +
+			`"review":"` + review + `","review_flags":[],"review_at":"2026-11-01T09:05:00Z","sending_mode":"full",` +
+			`"test_addresses_confirmed":0,"test_addresses_pending":0,"created_at":"2026-11-01T09:00:00Z"}`))
+	}))
+	t.Cleanup(srv.Close)
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_abc"
+	if code := h.run("admin", "unsuspend", testAccountID, "--reason", "Appeal accepted"); code != ExitOK {
+		t.Fatalf("unsuspend: exit %d: %s", code, h.errOut)
+	}
+	for _, w := range []string{"no longer suspended", "sign-up review is still rejected", "admin approve-signup"} {
+		if !strings.Contains(h.out.String(), w) {
+			t.Errorf("unsuspend output lacks %q:\n%s", w, h.out)
+		}
+	}
+	if strings.Contains(h.out.String(), "still paused") {
+		t.Errorf("unsuspend says paused:\n%s", h.out)
+	}
+	if code := h.run("admin", "approve-signup", testAccountID); code != ExitOK {
+		t.Fatalf("approve: exit %d: %s", code, h.errOut)
+	}
+	if !strings.Contains(h.out.String(), "It can launch campaigns now.") {
+		t.Errorf("approve output:\n%s", h.out)
 	}
 }
 

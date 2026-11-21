@@ -347,8 +347,9 @@ why.`
 		op, use, short, long = "unsuspendAccount", "unsuspend", "Lift an account's suspension",
 			`Lets a suspended account sign in and send again. Its API keys and CLI
 logins stay revoked, so the owner makes new ones; stopped campaigns stay
-stopped, and a pause stays until `+"`mailgoose admin unpause`"+`. --reason is
-logged.`
+stopped, and a pause stays until `+"`mailgoose admin unpause`"+`. A rejected
+sign-up stays rejected, so the account can't launch campaigns or take form
+signups until `+"`mailgoose admin approve-signup`"+`. --reason is logged.`
 	}
 	c := calls(op, &cobra.Command{
 		Use:     use + " <account-id> --reason <why>",
@@ -378,6 +379,10 @@ logged.`
 				fmt.Fprintf(a.Stdout, "%s (%s) is no longer suspended. Its old API keys stay revoked.\n", acc.Name, acc.ID)
 				if acc.SendingPausedAt != nil {
 					fmt.Fprintln(a.Stdout, "Its sending is still paused: `mailgoose admin unpause` lifts that.")
+				}
+				if ptrString(acc.Review) == "rejected" {
+					fmt.Fprintln(a.Stdout, "Its sign-up review is still rejected, so it can't launch campaigns or take form signups: "+
+						"`mailgoose admin approve-signup` lifts that.")
 				}
 			}
 			return nil
@@ -446,9 +451,11 @@ suspend) with ` + "`mailgoose admin reject-signup`" + `.`,
 // (MG-66).
 func (a *App) adminReviewCmd(approve bool) *cobra.Command {
 	var reason string
-	op, use, short, long, def := "approveSignup", "approve-signup", "Approve a new account waiting for review",
+	op, use, short, long, def := "approveSignup", "approve-signup", "Approve a sign-up that waits for review or was rejected",
 		`Approves a new account waiting for its sign-up review: it can launch
-campaigns and take form signups from now on. --reason is logged.`, "Sign-up approved."
+campaigns and take form signups from now on. A rejected sign-up can be
+approved too; that doesn't lift its suspension, which
+`+"`mailgoose admin unsuspend`"+` does. --reason is logged.`, "Sign-up approved."
 	if !approve {
 		op, use, short, long, def = "rejectSignup", "reject-signup", "Reject a new account and suspend it",
 			`Rejects a new account waiting for its sign-up review, and suspends it as
@@ -477,9 +484,12 @@ to appeal. --reason is logged and shown to the account as why.`, ""
 				a.printJSON(acc)
 				return nil
 			}
-			if approve {
+			switch {
+			case approve && acc.SuspendedAt != nil:
+				fmt.Fprintf(a.Stdout, "Approved %s (%s). It's still suspended: `mailgoose admin unsuspend` lifts that.\n", acc.Name, acc.ID)
+			case approve:
 				fmt.Fprintf(a.Stdout, "Approved %s (%s). It can launch campaigns now.\n", acc.Name, acc.ID)
-			} else {
+			default:
 				fmt.Fprintf(a.Stdout, "Rejected %s (%s) and suspended it. The owner has been emailed.\n", acc.Name, acc.ID)
 			}
 			return nil

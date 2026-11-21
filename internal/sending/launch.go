@@ -43,6 +43,9 @@ const (
 	// AccountInReview is a new account waiting for its sign-up review
 	// (MG-66).
 	AccountInReview = "account_in_review"
+	// SignupRejected is an account whose sign-up review was rejected and
+	// whose suspension was lifted without approving it (MG-106).
+	SignupRejected = "signup_rejected"
 	// SubscriptionPastDue is a pause while the paid plan's payment is past
 	// due, lifted once it goes through.
 	SubscriptionPastDue = "subscription_past_due"
@@ -314,13 +317,12 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 	}
 	var pausedAt, suspendedAt *time.Time
 	var reason, code, suspendedReason, terms, subStatus *string
-	var inReview bool
-	var mode string
+	var review, mode string
 	if err := s.DB.QueryRow(ctx, `
 		SELECT sending_paused_at, sending_paused_reason, sending_paused_code, suspended_at, suspended_reason, terms_version,
-		       coalesce(review = 'waiting', false), sending_mode, subscription_status
+		       coalesce(review, ''), sending_mode, subscription_status
 		FROM accounts WHERE id = $1`,
-		accountID).Scan(&pausedAt, &reason, &code, &suspendedAt, &suspendedReason, &terms, &inReview, &mode, &subStatus); err != nil {
+		accountID).Scan(&pausedAt, &reason, &code, &suspendedAt, &suspendedReason, &terms, &review, &mode, &subStatus); err != nil {
 		return nil, nil, err
 	}
 	if p := termsProblem(trimmed(terms)); p != nil {
@@ -351,11 +353,21 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 		}
 	}
 	// An account in test mode can reach only its own test addresses, so
-	// its review doesn't hold it back (MG-80); full sending needs both.
-	if inReview && suspendedAt == nil && mode != auth.SendingTest {
-		problems = append(problems, Problem{Code: AccountInReview,
-			Message: "New accounts are reviewed before their first campaign, and this one's review isn't done yet.",
-			Hint:    "Keep building and sending tests meanwhile; launching opens once the account is approved."})
+	// its review doesn't hold it back (MG-80); full sending needs both. A
+	// rejected review holds it back like a waiting one, whether or not the
+	// suspension that came with it was lifted (MG-106): only approving it
+	// lets the account launch.
+	if suspendedAt == nil && mode != auth.SendingTest {
+		switch review {
+		case "waiting":
+			problems = append(problems, Problem{Code: AccountInReview,
+				Message: "New accounts are reviewed before their first campaign, and this one's review isn't done yet.",
+				Hint:    "Keep building and sending tests meanwhile; launching opens once the account is approved."})
+		case "rejected":
+			problems = append(problems, Problem{Code: SignupRejected,
+				Message: "This account's sign-up review was rejected, so it can't launch campaigns or take form signups.",
+				Hint:    "Reply to the email about the rejection to ask for another look; launching opens once the sign-up is approved."})
+		}
 	}
 	return out, problems, nil
 }
