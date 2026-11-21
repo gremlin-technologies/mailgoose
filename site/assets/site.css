@@ -41,14 +41,14 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
 .skip {
   position: absolute;
   left: 1rem;
-  top: -3rem;
+  top: -4rem;
   z-index: 10;
   padding: 0.5rem 0.875rem;
   background: var(--surface);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-pop);
 }
-.skip:focus { top: 0.75rem; }
+/* The shadow comes with focus, so none of it shows above the header. */
+.skip:focus { top: 0.75rem; box-shadow: var(--shadow-pop); }
 
 /* Everything that changes on hover or focus eases the same way. */
 .button,
