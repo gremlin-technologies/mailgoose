@@ -31,6 +31,18 @@ const (
 	MaxHTMLFileBytes = 5 << 20
 	// DefaultAudienceName names an audience when the export doesn't.
 	DefaultAudienceName = "Mailchimp"
+	// MaxColumns is the most columns a member file's header may have, and
+	// the most different column names one audience's files may have
+	// between them. Mailchimp allows about 80 merge fields, so this is
+	// generous; it keeps a crafted header from costing time and memory.
+	MaxColumns = 1000
+	// MaxSkippedRows is how many skipped rows an audience lists in
+	// Skipped. Every skipped row is still counted in SkippedByReason.
+	MaxSkippedRows = 1000
+	// MaxListNames is the most names Read takes from one tags, group or
+	// permission cell; the rest are left out and the member's NamesCut is
+	// set.
+	MaxListNames = 500
 )
 
 // Options changes how Read reads an export. The zero value reads with the
@@ -80,6 +92,7 @@ const (
 	ErrUnsafePath     = "unsafe_path"
 	ErrTooLarge       = "too_large"
 	ErrTooManyMembers = "too_many_members"
+	ErrTooManyColumns = "too_many_columns"
 	ErrNoEmailColumn  = "no_email_column"
 	ErrUnknownStatus  = "unknown_status"
 	ErrNothingToRead  = "nothing_to_read"
@@ -460,8 +473,10 @@ type budgetReader struct {
 
 var errOverBudget = errors.New("over budget")
 
+// Read reads at most one byte past the budget, so that a file ending
+// exactly on it still reaches EOF and only a byte more is refused.
 func (b *budgetReader) Read(p []byte) (int, error) {
-	if b.rd.budget <= 0 {
+	if b.rd.budget < 0 {
 		return 0, errOverBudget
 	}
 	if int64(len(p)) > b.rd.budget+1 {
@@ -598,6 +613,9 @@ func (rd *reader) readMembers(r io.Reader, file string, status Status, aud *Audi
 		}
 		return refuse(ErrNoEmailColumn, "%s has no header row with an Email Address column.", file)
 	}
+	if len(header) > MaxColumns {
+		return refuse(ErrTooManyColumns, "%s has %s columns, more than the %s one import takes. Upload the file as Mailchimp exported it.", file, commas(len(header)), commas(MaxColumns))
+	}
 	col := mapColumns(header, rd.opts.GroupColumns)
 	if col.email < 0 {
 		return refuse(ErrNoEmailColumn, "%s has no Email Address column. Upload the file as Mailchimp exported it.", file)
@@ -606,12 +624,17 @@ func (rd *reader) readMembers(r io.Reader, file string, status Status, aud *Audi
 		return refuse(ErrUnknownStatus, "%s doesn't say which contacts it holds. Mailchimp names each export file for its contacts (subscribed, unsubscribed, cleaned); upload it with that name, or upload the whole ZIP.", file)
 	}
 	aud.Files = append(aud.Files, file)
-	aud.DroppedFields = mergeSorted(aud.DroppedFields, col.dropped)
+	for _, name := range col.dropped {
+		aud.DroppedFields = insertSorted(aud.DroppedFields, name)
+	}
 	for _, i := range sortedKeys(col.groups) {
-		aud.GroupColumns = mergeSorted(aud.GroupColumns, []string{col.groups[i]})
+		aud.GroupColumns = insertSorted(aud.GroupColumns, col.groups[i])
 	}
 	for _, i := range col.permissions {
-		aud.PermissionColumns = mergeSorted(aud.PermissionColumns, []string{strings.TrimSpace(header[i])})
+		aud.PermissionColumns = insertSorted(aud.PermissionColumns, strings.TrimSpace(header[i]))
+	}
+	if n := len(aud.DroppedFields) + len(aud.GroupColumns) + len(aud.PermissionColumns); n > MaxColumns {
+		return refuse(ErrTooManyColumns, "The files of %s have more than %s different columns between them, more than one import takes. Upload the export as Mailchimp made it.", aud.Name, commas(MaxColumns))
 	}
 
 	for {
@@ -624,7 +647,7 @@ func (rd *reader) readMembers(r io.Reader, file string, status Status, aud *Audi
 		}
 		var pe *csv.ParseError
 		if errors.As(err, &pe) {
-			aud.Skipped = append(aud.Skipped, SkippedRow{File: file, Row: pe.StartLine, Reason: SkipBadRow})
+			aud.skip(file, pe.StartLine, SkipBadRow)
 			continue
 		}
 		if err != nil {
@@ -645,20 +668,20 @@ func (rd *reader) readMembers(r io.Reader, file string, status Status, aud *Audi
 			if allBlank(rec) {
 				continue
 			}
-			aud.Skipped = append(aud.Skipped, SkippedRow{File: file, Row: line, Reason: SkipNoEmail})
+			aud.skip(file, line, SkipNoEmail)
 			continue
 		}
 		st := status
 		if v := cell(col.status); v != "" {
 			s, ok := statusFromValue(v)
 			if !ok {
-				aud.Skipped = append(aud.Skipped, SkippedRow{File: file, Row: line, Reason: SkipUnknownStatus})
+				aud.skip(file, line, SkipUnknownStatus)
 				continue
 			}
 			st = s
 		}
 		if st == "" {
-			aud.Skipped = append(aud.Skipped, SkippedRow{File: file, Row: line, Reason: SkipUnknownStatus})
+			aud.skip(file, line, SkipUnknownStatus)
 			continue
 		}
 		rd.members++
@@ -667,7 +690,6 @@ func (rd *reader) readMembers(r io.Reader, file string, status Status, aud *Audi
 		}
 		m := &Member{
 			Email: email, FirstName: cell(col.first), LastName: cell(col.last), Status: st,
-			Tags:        splitList(cell(col.tags)),
 			OptinTime:   cell(col.optinTime),
 			OptinIP:     cell(col.optinIP),
 			ConfirmTime: cell(col.confTime),
@@ -676,15 +698,21 @@ func (rd *reader) readMembers(r io.Reader, file string, status Status, aud *Audi
 		}
 		m.OptinAt = parseTime(m.OptinTime)
 		m.ConfirmAt = parseTime(m.ConfirmTime)
+		list := func(v string) []string {
+			names, cut := splitList(v)
+			m.NamesCut = m.NamesCut || cut
+			return names
+		}
+		m.Tags = list(cell(col.tags))
 		for _, i := range sortedKeys(col.groups) {
-			for _, g := range splitList(cell(i)) {
+			for _, g := range list(cell(i)) {
 				m.Groups = append(m.Groups, Group{Category: col.groups[i], Name: g})
 			}
 		}
 		for _, i := range col.permissions {
 			if v := cell(i); v != "" {
 				m.PermissionsKnown = true
-				m.Permissions = append(m.Permissions, splitList(v)...)
+				m.Permissions = append(m.Permissions, list(v)...)
 			}
 		}
 		aud.Members = append(aud.Members, m)
@@ -703,17 +731,17 @@ func allBlank(rec []string) bool {
 // splitList splits a cell that lists names, such as tags or groups:
 // separated by commas, each name optionally in double quotes so it can hold
 // a comma ("Smith, Jones","VIP"). Names are trimmed; blanks and repeats are
-// dropped.
-func splitList(v string) []string {
+// dropped. It keeps at most MaxListNames names, and cut is true when it
+// left some out.
+func splitList(v string) (names []string, cut bool) {
 	v = strings.TrimSpace(v)
 	if v == "" {
-		return nil
+		return nil, false
 	}
 	cr := csv.NewReader(strings.NewReader(v))
 	cr.LazyQuotes = true
 	cr.TrimLeadingSpace = true
 	cr.FieldsPerRecord = -1
-	var out []string
 	seen := map[string]bool{}
 	for {
 		rec, err := cr.Read()
@@ -726,16 +754,21 @@ func splitList(v string) []string {
 		}
 		for _, s := range rec {
 			s = strings.TrimSpace(strings.Trim(strings.TrimSpace(s), `"`))
-			if s != "" && !seen[s] {
-				seen[s] = true
-				out = append(out, s)
+			if s == "" || seen[s] {
+				continue
 			}
+			if len(names) == MaxListNames {
+				return names, true
+			}
+			seen[s] = true
+			// A copy, so a long cell isn't kept for a few names.
+			names = append(names, strings.Clone(s))
 		}
 		if err != nil {
 			break
 		}
 	}
-	return out
+	return names, false
 }
 
 // timeLayouts are the layouts parseTime tries. The public docs don't give
@@ -812,6 +845,12 @@ func (rd *reader) readCampaignCSV(e *zipEntry, campaigns []*Campaign) error {
 			}
 		}
 	}
+	// Only rows naming a campaign whose content the export holds are kept,
+	// so a long campaigns CSV costs no memory.
+	wanted := map[string]bool{}
+	for _, c := range campaigns {
+		wanted[normalize(c.Name)] = true
+	}
 	type row struct{ title, subject, sent string }
 	byKey := map[string]row{}
 	for {
@@ -833,9 +872,9 @@ func (rd *reader) readCampaignCSV(e *zipEntry, campaigns []*Campaign) error {
 		}
 		rw := row{title: get(titleCol), subject: get(subjCol), sent: get(sentCol)}
 		for _, k := range []string{get(idCol), get(titleCol)} {
-			if k = normalize(k); k != "" {
+			if k = normalize(k); wanted[k] {
 				if _, dup := byKey[k]; !dup {
-					byKey[k] = rw
+					byKey[k] = row{title: strings.Clone(rw.title), subject: strings.Clone(rw.subject), sent: rw.sent}
 				}
 			}
 		}
@@ -850,14 +889,13 @@ func (rd *reader) readCampaignCSV(e *zipEntry, campaigns []*Campaign) error {
 	return nil
 }
 
-func mergeSorted(have, add []string) []string {
-	for _, a := range add {
-		if !slices.Contains(have, a) {
-			have = append(have, a)
-		}
+// insertSorted adds name to the sorted list have unless it's there.
+func insertSorted(have []string, name string) []string {
+	i, found := slices.BinarySearch(have, name)
+	if found {
+		return have
 	}
-	slices.Sort(have)
-	return have
+	return slices.Insert(have, i, name)
 }
 
 func sortedKeys(m map[int]string) []int {

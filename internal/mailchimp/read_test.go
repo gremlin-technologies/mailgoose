@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -361,10 +362,129 @@ func TestSplitList(t *testing.T) {
 		" a ,, b ":                   {"a", "b"},
 		`odd "quote, here`:           {`odd "quote`, "here"},
 	} {
-		if got := splitList(in); !reflect.DeepEqual(got, want) {
-			t.Errorf("splitList(%q) = %q, want %q", in, got, want)
+		if got, cut := splitList(in); !reflect.DeepEqual(got, want) || cut {
+			t.Errorf("splitList(%q) = %q, %v, want %q", in, got, cut, want)
 		}
 	}
+}
+
+func TestSplitListKeepsAtMostMaxListNames(t *testing.T) {
+	names := make([]string, MaxListNames+100)
+	for i := range names {
+		names[i] = fmt.Sprintf("t%d", i)
+	}
+	got, cut := splitList(strings.Join(names, ","))
+	if len(got) != MaxListNames || !cut || got[0] != "t0" || got[MaxListNames-1] != names[MaxListNames-1] {
+		t.Errorf("kept %d names, cut %v", len(got), cut)
+	}
+	// Exactly MaxListNames is not cut.
+	if got, cut := splitList(strings.Join(names[:MaxListNames], ",")); len(got) != MaxListNames || cut {
+		t.Errorf("kept %d names, cut %v", len(got), cut)
+	}
+
+	csv := "Email Address,TAGS\na@example.com,\"" + strings.Join(names, ",") + "\"\nb@example.com,VIP\n"
+	a := mustRead(t, []byte(csv), "subscribed.csv", Options{}).Audiences[0]
+	if m := member(t, a, "a@example.com"); len(m.Tags) != MaxListNames || !m.NamesCut {
+		t.Errorf("a: %d tags, NamesCut %v", len(m.Tags), m.NamesCut)
+	}
+	if m := member(t, a, "b@example.com"); m.NamesCut {
+		t.Error("b: NamesCut set")
+	}
+}
+
+// A flood of rows that can't be read as members, which compresses to
+// almost nothing in a ZIP, lists only the first MaxSkippedRows and counts
+// the rest.
+func TestSkippedRowsAreBounded(t *testing.T) {
+	const rows = 50_000
+	csv := "Email Address,X\n" + strings.Repeat(",a\n", rows) + "a@example.com,b\n"
+	data := zipFiles(t, [2]string{"subscribed_members.csv", csv})
+	a := mustRead(t, data, "x.zip", Options{}).Audiences[0]
+	if len(a.Skipped) != MaxSkippedRows {
+		t.Errorf("listed %d skipped rows, want %d", len(a.Skipped), MaxSkippedRows)
+	}
+	if a.SkippedByReason[SkipNoEmail] != rows || a.SkippedRows() != rows {
+		t.Errorf("counted %v, want %d", a.SkippedByReason, rows)
+	}
+	if a.Skipped[0].Row != 2 || a.Skipped[MaxSkippedRows-1].Row != MaxSkippedRows+1 {
+		t.Errorf("first and last listed rows = %d, %d", a.Skipped[0].Row, a.Skipped[MaxSkippedRows-1].Row)
+	}
+	if len(a.Members) != 1 {
+		t.Errorf("members = %d", len(a.Members))
+	}
+}
+
+func wideHeader(n int) string {
+	cols := make([]string, n)
+	cols[0] = "Email Address"
+	for i := 1; i < n; i++ {
+		cols[i] = fmt.Sprintf("FIELD%d", i)
+	}
+	return strings.Join(cols, ",")
+}
+
+func TestTooManyColumns(t *testing.T) {
+	// MaxColumns is taken.
+	b := mustRead(t, []byte(wideHeader(MaxColumns)+"\na@example.com\n"), "subscribed.csv", Options{})
+	if got := len(b.Audiences[0].DroppedFields); got != MaxColumns-1 {
+		t.Errorf("dropped %d fields", got)
+	}
+	if !slices.IsSorted(b.Audiences[0].DroppedFields) {
+		t.Error("dropped fields aren't sorted")
+	}
+
+	// One more is refused, and a very wide header is refused quickly
+	// rather than read column by column.
+	for _, n := range []int{MaxColumns + 1, 1_000_000} {
+		start := time.Now()
+		_, err := read(t, []byte(wideHeader(n)+"\na@example.com\n"), "subscribed.csv", Options{})
+		wantRefused(t, err, ErrTooManyColumns)
+		if d := time.Since(start); d > 5*time.Second {
+			t.Errorf("%d columns took %v", n, d)
+		}
+	}
+
+	// Files of one audience can't add up to more than MaxColumns
+	// different columns between them.
+	half := func(from int) string {
+		cols := []string{"Email Address"}
+		for i := range MaxColumns/2 + 1 {
+			cols = append(cols, fmt.Sprintf("F%d", from+i))
+		}
+		return strings.Join(cols, ",") + "\na@example.com\n"
+	}
+	data := zipFiles(t,
+		[2]string{"subscribed.csv", half(0)},
+		[2]string{"unsubscribed.csv", half(MaxColumns)},
+	)
+	_, err := read(t, data, "x.zip", Options{})
+	wantRefused(t, err, ErrTooManyColumns)
+
+	// The same columns in every file count once.
+	data = zipFiles(t,
+		[2]string{"subscribed.csv", half(0)},
+		[2]string{"unsubscribed.csv", half(0)},
+		[2]string{"cleaned.csv", half(0)},
+	)
+	if b := mustRead(t, data, "x.zip", Options{}); len(b.Audiences[0].DroppedFields) != MaxColumns/2+1 {
+		t.Errorf("dropped %d fields", len(b.Audiences[0].DroppedFields))
+	}
+}
+
+func TestByteBudgetIsExact(t *testing.T) {
+	csv := []byte("Email Address\na@example.com\nb@example.com\n")
+	if b := mustRead(t, csv, "subscribed.csv", Options{MaxBytes: int64(len(csv))}); b.Members() != 2 {
+		t.Errorf("members = %d", b.Members())
+	}
+	_, err := read(t, csv, "subscribed.csv", Options{MaxBytes: int64(len(csv)) - 1})
+	wantRefused(t, err, ErrTooLarge)
+
+	data := zipFiles(t, [2]string{"subscribed.csv", string(csv)}, [2]string{"cleaned.csv", string(csv)})
+	if b := mustRead(t, data, "x.zip", Options{MaxBytes: 2 * int64(len(csv))}); b.Members() != 4 {
+		t.Errorf("members = %d", b.Members())
+	}
+	_, err = read(t, data, "x.zip", Options{MaxBytes: 2*int64(len(csv)) - 1})
+	wantRefused(t, err, ErrTooLarge)
 }
 
 func TestParseTime(t *testing.T) {

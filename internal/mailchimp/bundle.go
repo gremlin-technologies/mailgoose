@@ -82,8 +82,31 @@ type Audience struct {
 	GroupColumns []string
 	// PermissionColumns are the columns read as GDPR marketing permissions.
 	PermissionColumns []string
-	// Skipped are rows that weren't read as members.
-	Skipped []SkippedRow
+	// Skipped are the first MaxSkippedRows rows that weren't read as
+	// members, in the order read. SkippedByReason counts every skipped row,
+	// listed or not, by reason.
+	Skipped         []SkippedRow
+	SkippedByReason map[string]int
+}
+
+// SkippedRows counts every skipped row, including those past the ones
+// Skipped lists.
+func (a *Audience) SkippedRows() int {
+	n := 0
+	for _, c := range a.SkippedByReason {
+		n += c
+	}
+	return n
+}
+
+func (a *Audience) skip(file string, row int, reason string) {
+	if a.SkippedByReason == nil {
+		a.SkippedByReason = map[string]int{}
+	}
+	a.SkippedByReason[reason]++
+	if len(a.Skipped) < MaxSkippedRows {
+		a.Skipped = append(a.Skipped, SkippedRow{File: file, Row: row, Reason: reason})
+	}
 }
 
 // Member is one row of a member file.
@@ -109,6 +132,9 @@ type Member struct {
 	// for this member.
 	Permissions      []string
 	PermissionsKnown bool
+	// NamesCut is true when a tags, group or permission cell listed more
+	// than MaxListNames names, so some were left out.
+	NamesCut bool
 	// File and Row say where the member came from; the header is row 1.
 	File string
 	Row  int

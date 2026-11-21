@@ -40,6 +40,12 @@ should be checked against a real export when one is available.
   file over 5 MB is listed as too large rather than read.
   `MAILCHIMP_IMPORT_MAX_CONTACTS` (default 250,000) caps members across the
   whole export (decision 4).
+- **Other limits.** A member file with more than 1,000 columns, or an
+  audience whose files have more than 1,000 different columns between them,
+  is refused (`too_many_columns`); Mailchimp allows about 80 merge fields.
+  Only the first 1,000 skipped rows of an audience are listed, with every
+  skipped row counted by reason. A tags, group or permission cell keeps at
+  most 500 names, and the member is marked when some were left out.
 
 ## 2026-11-21: A no-domain account's missing From is its sign-in address (MG-108, owner decision; the details are reversible defaults)
 
