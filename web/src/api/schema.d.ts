@@ -3639,7 +3639,7 @@ export interface components {
             signups: number;
             /** @description How many confirm links from the form's confirmation emails have been used. */
             confirmations: number;
-            /** @description Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. */
+            /** @description Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. `signup_cap_reached`: the form has added its daily cap of new contacts (1,000 by default) in the last 24 hours, so its public endpoint answers 429 `form_signup_limit` until older signups age out; the message says when. */
             problems?: components["schemas"]["FormProblem"][];
             /** Format: date-time */
             created_at: string;

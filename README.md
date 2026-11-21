@@ -154,6 +154,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `SEND_RATE_PER_SECOND` | Campaign emails sent a second, across every worker. Default 10. |
 | `ACCOUNT_DAILY_SEND_LIMIT`, `NEW_ACCOUNT_DAILY_SEND_LIMIT` | The most campaign emails an account may send in any 24 hours (10,000 by default), and its limit in its first 7 days (1,000). In between the limit grows on a schedule (see [Account health](#account-health-and-send-limits)). An account's own `daily_send_limit` overrides both. |
 | `PLATFORM_DAILY_SEND_LIMIT` | The most campaign emails sent in any 24 hours across every account together, kept under the SES account's daily quota (50,000). Default 45,000; `0` means no cap. Copies past it wait, as they do for an account's limit. |
+| `FORM_DAILY_SIGNUP_LIMIT` | The most new contacts one signup form adds in any 24 hours, counted in Postgres so it holds across API tasks. Default 1,000; `0` means no cap. Past it the form answers 429 `form_signup_limit`, and the owner and `OPS_ALERT_EMAIL` are told once a day per form (see [Submissions and double opt-in](#submissions-and-double-opt-in)). |
 | `IMPORT_HOLD_RISKY_PERCENT`, `IMPORT_HOLD_INVALID_PERCENT`, `IMPORT_HOLD_SHARED_PERCENT`, `IMPORT_HOLD_SHARED_MIN` | When an import is held for review: role plus disposable addresses over 10% of its valid rows, invalid rows over 5% of all rows, or at least 50% of its addresses, and at least 200, in other accounts' imports. Percentages are 1 to 100. |
 | `OPS_ALERT_EMAIL` | Where to email an alert when an account is paused, throttled or suspended automatically, a sign-up waits for review, or a payment needs refunding or cancelling by hand in Stripe, and the daily abuse digest. Unset, these are only logged (as errors) and no digest is sent. Terraform sets it from `alert_email` (see `infra/README.md`). |
 | `ABUSE_DIGEST_HOUR` | The hour, UTC (0 to 23), the worker emails the daily abuse digest to `OPS_ALERT_EMAIL`. Default 13 (8 AM US Eastern in winter). |
@@ -1122,7 +1123,17 @@ redirects to the form's redirect URL or shows a success page.
   opened (when the script says), gets the normal success answer and is
   dropped. A missing or forged `_mg_ts` is a 400.
 - **Limits:** 10 posts a minute per IP and 600 a minute per form (429 with
-  Retry-After), plus the free plan's contact limit (409 `list_full`).
+  Retry-After), in memory in each API task, plus the free plan's contact
+  limit (409 `list_full`).
+- **Daily cap (MG-92):** a form adds at most `FORM_DAILY_SIGNUP_LIMIT` new
+  contacts (1,000) in any rolling 24 hours, counted in `form_signups` under
+  the account's row lock, so it holds across API tasks. Only a submission
+  that adds a contact counts; past the cap every submission (new address or
+  not) gets 429 `form_signup_limit` with Retry-After, as JSON or a page, and
+  nothing is stored. The first refusal emails the owner (from `notices@`,
+  `KindSystem`) and alerts `OPS_ALERT_EMAIL`, at most once in 24 hours per
+  form (`forms.signup_cap_noticed_at`), and `form get` lists the problem
+  `signup_cap_reached`.
 - **Double opt-in:** a new address is added unconfirmed and gets a
   confirmation email from the account's From on its verified domain, free of
   credits. The link (`/confirm/{token}`, 7 days) shows a page whose button

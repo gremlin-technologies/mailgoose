@@ -174,8 +174,13 @@ func serve(ctx context.Context, log *slog.Logger) error {
 			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Senders: srv.Senders, Unsubscribe: srv.Unsubscribe, Mail: sender,
 			Limits: sendLimits(cfg), Slicing: slicing(cfg),
 			LinkSafety: srv.LinkSafety, Alert: alerts.Notify, Log: log.With("component", "sending")}
+		// Each form adds at most FORM_DAILY_SIGNUP_LIMIT new contacts a day
+		// (MG-92); reaching it emails the owner from notices@ and
+		// OPS_ALERT_EMAIL, once a day per form.
 		srv.Signups = &signups.Service{DB: pool, Forms: srv.Forms, Settings: &auth.Service{DB: pool},
-			Domains: srv.Domains, Senders: srv.Senders, Mail: sender}
+			Domains: srv.Domains, Senders: srv.Senders, Mail: sender, DailyCap: formDailyCap(cfg),
+			CapNotices: &signups.CapNotices{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "notices@" + cfg.SystemSendingDomain},
+				Alert: alerts.Notify, Log: log.With("component", "signups")}}
 		// A suspension emails the owner, with ABUSE_EMAIL for appeals, and
 		// OPS_ALERT_EMAIL.
 		srv.Admin = &admin.Service{DB: pool, Sending: srv.Sending, Limits: sendLimits(cfg), Warning: warning(cfg),
@@ -490,6 +495,15 @@ func healthAlerts(cfg config.Config, sender mail.Sender, log *slog.Logger) (*sen
 	notices := &sending.Notices{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "notices@" + cfg.SystemSendingDomain},
 		NewDaily: cfg.NewAccountDailySendLimit, Ops: alert, Log: log.With("job", "health")}
 	return alert, notices
+}
+
+// formDailyCap is signups.Service.DailyCap for FORM_DAILY_SIGNUP_LIMIT,
+// whose 0 means no cap.
+func formDailyCap(cfg config.Config) int {
+	if cfg.FormDailySignupLimit == 0 {
+		return -1
+	}
+	return cfg.FormDailySignupLimit
 }
 
 func warning(cfg config.Config) sending.Warning {

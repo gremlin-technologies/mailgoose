@@ -4,6 +4,43 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: A daily cap on each form's new signups (MG-92, from the architecture review; reversible defaults)
+
+Form signups were limited only to 10 a minute per IP and 600 a minute per
+form, held in memory in each API task (MG-36), so a botnet that finds a form
+could add tens of thousands of made-up contacts an hour across tasks. With
+double opt-in off they become recipients who bounce and pause the account.
+
+- **Cap (reversible default):** each form adds at most 1,000 new contacts in
+  any rolling 24 hours, set by `FORM_DAILY_SIGNUP_LIMIT` (`0` means no cap).
+  It's counted in Postgres (`form_signups`, one row per counted signup),
+  under the account's row lock that `contacts.SignUp` already takes, so it
+  holds across API tasks. Each form's rows older than a day are pruned as it
+  takes new ones, so a form keeps at most a day's worth.
+- **What counts (reversible default):** a submission that adds a contact.
+  One from an address already on the list (subscribed, unconfirmed,
+  unsubscribed, bounced) doesn't, since it adds nobody and its confirmation
+  emails are already held to one an hour per address. Bots' dropped posts
+  don't either. Consent records aren't counted instead, because deleting a
+  contact deletes them, so deleting bot signups would reopen the form at
+  once. Signups in the day before the migration are copied in.
+- **Past the cap** every submission is refused alike, new address or not, so
+  the answer doesn't tell who's on the list: 429 `form_signup_limit` with
+  `Retry-After` (when enough signups age out), as JSON or the usual page
+  ("Please try again tomorrow"). Nothing is stored and no email goes. Bots
+  still get the success answer. `form get` lists the problem
+  `signup_cap_reached`, saying when it lifts.
+- **Notices (reversible defaults):** the first refusal emails the owner, from
+  `notices@` the system sending domain (`KindSystem`), with what to check and
+  how to turn on double opt-in if it's off, and alerts `OPS_ALERT_EMAIL`.
+  They go at most once in a rolling 24 hours per form, stamped on the form
+  (`signup_cap_noticed_at`) before sending, so two API tasks don't both send.
+  A notice that fails to send is logged and not retried that day.
+- **Unchanged:** the per-IP and per-minute limits stay as they are.
+- **Open for the owner:** an optional captcha per form (the review's other
+  suggestion) is new scope, not built. Whether owners can raise one form's
+  cap is open too; for now it's one value for every form.
+
 ## 2026-11-21: The send guard checks the kind of mail from the system domain (MG-90; the zero-kind rule is a reversible default)
 
 `mail.Guard` (2026-11-20, SES send isolation) let any message whose From was

@@ -4602,7 +4602,7 @@ Type: [BlockDocument](#schema-blockdocument) or [HtmlDocument](#schema-htmldocum
 | `confirm_text` | string | yes | The confirmation email's text, above its confirm link. |
 | `signups` | integer | yes | How many submissions the form has taken, bots' left out. A person who signs up twice counts twice. |
 | `confirmations` | integer | yes | How many confirm links from the form's confirmation emails have been used. |
-| `problems` | array of [FormProblem](#schema-formproblem) |  | Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. |
+| `problems` | array of [FormProblem](#schema-formproblem) |  | Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. `signup_cap_reached`: the form has added its daily cap of new contacts (1,000 by default) in the last 24 hours, so its public endpoint answers 429 `form_signup_limit` until older signups age out; the message says when. |
 | `created_at` | string (date-time) | yes |  |
 | `updated_at` | string (date-time) | yes |  |
 

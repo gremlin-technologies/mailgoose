@@ -108,6 +108,10 @@ scope; they only show where an idea came from.
   paused-sending errors leave copies queued for a minute instead of failing
   them, and `PLATFORM_DAILY_SEND_LIMIT` (default 45,000) caps campaign
   copies across all accounts under the SES quota.
+- Form signup cap (Nov 21, MG-92): each form adds at most
+  `FORM_DAILY_SIGNUP_LIMIT` (default 1,000) new contacts in a rolling 24
+  hours, counted in Postgres across API tasks; past it the form answers 429
+  `form_signup_limit`, and the owner and ops are told once a day per form.
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API

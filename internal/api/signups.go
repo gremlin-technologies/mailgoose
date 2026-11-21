@@ -210,6 +210,7 @@ func (s *Server) writeSubmitError(w http.ResponseWriter, r *http.Request, err er
 	var invalid *signups.InvalidError
 	var limit *contacts.LimitError
 	var send *signups.SendError
+	var capped *signups.CapError
 	switch {
 	case errors.Is(err, signups.ErrFormNotFound):
 		writeSignupError(w, r, formNotFound)
@@ -228,6 +229,11 @@ func (s *Server) writeSubmitError(w http.ResponseWriter, r *http.Request, err er
 		writeSignupError(w, r, &Error{Status: http.StatusServiceUnavailable, Code: "form_not_ready",
 			Message: "This form isn't taking signups yet.",
 			Hint:    "The form's owner needs a verified sending domain to send confirmation emails from; `mailgoose form get <form-id>` says what's missing."})
+	case errors.As(err, &capped):
+		// The form's daily cap (MG-92): Retry-After says when it takes one
+		// again.
+		w.Header().Set("Retry-After", strconv.Itoa(retrySeconds(capped.Wait())))
+		writeSignupError(w, r, TooManyRequests("form_signup_limit", "This form has taken all the signups it can for today. Please try again tomorrow."))
 	case errors.As(err, &limit):
 		writeSignupError(w, r, Conflict("list_full", "This list isn't taking new signups right now.").
 			WithHint("The account is at its contact limit."))
@@ -241,12 +247,13 @@ func (s *Server) writeSubmitError(w http.ResponseWriter, r *http.Request, err er
 	}
 }
 
+// retrySeconds is a wait in whole seconds for Retry-After, at least 1.
+func retrySeconds(wait time.Duration) int {
+	return max(int(wait.Seconds()+0.999), 1)
+}
+
 func writeSignupThrottled(w http.ResponseWriter, r *http.Request, wait time.Duration) {
-	secs := int(wait.Seconds() + 0.999)
-	if secs < 1 {
-		secs = 1
-	}
-	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	w.Header().Set("Retry-After", strconv.Itoa(retrySeconds(wait)))
 	writeSignupError(w, r, TooManyRequests("rate_limited", "Too many signups from here. Please wait a minute and try again."))
 }
 
@@ -263,6 +270,9 @@ func writeSignupError(w http.ResponseWriter, r *http.Request, e *Error) {
 		title = "Please check what you entered"
 	case http.StatusTooManyRequests:
 		title = "Please wait a minute"
+		if e.Code == "form_signup_limit" {
+			title = "Please try again tomorrow"
+		}
 	}
 	writePage(w, e.Status, page{Title: title, Body: []string{e.Message}, Back: backURL(r)})
 }
