@@ -127,12 +127,12 @@ func TestImportAddsContactsAndReportsSkippedRows(t *testing.T) {
 	}
 	got := h.skipped(t, im.ID)
 	wantRows := []SkippedRow{
-		{3, "not-an-address", SkipInvalidEmail},
-		{4, "PAT@example.com", SkipDuplicate},
-		{5, "old@example.com", SkipExists},
-		{6, "gone@example.com", SkipSuppressed},
-		{7, "", SkipInvalidRow},
-		{9, "multi\nline@example.com", SkipInvalidEmail},
+		{3, "not-an-address", SkipInvalidEmail, ""},
+		{4, "PAT@example.com", SkipDuplicate, ""},
+		{5, "old@example.com", SkipExists, ""},
+		{6, "gone@example.com", SkipSuppressed, ""},
+		{7, "", SkipInvalidRow, ""},
+		{9, "multi\nline@example.com", SkipInvalidEmail, ""},
 	}
 	if fmt.Sprint(got) != fmt.Sprint(wantRows) {
 		t.Errorf("skipped rows\n got %v\nwant %v", got, wantRows)
