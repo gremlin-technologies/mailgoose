@@ -81,7 +81,7 @@ func TestAdminDeliverability(t *testing.T) {
 		}
 	}
 	for _, w := range []string{
-		"OVER WARNING: the last 7 days are over 0.05% complaints (and at least 2) or 2% hard bounces, on 500 or more copies.",
+		"1 account shown is OVER WARNING: the last 7 days are over 0.05% complaints (and at least 2) or 2% hard bounces, on 500 or more copies.",
 		"Showing the worst 3 of 7 accounts; --limit shows up to 100.",
 		"Throughput, last 24 hours: 4,150 copies in 42 batches over 1037.5 seconds of sending: 4.00 a second (SEND_RATE_PER_SECOND is 10).",
 		"Batches overlapped and shared the rate: one batch sent 3.43 a second (over 1210.2 batch-seconds).",
@@ -132,5 +132,19 @@ func TestSendThroughputNoBatches(t *testing.T) {
 	got := sendThroughput{SendRatePerSecond: 10}.lines()
 	if len(got) != 1 || got[0] != "Throughput, last 24 hours: no batch sent a copy (SEND_RATE_PER_SECOND is 10)." {
 		t.Errorf("lines = %q", got)
+	}
+}
+
+func TestEarlyWarningLineSaysHowManyAreOver(t *testing.T) {
+	w := earlyWarning{ComplaintPercent: 0.05, HardBouncePercent: 2, MinComplaints: 2, MinCopies: 500}
+	rule := "the last 7 days are over 0.05% complaints (and at least 2) or 2% hard bounces, on 500 or more copies."
+	for over, want := range map[int]string{
+		0: "No account shown is over the early warning. OVER WARNING in STATE means " + rule,
+		1: "1 account shown is OVER WARNING: " + rule,
+		3: "3 accounts shown are OVER WARNING: " + rule,
+	} {
+		if got := w.line(over); got != want {
+			t.Errorf("line(%d) = %q, want %q", over, got, want)
+		}
 	}
 }
