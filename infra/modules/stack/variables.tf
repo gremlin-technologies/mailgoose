@@ -35,6 +35,18 @@ variable "sending_domain" {
   type        = string
 }
 
+variable "shared_sending_domain" {
+  description = <<-EOT
+    mailgoose's shared sending domain for this environment (MG-85), set as
+    SHARED_SENDING_DOMAIN on the API and worker: accounts without a verified
+    domain send from <sending slug>@ this domain, with replies to an address
+    they verified. Empty (the default) leaves shared sending off. Its zone is
+    zone_name unless zone_overrides names another.
+  EOT
+  type        = string
+  default     = ""
+}
+
 variable "dmarc_report_email" {
   type    = string
   default = ""

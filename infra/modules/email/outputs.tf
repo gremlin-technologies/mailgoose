@@ -13,3 +13,8 @@ output "configuration_set_arn" {
 output "events_topic_arn" {
   value = aws_sns_topic.events.arn
 }
+
+output "shared_identity_arn" {
+  description = "The shared sending domain's SES identity, or null when there is none."
+  value       = local.shared ? aws_sesv2_email_identity.shared[0].arn : null
+}

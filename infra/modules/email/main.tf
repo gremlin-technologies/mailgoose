@@ -3,6 +3,8 @@ data "aws_caller_identity" "current" {}
 
 locals {
   mail_from_domain = "${var.mail_from_subdomain}.${var.sending_domain}"
+  shared           = var.shared_sending_domain != ""
+  shared_mail_from = "${var.mail_from_subdomain}.${var.shared_sending_domain}"
   dmarc_value = join("; ", compact([
     "v=DMARC1",
     "p=${var.dmarc_policy}",
@@ -138,6 +140,83 @@ resource "aws_route53_record" "mail_from_spf" {
 resource "aws_route53_record" "dmarc" {
   zone_id = var.zone_id
   name    = "_dmarc.${var.sending_domain}"
+  type    = "TXT"
+  ttl     = 600
+  records = [local.dmarc_value]
+}
+
+# --- Shared sending domain (MG-85), only when shared_sending_domain is set ---
+#
+# The same setup as the system domain above: Easy DKIM, a custom MAIL FROM so
+# SPF aligns, and its own DMARC record. It uses the same configuration set,
+# so its bounces and complaints reach the events worker like any other send.
+
+resource "aws_sesv2_email_identity" "shared" {
+  count = local.shared ? 1 : 0
+
+  email_identity         = var.shared_sending_domain
+  configuration_set_name = aws_sesv2_configuration_set.this.configuration_set_name
+
+  dkim_signing_attributes {
+    next_signing_key_length = "RSA_2048_BIT"
+  }
+
+  lifecycle {
+    precondition {
+      condition     = var.shared_zone_id != ""
+      error_message = "shared_sending_domain is set but shared_zone_id isn't, so its DNS records have nowhere to go."
+    }
+
+    precondition {
+      condition     = var.shared_sending_domain != var.sending_domain
+      error_message = "shared_sending_domain must differ from sending_domain, so customer mail can't share the system domain's reputation."
+    }
+  }
+}
+
+resource "aws_route53_record" "shared_dkim" {
+  count = local.shared ? 3 : 0 # SES Easy DKIM always issues three tokens
+
+  zone_id = var.shared_zone_id
+  name    = "${aws_sesv2_email_identity.shared[0].dkim_signing_attributes[0].tokens[count.index]}._domainkey.${var.shared_sending_domain}"
+  type    = "CNAME"
+  ttl     = 600
+  records = ["${aws_sesv2_email_identity.shared[0].dkim_signing_attributes[0].tokens[count.index]}.dkim.amazonses.com"]
+}
+
+resource "aws_sesv2_email_identity_mail_from_attributes" "shared" {
+  count = local.shared ? 1 : 0
+
+  email_identity         = aws_sesv2_email_identity.shared[0].email_identity
+  mail_from_domain       = local.shared_mail_from
+  behavior_on_mx_failure = "USE_DEFAULT_VALUE"
+}
+
+resource "aws_route53_record" "shared_mail_from_mx" {
+  count = local.shared ? 1 : 0
+
+  zone_id = var.shared_zone_id
+  name    = local.shared_mail_from
+  type    = "MX"
+  ttl     = 600
+  records = ["10 feedback-smtp.${data.aws_region.current.region}.amazonses.com"]
+}
+
+resource "aws_route53_record" "shared_mail_from_spf" {
+  count = local.shared ? 1 : 0
+
+  zone_id = var.shared_zone_id
+  name    = local.shared_mail_from
+  type    = "TXT"
+  ttl     = 600
+  records = ["v=spf1 include:amazonses.com ~all"]
+}
+
+resource "aws_route53_record" "shared_dmarc" {
+  count = local.shared ? 1 : 0
+
+  zone_id = var.shared_zone_id
+  name    = "_dmarc.${var.shared_sending_domain}"
   type    = "TXT"
   ttl     = 600
   records = [local.dmarc_value]
