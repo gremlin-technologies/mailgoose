@@ -5009,7 +5009,14 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description `test_send_failed`: the mail provider refused or didn't answer. It still counts toward the day's tests. */
+        /**
+         * @description `test_send_failed`: a copy was refused, by the send guard or the mail
+         *     provider, or the provider didn't answer. Copies before it went;
+         *     copies after it weren't tried. `details.address` is the copy's
+         *     address, and `details.counted` is true when it still counts toward
+         *     the day's tests because it may have gone (no answer); a refused
+         *     copy, and the copies after it, don't count.
+         */
         TestSendFailed: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];

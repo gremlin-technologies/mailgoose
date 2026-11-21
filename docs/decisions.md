@@ -4,6 +4,31 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Only test copies that may have gone count toward the day's tests (MG-101, bug fix; the details are reversible defaults)
+
+`reserveTests` counted every copy of a test toward the 50 a day (MG-29)
+before any was sent, and nothing gave a place back: a copy the send guard
+refused (`mail.ErrNotThisEnvironment`), one SES rejected or throttled, and
+the copies after it, which weren't tried, all counted. Refusals before the
+reservation (an unverified From, a recipient not allowed, test mode, a
+suppressed address, an unsafe link) never counted. This replaces MG-29's
+"a test that fails at the mail provider still counts".
+
+- **What gives its place back.** A copy that certainly didn't go
+  (`mail.NotSent`): the guard refused it, the provider asked to retry later
+  (`ErrRetryLater`, MG-87; tests don't wait, so it's refused), or the
+  provider rejected it (`mail.ErrRejected`: an SES client error, or an
+  invalid message). The copies after a failed one always give theirs back.
+- **What still counts.** A copy with no answer (a timeout, a server fault,
+  any error not marked), since it may have gone, so retries can't get
+  round the limit with mail that went. Copies before the failure went.
+- **Race-safe.** Places are still reserved under the account row's lock and
+  given back by deleting their rows afterwards, so tests at once can't pass
+  the limit; a place given back is free for the next test. A tester's
+  credits (MG-86) count the same rows, so they come back too.
+- **Said.** `test_send_failed` has `details.address` and `details.counted`,
+  and its hint says whether the copy counts.
+
 ## 2026-11-21: The unverified-From error says the fixes where it's read (MG-100; the wording is a reversible default)
 
 A test or launch whose From was on no verified domain and wasn't a verified
@@ -2048,8 +2073,9 @@ Picked while building MG-29; easy to change.
   reputation like any other. The owner's own address is never refused.
   (Added after the MG-29 review.)
 - **50 a day is a rolling 24 hours**, counted per message, not per request.
-  A test that's counted and then fails at the mail provider still counts,
-  so retries can't get round the limit.
+  ~~A test that's counted and then fails at the mail provider still counts,
+  so retries can't get round the limit.~~ Changed Nov 21 (MG-101, above):
+  only a copy that may have gone still counts.
 - **Only draft and scheduled campaigns can be tested.** A campaign that's
   sending or done gets a 409, before any readiness check.
 - **A test must pass the same checks as a launch** (verified From, subject,

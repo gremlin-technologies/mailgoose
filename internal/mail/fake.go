@@ -40,7 +40,7 @@ func (f *Fake) Send(_ context.Context, m Message) (string, error) {
 		return "", f.Err
 	}
 	if err := m.Validate(); err != nil {
-		return "", fmt.Errorf("fake: invalid message: %w", err)
+		return "", &rejected{err: fmt.Errorf("fake: invalid message: %w", err)}
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()

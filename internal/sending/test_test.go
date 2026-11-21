@@ -335,8 +335,8 @@ func TestTestStatusAndFailure(t *testing.T) {
 		t.Fatalf("no campaign: %v", err)
 	}
 
-	// A failed send is reported, still counts, and isn't recorded as the
-	// campaign's test.
+	// A send the provider didn't answer is reported, still counts since it
+	// may have gone (MG-101), and isn't recorded as the campaign's test.
 	h2 := newHarness(t)
 	h2.fake.Err = errors.New("ses is down")
 	if _, err := h2.test(); err == nil || !strings.Contains(err.Error(), "ses is down") {

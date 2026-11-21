@@ -88,11 +88,15 @@ func (e *LimitError) Error() string {
 	return fmt.Sprintf("%d test emails sent in the last 24 hours; the limit is %d", e.Sent, TestsPerDay)
 }
 
-// SendError means the mail provider refused a test copy or didn't answer.
-// Copies before it went out.
+// SendError means a test copy wasn't sent: the guard or the mail provider
+// refused it, or the provider didn't answer. Copies before it went out;
+// copies after it weren't tried. Counted is whether the copy still counts
+// toward the day's tests: only when it may have gone, because the
+// provider didn't answer (MG-101).
 type SendError struct {
 	Address string
 	Err     error
+	Counted bool
 }
 
 func (e *SendError) Error() string { return "send test to " + e.Address + ": " + e.Err.Error() }
@@ -164,12 +168,12 @@ func (s *Service) Test(ctx context.Context, accountID, campaignID string, to []s
 		}
 		return nil, &NotReadyError{Problems: problems}
 	}
-	sentToday, err := s.reserveTests(ctx, accountID, campaignID, recipients)
+	sentToday, reserved, err := s.reserveTests(ctx, accountID, campaignID, recipients)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, addr := range recipients {
+	for i, addr := range recipients {
 		r := s.testRecipient(ctx, accountID, addr)
 		r.UnsubscribeURL = unsubURL
 		m := p.Template.Personalize(r)
@@ -188,7 +192,19 @@ func (s *Service) Test(ctx context.Context, accountID, campaignID string, to []s
 			msg.Headers = append(msg.Headers, mail.Header{Name: h.Name, Value: h.Value})
 		}
 		if _, err := s.Mail.Send(ctx, msg); err != nil {
-			return nil, &SendError{Address: addr, Err: err}
+			// This copy gives its place back when it certainly didn't go,
+			// and the copies after it, which weren't tried, always do.
+			// A copy that may have gone still counts (MG-101).
+			counted := !mail.NotSent(err)
+			back := reserved[i:]
+			if counted {
+				back = reserved[i+1:]
+			}
+			if rerr := s.releaseTests(ctx, accountID, back); rerr != nil {
+				s.log().ErrorContext(ctx, "test places not given back", "account_id", accountID, "err", rerr)
+				counted = true
+			}
+			return nil, &SendError{Address: addr, Err: err, Counted: counted}
 		}
 	}
 
@@ -310,27 +326,30 @@ func (s *Service) testRecipient(ctx context.Context, accountID, addr string) ren
 // account's (MG-86) also count against its credits, but for simulator
 // addresses, or it gets a *tester.ShortError when too few are left. The
 // account row is locked, so two tests at once can't both take the last
-// places. A reserved test that then fails to send still counts.
-func (s *Service) reserveTests(ctx context.Context, accountID, campaignID string, recipients []string) (int, error) {
+// places. It returns the day's count with these included, and each
+// recipient's reserved test_sends row, in order. A copy that then isn't
+// sent gives its row back with releaseTests (MG-101); the day's count, and
+// a tester's credits, count only the rows left.
+func (s *Service) reserveTests(ctx context.Context, accountID, campaignID string, recipients []string) (int, []string, error) {
 	n := len(recipients)
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	now := s.now()
 	st, err := tester.Load(ctx, tx, accountID, now, true)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if err := st.Check(tester.Billable(recipients)); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	since := now.Add(-24 * time.Hour)
 	var sent int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM test_sends WHERE account_id = $1 AND sent_at > $2`,
 		accountID, since).Scan(&sent); err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if sent+n > TestsPerDay {
 		// Wait until enough have aged out: the (sent+n-TestsPerDay)th
@@ -339,22 +358,53 @@ func (s *Service) reserveTests(ctx context.Context, accountID, campaignID string
 		if err := tx.QueryRow(ctx, `
 			SELECT sent_at FROM test_sends WHERE account_id = $1 AND sent_at > $2
 			ORDER BY sent_at OFFSET $3 LIMIT 1`, accountID, since, sent+n-TestsPerDay-1).Scan(&at); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return 0, err
+			return 0, nil, err
 		}
 		retry := at.Add(24 * time.Hour).Sub(now)
 		if at.IsZero() || retry < time.Second {
 			retry = time.Second
 		}
-		return 0, &LimitError{Sent: sent, RetryAfter: retry}
+		return 0, nil, &LimitError{Sent: sent, RetryAfter: retry}
 	}
 	simulated := make([]bool, n)
 	for i, a := range recipients {
 		simulated[i] = mail.IsSimulator(a)
 	}
-	if _, err := tx.Exec(ctx, `
+	rows, err := tx.Query(ctx, `
 		INSERT INTO test_sends (account_id, campaign_id, sent_at, simulated)
-		SELECT $1, $2, $3, s FROM unnest($4::boolean[]) AS s`, accountID, campaignID, now, simulated); err != nil {
-		return 0, err
+		SELECT $1, $2, $3, s FROM unnest($4::boolean[]) AS s
+		RETURNING id, simulated`, accountID, campaignID, now, simulated)
+	if err != nil {
+		return 0, nil, err
 	}
-	return sent + n, tx.Commit(ctx)
+	// Rows differ only in simulated, which a tester's credits count by, so
+	// each recipient takes a row with its own flag.
+	byFlag := map[bool][]string{}
+	var id string
+	var sim bool
+	if _, err := pgx.ForEachRow(rows, []any{&id, &sim}, func() error {
+		byFlag[sim] = append(byFlag[sim], id)
+		return nil
+	}); err != nil {
+		return 0, nil, err
+	}
+	ids := make([]string, n)
+	for i, f := range simulated {
+		if len(byFlag[f]) == 0 {
+			return 0, nil, fmt.Errorf("reserved too few test places for %d recipients", n)
+		}
+		ids[i], byFlag[f] = byFlag[f][0], byFlag[f][1:]
+	}
+	return sent + n, ids, tx.Commit(ctx)
+}
+
+// releaseTests gives back reserved test_sends rows of copies that weren't
+// sent, so they count neither toward the day's tests nor a tester's
+// credits. It runs even when ctx is done, as the copy's request may be.
+func (s *Service) releaseTests(ctx context.Context, accountID string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := s.DB.Exec(context.WithoutCancel(ctx), `DELETE FROM test_sends WHERE account_id = $1 AND id = ANY($2::uuid[])`, accountID, ids)
+	return err
 }

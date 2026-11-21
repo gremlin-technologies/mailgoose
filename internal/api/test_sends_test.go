@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -67,6 +68,41 @@ func campaignTest(body string) func(*testing.T) *http.Request {
 		r := campaignPath(http.MethodPost, body)(t)
 		r.URL.Path += "/test"
 		return r
+	}
+}
+
+// TestCampaignTestSendFailed: a copy the mail provider refused gives its
+// place back and says so; one it didn't answer still counts (MG-101).
+func TestCampaignTestSendFailed(t *testing.T) {
+	srv := authServer(t)
+	h := srv.Handler()
+	fullKey(func(*testing.T) *Server { return srv })(t)
+	readyCampaign(t, h)
+	v, _ := outboxes.Load(t)
+	outbox := v.(*mail.Fake)
+	outbox.Reset()
+
+	for _, tc := range []struct {
+		err     error
+		counted bool
+		hint    string
+	}{
+		{fmt.Errorf("ses: send: %w", mail.ErrRejected), false, "It wasn't sent, so it doesn't count toward the day's tests."},
+		{errors.New("ses: send: i/o timeout"), true, "It may have gone, so it counts toward the day's tests."},
+	} {
+		outbox.Err = tc.err
+		rec := do(t, h, bearer(campaignTest(""))(t))
+		body := rec.Body.String()
+		if rec.Code != http.StatusBadGateway || !strings.Contains(body, `"code":"test_send_failed"`) || !strings.Contains(body, tc.hint) ||
+			!strings.Contains(body, fmt.Sprintf(`"counted":%t`, tc.counted)) || !strings.Contains(body, `"address":"key@example.com"`) {
+			t.Errorf("failed (%v): %d %s", tc.err, rec.Code, body)
+		}
+	}
+	// Only the unanswered copy counted.
+	outbox.Err = nil
+	rec := do(t, h, bearer(campaignTest(""))(t))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"sent_today":2`) {
+		t.Errorf("after: %d %s", rec.Code, rec.Body)
 	}
 }
 
