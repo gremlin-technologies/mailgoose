@@ -1254,6 +1254,87 @@ progress {
   cursor: default;
 }
 
+.palette h2.palette-section {
+  margin-top: 1.5rem;
+}
+
+/* Column layouts (MG-110): a tile per layout, its columns drawn to scale. */
+.palette-layout {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+}
+
+.layout-glyph {
+  display: flex;
+  gap: 2px;
+  width: 2.25rem;
+  height: 0.875rem;
+  flex: none;
+}
+
+.layout-glyph span {
+  min-width: 0;
+  border: 1.5px solid var(--muted);
+  border-radius: 2px;
+  transition: border-color var(--ease);
+}
+
+.palette-item:hover:not(:disabled) .layout-glyph span,
+.layout-option:has(input:checked) .layout-glyph span {
+  border-color: var(--accent);
+}
+
+.layout-field {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.layout-field legend {
+  font-weight: 500;
+  margin-bottom: 0.375rem;
+}
+
+.layout-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+
+.layout-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem 0.25rem 0.375rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-button);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: box-shadow var(--ease);
+}
+
+.layout-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.layout-option:has(input:checked) {
+  box-shadow:
+    0 0 0 1.5px var(--accent),
+    var(--shadow-card);
+}
+
+.layout-option:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .inspector {
   border-left: 1px solid var(--border);
   display: flex;
@@ -1707,6 +1788,7 @@ h3.canvas-heading {
 
 .canvas-columns {
   display: grid;
+  /* The block's layout sets the columns' proportions inline. */
   grid-template-columns: 1fr 1fr;
   gap: 0.75rem;
 }

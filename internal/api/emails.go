@@ -34,7 +34,7 @@ func (s *Server) emailError(w http.ResponseWriter, r *http.Request, err error) b
 		return false
 	case errors.As(err, &posErr):
 		WriteError(w, Unprocessable("invalid_position", "That place can't be used: "+posErr.Message+".").
-			WithHint("Give after on its own, or index, or parent_id and column (0 left, 1 right) with an optional index."))
+			WithHint("Give after on its own, or index, or parent_id and column (0 for the first column) with an optional index."))
 	case errors.Is(err, emails.ErrFooterLocked):
 		WriteError(w, Unprocessable("footer_locked", "The footer stays the last block: it can't be removed, moved or added, and nothing goes after it."))
 	case errors.Is(err, emails.ErrNotBlocks):

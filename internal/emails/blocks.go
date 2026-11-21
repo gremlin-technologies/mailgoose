@@ -144,10 +144,43 @@ func UpdateBlock(d *Document, id string, raw json.RawMessage) (*Document, error)
 		return nil, ErrBlockNotFound
 	}
 	block := s.list()[i].(map[string]any)
+	if block["type"] == TypeColumns {
+		if _, setsCols := fields["columns"]; !setsCols {
+			if err := relayout(block, fields["layout"]); err != nil {
+				return nil, err
+			}
+		}
+	}
 	for k, v := range fields {
 		block[k] = v
 	}
 	return t.document()
+}
+
+// relayout fits a columns block's columns to a new layout: going to more
+// columns adds empty ones, and going to fewer drops the last ones only when
+// they're empty, so no block is lost. A layout ParseDocument won't take is
+// left for it to refuse.
+func relayout(block map[string]any, layout any) error {
+	name, _ := layout.(string)
+	widths := LayoutWidths(name)
+	if widths == nil {
+		return nil
+	}
+	cols, _ := block["columns"].([]any)
+	for len(cols) < len(widths) {
+		cols = append(cols, map[string]any{"blocks": []any{}})
+	}
+	for c := len(widths); c < len(cols); c++ {
+		col, _ := cols[c].(map[string]any)
+		if blocks, _ := col["blocks"].([]any); len(blocks) > 0 {
+			return docErr("fields.layout",
+				"the %s layout has %s, but column %d still holds %s; move or remove them first",
+				name, plural(len(widths), "column"), c, plural(len(blocks), "block"))
+		}
+	}
+	block["columns"] = cols[:len(widths)]
+	return nil
 }
 
 // MoveBlock moves the block with id to pos. The footer can't move.
@@ -311,10 +344,13 @@ func (t *tree) insert(block map[string]any, pos Position) error {
 		}
 		cols := columnsOf(parent)
 		if pos.Column == nil {
-			return posErr("column is required with parent_id: 0 for the left column, 1 for the right")
+			return posErr("column is required with parent_id: 0 for the first (left) column")
 		}
 		if *pos.Column < 0 || *pos.Column >= len(cols) {
-			return posErr("column must be 0 or 1")
+			if len(cols) == 1 {
+				return posErr("column must be 0; this columns block has 1 column")
+			}
+			return posErr("column must be 0 to %d; this columns block has %d columns", len(cols)-1, len(cols))
 		}
 		s = slot{holder: cols[*pos.Column]}
 	case pos.Column != nil:

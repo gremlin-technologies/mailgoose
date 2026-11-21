@@ -4,6 +4,29 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Column layouts (MG-110; reversible defaults)
+
+Asked for by the owner: drop in column layouts the way other builders do,
+not only a two-column row. This widens DES-2's "two-column row" to these
+layouts; the requirements snapshot keeps its old wording.
+
+- **Layouts.** A columns block has a `layout`: `1`, `1:1`, `1:1:1`,
+  `1:1:1:1`, `1:2`, `2:1`, `1:3` or `3:1`, each number a column's share
+  of the width. A block without one reads as `1:1`, so every saved email
+  keeps working. Columns still can't hold columns.
+- **Adding one.** Given a layout and no columns, the API makes that many
+  empty columns. The designer's palette has a Columns section with a tile
+  per layout; the CLI takes `--type columns --layout 1:2`.
+- **Changing the layout** (`fields.layout` on update, a picker in the
+  designer's properties, `--layout` in the CLI) adds empty columns on the
+  right when going to more, and drops right-hand columns only when they are
+  empty. If one still holds blocks the change is refused with a message
+  saying which column; nothing is ever dropped silently.
+- **Rendering.** Columns are table cells with pixel widths split by the
+  layout's ratio (the last column takes any rounding remainder), so Outlook
+  gets fixed widths, and they still stack full width on phones.
+- **Numbering.** `column` positions count from 0, the leftmost, up to 3.
+
 ## 2026-11-21: Reading Mailchimp's exports (MG-69; reversible defaults)
 
 Picked while building the reader, `internal/mailchimp`. Mailchimp's public

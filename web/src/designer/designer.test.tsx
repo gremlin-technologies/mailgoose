@@ -3,7 +3,21 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import { apiError, fakeApi, renderApp, signedIn } from "../test/render";
-import { canDrop, copyOf, isNoop, placeOf, zoneDown, zoneUp, type BlockDocument } from "./blocks";
+import {
+  canDrop,
+  columnLabel,
+  columnLayouts,
+  copyOf,
+  isNoop,
+  layoutGrid,
+  layoutLabel,
+  layoutWidths,
+  placeOf,
+  starterBlock,
+  zoneDown,
+  zoneUp,
+  type BlockDocument,
+} from "./blocks";
 
 const emailId = "33333333-3333-4333-8333-333333333333";
 const location = () => screen.getByTestId("location").textContent;
@@ -35,6 +49,7 @@ function doc(): BlockDocument {
       {
         id: "b_columns01",
         type: "columns",
+        layout: "1:1",
         columns: [
           { blocks: [{ id: "b_inner0001", type: "spacer", height: 24 }] },
           { blocks: [] },
@@ -101,7 +116,18 @@ describe("block logic", () => {
 
   it("copies a block without its ids, columns' contents too", () => {
     const copy = copyOf(doc().blocks[2]);
-    expect(copy).toEqual({ type: "columns", columns: [{ blocks: [{ type: "spacer", height: 24 }] }, { blocks: [] }] });
+    expect(copy).toEqual({ type: "columns", layout: "1:1", columns: [{ blocks: [{ type: "spacer", height: 24 }] }, { blocks: [] }] });
+  });
+
+  it("names and draws column layouts", () => {
+    expect(columnLayouts).toEqual(["1", "1:1", "1:1:1", "1:1:1:1", "1:2", "2:1", "1:3", "3:1"]);
+    expect(columnLayouts.map(layoutLabel)).toEqual(["1 column", "2 columns", "3 columns", "4 columns", "1:2", "2:1", "1:3", "3:1"]);
+    expect(layoutWidths("1:3")).toEqual([1, 3]);
+    expect(layoutGrid("2:1", 2)).toBe("minmax(0, 2fr) minmax(0, 1fr)");
+    // While a change of layout saves, the columns may not match it yet: draw them evenly.
+    expect(layoutGrid("1:1:1", 2)).toBe("minmax(0, 1fr) minmax(0, 1fr)");
+    expect([columnLabel(0, 1), columnLabel(1, 2), columnLabel(2, 4)]).toEqual(["Column", "Right column", "Column 3 of 4"]);
+    expect(starterBlock("columns", "1:3")).toEqual({ type: "columns", layout: "1:3" });
   });
 });
 
@@ -169,6 +195,47 @@ describe("designer", () => {
     await waitFor(() => expect(posted).toEqual({ version: 3, block: { type: "heading", text: "A heading" } }));
   });
 
+  it("adds a column layout from the palette and draws it to scale", async () => {
+    let posted: unknown;
+    const api = designerApi({
+      [`POST ${base}/blocks`]: (body) => {
+        posted = body;
+        const d = doc();
+        Object.assign(d.blocks[2], { layout: "1:3" });
+        return { status: 201, body: { block: { block: d.blocks[2], path: "blocks[2]", parent_id: null, column: null, index: 2 }, email: email(4, d) } };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp(`/emails/${emailId}`, api.fetch);
+    const palette = await screen.findByRole("complementary", { name: "Blocks" });
+    expect(within(palette).getAllByRole("button", { name: /layout$/ }).map((b) => b.getAttribute("aria-label"))).toEqual(columnLayouts.map((l) => `Add ${layoutLabel(l)} layout`));
+    await user.click(within(palette).getByRole("button", { name: "Add 1:3 layout" }));
+    await waitFor(() => expect(posted).toEqual({ version: 3, block: { type: "columns", layout: "1:3" } }));
+    const row = screen.getByRole("list", { name: "Left column" }).parentElement as HTMLElement;
+    await waitFor(() => expect(row.style.gridTemplateColumns).toBe("minmax(0px, 1fr) minmax(0px, 3fr)"));
+  });
+
+  it("changes a columns block's layout from its properties", async () => {
+    let patched: unknown;
+    const api = designerApi({
+      [`PATCH ${base}/blocks/b_columns01`]: (body) => {
+        patched = body;
+        const d = doc();
+        Object.assign(d.blocks[2], { layout: "1:1:1", columns: [...(d.blocks[2] as { columns: unknown[] }).columns, { blocks: [] }] });
+        return { status: 200, body: { block: d.blocks[2], email: email(4, d) } };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp(`/emails/${emailId}`, api.fetch);
+    const columns = await screen.findByRole("group", { name: "Columns block" });
+    await user.click(tool(columns, "Edit"));
+    const layout = await screen.findByRole("group", { name: "Layout" });
+    expect((within(layout).getByRole("radio", { name: "2 columns" }) as HTMLInputElement).checked).toBe(true);
+    await user.click(within(layout).getByRole("radio", { name: "3 columns" }));
+    await waitFor(() => expect(patched).toEqual({ version: 3, fields: { layout: "1:1:1" } }), { timeout: 3000 });
+    expect(await screen.findByRole("group", { name: "Column 3 of 3" })).toBeTruthy();
+  });
+
   it("selects a block it just added, ready to type over", async () => {
     const added = doc();
     added.blocks.splice(3, 0, { id: "b_new000001", type: "text", text: "Write something here.", align: "left" });
@@ -213,7 +280,7 @@ describe("designer", () => {
     );
 
     // Columns can't go in columns: the drop does nothing.
-    fireEvent.dragStart(screen.getByRole("button", { name: "Add two columns" }));
+    fireEvent.dragStart(screen.getByRole("button", { name: "Add 2 columns layout" }));
     fireEvent.drop(screen.getByTestId("zone-b_columns01-0-b_inner0001"));
     await new Promise((r) => setTimeout(r, 20));
     expect(bodies).toHaveLength(1);
@@ -249,14 +316,14 @@ describe("designer", () => {
     await user.click(within(text).getByRole("button", { name: "Move up" }));
     await waitFor(() => expect(calls[0]).toBe(`move {"version":3,"index":0}`));
 
-    await user.click(tool(within(canvas()).getByRole("group", { name: "Two columns block" }), "Duplicate"));
+    await user.click(tool(within(canvas()).getByRole("group", { name: "Columns block" }), "Duplicate"));
     await waitFor(() =>
       expect(calls[1]).toBe(
-        `add {"version":4,"block":{"type":"columns","columns":[{"blocks":[{"type":"spacer","height":24}]},{"blocks":[]}]},"after":"b_columns01"}`,
+        `add {"version":4,"block":{"type":"columns","layout":"1:1","columns":[{"blocks":[{"type":"spacer","height":24}]},{"blocks":[]}]},"after":"b_columns01"}`,
       ),
     );
 
-    const columns = screen.getByRole("group", { name: "Two columns block" });
+    const columns = screen.getByRole("group", { name: "Columns block" });
     expect(tool(columns, "Move down").disabled).toBe(true);
     await user.click(tool(columns, "Delete"));
     await user.click(within(columns).getByRole("button", { name: "Delete with its contents" }));
