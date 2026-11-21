@@ -15,6 +15,9 @@ The `mailgoose` CLI is built from this repository by GoReleaser
 - **The AUR**: the package `mailgoose-bin`, for Arch (pacman via an AUR
   helper).
 
+Both files are on the owner-merge list: a PR that changes either is reviewed
+as usual but left for the owner to merge (see `CLAUDE.md`).
+
 Archives hold only the binary; nothing else from this repository is published.
 The binaries aren't signed or notarized yet, so the Homebrew cask clears
 macOS's quarantine flag on the binary it installs.

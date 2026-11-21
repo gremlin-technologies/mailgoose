@@ -145,10 +145,11 @@ scope; they only show where an idea came from.
   acceptance criteria of its ticket (or, for a PR with no ticket, does what its
   description says); it follows the rules in this file. Anything else goes back
   to the author with review comments. PRs that touch `infra/`,
-  `.github/workflows/`, `scripts/ci/`, the `Dockerfile`, the `Makefile` or
-  `compose.yaml` are reviewed the same way but left for the owner to merge
-  (the owner's call, Nov 18; the last four added Nov 21, since each reaches
-  the staging deploy). The reviewer checks the diff's file list before it
+  `.github/workflows/`, `scripts/ci/`, the `Dockerfile`, the `Makefile`,
+  `compose.yaml` or `.goreleaser.yaml` are reviewed the same way but left for
+  the owner to merge (the owner's call, Nov 18; the next four added Nov 21,
+  since each reaches the staging deploy, and `.goreleaser.yaml` the same day,
+  since it decides what CLI builds ship and where). The reviewer checks the diff's file list before it
   merges, and merges only PRs opened from a branch of this repository by the
   owner or the project's own agents, never from a fork or another author.
 - **AWS keys stay local.** No agent in the cloud holds AWS credentials.
