@@ -157,6 +157,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `SIGNUP_REVIEW` | Which new accounts wait for an admin to approve them before they can launch campaigns or take form signups (see [Sign-up review](#account-health-and-send-limits)): `all` (the default, for the beta and launch month), `flagged` or `off`. |
 | `NEW_ACCOUNTS_TEST_MODE` | `on` (the default) or `off`: whether new accounts start in [test mode](#account-health-and-send-limits), sending only to their test addresses. Accounts made before MG-80 keep full sending. **Prod must set `off` before launch.** The local stack sets `off` unless you set it. |
 | `SYSTEM_SENDING_DOMAIN` | mailgoose's own sending domain; sign-in codes come from `signin@` it. Defaults to `mail.localhost` when mail is captured (`MAIL_SENDER=fake`). Unset with SES, sign-up and sign-in answer 503. |
+| `SHARED_SENDING_DOMAIN` | The domain accounts with no verified domain of their own send from, as `<sending slug>@` it, with replies to an address they verified (see [Sending without a domain](#sending-without-a-domain)). Unset or empty turns this off, and every From needs a verified domain. Must differ from `SYSTEM_SENDING_DOMAIN`. The local stack sets `shared.localhost`; prod leaves it unset for now. |
 | `WEB_DIR` | The built web app (`web/dist`) the API serves at `/`. The image sets it to `/srv/web`; unset, the API serves no web app. |
 | `WEB_ORIGINS` | Comma-separated origins, besides the API's own, that may send cookie-authenticated requests that change something, such as `https://app.staging.mailgoose.app`. Empty by default. |
 | `SES_CONFIGURATION_SET`, `SES_IDENTITY_TAG` | Read now, used once sending lands. |
@@ -981,7 +982,10 @@ in test mode while `NEW_ACCOUNTS_TEST_MODE` is on; older accounts keep full
 sending. A test-mode account still waiting for its sign-up review may launch
 to its test addresses and take their signups; allowing full sending doesn't
 approve the review. `mailgoose admin test-mode` lists accounts in test mode,
-and `allow-full-sending` and `set-test-mode` switch one.
+and `allow-full-sending` and `set-test-mode` switch one. Sender addresses
+(below, [Sending without a domain](#sending-without-a-domain)) are separate:
+a test address is who an account may send *to* in test mode, a sender
+address who it may send *from*.
 
 **Tester accounts** (MG-86) are for people invited to try mailgoose before
 launch. An admin makes one with `mailgoose admin tester grant <id>
@@ -1113,7 +1117,8 @@ redirects to the form's redirect URL or shows a success page.
 
 ## Sending domains
 
-Campaigns go out from an address at a domain the customer owns.
+Campaigns go out from an address at a domain the customer owns, or, with
+none, from the shared domain ([Sending without a domain](#sending-without-a-domain)).
 `internal/domains` makes the SES identity (Easy DKIM, MAIL FROM at
 `bounce.<domain>`, tagged with the environment and account) and returns the
 DNS records to add: three DKIM CNAMEs, an MX and SPF TXT for the MAIL FROM
@@ -1131,6 +1136,45 @@ mailgoose domain delete example.com --yes
 
 With `MAIL_SENDER=fake` (the local default) SES is in memory and DNS answers
 every record, so local domains verify on the first check.
+
+### Sending without a domain
+
+A domain of its own is optional for an account (MG-85), though the app, the
+CLI and the API all encourage one: it delivers better and readers trust it
+more. With `SHARED_SENDING_DOMAIN` set, a From that isn't on a verified
+domain of the account still sends when the account has proved it owns the
+address: its owner's sign-in address, or a confirmed sender address. The
+message then goes from the From name (the account's name if none) at
+`<sending_slug>@<shared domain>`, with Reply-To the From address, or the
+email's own Reply-To when that's a verified sender address or on a verified
+domain too (`unverified_reply_to` otherwise). `internal/senders.Resolver`
+decides this once for test sends, launches, signup confirmations and the
+email check, which warns `shared_domain`. Test results and launch summaries
+say `shared_domain` and the From used, and the web app and CLI show a nudge
+to add the domain.
+
+Each account has a `sending_slug`, made from its name when it's created
+(`Pat's Bakery` is `pats-bakery`) and never changed by a rename. A taken or
+reserved slug (postmaster, abuse, support, mailgoose and the like) or one
+under 3 characters gets a random 4-character suffix.
+
+Sender addresses work like test addresses: up to 10 an account, pending ones
+included, each confirmed by an emailed link valid for 7 days, resent at most
+once a minute, and at most 10 confirm emails an account in any 24 hours. The
+owner's sign-in address always counts and takes no slot. They're managed in
+the web app (Sender addresses, linked from Settings and Domains), the API
+(`/v1/sender-addresses`) and `mailgoose sender-addresses`.
+
+```sh
+mailgoose sender-addresses add hello@example.com
+mailgoose sender-addresses list
+mailgoose account get   # shows the Shared From
+```
+
+`mail.Guard` lets mail from the shared domain through only when its From is
+the sending account's own slug and it has at least one Reply-To, each one a
+verified sender of the account or on one of its verified domains. With the
+variable unset, everything behaves as before MG-85.
 
 **Not yet checked against real AWS.** Before relying on sending domains in
 staging, add one domain there from the owner's machine and confirm IAM allows

@@ -557,6 +557,207 @@ paths:
           $ref: "#/components/responses/TestAddressEmailFailed"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/sender-addresses:
+    get:
+      operationId: listSenderAddresses
+      summary: List sender addresses
+      description: |
+        The account's sender addresses (MG-85), oldest first: at most 10,
+        pending ones included, so there's no next page. A custom domain is
+        optional: when the server has shared sending on (`shared_address`
+        on the account isn't null), an email whose From isn't on a verified
+        domain of the account still sends if its From is a `confirmed`
+        sender address or the owner's own sign-in address, which always
+        counts and isn't listed. It then goes from the account's
+        `shared_address`, with replies to that address. A verified domain
+        of your own is still better for deliverability and trust.
+      tags: [sender-addresses]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The account's sender addresses.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SenderAddressList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: addSenderAddress
+      summary: Add a sender address
+      description: |
+        Adds a sender address (MG-85) and emails it a link to confirm the
+        account may send as it; it counts once the link is used, within 7
+        days. An account keeps up to 10, pending ones included; remove one
+        to free its slot. Addresses are compared ignoring case. The owner's
+        own sign-in address always counts and can't be added.
+
+        Adding one emails someone, so it needs a full-scope key or a
+        sign-in (403 `insufficient_scope` for a draft-scope key). An
+        account sends at most 10 sender address confirm emails in any 24
+        hours, adds and resends alike, and removing an address gives none
+        back (429 `sender_address_rate_limited` with `Retry-After`).
+      tags: [sender-addresses]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddSenderAddressRequest"
+      responses:
+        "201":
+          description: The new sender address, pending until its link is used.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SenderAddress"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/SenderAddressConflict"
+        "422":
+          $ref: "#/components/responses/InvalidSenderAddress"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/SenderAddressEmailFailed"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/sender-addresses/confirm:
+    post:
+      operationId: confirmSenderAddress
+      summary: Confirm a sender address
+      description: |
+        Uses the token from a sender address's confirm link (MG-85); the
+        web app's page at the link calls it. No credentials are needed: the
+        token is the proof. Using it again changes nothing and answers the
+        same. A token that isn't one is a 400 `invalid_token`; one for no
+        address (removed, or replaced by a newer link) a 404
+        `sender_address_link_not_found`; one older than 7 days a 410
+        `sender_address_link_expired`.
+      tags: [sender-addresses]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfirmSenderAddressRequest"
+      responses:
+        "200":
+          description: Confirmed.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConfirmedSenderAddress"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/SenderAddressLinkExpired"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/sender-addresses/{sender_address_id}:
+    delete:
+      operationId: removeSenderAddress
+      summary: Remove a sender address
+      description: |
+        The address frees its slot, its link stops working, and the account
+        can no longer send as it from the shared domain. Campaigns already
+        sending from it stop going out.
+      tags: [sender-addresses]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/SenderAddressId"
+      responses:
+        "204":
+          description: Removed.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/sender-addresses/{sender_address_id}/resend:
+    post:
+      operationId: resendSenderAddress
+      summary: Resend a sender address's confirm link
+      description: |
+        Emails a pending sender address a new confirm link, good for 7
+        days; the old link stops working. At most once a minute per address
+        (429 `sender_address_resend_too_soon` with `Retry-After`), and it
+        counts toward the account's 10 sender address confirm emails in any
+        24 hours (429 `sender_address_rate_limited`). A confirmed address
+        answers 409 `sender_address_confirmed`. Needs a full-scope key or a
+        sign-in.
+      tags: [sender-addresses]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/SenderAddressId"
+      responses:
+        "200":
+          description: The sender address, with the new link's times.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SenderAddress"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/SenderAddressConflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/SenderAddressEmailFailed"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/credits:
     get:
       operationId: getCredits
@@ -3185,7 +3386,10 @@ paths:
 
         Error codes: `missing_subject`, `missing_from` (no From on the email
         or the account), `unverified_from` (the From isn't on a verified
-        sending domain), `missing_postal_address`, `empty_email`,
+        sending domain, nor, with shared sending on, a verified sender
+        address), `unverified_reply_to` (the email would go from the shared
+        sending domain, and its Reply-To isn't a verified sender or on a
+        verified domain), `missing_postal_address`, `empty_email`,
         `merge_tag` (a tag that can't be filled), `missing_unsubscribe`,
         `broken_link` (not a full web address, or the page or site doesn't
         exist), `too_large` (over 102 KB as rendered), `invalid_html`, and
@@ -3198,7 +3402,10 @@ paths:
         checked too often), `link_safety_not_checked` (links weren't looked
         up on the phishing and malware lists: the lookup isn't set up, or
         didn't answer within 2 seconds; they pass), `missing_alt`,
-        `near_size_limit` (over 90 KB) and `unsupported_css`.
+        `near_size_limit` (over 90 KB), `unsupported_css`, and
+        `shared_domain` (the email goes from mailgoose's shared sending
+        domain because its From isn't on a verified domain; adding the
+        domain is better for deliverability and trust).
 
         Each link is fetched once with a HEAD request (GET if the site
         refuses HEAD), 3 seconds per link and 10 seconds in all, up to 50
@@ -5053,7 +5260,7 @@ components:
     AccountSettings:
       type: object
       required: [id, name, plan, from_name, from_email, postal_address, time_zone, missing_for_send, send_limit, terms, sending_mode,
-        tester, created_at]
+        tester, sending_slug, shared_address, created_at]
       properties:
         id:
           type: string
@@ -5095,6 +5302,25 @@ components:
             - $ref: "#/components/schemas/TesterStatus"
             - type: "null"
           description: The account's tester state when it's a tester account (MG-86); null otherwise.
+        sending_slug:
+          type: string
+          pattern: "^[a-z0-9-]{3,40}$"
+          description: |
+            The account's name on mailgoose's shared sending domain (MG-85),
+            made from the account's name when it was created. It doesn't
+            change when the account is renamed.
+          examples: [pats-bakery]
+        shared_address:
+          type: [string, "null"]
+          description: |
+            Where the account's email goes from when its From isn't on a
+            verified domain of its own (MG-85): `sending_slug` at mailgoose's
+            shared sending domain, with replies to the From address, which
+            has to be the owner's own sign-in address or a confirmed sender
+            address (`listSenderAddresses`). Null when the server has shared
+            sending off, and every From needs a verified domain. A custom
+            domain is optional, but better for deliverability and trust.
+          examples: [pats-bakery@send.mailgoose.example]
         created_at:
           type: string
           format: date-time
@@ -5204,6 +5430,73 @@ components:
         account_name:
           type: string
           description: The account the address now gets test mode's emails from.
+        confirmed_at:
+          type: string
+          format: date-time
+    SenderAddress:
+      type: object
+      required: [id, email, status, confirm_sent_at, confirm_expires_at, confirmed_at, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          examples: [pat@example.com]
+        status:
+          type: string
+          enum: [pending, confirmed]
+          description: "`pending` until the emailed link is used; only a `confirmed` address can send from the shared domain."
+        confirm_sent_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the latest confirm link was emailed; null once confirmed, or when the email couldn't be sent.
+        confirm_expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: When the latest confirm link stops working; null once confirmed.
+        confirmed_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    SenderAddressList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          maxItems: 10
+          items:
+            $ref: "#/components/schemas/SenderAddress"
+        next_cursor:
+          type: "null"
+    AddSenderAddressRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          type: string
+          examples: [pat@example.com]
+    ConfirmSenderAddressRequest:
+      type: object
+      additionalProperties: false
+      required: [token]
+      properties:
+        token:
+          type: string
+          description: The `token` in the confirm link's query.
+    ConfirmedSenderAddress:
+      type: object
+      required: [email, account_name, confirmed_at]
+      properties:
+        email:
+          type: string
+        account_name:
+          type: string
+          description: The account that may now send with this address as its sender.
         confirmed_at:
           type: string
           format: date-time
@@ -6733,7 +7026,7 @@ components:
           description: Who gets the test. Left out or empty, the account owner.
     TestSendResult:
       type: object
-      required: [campaign, to, sent_today, daily_limit]
+      required: [campaign, to, sent_today, daily_limit, from, reply_to, shared_domain, sender]
       properties:
         campaign:
           $ref: "#/components/schemas/Campaign"
@@ -6748,6 +7041,31 @@ components:
         daily_limit:
           type: integer
           description: Test emails an account can send in any 24 hours.
+        from:
+          $ref: "#/components/schemas/MailAddress"
+        reply_to:
+          type: array
+          items:
+            $ref: "#/components/schemas/MailAddress"
+        shared_domain:
+          type: boolean
+          description: |
+            True when the test went from mailgoose's shared sending domain
+            (MG-85), because the email's From isn't on a verified domain of
+            the account: `from` is the account's shared address and replies
+            go to `sender`. Adding the sender's domain would do better for
+            deliverability and trust.
+        sender:
+          type: [string, "null"]
+          description: The verified address the email was set to go from, when `shared_domain`; null otherwise.
+    MailAddress:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
     CampaignList:
       type: object
       required: [data, next_cursor]
@@ -6929,10 +7247,10 @@ components:
       properties:
         code:
           type: string
-          enum: [missing_subject, missing_from, unverified_from, missing_postal_address, empty_email,
-            merge_tag, missing_unsubscribe, broken_link, too_large, invalid_html, unsafe_link, insecure_link,
-            link_unreachable, link_not_checked, link_safety_not_checked, missing_alt, near_size_limit,
-            unsupported_css]
+          enum: [missing_subject, missing_from, unverified_from, unverified_reply_to, missing_postal_address,
+            empty_email, merge_tag, missing_unsubscribe, broken_link, too_large, invalid_html, unsafe_link,
+            insecure_link, link_unreachable, link_not_checked, link_safety_not_checked, missing_alt,
+            near_size_limit, unsupported_css, shared_domain]
         message:
           type: string
         path:
@@ -7543,6 +7861,14 @@ components:
       schema:
         type: string
         format: uuid
+    SenderAddressId:
+      name: sender_address_id
+      in: path
+      required: true
+      description: The sender address's `id`.
+      schema:
+        type: string
+        format: uuid
     ImportId:
       name: import_id
       in: path
@@ -7896,6 +8222,54 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    SenderAddressConflict:
+      description: |
+        `sender_address_exists`: the account has that address already.
+        `sender_address_limit`: the account has 10 sender addresses; remove
+        one first. `sender_address_confirmed`: the address is confirmed, so
+        there's no link to resend.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InvalidSenderAddress:
+      description: |
+        `invalid_email`: that isn't an email address.
+        `sender_address_is_owner`: the owner's own sign-in address always
+        counts, so it needs no slot.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    SenderAddressEmailFailed:
+      description: |
+        `sender_address_email_failed`: the confirm email couldn't be sent.
+        The address is kept, pending; resend its link in a minute.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    SenderAddressLinkExpired:
+      description: |
+        `sender_address_link_expired`: the link is older than 7 days.
+        Resend it from the web app or with `mailgoose sender-addresses
+        resend`.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     SignupReviewConflict:
       description: |
         `signup_not_waiting`: the account isn't waiting for its sign-up
@@ -7924,8 +8298,9 @@ components:
       description: |
         `not_ready`: something stops the email being sent;
         `details.problems` lists each with its `code` (`no_email`,
-        `missing_from`, `unverified_from`, `missing_postal_address`,
-        `missing_subject`, `empty_email`, `merge_tag`, `invalid_html`,
+        `missing_from`, `unverified_from`, `unverified_reply_to`,
+        `missing_postal_address`, `missing_subject`, `empty_email`,
+        `merge_tag`, `invalid_html`,
         `unsafe_link` with the link in `url`), `message` and `hint`.
         `invalid_test`: `to` has an address that isn't one, or more than 5.
         `test_recipient_not_allowed`: an address in `to` isn't the owner's
@@ -7951,8 +8326,13 @@ components:
       description: |
         `confirmation_required`: nothing was launched. `details.summary`
         (`campaign_id`, `name`, `subject`, `from`, `reply_to`,
-        `recipient_count`, `send_at`, `credits`, `balance`, `warnings`) is
-        what the person confirms, `details.code` the code that launches it
+        `shared_domain`, `sender`, `recipient_count`, `send_at`, `credits`,
+        `balance`, `warnings`) is what the person confirms. `shared_domain`
+        is true when the campaign goes from mailgoose's shared sending
+        domain (MG-85) because its From isn't on a verified domain: `from`
+        is then the account's shared address, and `sender` the verified
+        address it was set to go from (null otherwise). Show it, with a
+        nudge to add the sender's domain; `details.code` the code that launches it
         once they say yes, and `details.expires_at` when the code stops
         working. `campaign_locked`: the campaign isn't a draft and wasn't
         launched; `details.status` is its status.
@@ -7968,6 +8348,8 @@ components:
         `not_ready`: the campaign can't launch; `details.problems` lists
         each reason with its `code`, `message` and `hint`: Prepare's
         (`no_email`, `missing_from`, `unverified_from`,
+        `unverified_reply_to` (on the shared sending domain, the Reply-To
+        must be a verified sender or on a verified domain),
         `missing_postal_address`, `missing_subject`, `empty_email`,
         `merge_tag`), `check_failed` (an email check error), `unsafe_link`
         (a link on Google Web Risk's malware, phishing or unwanted software

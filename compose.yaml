@@ -29,6 +29,7 @@ services:
     environment:
       APP_ENV: local
       MAIL_SENDER: fake
+      SHARED_SENDING_DOMAIN: shared.localhost
       PORT: "8080"
       DATABASE_URL: postgres://mailgoose:mailgoose@postgres:5432/mailgoose?sslmode=disable
       PUBLIC_BASE_URL: http://localhost:8080
@@ -45,6 +46,7 @@ services:
     environment:
       APP_ENV: local
       MAIL_SENDER: fake
+      SHARED_SENDING_DOMAIN: shared.localhost
       DATABASE_URL: postgres://mailgoose:mailgoose@postgres:5432/mailgoose?sslmode=disable
     depends_on:
       postgres:

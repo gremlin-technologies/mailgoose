@@ -704,10 +704,12 @@ const (
 	EmailCheckIssueCodeMissingSubject       EmailCheckIssueCode = "missing_subject"
 	EmailCheckIssueCodeMissingUnsubscribe   EmailCheckIssueCode = "missing_unsubscribe"
 	EmailCheckIssueCodeNearSizeLimit        EmailCheckIssueCode = "near_size_limit"
+	EmailCheckIssueCodeSharedDomain         EmailCheckIssueCode = "shared_domain"
 	EmailCheckIssueCodeTooLarge             EmailCheckIssueCode = "too_large"
 	EmailCheckIssueCodeUnsafeLink           EmailCheckIssueCode = "unsafe_link"
 	EmailCheckIssueCodeUnsupportedCss       EmailCheckIssueCode = "unsupported_css"
 	EmailCheckIssueCodeUnverifiedFrom       EmailCheckIssueCode = "unverified_from"
+	EmailCheckIssueCodeUnverifiedReplyTo    EmailCheckIssueCode = "unverified_reply_to"
 )
 
 // Valid indicates whether the value is a known member of the EmailCheckIssueCode enum.
@@ -741,6 +743,8 @@ func (e EmailCheckIssueCode) Valid() bool {
 		return true
 	case EmailCheckIssueCodeNearSizeLimit:
 		return true
+	case EmailCheckIssueCodeSharedDomain:
+		return true
 	case EmailCheckIssueCodeTooLarge:
 		return true
 	case EmailCheckIssueCodeUnsafeLink:
@@ -748,6 +752,8 @@ func (e EmailCheckIssueCode) Valid() bool {
 	case EmailCheckIssueCodeUnsupportedCss:
 		return true
 	case EmailCheckIssueCodeUnverifiedFrom:
+		return true
+	case EmailCheckIssueCodeUnverifiedReplyTo:
 		return true
 	default:
 		return false
@@ -1141,6 +1147,24 @@ func (e PlanCheckoutRequestInterval) Valid() bool {
 	}
 }
 
+// Defines values for SenderAddressStatus.
+const (
+	SenderAddressStatusConfirmed SenderAddressStatus = "confirmed"
+	SenderAddressStatusPending   SenderAddressStatus = "pending"
+)
+
+// Valid indicates whether the value is a known member of the SenderAddressStatus enum.
+func (e SenderAddressStatus) Valid() bool {
+	switch e {
+	case SenderAddressStatusConfirmed:
+		return true
+	case SenderAddressStatusPending:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SendingMode.
 const (
 	SendingModeFull SendingMode = "full"
@@ -1430,6 +1454,26 @@ type AccountSettings struct {
 	// from those addresses. mailgoose staff allow `full` sending.
 	SendingMode SendingMode `json:"sending_mode"`
 
+	// SendingSlug The account's name on mailgoose's shared sending domain (MG-85),
+	// made from the account's name when it was created. It doesn't
+	// change when the account is renamed.
+	//
+	//
+	// Examples: pats-bakery
+	SendingSlug string `json:"sending_slug"`
+
+	// SharedAddress Where the account's email goes from when its From isn't on a
+	// verified domain of its own (MG-85): `sending_slug` at mailgoose's
+	// shared sending domain, with replies to the From address, which
+	// has to be the owner's own sign-in address or a confirmed sender
+	// address (`listSenderAddresses`). Null when the server has shared
+	// sending off, and every From needs a verified domain. A custom
+	// domain is optional, but better for deliverability and trust.
+	//
+	//
+	// Examples: pats-bakery@send.mailgoose.example
+	SharedAddress *string `json:"shared_address"`
+
 	// Terms Which version of mailgoose's terms the account accepted, and the
 	// version in force now. Versions are dates, `YYYY-MM-DD`; what changed
 	// in each is on the web app's `/policies/changes` page.
@@ -1480,6 +1524,12 @@ type AddEmailBlockRequest struct {
 
 	// Version The version you read.
 	Version int `json:"version"`
+}
+
+// AddSenderAddressRequest defines model for AddSenderAddressRequest.
+type AddSenderAddressRequest struct {
+	// Email Examples: pat@example.com
+	Email string `json:"email"`
 }
 
 // AddTestAddressRequest defines model for AddTestAddressRequest.
@@ -2097,10 +2147,24 @@ type ColumnsBlock struct {
 // ColumnsBlockType defines model for ColumnsBlock.Type.
 type ColumnsBlockType string
 
+// ConfirmSenderAddressRequest defines model for ConfirmSenderAddressRequest.
+type ConfirmSenderAddressRequest struct {
+	// Token The `token` in the confirm link's query.
+	Token string `json:"token"`
+}
+
 // ConfirmTestAddressRequest defines model for ConfirmTestAddressRequest.
 type ConfirmTestAddressRequest struct {
 	// Token The `token` in the confirm link's query.
 	Token string `json:"token"`
+}
+
+// ConfirmedSenderAddress defines model for ConfirmedSenderAddress.
+type ConfirmedSenderAddress struct {
+	// AccountName The account that may now send with this address as its sender.
+	AccountName string    `json:"account_name"`
+	ConfirmedAt time.Time `json:"confirmed_at"`
+	Email       string    `json:"email"`
 }
 
 // ConfirmedTestAddress defines model for ConfirmedTestAddress.
@@ -3142,6 +3206,12 @@ type LaunchResult struct {
 // `other`: described in `list_source_detail`.
 type ListSource string
 
+// MailAddress defines model for MailAddress.
+type MailAddress struct {
+	Email string `json:"email"`
+	Name  string `json:"name"`
+}
+
 // MoveEmailBlockRequest The new place, as in BlockPlace.
 type MoveEmailBlockRequest struct {
 	// After Stable for the block's life: edits and moves keep it. Leave it out
@@ -3337,6 +3407,33 @@ type SendLimit struct {
 	//
 	// Examples: 10000
 	Usual int `json:"usual"`
+}
+
+// SenderAddress defines model for SenderAddress.
+type SenderAddress struct {
+	// ConfirmExpiresAt When the latest confirm link stops working; null once confirmed.
+	ConfirmExpiresAt *time.Time `json:"confirm_expires_at"`
+
+	// ConfirmSentAt When the latest confirm link was emailed; null once confirmed, or when the email couldn't be sent.
+	ConfirmSentAt *time.Time `json:"confirm_sent_at"`
+	ConfirmedAt   *time.Time `json:"confirmed_at"`
+	CreatedAt     time.Time  `json:"created_at"`
+
+	// Email Examples: pat@example.com
+	Email string `json:"email"`
+	Id    string `json:"id"`
+
+	// Status `pending` until the emailed link is used; only a `confirmed` address can send from the shared domain.
+	Status SenderAddressStatus `json:"status"`
+}
+
+// SenderAddressStatus `pending` until the emailed link is used; only a `confirmed` address can send from the shared domain.
+type SenderAddressStatus string
+
+// SenderAddressList defines model for SenderAddressList.
+type SenderAddressList struct {
+	Data       []SenderAddress `json:"data"`
+	NextCursor any             `json:"next_cursor"`
 }
 
 // SendingMode `test` while the account is in test mode (MG-80): it sends only to
@@ -3552,10 +3649,22 @@ type TestSendResult struct {
 	Campaign Campaign `json:"campaign"`
 
 	// DailyLimit Test emails an account can send in any 24 hours.
-	DailyLimit int `json:"daily_limit"`
+	DailyLimit int           `json:"daily_limit"`
+	From       MailAddress   `json:"from"`
+	ReplyTo    []MailAddress `json:"reply_to"`
+
+	// Sender The verified address the email was set to go from, when `shared_domain`; null otherwise.
+	Sender *string `json:"sender"`
 
 	// SentToday Test emails the account sent in the last 24 hours, these included.
 	SentToday int `json:"sent_today"`
+
+	// SharedDomain True when the test went from mailgoose's shared sending domain
+	// (MG-85), because the email's From isn't on a verified domain of
+	// the account: `from` is the account's shared address and replies
+	// go to `sender`. Adding the sender's domain would do better for
+	// deliverability and trust.
+	SharedDomain bool `json:"shared_domain"`
 
 	// To Who each copy went to.
 	To []string `json:"to"`
@@ -3751,6 +3860,9 @@ type ImportId = string
 // Limit defines model for Limit.
 type Limit = int
 
+// SenderAddressId defines model for SenderAddressId.
+type SenderAddressId = string
+
 // TagId defines model for TagId.
 type TagId = string
 
@@ -3811,6 +3923,9 @@ type InvalidHtml = Error
 // InvalidImage defines model for InvalidImage.
 type InvalidImage = Error
 
+// InvalidSenderAddress defines model for InvalidSenderAddress.
+type InvalidSenderAddress = Error
+
 // InvalidTestAddress defines model for InvalidTestAddress.
 type InvalidTestAddress = Error
 
@@ -3831,6 +3946,15 @@ type PlanConflict = Error
 
 // RequestTooLarge defines model for RequestTooLarge.
 type RequestTooLarge = Error
+
+// SenderAddressConflict defines model for SenderAddressConflict.
+type SenderAddressConflict = Error
+
+// SenderAddressEmailFailed defines model for SenderAddressEmailFailed.
+type SenderAddressEmailFailed = Error
+
+// SenderAddressLinkExpired defines model for SenderAddressLinkExpired.
+type SenderAddressLinkExpired = Error
 
 // SendingModeConflict defines model for SendingModeConflict.
 type SendingModeConflict = Error
@@ -4211,6 +4335,12 @@ type CreateImportJSONRequestBody = CreateImportRequest
 
 // CreatePlanCheckoutJSONRequestBody defines body for CreatePlanCheckout for application/json ContentType.
 type CreatePlanCheckoutJSONRequestBody = PlanCheckoutRequest
+
+// AddSenderAddressJSONRequestBody defines body for AddSenderAddress for application/json ContentType.
+type AddSenderAddressJSONRequestBody = AddSenderAddressRequest
+
+// ConfirmSenderAddressJSONRequestBody defines body for ConfirmSenderAddress for application/json ContentType.
+type ConfirmSenderAddressJSONRequestBody = ConfirmSenderAddressRequest
 
 // CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
 type CreateSessionJSONRequestBody = SessionRequest
@@ -5210,6 +5340,21 @@ type ServerInterface interface {
 	// CreatePlanPortal Manage the paid plan
 	// (POST /v1/plan/portal)
 	CreatePlanPortal(w http.ResponseWriter, r *http.Request)
+	// ListSenderAddresses List sender addresses
+	// (GET /v1/sender-addresses)
+	ListSenderAddresses(w http.ResponseWriter, r *http.Request)
+	// AddSenderAddress Add a sender address
+	// (POST /v1/sender-addresses)
+	AddSenderAddress(w http.ResponseWriter, r *http.Request)
+	// ConfirmSenderAddress Confirm a sender address
+	// (POST /v1/sender-addresses/confirm)
+	ConfirmSenderAddress(w http.ResponseWriter, r *http.Request)
+	// RemoveSenderAddress Remove a sender address
+	// (DELETE /v1/sender-addresses/{sender_address_id})
+	RemoveSenderAddress(w http.ResponseWriter, r *http.Request, senderAddressId SenderAddressId)
+	// ResendSenderAddress Resend a sender address's confirm link
+	// (POST /v1/sender-addresses/{sender_address_id}/resend)
+	ResendSenderAddress(w http.ResponseWriter, r *http.Request, senderAddressId SenderAddressId)
 	// DeleteAllSessions Sign out everywhere
 	// (DELETE /v1/sessions)
 	DeleteAllSessions(w http.ResponseWriter, r *http.Request)
@@ -7854,6 +7999,100 @@ func (siw *ServerInterfaceWrapper) CreatePlanPortal(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// ListSenderAddresses operation middleware
+func (siw *ServerInterfaceWrapper) ListSenderAddresses(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSenderAddresses(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddSenderAddress operation middleware
+func (siw *ServerInterfaceWrapper) AddSenderAddress(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddSenderAddress(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmSenderAddress operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmSenderAddress(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmSenderAddress(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveSenderAddress operation middleware
+func (siw *ServerInterfaceWrapper) RemoveSenderAddress(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "sender_address_id" -------------
+	var senderAddressId SenderAddressId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sender_address_id", r.PathValue("sender_address_id"), &senderAddressId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sender_address_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveSenderAddress(w, r, senderAddressId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResendSenderAddress operation middleware
+func (siw *ServerInterfaceWrapper) ResendSenderAddress(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "sender_address_id" -------------
+	var senderAddressId SenderAddressId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sender_address_id", r.PathValue("sender_address_id"), &senderAddressId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sender_address_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResendSenderAddress(w, r, senderAddressId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteAllSessions operation middleware
 func (siw *ServerInterfaceWrapper) DeleteAllSessions(w http.ResponseWriter, r *http.Request) {
 
@@ -8357,6 +8596,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/test-addresses/confirm", wrapper.ConfirmTestAddress)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/test-addresses/{test_address_id}", wrapper.RemoveTestAddress)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/test-addresses/{test_address_id}/resend", wrapper.ResendTestAddress)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sender-addresses", wrapper.ListSenderAddresses)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sender-addresses", wrapper.AddSenderAddress)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sender-addresses/confirm", wrapper.ConfirmSenderAddress)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sender-addresses/{sender_address_id}", wrapper.RemoveSenderAddress)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sender-addresses/{sender_address_id}/resend", wrapper.ResendSenderAddress)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/credits", wrapper.GetCredits)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/credits/checkout", wrapper.CreateCreditCheckout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/plan", wrapper.GetPlan)

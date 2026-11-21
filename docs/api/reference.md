@@ -58,6 +58,7 @@ Servers:
 - [Signup forms](#tag-forms)
 - [Operator tools (mailgoose staff only)](#tag-admin)
 - [test-addresses](#tag-test-addresses)
+- [sender-addresses](#tag-sender-addresses)
 - [Schemas](#schemas)
 
 <a id="tag-health"></a>
@@ -1751,7 +1752,10 @@ is false when there are errors.
 
 Error codes: `missing_subject`, `missing_from` (no From on the email
 or the account), `unverified_from` (the From isn't on a verified
-sending domain), `missing_postal_address`, `empty_email`,
+sending domain, nor, with shared sending on, a verified sender
+address), `unverified_reply_to` (the email would go from the shared
+sending domain, and its Reply-To isn't a verified sender or on a
+verified domain), `missing_postal_address`, `empty_email`,
 `merge_tag` (a tag that can't be filled), `missing_unsubscribe`,
 `broken_link` (not a full web address, or the page or site doesn't
 exist), `too_large` (over 102 KB as rendered), `invalid_html`, and
@@ -1764,7 +1768,10 @@ a port other than 80 or 443, the check ran out of time, or links were
 checked too often), `link_safety_not_checked` (links weren't looked
 up on the phishing and malware lists: the lookup isn't set up, or
 didn't answer within 2 seconds; they pass), `missing_alt`,
-`near_size_limit` (over 90 KB) and `unsupported_css`.
+`near_size_limit` (over 90 KB), `unsupported_css`, and
+`shared_domain` (the email goes from mailgoose's shared sending
+domain because its From isn't on a verified domain; adding the
+domain is better for deliverability and trust).
 
 Each link is fetched once with a HEAD request (GET if the site
 refuses HEAD), 3 seconds per link and 10 seconds in all, up to 50
@@ -2173,7 +2180,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
-- `422`: `not_ready`: something stops the email being sent; `details.problems` lists each with its `code` (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`, `invalid_html`, `unsafe_link` with the link in `url`), `message` and `hint`. `invalid_test`: `to` has an address that isn't one, or more than 5. `test_recipient_not_allowed`: an address in `to` isn't the owner's or on a verified sending domain; `details.address` names it. `test_recipient_suppressed`: an address in `to` unsubscribed, bounced or complained (the owner's own address is never refused); `details.address` names it. `test_mode`: the account is in test mode (MG-80) and an address in `to` is neither the owner's nor a confirmed test address, whatever its domain; `details.address` names it. `tester_limit`: a tester account (MG-86) has ended, or the test needs more tester credits than are left (simulator addresses need none); `details` has `needed`, `credits`, `used`, `left`, `until` and `ended`. A tester account may also test to SES mailbox simulator addresses (`*@simulator.amazonses.com`). [Error](#schema-error)
+- `422`: `not_ready`: something stops the email being sent; `details.problems` lists each with its `code` (`no_email`, `missing_from`, `unverified_from`, `unverified_reply_to`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`, `invalid_html`, `unsafe_link` with the link in `url`), `message` and `hint`. `invalid_test`: `to` has an address that isn't one, or more than 5. `test_recipient_not_allowed`: an address in `to` isn't the owner's or on a verified sending domain; `details.address` names it. `test_recipient_suppressed`: an address in `to` unsubscribed, bounced or complained (the owner's own address is never refused); `details.address` names it. `test_mode`: the account is in test mode (MG-80) and an address in `to` is neither the owner's nor a confirmed test address, whatever its domain; `details.address` names it. `tester_limit`: a tester account (MG-86) has ended, or the test needs more tester credits than are left (simulator addresses need none); `details` has `needed`, `credits`, `used`, `left`, `until` and `ended`. A tester account may also test to SES mailbox simulator addresses (`*@simulator.amazonses.com`). [Error](#schema-error)
 - `429`: `test_limit`: the account has sent 50 test emails in the last 24 hours; Retry-After says when enough have aged out. `rate_limited`: the API's request limit. [Error](#schema-error)
 - `502`: `test_send_failed`: the mail provider refused or didn't answer. It still counts toward the day's tests. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
@@ -2221,8 +2228,8 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `409`: `confirmation_required`: nothing was launched. `details.summary` (`campaign_id`, `name`, `subject`, `from`, `reply_to`, `recipient_count`, `send_at`, `credits`, `balance`, `warnings`) is what the person confirms, `details.code` the code that launches it once they say yes, and `details.expires_at` when the code stops working. `campaign_locked`: the campaign isn't a draft and wasn't launched; `details.status` is its status. [Error](#schema-error)
-- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up review; not for an account in test mode), `test_mode` (the account is in test mode and the campaign reaches anyone but its confirmed test addresses and its owner; `details.recipients` and `details.not_test_addresses`), `new_terms_not_accepted` (the terms changed and the account hasn't accepted the new version; `details.current_version` and `details.accepted_version`, then `acceptTerms`), `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, `credits_short` with `details.needed`, `details.balance` and `details.short`, and `tester_limit` (a tester account, MG-86, that has ended, or whose campaign needs more tester credits than are left; `details.needed`, `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`). `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
+- `409`: `confirmation_required`: nothing was launched. `details.summary` (`campaign_id`, `name`, `subject`, `from`, `reply_to`, `shared_domain`, `sender`, `recipient_count`, `send_at`, `credits`, `balance`, `warnings`) is what the person confirms. `shared_domain` is true when the campaign goes from mailgoose's shared sending domain (MG-85) because its From isn't on a verified domain: `from` is then the account's shared address, and `sender` the verified address it was set to go from (null otherwise). Show it, with a nudge to add the sender's domain; `details.code` the code that launches it once they say yes, and `details.expires_at` when the code stops working. `campaign_locked`: the campaign isn't a draft and wasn't launched; `details.status` is its status. [Error](#schema-error)
+- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from`, `unverified_reply_to` (on the shared sending domain, the Reply-To must be a verified sender or on a verified domain), `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up review; not for an account in test mode), `test_mode` (the account is in test mode and the campaign reaches anyone but its confirmed test addresses and its owner; `details.recipients` and `details.not_test_addresses`), `new_terms_not_accepted` (the terms changed and the account hasn't accepted the new version; `details.current_version` and `details.accepted_version`, then `acceptTerms`), `subscription_past_due` (sending is paused until the paid plan's payment goes through), `no_recipients`, `credits_short` with `details.needed`, `details.balance` and `details.short`, and `tester_limit` (a tester account, MG-86, that has ended, or whose campaign needs more tester credits than are left; `details.needed`, `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`). `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-cancelcampaign"></a>
@@ -3254,6 +3261,160 @@ Responses:
 - `502`: `test_address_email_failed`: the confirm email couldn't be sent. The address is kept, pending; resend its link in a minute. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
+<a id="tag-sender-addresses"></a>
+
+## sender-addresses
+
+<a id="op-listsenderaddresses"></a>
+
+### List sender addresses
+
+`GET /v1/sender-addresses`
+
+- Operation: `listSenderAddresses`
+- CLI: `mailgoose sender-addresses list`, `mailgoose sender-addresses remove`, `mailgoose sender-addresses resend`
+
+The account's sender addresses (MG-85), oldest first: at most 10,
+pending ones included, so there's no next page. A custom domain is
+optional: when the server has shared sending on (`shared_address`
+on the account isn't null), an email whose From isn't on a verified
+domain of the account still sends if its From is a `confirmed`
+sender address or the owner's own sign-in address, which always
+counts and isn't listed. It then goes from the account's
+`shared_address`, with replies to that address. A verified domain
+of your own is still better for deliverability and trust.
+
+Responses:
+
+- `200`: The account's sender addresses. [SenderAddressList](#schema-senderaddresslist)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-addsenderaddress"></a>
+
+### Add a sender address
+
+`POST /v1/sender-addresses`
+
+- Operation: `addSenderAddress`
+- CLI: `mailgoose sender-addresses add`
+- Needs a `full`-scope key
+
+Adds a sender address (MG-85) and emails it a link to confirm the
+account may send as it; it counts once the link is used, within 7
+days. An account keeps up to 10, pending ones included; remove one
+to free its slot. Addresses are compared ignoring case. The owner's
+own sign-in address always counts and can't be added.
+
+Adding one emails someone, so it needs a full-scope key or a
+sign-in (403 `insufficient_scope` for a draft-scope key). An
+account sends at most 10 sender address confirm emails in any 24
+hours, adds and resends alike, and removing an address gives none
+back (429 `sender_address_rate_limited` with `Retry-After`).
+
+Request body (`application/json`, required): [AddSenderAddressRequest](#schema-addsenderaddressrequest)
+
+Responses:
+
+- `201`: The new sender address, pending until its link is used. [SenderAddress](#schema-senderaddress)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `409`: `sender_address_exists`: the account has that address already. `sender_address_limit`: the account has 10 sender addresses; remove one first. `sender_address_confirmed`: the address is confirmed, so there's no link to resend. [Error](#schema-error)
+- `422`: `invalid_email`: that isn't an email address. `sender_address_is_owner`: the owner's own sign-in address always counts, so it needs no slot. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `502`: `sender_address_email_failed`: the confirm email couldn't be sent. The address is kept, pending; resend its link in a minute. [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-confirmsenderaddress"></a>
+
+### Confirm a sender address
+
+`POST /v1/sender-addresses/confirm`
+
+- Operation: `confirmSenderAddress`
+- CLI: `mailgoose sender-addresses confirm`
+
+Uses the token from a sender address's confirm link (MG-85); the
+web app's page at the link calls it. No credentials are needed: the
+token is the proof. Using it again changes nothing and answers the
+same. A token that isn't one is a 400 `invalid_token`; one for no
+address (removed, or replaced by a newer link) a 404
+`sender_address_link_not_found`; one older than 7 days a 410
+`sender_address_link_expired`.
+
+Request body (`application/json`, required): [ConfirmSenderAddressRequest](#schema-confirmsenderaddressrequest)
+
+Responses:
+
+- `200`: Confirmed. [ConfirmedSenderAddress](#schema-confirmedsenderaddress)
+- `400`: The request is malformed. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `410`: `sender_address_link_expired`: the link is older than 7 days. Resend it from the web app or with `mailgoose sender-addresses resend`. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-removesenderaddress"></a>
+
+### Remove a sender address
+
+`DELETE /v1/sender-addresses/{sender_address_id}`
+
+- Operation: `removeSenderAddress`
+- CLI: `mailgoose sender-addresses remove`
+
+The address frees its slot, its link stops working, and the account
+can no longer send as it from the shared domain. Campaigns already
+sending from it stop going out.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `sender_address_id` | path | string (uuid) | yes | The sender address's `id`. |
+
+Responses:
+
+- `204`: Removed.
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-resendsenderaddress"></a>
+
+### Resend a sender address's confirm link
+
+`POST /v1/sender-addresses/{sender_address_id}/resend`
+
+- Operation: `resendSenderAddress`
+- CLI: `mailgoose sender-addresses resend`
+- Needs a `full`-scope key
+
+Emails a pending sender address a new confirm link, good for 7
+days; the old link stops working. At most once a minute per address
+(429 `sender_address_resend_too_soon` with `Retry-After`), and it
+counts toward the account's 10 sender address confirm emails in any
+24 hours (429 `sender_address_rate_limited`). A confirmed address
+answers 409 `sender_address_confirmed`. Needs a full-scope key or a
+sign-in.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `sender_address_id` | path | string (uuid) | yes | The sender address's `id`. |
+
+Responses:
+
+- `200`: The sender address, with the new link's times. [SenderAddress](#schema-senderaddress)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `sender_address_exists`: the account has that address already. `sender_address_limit`: the account has 10 sender addresses; remove one first. `sender_address_confirmed`: the address is confirmed, so there's no link to resend. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `502`: `sender_address_email_failed`: the confirm email couldn't be sent. The address is kept, pending; resend its link in a minute. [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
 <a id="schemas"></a>
 
 ## Schemas
@@ -3639,6 +3800,8 @@ Type: string: one of `pending`, `verified`, `failed`
 | `terms` | [TermsStatus](#schema-termsstatus) | yes |  |
 | `sending_mode` | [SendingMode](#schema-sendingmode) | yes |  |
 | `tester` | [TesterStatus](#schema-testerstatus) or null | yes | The account's tester state when it's a tester account (MG-86); null otherwise. |
+| `sending_slug` | string | yes | The account's name on mailgoose's shared sending domain (MG-85), made from the account's name when it was created. It doesn't change when the account is renamed. |
+| `shared_address` | string or null | yes | Where the account's email goes from when its From isn't on a verified domain of its own (MG-85): `sending_slug` at mailgoose's shared sending domain, with replies to the From address, which has to be the owner's own sign-in address or a confirmed sender address (`listSenderAddresses`). Null when the server has shared sending off, and every From needs a verified domain. A custom domain is optional, but better for deliverability and trust. |
 | `created_at` | string (date-time) | yes |  |
 
 <a id="schema-testerstatus"></a>
@@ -3722,6 +3885,55 @@ Type: string: one of `test`, `full`
 | --- | --- | --- | --- |
 | `email` | string | yes |  |
 | `account_name` | string | yes | The account the address now gets test mode's emails from. |
+| `confirmed_at` | string (date-time) | yes |  |
+
+<a id="schema-senderaddress"></a>
+
+### SenderAddress
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | yes |  |
+| `email` | string | yes |  |
+| `status` | string: one of `pending`, `confirmed` | yes | `pending` until the emailed link is used; only a `confirmed` address can send from the shared domain. |
+| `confirm_sent_at` | string (date-time) or null | yes | When the latest confirm link was emailed; null once confirmed, or when the email couldn't be sent. |
+| `confirm_expires_at` | string (date-time) or null | yes | When the latest confirm link stops working; null once confirmed. |
+| `confirmed_at` | string (date-time) or null | yes |  |
+| `created_at` | string (date-time) | yes |  |
+
+<a id="schema-senderaddresslist"></a>
+
+### SenderAddressList
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `data` | array of [SenderAddress](#schema-senderaddress) | yes |  |
+| `next_cursor` | null | yes |  |
+
+<a id="schema-addsenderaddressrequest"></a>
+
+### AddSenderAddressRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `email` | string | yes |  |
+
+<a id="schema-confirmsenderaddressrequest"></a>
+
+### ConfirmSenderAddressRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `token` | string | yes | The `token` in the confirm link's query. |
+
+<a id="schema-confirmedsenderaddress"></a>
+
+### ConfirmedSenderAddress
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `email` | string | yes |  |
+| `account_name` | string | yes | The account that may now send with this address as its sender. |
 | `confirmed_at` | string (date-time) | yes |  |
 
 <a id="schema-sendlimit"></a>
@@ -4665,6 +4877,19 @@ later. Present only on a campaign launched in a slice.
 | `to` | array of string | yes | Who each copy went to. |
 | `sent_today` | integer | yes | Test emails the account sent in the last 24 hours, these included. |
 | `daily_limit` | integer | yes | Test emails an account can send in any 24 hours. |
+| `from` | [MailAddress](#schema-mailaddress) | yes |  |
+| `reply_to` | array of [MailAddress](#schema-mailaddress) | yes |  |
+| `shared_domain` | boolean | yes | True when the test went from mailgoose's shared sending domain (MG-85), because the email's From isn't on a verified domain of the account: `from` is the account's shared address and replies go to `sender`. Adding the sender's domain would do better for deliverability and trust. |
+| `sender` | string or null | yes | The verified address the email was set to go from, when `shared_domain`; null otherwise. |
+
+<a id="schema-mailaddress"></a>
+
+### MailAddress
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes |  |
+| `email` | string | yes |  |
 
 <a id="schema-campaignlist"></a>
 
@@ -4798,7 +5023,7 @@ later. Present only on a campaign launched in a slice.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `code` | string: one of `missing_subject`, `missing_from`, `unverified_from`, `missing_postal_address`, `empty_email`, `merge_tag`, `missing_unsubscribe`, `broken_link`, `too_large`, `invalid_html`, `unsafe_link`, `insecure_link`, `link_unreachable`, `link_not_checked`, `link_safety_not_checked`, `missing_alt`, `near_size_limit`, `unsupported_css` | yes |  |
+| `code` | string: one of `missing_subject`, `missing_from`, `unverified_from`, `unverified_reply_to`, `missing_postal_address`, `empty_email`, `merge_tag`, `missing_unsubscribe`, `broken_link`, `too_large`, `invalid_html`, `unsafe_link`, `insecure_link`, `link_unreachable`, `link_not_checked`, `link_safety_not_checked`, `missing_alt`, `near_size_limit`, `unsupported_css`, `shared_domain` | yes |  |
 | `message` | string | yes |  |
 | `path` | string |  | The block field or setting it's about, such as `blocks[2].alt` or `settings.subject`. |
 | `line` | integer |  | The line of an html email's markup it's on. |

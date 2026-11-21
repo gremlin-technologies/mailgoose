@@ -101,3 +101,103 @@ func TestGuard(t *testing.T) {
 		}
 	})
 }
+
+// TestGuardSharedDomain: mail on the shared sending domain (MG-85) goes only
+// as its own account's slug, with Reply-To addresses that account verified.
+func TestGuardSharedDomain(t *testing.T) {
+	slugs := map[string]string{"acct-1": "pats-bakery", "acct-2": "other-shop"}
+	verified := map[string]map[string]bool{"acct-1": {"pat@example.com": true}, "acct-2": {"sam@example.net": true}}
+	calls := 0
+	shared := func(_ context.Context, accountID, local string, replyTo []string) error {
+		calls++
+		if slugs[accountID] != strings.ToLower(local) {
+			return errors.New("not the account's slug")
+		}
+		for _, r := range replyTo {
+			if !verified[accountID][r] {
+				return errors.New("unverified reply-to")
+			}
+		}
+		return nil
+	}
+	refuse := func(context.Context, string, string) error { return errors.New("not verified") }
+	msg := func(from, account string, replyTo ...string) Message {
+		m := Message{From: Address{Email: from}, To: Address{Email: "to@example.com"}, Subject: "Hi", Text: "Hi",
+			Kind: KindCampaign, AccountID: account}
+		for _, r := range replyTo {
+			m.ReplyTo = append(m.ReplyTo, Address{Email: r})
+		}
+		return m
+	}
+	guard := func() *Guard {
+		return &Guard{Sender: &Fake{}, System: "mail.staging.mailgoose.app", Verified: refuse,
+			Shared: "shared.staging.mailgoose.app", SharedSender: shared}
+	}
+
+	tests := []struct {
+		name string
+		m    Message
+		ok   bool
+	}{
+		{"own slug, verified reply-to", msg("pats-bakery@shared.staging.mailgoose.app", "acct-1", "pat@example.com"), true},
+		{"own slug any case", msg("Pats-Bakery@SHARED.staging.mailgoose.app", "acct-1", "Pat@Example.com "), true},
+		{"own slug, no reply-to", msg("pats-bakery@shared.staging.mailgoose.app", "acct-1"), false},
+		{"another account's slug", msg("other-shop@shared.staging.mailgoose.app", "acct-1", "pat@example.com"), false},
+		{"another account's slug and its reply-to", msg("other-shop@shared.staging.mailgoose.app", "acct-1", "sam@example.net"), false},
+		{"reply-to the account hasn't verified", msg("pats-bakery@shared.staging.mailgoose.app", "acct-1", "pat@example.com", "boss@example.org"), false},
+		{"another account's verified reply-to", msg("pats-bakery@shared.staging.mailgoose.app", "acct-1", "sam@example.net"), false},
+		{"no account", msg("pats-bakery@shared.staging.mailgoose.app", ""), false},
+		{"subdomain of the shared domain", msg("pats-bakery@x.shared.staging.mailgoose.app", "acct-1"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := &Fake{}
+			g := guard()
+			g.Sender = fake
+			_, err := g.Send(context.Background(), tt.m)
+			if tt.ok && (err != nil || len(fake.Sent()) != 1) {
+				t.Fatalf("not sent: %v", err)
+			}
+			if !tt.ok && (!errors.Is(err, ErrNotThisEnvironment) || len(fake.Sent()) != 0) {
+				t.Fatalf("err = %v, sent %d; want a refusal", err, len(fake.Sent()))
+			}
+		})
+	}
+
+	t.Run("off without a shared domain", func(t *testing.T) {
+		g := guard()
+		g.Shared = ""
+		if err := g.Check(context.Background(), msg("pats-bakery@shared.staging.mailgoose.app", "acct-1", "pat@example.com")); !errors.Is(err, ErrNotThisEnvironment) {
+			t.Fatalf("err = %v, want a refusal", err)
+		}
+	})
+
+	t.Run("a remembered pass never lets another slug or reply-to through", func(t *testing.T) {
+		calls = 0
+		g := guard()
+		ctx := context.Background()
+		good := msg("pats-bakery@shared.staging.mailgoose.app", "acct-1", "pat@example.com")
+		for range 3 {
+			if err := g.Check(ctx, good); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if calls != 1 {
+			t.Fatalf("SharedSender called %d times within the TTL, want 1", calls)
+		}
+		for _, bad := range []Message{
+			msg("other-shop@shared.staging.mailgoose.app", "acct-1", "pat@example.com"),
+			msg("pats-bakery@shared.staging.mailgoose.app", "acct-1", "pat@example.com", "boss@example.org"),
+			msg("pats-bakery@shared.staging.mailgoose.app", "acct-1", "boss@example.org"),
+			msg("pats-bakery@shared.staging.mailgoose.app", "acct-2", "pat@example.com"),
+		} {
+			if err := g.Check(ctx, bad); err == nil {
+				t.Errorf("%s from %s, reply-to %v passed after a good pass", bad.AccountID, bad.From.Email, bad.ReplyTo)
+			}
+		}
+		// The same addresses in another order and case are the same pass.
+		if err := g.Check(ctx, msg("PATS-BAKERY@shared.staging.mailgoose.app", "acct-1", "Pat@Example.com")); err != nil {
+			t.Fatal(err)
+		}
+	})
+}

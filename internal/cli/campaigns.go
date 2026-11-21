@@ -522,9 +522,11 @@ on a verified sending domain of the account. Merge tags are filled from the
 contact with that address when there is one. No credits are used, and the
 account can send 50 test emails in any 24 hours.
 
-The email has to be ready to send: a From on a verified domain, a subject,
-the account's postal address, and merge tags that can be filled in. If it
-isn't, nothing is sent and each problem is listed with how to fix it.`,
+The email has to be ready to send: a From on a verified domain (or, where
+the server has shared sending on, a verified sender address: see
+` + "`mailgoose sender-addresses`" + `), a subject, the account's postal
+address, and merge tags that can be filled in. If it isn't, nothing is sent
+and each problem is listed with how to fix it.`,
 		Example: `  mailgoose campaign test 3f1c...
   mailgoose campaign test 3f1c... --to sam@yourbakery.com --to you@yourbakery.com`,
 		Args: cobra.ExactArgs(1),
@@ -538,10 +540,14 @@ isn't, nothing is sent and each problem is listed with how to fix it.`,
 				body = map[string]any{"to": to}
 			}
 			var out struct {
-				Campaign   campaign `json:"campaign"`
-				To         []string `json:"to"`
-				SentToday  int      `json:"sent_today"`
-				DailyLimit int      `json:"daily_limit"`
+				Campaign     campaign   `json:"campaign"`
+				To           []string   `json:"to"`
+				SentToday    int        `json:"sent_today"`
+				DailyLimit   int        `json:"daily_limit"`
+				From         mailAddr   `json:"from"`
+				ReplyTo      []mailAddr `json:"reply_to"`
+				SharedDomain bool       `json:"shared_domain"`
+				Sender       *string    `json:"sender"`
 			}
 			if err := a.call(cmd.Context(), http.MethodPost, campaignPath(id)+"/test", body, &out, true); err != nil {
 				return listSendProblems(err, "The campaign can't be sent yet, so nothing was sent.")
@@ -552,6 +558,13 @@ isn't, nothing is sent and each problem is listed with how to fix it.`,
 			}
 			fmt.Fprintf(a.Stdout, "Sent a test of %q to %s.\n", out.Campaign.Name, strings.Join(out.To, ", "))
 			fmt.Fprintf(a.Stdout, "%d of %d test emails used in the last 24 hours.\n", out.SentToday, out.DailyLimit)
+			if out.SharedDomain && out.Sender != nil {
+				replyTo := *out.Sender
+				if len(out.ReplyTo) > 0 {
+					replyTo = out.ReplyTo[0].Email
+				}
+				fmt.Fprintln(a.Stdout, sharedNudge(out.From.Email, replyTo, *out.Sender))
+			}
 			return nil
 		},
 	})
@@ -750,6 +763,17 @@ func (a *App) launchError(ctx context.Context, id string, err error) error {
 	fmt.Fprintf(tw, "Sends:\t%s\n", when)
 	fmt.Fprintf(tw, "Credits:\t%d of %d\n", num("credits"), num("balance"))
 	_ = tw.Flush()
+	if shared, _ := sum["shared_domain"].(bool); shared {
+		if sender, _ := sum["sender"].(string); sender != "" {
+			replyTo := sender
+			if rt, _ := sum["reply_to"].([]any); len(rt) > 0 {
+				m, _ := rt[0].(map[string]any)
+				replyTo = str(m, "email")
+			}
+			m, _ := sum["from"].(map[string]any)
+			fmt.Fprintln(a.Stdout, sharedNudge(str(m, "email"), replyTo, sender))
+		}
+	}
 	if ws, _ := sum["warnings"].([]any); len(ws) > 0 {
 		fmt.Fprintf(a.Stdout, "%d %s:\n", len(ws), plural(len(ws), "warning", "warnings"))
 		for _, w := range ws {
@@ -762,6 +786,23 @@ func (a *App) launchError(ctx context.Context, id string, err error) error {
 		Message: "Nothing was launched. The summary above needs confirming.",
 		Hint: "Show the summary to the person. Only if they say yes, run `mailgoose campaign launch " + id +
 			" --confirm " + code + "`. The code works for 15 minutes."}
+}
+
+// mailAddr is the API's MailAddress.
+type mailAddr struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// sharedNudge says a send goes from mailgoose's shared sending domain
+// (MG-85), and how to send from the sender's own domain instead.
+func sharedNudge(from, replyTo, sender string) string {
+	domain := sender
+	if at := strings.LastIndexByte(sender, '@'); at >= 0 {
+		domain = sender[at+1:]
+	}
+	return fmt.Sprintf("Sending from %s, mailgoose's shared domain, with replies to %s.\n"+
+		"Add your own domain for better deliverability and trust: mailgoose domain add %s", from, replyTo, domain)
 }
 
 // listSendProblems puts every problem in a not_ready error's message, one

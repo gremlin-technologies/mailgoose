@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -25,6 +26,10 @@ var ErrNotThisEnvironment = errors.New("from address is not a sending identity o
 // database. Only an environment's own domains service can have verified a
 // domain there, since SES holds one identity per name in the account and
 // adopting another environment's identity is refused.
+//
+// With a shared sending domain (MG-85), a message may also go from it, but
+// only as its own account's sending slug and with every Reply-To one the
+// account has verified: SharedSender says so.
 type Guard struct {
 	Sender
 	// System is this environment's system sending domain
@@ -34,6 +39,16 @@ type Guard struct {
 	// a domain accountID has verified in this environment, and an error
 	// otherwise. It's domains.Service.RequireVerifiedFrom.
 	Verified func(ctx context.Context, accountID, from string) error
+	// Shared is this environment's shared sending domain
+	// (SHARED_SENDING_DOMAIN); empty means none, and mail from it is refused
+	// like any other domain the account hasn't verified.
+	Shared string
+	// SharedSender returns nil when local, the From's local part on the
+	// shared domain, is accountID's own sending slug and every replyTo (at
+	// least one; the guard refuses a message with none)
+	// address is a verified sender of accountID or on one of its verified
+	// domains, and an error otherwise. It's senders.Resolver.CheckShared.
+	SharedSender func(ctx context.Context, accountID, local string, replyTo []string) error
 	// TTL is how long a domain that passed stays trusted without asking
 	// Verified again, so a campaign doesn't query the database for every
 	// copy. Zero means one minute; a refusal is never remembered.
@@ -45,7 +60,10 @@ type Guard struct {
 	passed map[guardKey]time.Time
 }
 
-type guardKey struct{ account, domain string }
+// guardKey is what a pass was for. A message on the shared domain passes
+// for its exact From and Reply-To addresses (sender), so a pass never lets
+// through another account's slug or a Reply-To that wasn't checked.
+type guardKey struct{ account, domain, sender string }
 
 // guardCacheMax bounds the remembered passes; past it the cache starts over.
 const guardCacheMax = 10_000
@@ -69,10 +87,25 @@ func (g *Guard) Check(ctx context.Context, m Message) error {
 	if g.System != "" && domain == strings.ToLower(strings.TrimSuffix(g.System, ".")) {
 		return nil
 	}
-	if m.AccountID == "" || g.Verified == nil {
+	shared := g.Shared != "" && domain == strings.ToLower(strings.TrimSuffix(g.Shared, "."))
+	if m.AccountID == "" || (!shared && g.Verified == nil) || (shared && g.SharedSender == nil) {
 		return fmt.Errorf("%w: %s", ErrNotThisEnvironment, domain)
 	}
-	key := guardKey{m.AccountID, domain}
+	key := guardKey{account: m.AccountID, domain: domain}
+	local := m.From.Email[:at]
+	var replyTo []string
+	if shared {
+		for _, r := range m.ReplyTo {
+			replyTo = append(replyTo, strings.ToLower(strings.TrimSpace(r.Email)))
+		}
+		// Replies go to the address the account verified, so a message on
+		// the shared domain without one isn't one mailgoose made.
+		if len(replyTo) == 0 {
+			return fmt.Errorf("%w: %s with no Reply-To", ErrNotThisEnvironment, domain)
+		}
+		slices.Sort(replyTo)
+		key.sender = strings.ToLower(local) + "\x00" + strings.Join(replyTo, "\x00")
+	}
 	now := g.now()
 	g.mu.Lock()
 	until, ok := g.passed[key]
@@ -80,7 +113,13 @@ func (g *Guard) Check(ctx context.Context, m Message) error {
 	if ok && now.Before(until) {
 		return nil
 	}
-	if err := g.Verified(ctx, m.AccountID, m.From.Email); err != nil {
+	var err error
+	if shared {
+		err = g.SharedSender(ctx, m.AccountID, local, replyTo)
+	} else {
+		err = g.Verified(ctx, m.AccountID, m.From.Email)
+	}
+	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

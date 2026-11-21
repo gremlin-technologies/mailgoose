@@ -89,11 +89,11 @@ tidy: ## Tidy go.mod
 
 run-api: ## Run the API against the compose Postgres
 	docker compose up -d --wait postgres
-	APP_ENV=local MAIL_SENDER=fake MAIL_CAPTURE_DIR=$(CURDIR)/.local/mail \
+	APP_ENV=local MAIL_SENDER=fake MAIL_CAPTURE_DIR=$(CURDIR)/.local/mail SHARED_SENDING_DOMAIN=shared.localhost \
 	DATABASE_URL="postgres://mailgoose:mailgoose@localhost:5432/mailgoose?sslmode=disable" $(GO) run ./cmd/mailgoosed serve
 
 run-worker: ## Run the worker locally (idles with no queue URLs)
-	APP_ENV=local MAIL_SENDER=fake MAIL_CAPTURE_DIR=$(CURDIR)/.local/mail $(GO) run ./cmd/mailgoosed worker
+	APP_ENV=local MAIL_SENDER=fake MAIL_CAPTURE_DIR=$(CURDIR)/.local/mail SHARED_SENDING_DOMAIN=shared.localhost $(GO) run ./cmd/mailgoosed worker
 
 migrate: ## Apply migrations to the compose Postgres
 	docker compose up -d --wait postgres

@@ -34,6 +34,55 @@ SUCCEEDED in about 6 minutes; `/readyz` answered with the merged commit).
 - The connection `mailgoose-deployment`, made by hand while testing, is
   unused. Deleting it is the owner's call.
 
+## 2026-11-21: Optional custom domains: a shared sending domain with verified sender addresses (MG-85, owner ask; details are reversible defaults)
+
+The owner asked (Nov 21) for custom domains to be optional: encouraged
+heavily for deliverability and trust, since they're a barrier for small
+business owners, while still verifying that the sender owns their email
+address.
+
+- **Design (MG-85):** with `SHARED_SENDING_DOMAIN` set, a From that isn't on
+  a verified domain of the account sends when it's a verified sender of the
+  account: the owner's sign-in address (proved at every sign-in, needs no
+  slot) or a sender address confirmed by an emailed link. The message goes
+  from the From name, or the account's name, at
+  `<sending_slug>@<shared domain>`, with Reply-To the From address. A From on
+  a verified domain is unchanged, and the owner's address never goes in the
+  From unless its domain is verified. Unset, nothing changes.
+- **Details picked (reversible defaults):**
+  - `accounts.sending_slug` is made from the account's name at creation
+    (accents folded, apostrophes dropped, anything else to hyphens, at most 32
+    characters before a suffix), backfilled oldest account first, and never
+    changed by a rename. A taken or reserved slug (postmaster, abuse, admin,
+    administrator, hostmaster, webmaster, mailer-daemon, root, noreply,
+    no-reply, bounce, bounces, support, security, info, mail, mailgoose), or
+    one under 3 characters, gets `-` and 4 random hex characters.
+  - Sender addresses copy test addresses' limits: at most 10 an account
+    (pending included), links valid 7 days, a resend at most once a minute,
+    at most 10 confirm emails an account in 24 hours.
+  - An email's own Reply-To must also be a verified sender or on a verified
+    domain, or the test, launch or email check refuses it with
+    `unverified_reply_to`.
+  - `mail.Guard` lets the shared domain through only for the account's own
+    slug with at least one Reply-To and every Reply-To verified; its one-minute pass cache is keyed by
+    the exact local part and Reply-Tos, so one pass can't cover another.
+  - The nudge, in test results, launch summaries (web and CLI) and as an
+    email check warning (`shared_domain`): "Sending from <slug>@<shared>,
+    mailgoose's shared domain, with replies to <you>. Add your own domain for
+    better deliverability and trust", with the `mailgoose domain add` command
+    or a link to Domains.
+  - Locally (`scripts/dev.sh`, `make run-api`, `compose.yaml`) the shared
+    domain is `shared.localhost`.
+- **Open questions for the owner:**
+  1. **Tighter limits for shared-domain senders?** Default: the same send
+     limits, review and test mode as any other account for now; nothing extra
+     is built.
+  2. **Which domain is the shared one?** Default: `SHARED_SENDING_DOMAIN`
+     stays unset in prod, so prod is unchanged. Staging gets a subdomain of
+     `staging.mailgoose.app` (assumed `shared.staging.mailgoose.app`) in a
+     separate infra PR, which has to verify it in SES. For prod we recommend
+     a separately registered domain, so a shared-domain reputation problem
+     can't touch mailgoose.app or its sign-in mail.
 ## 2026-11-21: Light by default, dark mode a switch in Settings (owner decision; storage is a reversible default)
 
 The owner decided: "light-only by default with a 'dark mode' toggle in
