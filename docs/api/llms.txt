@@ -167,3 +167,11 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 - [Confirm a test address](reference.md#op-confirmtestaddress): `POST /v1/test-addresses/confirm`, CLI `mailgoose test-addresses confirm`. Uses the token from a test address's confirm link (MG-80); the web app's page at the link calls it.
 - [Remove a test address](reference.md#op-removetestaddress): `DELETE /v1/test-addresses/{test_address_id}`, CLI `mailgoose test-addresses remove`. The address frees its slot, its link stops working, and test mode no longer sends to it.
 - [Resend a test address's confirm link](reference.md#op-resendtestaddress): `POST /v1/test-addresses/{test_address_id}/resend`, CLI `mailgoose test-addresses resend`. Emails a pending test address a new confirm link, good for 7 days; the old link stops working.
+
+## sender-addresses
+
+- [List sender addresses](reference.md#op-listsenderaddresses): `GET /v1/sender-addresses`, CLI `mailgoose sender-addresses list`, `mailgoose sender-addresses remove`, `mailgoose sender-addresses resend`. The account's sender addresses (MG-85), oldest first: at most 10, pending ones included, so there's no next page.
+- [Add a sender address](reference.md#op-addsenderaddress): `POST /v1/sender-addresses`, CLI `mailgoose sender-addresses add`. Adds a sender address (MG-85) and emails it a link to confirm the account may send as it; it counts once the link is used, within 7 days.
+- [Confirm a sender address](reference.md#op-confirmsenderaddress): `POST /v1/sender-addresses/confirm`, CLI `mailgoose sender-addresses confirm`. Uses the token from a sender address's confirm link (MG-85); the web app's page at the link calls it.
+- [Remove a sender address](reference.md#op-removesenderaddress): `DELETE /v1/sender-addresses/{sender_address_id}`, CLI `mailgoose sender-addresses remove`. The address frees its slot, its link stops working, and the account can no longer send as it from the shared domain.
+- [Resend a sender address's confirm link](reference.md#op-resendsenderaddress): `POST /v1/sender-addresses/{sender_address_id}/resend`, CLI `mailgoose sender-addresses resend`. Emails a pending sender address a new confirm link, good for 7 days; the old link stops working.

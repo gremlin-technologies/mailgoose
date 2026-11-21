@@ -46,7 +46,17 @@ func (s *Server) TestCampaign(w http.ResponseWriter, r *http.Request, id string)
 	if s.campaignError(w, r, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, apigen.TestSendResult{Campaign: out, To: res.To, SentToday: res.SentToday, DailyLimit: sending.TestsPerDay})
+	replyTo := make([]apigen.MailAddress, len(res.ReplyTo))
+	for i, a := range res.ReplyTo {
+		replyTo[i] = apigen.MailAddress{Name: a.Name, Email: a.Email}
+	}
+	var sender *string
+	if res.SharedDomain {
+		sender = &res.Sender
+	}
+	writeJSON(w, http.StatusOK, apigen.TestSendResult{Campaign: out, To: res.To, SentToday: res.SentToday, DailyLimit: sending.TestsPerDay,
+		From: apigen.MailAddress{Name: res.From.Name, Email: res.From.Email}, ReplyTo: replyTo,
+		SharedDomain: res.SharedDomain, Sender: sender})
 }
 
 func (s *Server) testSendError(w http.ResponseWriter, r *http.Request, err error) bool {

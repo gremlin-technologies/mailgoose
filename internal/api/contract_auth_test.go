@@ -22,6 +22,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/images"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
+	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
 	"github.com/gremlin-technologies/mailgoose/internal/testmode"
@@ -76,7 +77,8 @@ func authServerTB(t testing.TB) *Server {
 			// Tests of test mode turn it on (MG-80).
 			NewAccountSending: auth.SendingFull,
 		},
-		TestAddresses: &testmode.Service{DB: db, Mail: fake, From: mail.Address{Name: "mailgoose", Email: "signin@mail.test.example"}},
+		TestAddresses:   &testmode.Service{DB: db, Mail: fake, From: mail.Address{Name: "mailgoose", Email: "signin@mail.test.example"}},
+		SenderAddresses: &senders.Service{DB: db, Mail: fake, From: mail.Address{Name: "mailgoose", Email: "signin@mail.test.example"}},
 	}
 	s.Sending = &sending.Service{DB: db, Campaigns: s.Campaigns, Emails: s.Emails, Settings: s.Auth,
 		Domains: s.Domains, Unsubscribe: s.Unsubscribe, Mail: fake, Limits: testLimits}

@@ -26,8 +26,10 @@ type account struct {
 	Terms          terms     `json:"terms"`
 	SendingMode    string    `json:"sending_mode"`
 	// Tester is the account's tester state (MG-86); nil when it isn't one.
-	Tester    *testerStatus `json:"tester"`
-	CreatedAt time.Time     `json:"created_at"`
+	Tester        *testerStatus `json:"tester"`
+	SendingSlug   string        `json:"sending_slug"`
+	SharedAddress *string       `json:"shared_address"`
+	CreatedAt     time.Time     `json:"created_at"`
 }
 
 // testerStatus is the API's TesterStatus.
@@ -303,6 +305,9 @@ func (a *App) printAccount(acct account) {
 			fmt.Fprintln(a.Stdout, "             Sends to *@simulator.amazonses.com use no credits.")
 		}
 	}
+	if acct.SharedAddress != nil {
+		fmt.Fprintf(a.Stdout, "Shared From: %s (when the From isn't on a verified domain of yours)\n", *acct.SharedAddress)
+	}
 	if acct.Terms.AcceptanceNeeded {
 		fmt.Fprintf(a.Stdout, "\nThe terms changed: version %s took effect on %s. Read what changed in the web app at /policies/changes,\n", acct.Terms.CurrentVersion, acct.Terms.CurrentEffective)
 		fmt.Fprintf(a.Stdout, "then accept with `mailgoose account accept-terms --version %s`. Campaigns can't launch until you do.\n", acct.Terms.CurrentVersion)
@@ -310,6 +315,11 @@ func (a *App) printAccount(acct account) {
 	if acct.SendingMode == "test" {
 		fmt.Fprintln(a.Stdout, "\nThe account is in test mode: campaigns, tests and form signups reach only your confirmed test")
 		fmt.Fprintln(a.Stdout, "addresses (`mailgoose test-addresses list`) and your own address. mailgoose can allow full sending.")
+	}
+	if acct.SharedAddress != nil {
+		fmt.Fprintln(a.Stdout, "\nWithout a domain of your own, emails go from the shared From above, with replies to your From")
+		fmt.Fprintln(a.Stdout, "address, which must be your sign-in address or a verified sender (`mailgoose sender-addresses list`).")
+		fmt.Fprintln(a.Stdout, "Your own domain is better for deliverability and trust: `mailgoose domain add <domain>`.")
 	}
 	if len(acct.MissingForSend) > 0 {
 		fmt.Fprintf(a.Stdout, "\nCampaigns can't launch until you set: %s\n", strings.Join(acct.MissingForSend, ", "))

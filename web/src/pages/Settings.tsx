@@ -35,7 +35,7 @@ export function Settings() {
               setJustSaved(true);
             }}
           />
-          <SendingMode mode={state.data.sending_mode} />
+          <SendingMode mode={state.data.sending_mode} shared={state.data.shared_address ?? null} />
           <Appearance />
           <DeleteAccount name={state.data.name} />
         </>
@@ -209,8 +209,11 @@ function SettingsForm({
   );
 }
 
-/** Whether the account is in test mode (MG-80), with its test addresses. */
-function SendingMode({ mode }: { mode: Account["sending_mode"] }) {
+/**
+ * Whether the account is in test mode (MG-80), with its test addresses, and
+ * where its email goes from without a domain of its own (MG-85).
+ */
+function SendingMode({ mode, shared }: { mode: Account["sending_mode"]; shared: string | null }) {
   return (
     <div className="panel stack">
       <h2>Sending</h2>
@@ -219,8 +222,16 @@ function SendingMode({ mode }: { mode: Account["sending_mode"] }) {
           ? "Test mode: campaigns, tests and form signups reach only your confirmed test addresses and you. Ask mailgoose if you need full sending."
           : "Full sending: campaigns go to everyone you pick."}
       </p>
-      <p>
+      {shared && (
+        <p>
+          Without a domain of your own, your emails go from {shared}, mailgoose's shared domain, with replies to your
+          From address. Your own domain does better.
+        </p>
+      )}
+      <p className="row">
         <Link to="/test-addresses">Test addresses</Link>
+        {shared && <Link to="/sender-addresses">Sender addresses</Link>}
+        <Link to="/domains">Domains</Link>
       </p>
     </div>
   );

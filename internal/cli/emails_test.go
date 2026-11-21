@@ -24,6 +24,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/policy"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
+	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
@@ -39,6 +40,13 @@ var liveDBs sync.Map // *testing.T -> *pgxpool.Pool
 // liveAPI runs the real API on a test database and points a harness at it
 // with a full-scope key, for commands whose round trip matters.
 func liveAPI(t *testing.T) *harness {
+	t.Helper()
+	return liveAPIShared(t, "")
+}
+
+// liveAPIShared is liveAPI with shared sending from the domain shared, or
+// off when it's empty (MG-85).
+func liveAPIShared(t *testing.T, shared string) *harness {
 	t.Helper()
 	ctx := context.Background()
 	db := dbtest.New(t)
@@ -60,6 +68,10 @@ func liveAPI(t *testing.T) *harness {
 	srv.Sending = &sending.Service{DB: db, Campaigns: srv.Campaigns, Emails: srv.Emails, Settings: srv.Auth,
 		Domains: &domains.Service{DB: db}, Unsubscribe: srv.Unsubscribe, Mail: outbox}
 	srv.Signups = &signups.Service{DB: db, Forms: srv.Forms, Settings: srv.Auth, Domains: &domains.Service{DB: db}, Mail: outbox}
+	if shared != "" {
+		r := &senders.Resolver{DB: db, Domains: &domains.Service{DB: db}, Shared: shared}
+		srv.Senders, srv.Sending.Senders, srv.Signups.Senders = r, r, r
+	}
 	srv.Reports = &reports.Service{DB: db}
 	var accountID, userID string
 	if err := db.QueryRow(ctx, `INSERT INTO accounts (name, status, terms_version) VALUES ('Test', 'active', $1) RETURNING id`,

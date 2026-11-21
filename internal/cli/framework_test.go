@@ -224,6 +224,9 @@ func TestNoCommandWaitsForInput(t *testing.T) {
 		"/v1/test-addresses": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`))
 		},
+		"/v1/sender-addresses": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`))
+		},
 		"/v1/contacts/export": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte("email,first_name,last_name,status,tags,source,created_at,status_changed_at,permission_confirmed\n"))
 		},

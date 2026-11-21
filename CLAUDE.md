@@ -88,6 +88,11 @@ scope; they only show where an idea came from.
   in the side menu. See `docs/design-system.md`. Light by default (Nov 21):
   dark mode is a switch in Settings, kept per browser; the public site is
   light only.
+- Optional custom domains (Nov 21, MG-85): with `SHARED_SENDING_DOMAIN` set,
+  an account without a verified domain sends from `<sending slug>@` that
+  shared domain, with replies to an address it verified (the owner's sign-in
+  address or a confirmed sender address, up to 10). The app nudges toward
+  adding a domain. Off in prod for now; details are reversible defaults.
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API

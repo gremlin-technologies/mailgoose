@@ -85,6 +85,11 @@ type Config struct {
 	SESConfigurationSet string
 	// SystemSendingDomain is mailgoose's own sending domain (sign-in codes, double opt-in).
 	SystemSendingDomain string
+	// SharedSendingDomain is the domain an account with no verified domain
+	// of its own sends from (MG-85), as <its sending slug>@ it, with replies
+	// to the address it verified. SHARED_SENDING_DOMAIN; empty turns shared
+	// sending off, so every send needs a verified domain, as before.
+	SharedSendingDomain string
 	// SESIdentityTag is "Environment=<env>"; every SES identity the app creates must carry it.
 	SESIdentityTag string
 
@@ -318,6 +323,7 @@ func load(getenv func(string) string) (Config, error) {
 		SliceWait:                     sliceWait,
 		SESConfigurationSet:           getenv("SES_CONFIGURATION_SET"),
 		SystemSendingDomain:           getenv("SYSTEM_SENDING_DOMAIN"),
+		SharedSendingDomain:           strings.ToLower(strings.TrimSuffix(strings.TrimSpace(getenv("SHARED_SENDING_DOMAIN")), ".")),
 		SESIdentityTag:                getenv("SES_IDENTITY_TAG"),
 		WebDir:                        getenv("WEB_DIR"),
 		MigrateOnStart:                migrate,
@@ -385,6 +391,17 @@ func load(getenv func(string) string) (Config, error) {
 	// Mail captured locally needs no real domain.
 	if cfg.SystemSendingDomain == "" && cfg.MailSender == "fake" {
 		cfg.SystemSendingDomain = "mail.localhost"
+	}
+	// The shared domain is customers' mail, the system domain mailgoose's
+	// own; one can't be the other.
+	if d := cfg.SharedSendingDomain; d != "" {
+		sys := strings.ToLower(strings.TrimSuffix(cfg.SystemSendingDomain, "."))
+		switch {
+		case strings.ContainsAny(d, "@/ ") || !strings.Contains(d, "."):
+			errs = append(errs, fmt.Errorf("SHARED_SENDING_DOMAIN must be a domain name, such as send.example.com, got %q", d))
+		case d == sys:
+			errs = append(errs, errors.New("SHARED_SENDING_DOMAIN must not be the SYSTEM_SENDING_DOMAIN: customers' mail and mailgoose's own need separate domains"))
+		}
 	}
 	cfg.AbuseEmail = strings.TrimSpace(getenv("ABUSE_EMAIL"))
 	switch {

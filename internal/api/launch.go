@@ -108,6 +108,10 @@ func summaryJSON(s *sending.Summary) map[string]any {
 	if s.SendAt != nil {
 		sendAt = s.SendAt.UTC().Format(time.RFC3339)
 	}
+	var sender any
+	if s.SharedDomain {
+		sender = s.Sender
+	}
 	warnings := s.Warnings
 	if warnings == nil {
 		warnings = []emailcheck.Issue{}
@@ -118,6 +122,8 @@ func summaryJSON(s *sending.Summary) map[string]any {
 		"subject":          s.Subject,
 		"from":             addr(s.From),
 		"reply_to":         replyTo,
+		"shared_domain":    s.SharedDomain,
+		"sender":           sender,
 		"recipient_count":  s.RecipientCount,
 		"send_at":          sendAt,
 		"credits":          s.Credits,
