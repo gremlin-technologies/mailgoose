@@ -2277,7 +2277,8 @@ h3.canvas-heading {
 
 .paused-banner,
 .review-banner,
-.test-mode-banner {
+.test-mode-banner,
+.tester-banner {
   margin-bottom: 1rem;
 }
 

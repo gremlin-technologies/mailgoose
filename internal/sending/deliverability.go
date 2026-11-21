@@ -22,13 +22,15 @@ const DeliverabilityWindow = 7 * 24 * time.Hour
 
 // How a window's campaign copies, hard bounces and complaints are counted,
 // for the platform (platformRates) and for each account
-// (DeliverabilityReport) alike. $1 and $2 bound the window.
+// (DeliverabilityReport) alike. $1 and $2 bound the window. SES mailbox
+// simulator addresses are left out, as SES leaves them out (MG-86).
 const (
-	sentIn        = `FROM campaign_recipients WHERE sent_at > $1 AND sent_at <= $2`
+	sentIn        = `FROM campaign_recipients WHERE sent_at > $1 AND sent_at <= $2 AND NOT simulated`
 	hardBouncedIn = `FROM send_events
-				WHERE occurred_at > $1 AND occurred_at <= $2 AND kind = 'campaign' AND type = 'bounce' AND subtype LIKE 'permanent/%'`
+				WHERE occurred_at > $1 AND occurred_at <= $2 AND kind = 'campaign' AND NOT simulated
+				AND type = 'bounce' AND subtype LIKE 'permanent/%'`
 	complainedIn = `FROM send_events
-				WHERE occurred_at > $1 AND occurred_at <= $2 AND kind = 'campaign' AND type = 'complaint'`
+				WHERE occurred_at > $1 AND occurred_at <= $2 AND kind = 'campaign' AND NOT simulated AND type = 'complaint'`
 )
 
 // WindowRates are an account's rates over one window, with the rates as
@@ -57,7 +59,10 @@ type AccountDeliverability struct {
 	AccountName string  `json:"account_name"`
 	OwnerEmail  *string `json:"owner_email"`
 	// SendingMode is test or full (MG-80).
-	SendingMode     string     `json:"sending_mode"`
+	SendingMode string `json:"sending_mode"`
+	// TesterUntil is when its tester account (MG-86) ends, or ended; nil
+	// when it isn't one.
+	TesterUntil     *time.Time `json:"tester_until"`
 	SendingPausedAt *time.Time `json:"sending_paused_at"`
 	SuspendedAt     *time.Time `json:"suspended_at"`
 	// ThrottledUntil is when its early-warning throttle lifts; nil when it
@@ -85,6 +90,9 @@ func (a AccountDeliverability) State() []string {
 	}
 	if a.SendingMode == "test" {
 		s = append(s, "test mode")
+	}
+	if a.TesterUntil != nil {
+		s = append(s, "tester until "+a.TesterUntil.UTC().Format("2006-01-02"))
 	}
 	return s
 }
@@ -147,7 +155,7 @@ func DeliverabilityReport(ctx context.Context, q digestQuerier, now time.Time, w
 		)
 		SELECT a.id::text, a.name,
 			(SELECT u.email FROM users u WHERE u.account_id = a.id ORDER BY u.created_at, u.id LIMIT 1),
-			a.sending_mode, a.sending_paused_at, a.suspended_at,
+			a.sending_mode, a.tester_until, a.sending_paused_at, a.suspended_at,
 			(SELECT max(t.until) FROM account_throttles t WHERE t.account_id = a.id),
 			coalesce(s.day, 0), coalesce(b.day, 0), coalesce(c.day, 0),
 			coalesce(s.week, 0), coalesce(b.week, 0), coalesce(c.week, 0)
@@ -163,7 +171,7 @@ func DeliverabilityReport(ctx context.Context, q digestQuerier, now time.Time, w
 	for rows.Next() {
 		var a AccountDeliverability
 		var d, wk Rates
-		if err := rows.Scan(&a.AccountID, &a.AccountName, &a.OwnerEmail, &a.SendingMode, &a.SendingPausedAt,
+		if err := rows.Scan(&a.AccountID, &a.AccountName, &a.OwnerEmail, &a.SendingMode, &a.TesterUntil, &a.SendingPausedAt,
 			&a.SuspendedAt, &a.ThrottledUntil, &d.Sent, &d.HardBounces, &d.Complaints,
 			&wk.Sent, &wk.HardBounces, &wk.Complaints); err != nil {
 			return nil, err

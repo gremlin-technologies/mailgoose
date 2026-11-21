@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/tester"
 )
 
 // Early-warning throttles (MG-61).
@@ -233,15 +234,27 @@ func (l Limits) ForAccount(ctx context.Context, q querier, accountID string, own
 	return out, nil
 }
 
+// ownLimitSQL is an account's own daily limit, from a row of accounts a: the
+// limit staff set, held to tester.Daily for a tester account (MG-86).
+var ownLimitSQL = fmt.Sprintf(`CASE WHEN a.tester_started_at IS NOT NULL
+	THEN least(coalesce(a.daily_send_limit, %[1]d), %[1]d) ELSE a.daily_send_limit END`, tester.Daily)
+
 // Account is ForAccount for an account read from the database.
 func (l Limits) Account(ctx context.Context, q querier, accountID string, now time.Time) (SendLimit, error) {
 	var own *int
 	var since time.Time
-	if err := q.QueryRow(ctx, `SELECT daily_send_limit, coalesce(activated_at, created_at) FROM accounts WHERE id = $1`,
-		accountID).Scan(&own, &since); err != nil {
+	var isTester bool
+	if err := q.QueryRow(ctx, `SELECT `+ownLimitSQL+`, coalesce(a.activated_at, a.created_at), a.tester_started_at IS NOT NULL
+		FROM accounts a WHERE a.id = $1`,
+		accountID).Scan(&own, &since, &isTester); err != nil {
 		return SendLimit{Usual: l.Daily}, err
 	}
-	return l.ForAccount(ctx, q, accountID, own, since, now)
+	out, err := l.ForAccount(ctx, q, accountID, own, since, now)
+	if err == nil && isTester && out.LoweredUntil == nil && out.Daily == tester.Daily {
+		r := fmt.Sprintf("Tester accounts send to at most %d people a day.", tester.Daily)
+		out.Reason = &r
+	}
+	return out, err
 }
 
 // thousands writes n with thousands separators: 10,000.

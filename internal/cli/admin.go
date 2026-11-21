@@ -71,10 +71,12 @@ type adminAccount struct {
 		CreatedAt  time.Time `json:"created_at"`
 		Until      time.Time `json:"until"`
 	} `json:"throttles"`
-	Contacts      int64      `json:"contacts"`
-	CreditBalance int64      `json:"credit_balance"`
-	Last30Days    adminRates `json:"last_30_days"`
-	HeldImports   []struct {
+	Contacts      int64 `json:"contacts"`
+	CreditBalance int64 `json:"credit_balance"`
+	// Tester is its tester state (MG-86); nil when it isn't one.
+	Tester      *testerStatus `json:"tester"`
+	Last30Days  adminRates    `json:"last_30_days"`
+	HeldImports []struct {
 		ID               string  `json:"id"`
 		TotalRows        int64   `json:"total_rows"`
 		HoldReason       string  `json:"hold_reason"`
@@ -132,15 +134,16 @@ func (a *App) adminCmd() *cobra.Command {
 		Short: "mailgoose staff tools (admins only)",
 		Long: `Tools for mailgoose staff: find an account, pause or unpause its
 sending, suspend or unsuspend it, review new sign-ups, switch it between
-test mode and full sending, see each account's bounce and complaint rates,
-stop a campaign in flight, approve a held import and grant credits.
+test mode and full sending, make it a tester account, see each account's
+bounce and complaint rates, stop a campaign in flight, approve a held
+import and grant credits.
 They need you signed in with ` + "`mailgoose login`" + ` as an admin; API keys
 are refused. Every action takes --reason and is logged with who did it
 (` + "`mailgoose admin log`" + `).`,
 	}
 	cmd.AddCommand(a.adminFindCmd(), a.adminAccountCmd(), a.adminPauseCmd(true), a.adminPauseCmd(false),
 		a.adminSuspendCmd(true), a.adminSuspendCmd(false), a.adminSignupsCmd(), a.adminReviewCmd(true), a.adminReviewCmd(false),
-		a.adminTestModeCmd(), a.adminSendingModeCmd(true), a.adminSendingModeCmd(false), a.adminDeliverabilityCmd(),
+		a.adminTestModeCmd(), a.adminSendingModeCmd(true), a.adminSendingModeCmd(false), a.adminTesterCmd(), a.adminDeliverabilityCmd(),
 		a.adminStopCmd(), a.adminApproveImportCmd(), a.adminGrantCmd(), a.adminLogCmd())
 	return cmd
 }
@@ -229,6 +232,9 @@ func (a *App) printAdminAccount(acc adminAccount) {
 		limit += " (set for this account)"
 	}
 	fmt.Fprintf(w, "Daily limit:  %s\n", limit)
+	if acc.Tester != nil {
+		fmt.Fprintf(w, "Tester:       %s\n", acc.Tester.adminLine())
+	}
 	fmt.Fprintf(w, "Contacts:     %d\n", acc.Contacts)
 	fmt.Fprintf(w, "Credits:      %d\n", acc.CreditBalance)
 	fmt.Fprintf(w, "Terms:        %s\n", termsLine(acc.TermsVersion, acc.TermsAcceptedAt))
@@ -565,6 +571,7 @@ type accountDeliverability struct {
 	AccountName     string              `json:"account_name"`
 	OwnerEmail      *string             `json:"owner_email"`
 	SendingMode     string              `json:"sending_mode"`
+	TesterUntil     *time.Time          `json:"tester_until"`
 	SendingPausedAt *time.Time          `json:"sending_paused_at"`
 	SuspendedAt     *time.Time          `json:"suspended_at"`
 	ThrottledUntil  *time.Time          `json:"throttled_until"`
@@ -591,6 +598,9 @@ func (d accountDeliverability) state() string {
 	}
 	if d.SendingMode == "test" {
 		s = append(s, "test mode")
+	}
+	if d.TesterUntil != nil {
+		s = append(s, "tester until "+d.TesterUntil.UTC().Format("2006-01-02"))
 	}
 	if len(s) == 0 {
 		return "ok"
@@ -715,6 +725,121 @@ sending to anyone else are skipped, with their credits given back.
 	})
 	c.Flags().StringVar(&reason, "reason", def, "why (logged)")
 	return c
+}
+
+// adminTesterCmd is `mailgoose admin tester grant|revoke` (MG-86).
+func (a *App) adminTesterCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "tester",
+		Short: "Make an account a tester account, or end one",
+		Long: `A tester account is one of the people invited to try mailgoose before
+launch. It sends real campaigns, with full sending, within tight limits:
+500 credits for its life (campaign copies and test sends; SES mailbox
+simulator addresses use none), 100 copies a day, 500 contacts and a
+stricter automatic pause, until its end date.`,
+	}
+
+	var until, reason string
+	var credits int
+	grant := calls("grantTester", &cobra.Command{
+		Use:   "grant <account-id>",
+		Short: "Make an account a tester account, or extend one",
+		Long: `Makes the account a tester account, and gives it full sending. --until is
+when it stops sending: a date (the end of that day, UTC) or an RFC 3339
+time, at most 366 days away; 30 days from now by default. --credits is
+its sends for its life (500 by default). Granting an account that's a
+tester already sets its new end and credits; the credits it used still
+count. Only an account whose sign-up was approved, or never held for
+review, can be one. --reason is logged.`,
+		Example: `  mailgoose admin tester grant 3f1c... --reason "Invited to try staging"
+  mailgoose admin tester grant 3f1c... --until 2027-01-31 --reason "Extended for the beta"`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := adminIDArg(args[0], "an account")
+			if err != nil {
+				return err
+			}
+			if err := needReason(reason); err != nil {
+				return err
+			}
+			body := map[string]any{"reason": reason}
+			if until != "" {
+				t, err := parseUntil(until)
+				if err != nil {
+					return err
+				}
+				body["until"] = t.UTC().Format(time.RFC3339)
+			}
+			if credits != 0 {
+				body["credits"] = credits
+			}
+			var acc adminAccount
+			if err := a.call(cmd.Context(), http.MethodPost, adminAccountPath(id)+"/grant-tester", body, &acc, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(acc)
+				return nil
+			}
+			fmt.Fprintf(a.Stdout, "%s (%s) is a tester account.\n", acc.Name, acc.ID)
+			if acc.Tester != nil {
+				fmt.Fprintf(a.Stdout, "Tester: %s\n", acc.Tester.adminLine())
+			}
+			return nil
+		},
+	})
+	grant.Flags().StringVar(&until, "until", "", "when it stops sending: a date or an RFC 3339 time (default 30 days from now)")
+	grant.Flags().IntVar(&credits, "credits", 0, "its sends for its life, 1 to 10000 (default 500)")
+	grant.Flags().StringVar(&reason, "reason", "Invited to test mailgoose.", "why (logged)")
+
+	var revokeReason string
+	revoke := calls("revokeTester", &cobra.Command{
+		Use:   "revoke <account-id>",
+		Short: "End a tester account",
+		Long: `Ends the account's tester state and puts it in test mode: from now on it
+sends only to its confirmed test addresses and its owner's own address,
+and copies of a campaign already sending to anyone else are skipped. To
+make it a customer afterwards, use ` + "`mailgoose admin allow-full-sending`" + `.
+--reason is logged.`,
+		Example: `  mailgoose admin tester revoke 3f1c... --reason "Testing finished"`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := adminIDArg(args[0], "an account")
+			if err != nil {
+				return err
+			}
+			if err := needReason(revokeReason); err != nil {
+				return err
+			}
+			var acc adminAccount
+			if err := a.call(cmd.Context(), http.MethodPost, adminAccountPath(id)+"/revoke-tester",
+				map[string]any{"reason": revokeReason}, &acc, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(acc)
+				return nil
+			}
+			fmt.Fprintf(a.Stdout, "%s (%s) is no longer a tester account. It's in test mode now.\n", acc.Name, acc.ID)
+			return nil
+		},
+	})
+	revoke.Flags().StringVar(&revokeReason, "reason", "Testing finished.", "why (logged)")
+	cmd.AddCommand(grant, revoke)
+	return cmd
+}
+
+// parseUntil reads --until: a date, meaning the end of that day in UTC, or
+// an RFC 3339 time.
+func parseUntil(v string) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t, nil
+	}
+	if d, err := time.Parse("2006-01-02", v); err == nil {
+		return d.Add(24*time.Hour - time.Second), nil
+	}
+	return time.Time{}, usageError(fmt.Sprintf("--until %q isn't a date.", v),
+		"Use a date like 2027-01-31, or a time like 2027-01-31T17:00:00Z.")
 }
 
 func (a *App) adminStopCmd() *cobra.Command {

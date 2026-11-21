@@ -26,6 +26,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
+	"github.com/gremlin-technologies/mailgoose/internal/tester"
 )
 
 // Actions, as logged.
@@ -47,6 +48,9 @@ const (
 	// Test mode (MG-80).
 	ActionAllowFullSending = "allow_full_sending"
 	ActionSetTestMode      = "set_test_mode"
+	// Tester accounts (MG-86).
+	ActionGrantTester  = "grant_tester"
+	ActionRevokeTester = "revoke_tester"
 )
 
 // Limits on what an admin sends.
@@ -74,6 +78,11 @@ var (
 	// ErrSendingModeUnchanged is allowing full sending to an account that
 	// has it, or putting one in test mode that's in it already (MG-80).
 	ErrSendingModeUnchanged = errors.New("the account is in that sending mode already")
+	// ErrNotApproved is making an account a tester while its sign-up
+	// review waits or was rejected (MG-86).
+	ErrNotApproved = errors.New("the account's sign-up isn't approved")
+	// ErrNotTester is revoking an account that isn't a tester (MG-86).
+	ErrNotTester = tester.ErrNotTester
 )
 
 // InputError is a reason or amount that can't be used.
@@ -351,6 +360,8 @@ type Account struct {
 	// at TermsAcceptedAt (MG-68).
 	TermsVersion    *string    `json:"terms_version"`
 	TermsAcceptedAt *time.Time `json:"terms_accepted_at"`
+	// Tester is its tester state (MG-86); nil when it isn't one.
+	Tester *tester.Status `json:"tester"`
 }
 
 // GetAccount is one account in full.
@@ -368,11 +379,12 @@ func (s *Service) GetAccount(ctx context.Context, id string) (*Account, error) {
 	if err := s.DB.QueryRow(ctx, `
 		SELECT a.daily_send_limit, a.terms_version, a.terms_accepted_at,
 			(SELECT count(*) FROM contacts WHERE account_id = a.id),
-			(SELECT count(*) FROM campaign_recipients WHERE account_id = a.id AND sent_at > $2),
+			(SELECT count(*) FROM campaign_recipients WHERE account_id = a.id AND sent_at > $2 AND NOT simulated),
 			(SELECT count(DISTINCT recipient_id) FROM send_events
-				WHERE account_id = a.id AND occurred_at > $2 AND kind = 'campaign' AND type = 'bounce' AND subtype LIKE 'permanent/%'),
+				WHERE account_id = a.id AND occurred_at > $2 AND kind = 'campaign' AND NOT simulated
+					AND type = 'bounce' AND subtype LIKE 'permanent/%'),
 			(SELECT count(DISTINCT recipient_id) FROM send_events
-				WHERE account_id = a.id AND occurred_at > $2 AND kind = 'campaign' AND type = 'complaint')
+				WHERE account_id = a.id AND occurred_at > $2 AND kind = 'campaign' AND NOT simulated AND type = 'complaint')
 		FROM accounts a WHERE a.id = $1`, id, since).Scan(&a.DailySendLimit, &a.TermsVersion, &a.TermsAcceptedAt, &a.Contacts,
 		&a.Last30Days.Sent, &a.Last30Days.HardBounces, &a.Last30Days.Complaints); err != nil {
 		return nil, err
@@ -384,6 +396,9 @@ func (s *Service) GetAccount(ctx context.Context, id string) (*Account, error) {
 	}
 	a.Balance = sum.Balance
 	if a.SendLimit, err = s.Limits.Account(ctx, s.DB, id, s.now()); err != nil {
+		return nil, err
+	}
+	if a.Tester, err = tester.Load(ctx, s.DB, id, s.now(), false); err != nil {
 		return nil, err
 	}
 	rows, err := s.DB.Query(ctx, `
@@ -744,6 +759,108 @@ func (s *Service) setSendingMode(ctx context.Context, actor Actor, accountID, mo
 			return err
 		}
 		_, err = s.record(ctx, tx, actor, action, &accountID, nil, reason, map[string]any{"from": cur, "to": mode}, now)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return s.GetAccount(ctx, accountID)
+}
+
+// GrantTester makes an account a tester account (MG-86), or changes the
+// end and credits of one: until is when it stops sending (nil is
+// tester.DefaultDays from now), and credits its sends for its life (0 is
+// tester.Credits). Its credits are counted from when it first became a
+// tester, so granting again extends it without a fresh start. It also
+// gets full sending, as a tester sends to people who agreed, not only to
+// test addresses. Only an account whose sign-up was approved, or never
+// held for review (MG-66), and that isn't suspended can be one.
+func (s *Service) GrantTester(ctx context.Context, actor Actor, accountID string, until *time.Time, credits int, reason string) (*Account, error) {
+	reason, err := cleanReason(reason)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	end := now.AddDate(0, 0, tester.DefaultDays)
+	if until != nil {
+		end = until.UTC()
+	}
+	switch {
+	case !end.After(now):
+		return nil, &InputError{Field: "until", Message: "the end date has passed"}
+	case end.After(now.AddDate(0, 0, tester.MaxDays)):
+		return nil, &InputError{Field: "until", Message: fmt.Sprintf("a tester account lasts at most %d days", tester.MaxDays)}
+	}
+	if credits == 0 {
+		credits = tester.Credits
+	}
+	if credits < 1 || credits > tester.MaxCredits {
+		return nil, &InputError{Field: "credits", Message: fmt.Sprintf("credits must be 1 to %d", tester.MaxCredits)}
+	}
+	if err := s.inTx(ctx, func(tx pgx.Tx) error {
+		var review, mode string
+		var suspended bool
+		var started *time.Time
+		err := tx.QueryRow(ctx, `
+			SELECT coalesce(review, ''), suspended_at IS NOT NULL, sending_mode, tester_started_at FROM accounts WHERE id = $1 FOR UPDATE`,
+			accountID).Scan(&review, &suspended, &mode, &started)
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			return ErrNotFound
+		case err != nil:
+			return err
+		case review == "waiting" || review == "rejected":
+			return ErrNotApproved
+		case suspended:
+			return ErrSuspended
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE accounts SET tester_started_at = coalesce(tester_started_at, $2), tester_until = $3, tester_credits = $4,
+				sending_mode = 'full', updated_at = $2
+			WHERE id = $1`, accountID, now, end, credits); err != nil {
+			return err
+		}
+		_, err = s.record(ctx, tx, actor, ActionGrantTester, &accountID, nil, reason,
+			map[string]any{"until": end, "credits": credits, "extended": started != nil, "sending_mode_was": mode}, now)
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return s.GetAccount(ctx, accountID)
+}
+
+// RevokeTester ends an account's tester state (MG-86) and puts it in test
+// mode (MG-80): from now on it sends only to its confirmed test addresses
+// and its owner's address, and copies of a campaign already sending to
+// anyone else are skipped. Making it a customer afterwards is
+// AllowFullSending. Granting it again starts its credits afresh.
+func (s *Service) RevokeTester(ctx context.Context, actor Actor, accountID, reason string) (*Account, error) {
+	reason, err := cleanReason(reason)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.inTx(ctx, func(tx pgx.Tx) error {
+		now := s.now()
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT true FROM accounts WHERE id = $1 FOR UPDATE`, accountID).Scan(&exists); errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		} else if err != nil {
+			return err
+		}
+		st, err := tester.Load(ctx, tx, accountID, now, false)
+		if err != nil {
+			return err
+		}
+		if st == nil {
+			return ErrNotTester
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE accounts SET tester_started_at = NULL, tester_until = NULL, tester_credits = NULL,
+				sending_mode = 'test', updated_at = $2
+			WHERE id = $1`, accountID, now); err != nil {
+			return err
+		}
+		_, err = s.record(ctx, tx, actor, ActionRevokeTester, &accountID, nil, reason,
+			map[string]any{"until": st.Until, "credits": st.Credits, "used": st.Used}, now)
 		return err
 	}); err != nil {
 		return nil, err

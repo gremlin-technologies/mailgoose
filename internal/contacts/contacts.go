@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/mail"
 )
 
 // Statuses (CON-2). Only StatusSubscribed receives campaigns.
@@ -554,15 +555,25 @@ func CountRecipientsOutside(ctx context.Context, q RowQuerier, accountID string,
 	return total, outside, err
 }
 
+// CountSimulatorRecipients counts the audience's contacts now, and how
+// many of them are SES mailbox simulator addresses (MG-86).
+func CountSimulatorRecipients(ctx context.Context, q RowQuerier, accountID string, aud Audience) (total, simulated int, err error) {
+	where, args := recipientsWhere(accountID, aud)
+	err = q.QueryRow(ctx, `SELECT count(*), count(*) FILTER (WHERE `+fmt.Sprintf(mail.SimulatorSQL, "email")+`) FROM contacts WHERE `+where,
+		args...).Scan(&total, &simulated)
+	return total, simulated, err
+}
+
 // SnapshotRecipients fixes a launched campaign's recipients: one
 // campaign_recipients row per contact the audience reaches now, written in
-// tx. It returns how many.
+// tx, with SES mailbox simulator addresses marked (MG-86). It returns how
+// many.
 func SnapshotRecipients(ctx context.Context, tx pgx.Tx, accountID, campaignID string, aud Audience) (int, error) {
 	where, args := recipientsWhere(accountID, aud)
 	args = append(args, campaignID)
 	tag, err := tx.Exec(ctx, fmt.Sprintf(`
-		INSERT INTO campaign_recipients (account_id, campaign_id, contact_id)
-		SELECT account_id, $%d, id FROM contacts WHERE `, len(args))+where, args...)
+		INSERT INTO campaign_recipients (account_id, campaign_id, contact_id, simulated)
+		SELECT account_id, $%d, id, `+fmt.Sprintf(mail.SimulatorSQL, "email")+` FROM contacts WHERE `, len(args))+where, args...)
 	if err != nil {
 		return 0, err
 	}

@@ -594,3 +594,52 @@ func TestValidationNotice(t *testing.T) {
 		t.Errorf("log = %q, want a warning", buf.String())
 	}
 }
+
+// TestSimulatorCopiesDontPause: events for copies to SES's mailbox
+// simulator (MG-86) are stored marked simulated and never pause or throttle
+// the account, as SES leaves them out of its rates; the contact still
+// changes.
+func TestSimulatorCopiesDontPause(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	sim := h.addContact(t, "complaint@simulator.amazonses.com", "subscribed")
+	if _, err := h.db.Exec(ctx, `
+		INSERT INTO campaign_recipients (account_id, campaign_id, contact_id, status, sent_at, message_id, simulated)
+		VALUES ($1, $2, $3, 'sent', now(), 'sim-copy', true)`, h.acc, h.campaign, sim); err != nil {
+		t.Fatal(err)
+	}
+	// A small campaign, where two complaints would pause any account.
+	if _, err := h.db.Exec(ctx, `
+		INSERT INTO campaign_recipients (account_id, campaign_id, status, sent_at, message_id, simulated)
+		SELECT $1, $2, 'sent', now(), 'sim-' || i, true FROM generate_series(1, 600) i`, h.acc, h.campaign); err != nil {
+		t.Fatal(err)
+	}
+	var alerts []sending.AutoPause
+	h.svc.Alert = func(_ context.Context, p sending.AutoPause) { alerts = append(alerts, p) }
+	h.svc.Throttled = func(_ context.Context, th sending.Throttle) { t.Errorf("throttled: %+v", th) }
+	ids := []string{"sim-copy", "sim-1", "sim-2", "sim-3"}
+	for _, id := range ids {
+		if got := h.handle(t, h.payload(t, "complaint", "{{MESSAGE_ID}}", id, "{{ADDRESS}}", "complaint@simulator.amazonses.com")); got != Stored {
+			t.Fatalf("%s: %s", id, got)
+		}
+	}
+	if len(alerts) != 0 {
+		t.Errorf("paused on simulator complaints: %+v", alerts)
+	}
+	var marked int
+	if err := h.db.QueryRow(ctx, `SELECT count(*) FROM send_events WHERE simulated`).Scan(&marked); err != nil || marked != len(ids) {
+		t.Errorf("%d events marked simulated, %v", marked, err)
+	}
+	if c := h.contactState(t, sim); c.status != "complained" {
+		t.Errorf("simulator contact %s, want complained", c.status)
+	}
+	// An event for a simulator address with no send record (a test send) is
+	// marked too.
+	if got := h.handle(t, h.payload(t, "complaint", "{{MESSAGE_ID}}", "test-copy", "{{KIND}}", "test",
+		"{{ADDRESS}}", "complaint@simulator.amazonses.com")); got != Stored {
+		t.Fatalf("test copy: %s", got)
+	}
+	if err := h.db.QueryRow(ctx, `SELECT count(*) FROM send_events WHERE simulated`).Scan(&marked); err != nil || marked != len(ids)+1 {
+		t.Errorf("%d events marked simulated, %v", marked, err)
+	}
+}

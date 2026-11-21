@@ -20,7 +20,7 @@ func adminStub(t *testing.T, bodies map[string]map[string]any) *harness {
 		`"review":"waiting","review_flags":["disposable_domain","ip_burst"],"review_at":"2026-11-01T09:05:00Z","sending_mode":"test","test_addresses_confirmed":2,"test_addresses_pending":1,"created_at":"2026-11-01T09:00:00Z",` +
 		`"daily_send_limit":2000,"send_limit":{"daily":1000,"usual":10000,"reason":"Lowered automatically.","lowered_until":"2026-11-25T10:00:00Z"},` +
 		`"throttles":[{"id":3,"campaign_id":"camp-1","reason":"Lowered automatically: 0.2% marked it as spam.","created_at":"2026-11-18T10:00:00Z","until":"2026-11-25T10:00:00Z"}],` +
-		`"contacts":1200,"credit_balance":9000,"last_30_days":{"sent":1000,"hard_bounces":12,"complaints":4},` +
+		`"contacts":1200,"credit_balance":9000,"tester":{"started_at":"2026-11-18T12:00:00Z","until":"2026-12-18T12:00:00Z","credits":500,"used":120,"left":380,"ended":false},"last_30_days":{"sent":1000,"hard_bounces":12,"complaints":4},` +
 		`"held_imports":[{"id":"imp-1","file_name":null,"total_rows":3000,"hold_reason":"shared_list","status":"done",` +
 		`"list_source":"export","list_source_detail":null,"checks":{"invalid_rows":2,"role_addresses":3,"disposable_addresses":1,"shared_addresses":1800,"shared_account_id":"acc-2"},"created_at":"2026-11-17T09:00:00Z"}],` +
 		`"live_campaigns":[{"id":"camp-1","name":"Bread week","status":"sending","send_at":null,"recipients":1000,"rates":{"sent":1000,"hard_bounces":12,"complaints":4}}],` +
@@ -66,7 +66,7 @@ func TestAdminCommands(t *testing.T) {
 		want []string
 	}{
 		{[]string{"admin", "find", "pat"}, []string{testAccountID, "Pat's Bakery", "pat@example.com", "suspended"}},
-		{[]string{"admin", "account", testAccountID}, []string{"Suspended:", "by staff@example.com: Bought list", "PAUSED", "Phishing reports", "Daily limit:  1000 (THROTTLED until 2026-11-25", "Throttled:    2026-11-18", "0.2% marked it as spam", "1000 sent, 12 hard bounces (1.20%), 4 complaints (0.40%)", "imp-1", "list source export; 2 invalid, 3 role, 1 disposable; 1800 in other accounts' imports, most in account acc-2", "Bread week", "Terms:        version 2026-11-19, accepted 2026-11-0"}},
+		{[]string{"admin", "account", testAccountID}, []string{"Suspended:", "by staff@example.com: Bought list", "PAUSED", "Phishing reports", "Daily limit:  1000 (THROTTLED until 2026-11-25", "Throttled:    2026-11-18", "0.2% marked it as spam", "1000 sent, 12 hard bounces (1.20%), 4 complaints (0.40%)", "imp-1", "list source export; 2 invalid, 3 role, 1 disposable; 1800 in other accounts' imports, most in account acc-2", "Bread week", "Terms:        version 2026-11-19, accepted 2026-11-0", "120 of 500 credits used, 380 left, until 2026-12-18"}},
 		{[]string{"admin", "pause", testAccountID, "--reason", "Phishing reports"}, []string{"Paused sending for Pat's Bakery"}},
 		{[]string{"admin", "unpause", testAccountID, "--reason", "Owner fixed the list"}, []string{"can send again"}},
 		{[]string{"admin", "suspend", testAccountID, "--reason", "Bought list"}, []string{"Suspended Pat's Bakery", "owner has been emailed"}},
