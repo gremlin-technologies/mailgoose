@@ -91,6 +91,13 @@ resource "aws_ecs_task_definition" "this" {
   execution_role_arn       = aws_iam_role.execution.arn
   task_role_arn            = aws_iam_role.task.arn
 
+  # A change here (environment, secrets, CPU, memory) replaces the task
+  # definition. Without this, the replace deregisters the old revision, the
+  # one a rollback would point at (MG-102). Kept revisions cost nothing;
+  # Terraform only forgets them. See infra/README.md, "Rolling back to an
+  # earlier revision".
+  skip_destroy = true
+
   runtime_platform {
     operating_system_family = "LINUX"
     cpu_architecture        = var.cpu_architecture

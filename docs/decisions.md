@@ -4,6 +4,22 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Terraform keeps old ECS task definition revisions (MG-102; reversible default)
+
+An apply that changed the API or worker task definition replaced it and
+deregistered the old revision (the staging API's `:5` went this way during
+the MG-85 apply), which removed the revision a rollback would point at.
+
+- **`skip_destroy = true`** on `aws_ecs_task_definition.this`
+  (`infra/modules/service`), for both services in both environments. On a
+  replace, Terraform registers the new revision and only forgets the old one,
+  which stays registered. Inactive revisions cost nothing.
+- **Rollback** is pointing a service at an earlier revision by hand, or
+  redeploying an older image; `infra/README.md`, "Rolling back to an earlier
+  revision", has the commands.
+- **Not done:** no automatic clean-up of old revisions. To undo, remove the
+  line and apply; revisions kept until then stay until deregistered by hand.
+
 ## 2026-11-21: `.goreleaser.yaml` waits for the owner's merge too (owner decision)
 
 The owner said yes on Nov 21 to adding `.goreleaser.yaml` to the files only
