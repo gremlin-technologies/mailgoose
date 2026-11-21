@@ -1,12 +1,14 @@
-// Writes the public site's policy pages (site/<slug>/index.html) from the
-// app's own policy pages, web/src/pages/Policies.tsx, and the current policy
-// version. Run it from the repository root after changing either:
+// Writes the public site's policy pages (site/<slug>/index.html in the public
+// site repository, gremlin-technologies/mailgoose-public) from the app's own
+// policy pages, web/src/pages/Policies.tsx, and the current policy version.
+// Run it from this repository's root, with the site repository checked out
+// next to it, after changing either, then open a PR there:
 //
-//   node scripts/site/policies.mjs
+//   node scripts/site/policies.mjs    # writes ../mailgoose-public/site/<slug>/index.html
 //
-// web/src/pages/sitePolicies.test.ts fails when the two drift apart.
+// SITE_DIR points it at another checkout's site/ folder.
 import fs from "node:fs";
-const [src, ver, out] = ["web/src/pages/Policies.tsx", "web/src/policyVersions.gen.ts", "site"];
+const [src, ver, out] = ["web/src/pages/Policies.tsx", "web/src/policyVersions.gen.ts", process.env.SITE_DIR || "../mailgoose-public/site"];
 const t = fs.readFileSync(src, "utf8");
 const start = t.indexOf("export const policies: Policy[] = ") + "export const policies: Policy[] = ".length;
 const end = t.indexOf("];", start) + 1;
@@ -41,8 +43,8 @@ ${s.points.map((x) => `        <li>${esc(x)}</li>`).join("\n")}
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
-  <!-- Copied from web/src/pages/Policies.tsx, the app's own policy pages.
-       Keep the two in step: web/src/pages/sitePolicies.test.ts checks it. -->
+  <!-- Generated from the app's own policy pages by scripts/site/policies.mjs
+       in the app repository. Don't edit by hand. -->
   <header class="site-header">
     <div class="wrap">
       <a class="brand" href="/"><img src="/assets/brand/wordmark.png" width="133" height="32" alt="mailgoose"></a>

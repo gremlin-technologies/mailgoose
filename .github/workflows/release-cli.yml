@@ -1,0 +1,63 @@
+name: Release CLI
+
+# Builds the mailgoose CLI with GoReleaser (.goreleaser.yaml) and publishes it:
+# a GitHub Release on the public repository gremlin-technologies/mailgoose-public
+# (archives, .deb, .rpm, checksums), the Homebrew cask in
+# gremlin-technologies/homebrew-tap, and the AUR package mailgoose-bin.
+# Run it from the Actions tab with a version, or push a tag like v0.1.0.
+#
+# Secrets (Settings > Secrets and variables > Actions), see docs/releasing.md:
+#   RELEASE_TOKEN  fine-grained token: Contents read and write on
+#                  mailgoose-public and homebrew-tap. Required.
+#   AUR_KEY        private SSH key of the AUR account. Optional: without it the
+#                  AUR package is built but not pushed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, like v0.1.0. A suffix like -beta.1 marks it pre-release, which the latest-download links and Homebrew skip"
+        required: true
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-cli
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Tag the commit (run by hand)
+        # GoReleaser reads the version from a tag on HEAD. The tag stays on the
+        # runner; the release creates its own tag on mailgoose-public.
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "version must look like v0.1.0 or v0.1.0-alpha.1, got: $VERSION" >&2
+            exit 1
+          fi
+          git tag "$VERSION"
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          AUR_KEY: ${{ secrets.AUR_KEY }}

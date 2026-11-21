@@ -1,72 +1,32 @@
-# The public website at mailgoose.app (site/)
+# The public website at mailgoose.app
 
-Plain HTML and CSS with no build step: a landing page that says what mailgoose
-is and how it keeps email wanted, and static copies of the four policy pages.
-`.github/workflows/pages.yml` publishes `site/` to GitHub Pages on every
-push to `main` that changes it. It needs no AWS access, so it isn't held up by
-the CloudFront or OIDC blocks (`docs/decisions.md`).
+Since Nov 21 the site lives in its own public repository,
+[gremlin-technologies/mailgoose-public](https://github.com/gremlin-technologies/mailgoose-public),
+so this repository can be private (GitHub Pages on a free account serves only
+public repositories). Its README covers the layout, local preview, publishing
+and the DNS records. The knowledge base will go there too, under `site/docs/`
+(mailgoose.app/docs/).
 
-- `site/index.html`: the landing page.
-- `site/assets/tokens.css`: the web app's design tokens and Inter, generated
-  from the light tokens in `web/src/styles.css` (the site is light only). Don't edit it by hand; after changing the app's
-  tokens, run `node scripts/site/tokens.mjs` from the repository root.
-  `web/src/pages/siteTokens.test.ts` fails if they drift. `site.css` lays the
-  page out with them, following `docs/design-system.md`.
-- `site/terms/`, `site/privacy/`, `site/anti-spam/`, `site/dpa/`: generated from the app's own
-  policy pages (`web/src/pages/Policies.tsx`). Don't edit them by hand; change
-  `Policies.tsx`, then run `node scripts/site/policies.mjs` from the repository
-  root. `web/src/pages/sitePolicies.test.ts` fails if they drift. Their text is
-  still the placeholder outline, marked as such on each page.
-- `site/alpha/`: the alpha tester guide at mailgoose.app/alpha/. Hand-written
-  (not generated), unlisted (no link from the site, `noindex`) and meant to be
-  linked from tester invites. It documents only what's on `main`; when a
-  feature ships or changes, update its section, and move items out of
-  "Coming soon" as they land.
-- `site/assets/`: stylesheets, favicons, Inter (`fonts/`, with its licence),
-  the social card, and `brand/` (downsized copies of the logos in
-  `docs/brand/`).
+Two kinds of page there are generated from this repository, so the site says
+what the app says:
 
-Preview locally: `cd site && python3 -m http.server 8000`, then open
-http://localhost:8000.
+- `site/assets/tokens.css`, from the light tokens in `web/src/styles.css`, by
+  `scripts/site/tokens.mjs`.
+- The four policy pages (`site/terms/`, `site/privacy/`, `site/anti-spam/`,
+  `site/dpa/`), from `web/src/pages/Policies.tsx` and the current policy
+  version, by `scripts/site/policies.mjs`.
 
-## One-time setup (the owner)
-
-GitHub Pages is free for this repository because it's public.
-
-1. **Pages source.** In the repository on GitHub: Settings > Pages > Build and
-   deployment > Source: **GitHub Actions**.
-2. **Merge the PR** that adds `site/`. The "Public site" workflow runs and
-   publishes it (Actions tab shows a green run).
-3. **GoDaddy DNS** for mailgoose.app (My Products > mailgoose.app > DNS):
-   - Delete the `A` record(s) for `@` that point to GoDaddy's parking page
-     (value "Parked" or a GoDaddy address). If Domain > Forwarding is set,
-     remove it too.
-   - Add four `A` records, name `@`: `185.199.108.153`, `185.199.109.153`,
-     `185.199.110.153`, `185.199.111.153`.
-   - Add four `AAAA` records, name `@`: `2606:50c0:8000::153`,
-     `2606:50c0:8001::153`, `2606:50c0:8002::153`, `2606:50c0:8003::153`.
-   - Set the `CNAME` record named `www` to `gremlin-technologies.github.io`
-     (edit it if it exists, add it if not).
-   - **Leave everything else alone**, in particular: the `MX` record, the
-     `TXT` records on `@` (SPF and the Microsoft verification), the `CNAME`s
-     `autodiscover`, `lyncdiscover`, `sip`, `enterpriseregistration`,
-     `enterpriseenrollment` and any `selector1._domainkey` /
-     `selector2._domainkey`, the `SRV` records, any `_dmarc` record, the `NS`
-     records for `@` and the `NS` records for `staging` (the Route 53
-     delegation). Those keep Microsoft 365 mail and staging working.
-4. **Custom domain.** Settings > Pages > Custom domain: `mailgoose.app`, Save.
-   Wait for the DNS check to pass.
-5. **HTTPS.** Tick **Enforce HTTPS** once it's clickable (it stays greyed out
-   until GitHub has issued the certificate).
-6. **Optional, recommended:** verify the domain so no other GitHub account can
-   claim it. In the GitHub account settings of `gremlin-technologies` (not the
-   repository): Pages > Add a domain > `mailgoose.app`. Add the `TXT` record
-   it shows at GoDaddy, then click Verify.
-
-Check it's live:
+After changing either source, with the site repository checked out next to
+this one (`../mailgoose-public`; set `SITE_DIR` to point at another checkout's
+`site/` folder):
 
 ```sh
-dig +short mailgoose.app A      # the four 185.199.x.153 addresses
-dig +short mailgoose.app MX     # unchanged: still the Microsoft 365 host
-curl -sI https://mailgoose.app | head -1   # HTTP/2 200
+node scripts/site/tokens.mjs
+node scripts/site/policies.mjs
 ```
+
+Then open a PR in mailgoose-public with the result. `node
+scripts/site/tokens.mjs --check` exits 1 if the site's tokens are out of date.
+
+CLI downloads are published as GitHub Releases on mailgoose-public too; see
+`docs/releasing.md`.
