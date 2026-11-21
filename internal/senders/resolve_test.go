@@ -122,6 +122,22 @@ func TestResolve(t *testing.T) {
 	if h := off.UnverifiedHint("x@example.net"); strings.Contains(h, "sender-addresses") || !strings.Contains(h, "domain add example.net") {
 		t.Errorf("hint off: %s", h)
 	}
+	// With it on, the owner's sign-in address is named as a fix, and the
+	// API routes beside the CLI commands; details carry the From and
+	// whether shared sending is on, for a client's own wording (MG-100).
+	if h := r.UnverifiedHint("x@example.net"); !strings.Contains(h, "sign-in address, which works as it is") ||
+		!strings.Contains(h, "POST /v1/sender-addresses") || !strings.Contains(h, "POST /v1/domains") {
+		t.Errorf("hint on: %s", h)
+	}
+	if h := off.UnverifiedHint("x@example.net"); strings.Contains(h, "sign-in") || !strings.Contains(h, "POST /v1/domains") {
+		t.Errorf("hint off: %s", h)
+	}
+	if d := r.UnverifiedDetails("x@example.net"); d["from_email"] != "x@example.net" || d["shared_sending"] != true {
+		t.Errorf("details on: %v", d)
+	}
+	if d := off.UnverifiedDetails("x@example.net"); d["from_email"] != "x@example.net" || d["shared_sending"] != false {
+		t.Errorf("details off: %v", d)
+	}
 	if r.SharedAddress("pats-bakery") != shared || off.SharedAddress("pats-bakery") != "" {
 		t.Error("SharedAddress")
 	}

@@ -8485,6 +8485,10 @@ components:
         `missing_postal_address`, `missing_subject`, `empty_email`,
         `merge_tag`, `invalid_html`,
         `unsafe_link` with the link in `url`), `message` and `hint`.
+        `unverified_from` also has `from_email`, the From, and
+        `shared_sending`, true when shared sending is on: the owner's own
+        sign-in address then sends as it is, and so does a sender address
+        added with `addSenderAddress` once its link is opened.
         `invalid_test`: `to` has an address that isn't one, or more than 5.
         `test_recipient_not_allowed`: an address in `to` isn't the owner's
         or on a verified sending domain; `details.address` names it.
@@ -8530,7 +8534,8 @@ components:
       description: |
         `not_ready`: the campaign can't launch; `details.problems` lists
         each reason with its `code`, `message` and `hint`: Prepare's
-        (`no_email`, `missing_from`, `unverified_from`,
+        (`no_email`, `missing_from`, `unverified_from` (with `from_email`
+        and `shared_sending`, as for a test),
         `unverified_reply_to` (on the shared sending domain, the Reply-To
         must be a verified sender or on a verified domain),
         `missing_postal_address`, `missing_subject`, `empty_email`,

@@ -252,6 +252,32 @@ describe("draft campaign", () => {
     expect(api.calls.filter((c) => c.path === `${base}/test`).at(-1)?.body).toEqual({});
   });
 
+  it.each([
+    { shared: true, links: ["Sender addresses", "domain"], says: /Send from your sign-in address, pat@example.com, which works as it is/ },
+    { shared: false, links: ["Domains"], says: /Verify its domain on Domains/ },
+  ])("words an unverified From itself, with links, not the CLI hint (MG-100, shared sending $shared)", async ({ shared, links, says }) => {
+    const unverified = {
+      code: "unverified_from",
+      message: "The From address hi@pendingbakery.com isn't on a verified sending domain of this account.",
+      hint: "Verify the address with `mailgoose sender-addresses add hi@pendingbakery.com`.",
+      from_email: "hi@pendingbakery.com",
+      shared_sending: shared,
+    };
+    const api = server(campaign(), {
+      [`POST ${base}/test`]: () => fail(422, "not_ready", "This campaign can't be tested yet.", { problems: [unverified] }),
+    });
+    const user = userEvent.setup();
+    renderApp(`/campaigns/${campaignId}`, api.fetch);
+    await user.click(await screen.findByRole("button", { name: "Send test" }));
+    const item = within(await screen.findByRole("alert")).getByRole("listitem");
+    expect(item.textContent).toMatch(says);
+    expect(item.textContent).not.toContain("mailgoose sender-addresses");
+    expect(item.textContent?.includes("sign-in address")).toBe(shared);
+    expect(within(item).getAllByRole("link").map((a) => [a.textContent, a.getAttribute("href")])).toEqual(
+      links.map((name) => [name, name === "Sender addresses" ? "/sender-addresses" : "/domains"]),
+    );
+  });
+
   it("launches only after the summary is confirmed, sending its code back", async () => {
     const api = server(campaign({ last_test: { at: "2026-11-19T10:00:00Z", version: 1, email_version: 4 } }), {
       [`POST ${base}/launch`]: (b) => {
