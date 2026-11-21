@@ -103,10 +103,16 @@ func (s *Server) testSendError(w http.ResponseWriter, r *http.Request, err error
 			WithDetails(map[string]any{"needed": short.Needed, "credits": st.Credits, "used": st.Used, "left": st.Left,
 				"until": st.Until, "ended": st.Ended}))
 	case errors.As(err, &failed):
-		s.Log.ErrorContext(r.Context(), "test send failed", "err", failed.Err)
+		s.Log.ErrorContext(r.Context(), "test send failed", "err", failed.Err, "counted", failed.Counted)
+		// Only a copy that may have gone counts toward the day's tests
+		// (MG-101); copies after it weren't tried and don't.
+		hint := "Try again in a minute. It wasn't sent, so it doesn't count toward the day's tests."
+		if failed.Counted {
+			hint = "Try again in a minute. It may have gone, so it counts toward the day's tests."
+		}
 		WriteError(w, &Error{Status: http.StatusBadGateway, Code: "test_send_failed",
-			Message: "The test to " + failed.Address + " couldn't be sent; the mail provider refused it or didn't answer.",
-			Hint:    "Try again in a minute. It still counts toward the day's tests."})
+			Message: "The test to " + failed.Address + " couldn't be sent; it was refused, or the mail provider didn't answer.",
+			Hint:    hint, Details: map[string]any{"address": failed.Address, "counted": failed.Counted}})
 	default:
 		// Not found, a campaign past scheduled, or the database.
 		s.campaignError(w, r, err)

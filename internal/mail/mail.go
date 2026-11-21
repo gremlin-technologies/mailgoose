@@ -76,6 +76,26 @@ type retryLater struct{ err error }
 func (e *retryLater) Error() string   { return e.err.Error() }
 func (e *retryLater) Unwrap() []error { return []error{ErrRetryLater, e.err} }
 
+// ErrRejected marks a send that certainly didn't go: the message was
+// invalid, or the mail provider answered and refused it for good, as SES
+// does with a client error such as MessageRejected (MG-101). An error with
+// no answer, such as a timeout, isn't marked: the message may have gone.
+var ErrRejected = errors.New("the mail provider rejected the message")
+
+// rejected is an error marked ErrRejected.
+type rejected struct{ err error }
+
+func (e *rejected) Error() string   { return e.err.Error() }
+func (e *rejected) Unwrap() []error { return []error{ErrRejected, e.err} }
+
+// NotSent reports whether err from a Sender means the message certainly
+// wasn't sent: the Guard refused it (ErrNotThisEnvironment), the provider
+// asked to retry later (ErrRetryLater), or it was rejected (ErrRejected).
+// Any other error may hide a message that went (MG-101).
+func NotSent(err error) bool {
+	return errors.Is(err, ErrNotThisEnvironment) || errors.Is(err, ErrRetryLater) || errors.Is(err, ErrRejected)
+}
+
 // Sender sends a message and returns the provider's message ID.
 type Sender interface {
 	Send(ctx context.Context, m Message) (messageID string, err error)

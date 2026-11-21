@@ -46,7 +46,7 @@ func (s SES) Send(ctx context.Context, m Message) (string, error) {
 		return "", errors.New("ses: no configuration set; set SES_CONFIGURATION_SET")
 	}
 	if err := m.Validate(); err != nil {
-		return "", fmt.Errorf("ses: invalid message: %w", err)
+		return "", &rejected{err: fmt.Errorf("ses: invalid message: %w", err)}
 	}
 
 	body := &types.Body{}
@@ -96,12 +96,26 @@ func (s SES) Send(ctx context.Context, m Message) (string, error) {
 // daily quota exceeded, and sending paused or suspended on the AWS account.
 // The message would go once SES accepts mail again, so callers that can wait
 // (the send pipeline) shouldn't fail it. Every other error is returned as
-// it is.
+// it is, except that an SES client error, its answer that this message
+// won't go, is marked ErrRejected (MG-101). A server fault or no answer at
+// all is left unmarked, since the message may have gone.
 func classifySESError(err error) error {
-	if err == nil || !sesRetryLater(err) {
-		return err
+	switch {
+	case err == nil:
+		return nil
+	case sesRetryLater(err):
+		return &retryLater{err: err}
+	case sesRejected(err):
+		return &rejected{err: err}
 	}
-	return &retryLater{err: err}
+	return err
+}
+
+// sesRejected reports whether SES answered err as a client fault: it
+// refused this message, so it wasn't sent.
+func sesRejected(err error) bool {
+	var api smithy.APIError
+	return errors.As(err, &api) && api.ErrorFault() == smithy.FaultClient
 }
 
 func sesRetryLater(err error) bool {
