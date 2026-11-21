@@ -34,17 +34,19 @@ ${s.points.map((x) => `        <li>${esc(x)}</li>`).join("\n")}
   <meta name="description" content="${esc(p.summary)}">
   <link rel="canonical" href="https://mailgoose.app${p.path}/">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/tokens.css">
   <link rel="stylesheet" href="/assets/site.css">
 </head>
 <body>
+  <a class="skip" href="#main">Skip to content</a>
   <!-- Copied from web/src/pages/Policies.tsx, the app's own policy pages.
        Keep the two in step: web/src/pages/sitePolicies.test.ts checks it. -->
   <header class="site-header">
     <div class="wrap">
-      <a class="logo" href="/"><img class="logo-mark" src="/assets/favicon.svg" alt="" width="30" height="30">mailgoose</a>
+      <a class="brand" href="/">mailgoose</a>
     </div>
   </header>
-  <main class="policy">
+  <main class="policy" id="main">
     <h1>${esc(p.title)}</h1>
     <p class="policy-version">Version ${v.version}, effective ${date(v.effective)}.</p>
     <div class="notice" role="note">

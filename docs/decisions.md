@@ -4,6 +4,27 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Public site restyled to match the app (owner ask; the details are reversible defaults)
+
+The owner asked for another design pass on mailgoose.app so it matches the
+redesigned app. The copy is unchanged; this is a styling pass.
+
+- **One set of tokens.** `site/assets/tokens.css` is generated from the app's
+  `web/src/styles.css` by `scripts/site/tokens.mjs`, and
+  `web/src/pages/siteTokens.test.ts` fails if the two drift. `site.css` only
+  lays them out, with the app's rules: white pages, near-black text, the blue
+  for actions and state, hairline-and-shadow cards, 120ms color changes.
+- **Inter**, self-hosted from the same `@fontsource-variable/inter` file the
+  app uses (latin subset), with its licence beside it.
+- **Dark mode follows the system**, as in the app, because the tokens carry
+  it. Default; dropping it means a light-only tokens file for the site.
+- **Wordmark.** The site uses the app's wordmark (the word and the orange
+  dot). MG-84's goose mark replaces the dot in both once it lands; the
+  favicon is unchanged until then.
+- **Small markup changes:** a skip link, Lucide icons on the feature cards
+  (the ones the app's menu uses), the CLI sample in a terminal card, and the
+  mascot on the 404 page (as `docs/brand.md` suggests).
+
 ## 2026-11-20: Per-customer deliverability report (MG-82, owner decision; details are reversible defaults)
 
 The owner decided to show each customer's bounce and complaint rates from

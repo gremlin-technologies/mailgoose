@@ -155,7 +155,14 @@ asks for its details first, and the HTML email editor keeps its old layout.
   sign-in page, empty states and the 404 page.
 - **Toasts, menus and dialogs** don't exist yet; `--shadow-pop` is ready for
   them.
-- **The public site** in `site/` has its own stylesheet and was not restyled.
+
+## The public site
+
+`site/` (mailgoose.app) uses these tokens too: `scripts/site/tokens.mjs`
+copies the `:root` blocks into `site/assets/tokens.css`, and
+`web/src/pages/siteTokens.test.ts` fails if they drift. After changing a token
+here, run `node scripts/site/tokens.mjs`. The site's own stylesheet,
+`site/assets/site.css`, follows the same rules, a size up for a landing page.
 
 ## Open questions
 

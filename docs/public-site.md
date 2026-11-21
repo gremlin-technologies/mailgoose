@@ -6,14 +6,19 @@ is and how it keeps email wanted, and static copies of the four policy pages.
 push to `main` that changes it. It needs no AWS access, so it isn't held up by
 the CloudFront or OIDC blocks (`docs/decisions.md`).
 
-- `site/index.html`: the landing page. Colors from `docs/brand.md`.
+- `site/index.html`: the landing page.
+- `site/assets/tokens.css`: the web app's design tokens and Inter, generated
+  from `web/src/styles.css`. Don't edit it by hand; after changing the app's
+  tokens, run `node scripts/site/tokens.mjs` from the repository root.
+  `web/src/pages/siteTokens.test.ts` fails if they drift. `site.css` lays the
+  page out with them, following `docs/design-system.md`.
 - `site/terms/`, `site/privacy/`, `site/anti-spam/`, `site/dpa/`: generated from the app's own
   policy pages (`web/src/pages/Policies.tsx`). Don't edit them by hand; change
   `Policies.tsx`, then run `node scripts/site/policies.mjs` from the repository
   root. `web/src/pages/sitePolicies.test.ts` fails if they drift. Their text is
   still the placeholder outline, marked as such on each page.
-- `site/assets/`: stylesheet, favicon and two downsized copies of
-  `docs/brand/mascot.png`.
+- `site/assets/`: stylesheets, favicon, Inter (`fonts/`, with its licence) and
+  two downsized copies of `docs/brand/mascot.png`.
 
 Preview locally: `cd site && python3 -m http.server 8000`, then open
 http://localhost:8000.
