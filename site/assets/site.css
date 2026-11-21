@@ -62,26 +62,11 @@ code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospac
   html { scroll-behavior: auto; }
 }
 
-/* The wordmark: the app's, word for word (.brand in web/src/styles.css).
-   MG-84 swaps the orange dot for the goose mark; until then this is the
-   placeholder. */
-.brand {
-  color: var(--text);
-  font-weight: 700;
-  font-size: 1.25rem;
-  letter-spacing: -0.03em;
-  text-decoration: none;
-}
+/* The wordmark: the goose head and the word, as in the app's side menu. A
+   <picture> swaps in the light-text version in dark mode. */
+.brand { display: inline-flex; align-items: center; text-decoration: none; }
 .brand:hover { text-decoration: none; }
-.brand::after {
-  content: "";
-  display: inline-block;
-  width: 0.38em;
-  height: 0.38em;
-  margin-left: 0.1em;
-  border-radius: 50%;
-  background: var(--brand-mark);
-}
+.brand img { display: block; height: 2rem; width: auto; }
 
 /* Header */
 .site-header {
@@ -183,11 +168,15 @@ h3 { font-size: 1rem; line-height: 1.4; letter-spacing: -0.01em; margin: 0 0 0.3
 .button-note { font-size: 0.875rem; color: var(--muted); margin: 0; }
 .hero-art {
   margin: 0;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.5rem;
   border-radius: var(--radius-lg);
-  overflow: hidden;
   border: 1px solid var(--border);
-  box-shadow: var(--shadow-pop);
+  background: var(--surface-subtle);
+  box-shadow: var(--shadow-card);
 }
+.hero-art img { width: auto; max-height: 26rem; }
 
 /* Sections */
 .band { padding: 5rem 0; border-top: 1px solid var(--border); }
@@ -348,18 +337,17 @@ h3 { font-size: 1rem; line-height: 1.4; letter-spacing: -0.01em; margin: 0 0 0.3
 
 .lost { text-align: center; }
 .lost img {
-  width: min(22rem, 100%);
+  width: auto;
+  height: 14rem;
   margin: 0 auto 2rem;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-card);
 }
 
 /* Small screens */
 @media (max-width: 860px) {
   .hero { padding: 2.5rem 0 3.5rem; }
   .hero .wrap, .split { grid-template-columns: 1fr; gap: 2.5rem; }
-  .hero-art { order: -1; }
+  .hero-art { order: -1; padding: 1.5rem; }
+  .hero-art img { max-height: 16rem; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .band { padding: 3.5rem 0; }
   .section-head { margin-bottom: 2rem; }

@@ -73,9 +73,11 @@ scope; they only show where an idea came from.
   mode sends only to up to 5 confirmed test addresses plus the owner's own.
   New accounts start in test mode while `NEW_ACCOUNTS_TEST_MODE` is on (the
   default); prod turns it off before launch. Admins switch accounts.
-- Brand (Nov 18): the goose in `docs/brand/mascot.png` is the mascot and the
-  UI palette comes from it; modern and sleek, but simple to use. See
-  `docs/brand.md`.
+- Brand (Nov 18): the goose is the mascot and the UI palette comes from it;
+  modern and sleek, but simple to use. Logos (Nov 21, the owner's):
+  `docs/brand/wordmark.png` (head and word; light-text version for dark mode)
+  in the app's side menu and the site header, `docs/brand/goose.png` wherever
+  the goose stands alone, the head as favicon. See `docs/brand.md`.
 - UI look (Nov 20): white pages, near-black text, the periwinkle blue only for
   actions and state, hairline-and-shadow depth, 120ms transitions, Lucide icons
   in the side menu. See `docs/design-system.md`.

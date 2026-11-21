@@ -26,8 +26,11 @@ export function AppLayout() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <NavLink to="/" className="brand">
-          mailgoose
+        <NavLink to="/" className="brand-logo">
+          <picture>
+            <source srcSet="/brand/wordmark-light.png" media="(prefers-color-scheme: dark)" />
+            <img src="/brand/wordmark.png" width={116} height={28} alt="mailgoose" />
+          </picture>
         </NavLink>
         {session && (
           <p className="account" title={session.user.email}>

@@ -509,8 +509,19 @@ progress {
   border-right: 1px solid var(--border);
 }
 
-.sidebar .brand {
+/* The logo in the side menu: the goose head and the word. The <picture>
+   swaps in the light-text version in dark mode. */
+.brand-logo {
+  display: flex;
+  align-self: flex-start;
   padding: 0 0.625rem;
+  border-radius: var(--radius-sm);
+}
+
+.brand-logo img {
+  display: block;
+  height: 1.75rem;
+  width: auto;
 }
 
 .account {

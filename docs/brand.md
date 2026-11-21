@@ -3,7 +3,22 @@
 The mailgoose mascot and where the UI's colors come from. The web app and
 editor tickets (MG-41 onward) build their design tokens from this file.
 
-![The mailgoose mascot: a white goose carrying a brown mail satchel, on a periwinkle background](brand/mascot.png)
+![The mailgoose wordmark: the goose's head in a blue mail carrier's cap, then the word mailgoose](brand/wordmark.png)
+
+## Logos (Nov 21, the owner's)
+
+- `brand/wordmark.png`: the goose's head in a mail carrier's cap, then the word
+  "mailgoose" in dark charcoal. `brand/wordmark-light.png` is the same with
+  light text, for dark backgrounds. Used in the app's side menu and the public
+  site's header.
+- `brand/goose.png`: the whole goose, walking, with a satchel of letters. Used
+  wherever the goose appears on its own: the site's hero and 404 page.
+- The favicons (app and site) are the head from the wordmark, cropped square.
+
+These are transparent cut-outs of the owner's artwork, which came on black.
+The web copies (`web/public/brand/`, `site/assets/brand/`, the favicons) are
+downsized and palette-compressed from these. `brand/mascot.png` is the earlier
+mascot and is no longer used.
 
 ## Direction
 

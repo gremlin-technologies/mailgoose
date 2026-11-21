@@ -17,8 +17,9 @@ the CloudFront or OIDC blocks (`docs/decisions.md`).
   `Policies.tsx`, then run `node scripts/site/policies.mjs` from the repository
   root. `web/src/pages/sitePolicies.test.ts` fails if they drift. Their text is
   still the placeholder outline, marked as such on each page.
-- `site/assets/`: stylesheets, favicon, Inter (`fonts/`, with its licence) and
-  two downsized copies of `docs/brand/mascot.png`.
+- `site/assets/`: stylesheets, favicons, Inter (`fonts/`, with its licence),
+  the social card, and `brand/` (downsized copies of the logos in
+  `docs/brand/`).
 
 Preview locally: `cd site && python3 -m http.server 8000`, then open
 http://localhost:8000.

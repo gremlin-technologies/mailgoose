@@ -52,7 +52,7 @@ background pair against WCAG 2.2 AA, in both modes.
 | `--accent` | `#5562a3` | Primary button, links, focus, active icon |
 | `--accent-hover` | `#47528a` | Primary hover |
 | `--accent-soft` / `-text` | `#eff1fb` / `#3f4a85` | Selected choice, info badge, next step |
-| `--brand-mark` | `#f68a3f` | The dot in the wordmark. Decoration only. |
+| `--brand-mark` | `#f68a3f` | The dot after the text wordmark on the sign-in and policy pages. Decoration only. |
 
 Status colors (`good`, `warn`, `error`, `danger`) are unchanged in role and
 used only for badges, notices and destructive actions.
@@ -83,7 +83,8 @@ the app; the mascot keeps them.
 
 ## Components
 
-- **Side menu.** 240px, on `--surface-subtle`. The wordmark, then an account
+- **Side menu.** 240px, on `--surface-subtle`. The logo (`brand/wordmark.png`,
+  28px tall, light-text version in dark mode), then an account
   box, then the menu in three runs: Dashboard on its own, **Marketing**
   (Emails, Campaigns, Contacts, Tags, Signup forms) and **Account** (Domains,
   API keys, Credits and billing, Settings). The selected page is a white pill

@@ -4,7 +4,7 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
-## 2026-11-21: Public site restyled to match the app (owner ask; the details are reversible defaults)
+## 2026-11-21: Public site restyled to match the app, and new logos (owner ask; the details are reversible defaults)
 
 The owner asked for another design pass on mailgoose.app so it matches the
 redesigned app. The copy is unchanged; this is a styling pass.
@@ -18,12 +18,16 @@ redesigned app. The copy is unchanged; this is a styling pass.
   app uses (latin subset), with its licence beside it.
 - **Dark mode follows the system**, as in the app, because the tokens carry
   it. Default; dropping it means a light-only tokens file for the site.
-- **Wordmark.** The site uses the app's wordmark (the word and the orange
-  dot). MG-84's goose mark replaces the dot in both once it lands; the
-  favicon is unchanged until then.
+- **New logos (owner's, added at the owner's ask).** The wordmark (goose
+  head and word) replaces the text wordmark in the app's side menu and the
+  site header, with a light-text version in dark mode. The whole goose
+  replaces the old mascot on the site's hero, 404 page and social card. The
+  head, cropped square, is the favicon for both. Files in `docs/brand/`. This
+  covers the logo part of MG-84. The sign-in and policy pages in the app keep
+  the text wordmark for now.
 - **Small markup changes:** a skip link, Lucide icons on the feature cards
   (the ones the app's menu uses), the CLI sample in a terminal card, and the
-  mascot on the 404 page (as `docs/brand.md` suggests).
+  goose on the 404 page (as `docs/brand.md` suggests).
 
 ## 2026-11-20: Per-customer deliverability report (MG-82, owner decision; details are reversible defaults)
 

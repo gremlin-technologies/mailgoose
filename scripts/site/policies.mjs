@@ -33,7 +33,9 @@ ${s.points.map((x) => `        <li>${esc(x)}</li>`).join("\n")}
   <title>${esc(p.title)} | mailgoose</title>
   <meta name="description" content="${esc(p.summary)}">
   <link rel="canonical" href="https://mailgoose.app${p.path}/">
-  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="/assets/icon-192.png" sizes="192x192" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
   <link rel="stylesheet" href="/assets/tokens.css">
   <link rel="stylesheet" href="/assets/site.css">
 </head>
@@ -43,7 +45,7 @@ ${s.points.map((x) => `        <li>${esc(x)}</li>`).join("\n")}
        Keep the two in step: web/src/pages/sitePolicies.test.ts checks it. -->
   <header class="site-header">
     <div class="wrap">
-      <a class="brand" href="/">mailgoose</a>
+      <a class="brand" href="/"><picture><source srcset="/assets/brand/wordmark-light.png" media="(prefers-color-scheme: dark)"><img src="/assets/brand/wordmark.png" width="133" height="32" alt="mailgoose"></picture></a>
     </div>
   </header>
   <main class="policy" id="main">
