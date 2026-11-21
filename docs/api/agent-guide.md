@@ -56,7 +56,10 @@ prints DNS records the person must add at their DNS host, and
 
 A domain is optional where `mailgoose account get` shows a `Shared From`.
 Then a From address the person has proved they own can send without one:
-their sign-in address, or one they confirm by the link emailed to it.
+their sign-in address, or one they confirm by the link emailed to it. With
+no From set on the email or the account, it goes as their sign-in address
+(`default_from_email` in `mailgoose account get --json`), and tests and
+launch summaries say so (`default_from`).
 
 ```sh
 mailgoose sender-addresses add hello@example.com   # emails it a confirm link

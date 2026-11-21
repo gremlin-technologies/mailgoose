@@ -367,6 +367,154 @@ func TestSharedSendingThroughTheAPI(t *testing.T) {
 	}
 }
 
+// TestSharedSendingDefaultFrom: with shared sending on and no verified
+// domain, a campaign whose email and account set no From tests and launches
+// as the owner's sign-in address: from the account's slug on the shared
+// domain, with replies to that address, and the account, test result,
+// email check and launch summary say so (MG-108). With shared sending off,
+// or a verified domain, a missing From is still refused.
+func TestSharedSendingDefaultFrom(t *testing.T) {
+	noFrom := func(t *testing.T, srv *Server) (http.Handler, *pgxpool.Pool, string) {
+		t.Helper()
+		h := srv.Handler()
+		fullKey(func(*testing.T) *Server { return srv })(t)
+		sharedCampaign(t, h)
+		v, _ := testDBs.Load(t)
+		db := v.(*pgxpool.Pool)
+		id, _ := addedCampaigns.Load(t)
+		if _, err := db.Exec(t.Context(), `UPDATE accounts SET from_email = NULL WHERE id = (SELECT account_id FROM campaigns WHERE id = $1)`, id); err != nil {
+			t.Fatal(err)
+		}
+		return h, db, id.(string)
+	}
+	refused := func(t *testing.T, h http.Handler) {
+		t.Helper()
+		rec := do(t, h, bearer(campaignTest(""))(t))
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), `"code":"missing_from"`) {
+			t.Errorf("test: %d %s", rec.Code, rec.Body)
+		}
+		rec = do(t, h, bearer(emailPath(http.MethodPost, "/check", ""))(t))
+		var a checkAnswer
+		if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
+			t.Fatal(err)
+		}
+		if errs, _ := a.codes(); !strings.Contains(errs, "missing_from") {
+			t.Errorf("check: %s", rec.Body)
+		}
+		rec = do(t, h, bearer(request(http.MethodGet, "/v1/account"))(t))
+		if !strings.Contains(rec.Body.String(), `"default_from_email":null`) || !strings.Contains(rec.Body.String(), `"from_email":null`) {
+			t.Errorf("account: %s", rec.Body)
+		}
+	}
+
+	t.Run("shared on, no domain", func(t *testing.T) {
+		srv := sharedServer(t)
+		h, db, id := noFrom(t, srv)
+		shared := slugOf(t) + "@" + sharedDomain
+		v, _ := outboxes.Load(t)
+		outbox := v.(*mail.Fake)
+		outbox.Reset()
+
+		rec := do(t, h, bearer(request(http.MethodGet, "/v1/account"))(t))
+		if !strings.Contains(rec.Body.String(), `"default_from_email":"key@example.com"`) || !strings.Contains(rec.Body.String(), `"from_email":null`) {
+			t.Errorf("account: %s", rec.Body)
+		}
+
+		rec = do(t, h, bearer(campaignTest(""))(t))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("test: %d %s", rec.Code, rec.Body)
+		}
+		for _, want := range []string{`"shared_domain":true`, `"default_from":true`, `"sender":"key@example.com"`,
+			`"from":{"email":"` + shared + `","name":"Pat's Bakery"}`, `"reply_to":[{"email":"key@example.com","name":""}]`} {
+			if !strings.Contains(rec.Body.String(), want) {
+				t.Errorf("test result lacks %s: %s", want, rec.Body)
+			}
+		}
+		sent := outbox.Sent()
+		if len(sent) != 1 || sent[0].Message.From.Email != shared || sent[0].Message.From.Name != "Pat's Bakery" ||
+			len(sent[0].Message.ReplyTo) != 1 || sent[0].Message.ReplyTo[0].Email != "key@example.com" {
+			t.Fatalf("sent %+v", sent)
+		}
+
+		rec = do(t, h, bearer(emailPath(http.MethodPost, "/check", ""))(t))
+		var a checkAnswer
+		if err := json.Unmarshal(rec.Body.Bytes(), &a); err != nil {
+			t.Fatal(err)
+		}
+		if errs, warns := a.codes(); errs != "" || !strings.Contains(warns, "shared_domain") {
+			t.Errorf("check: errors %q, warnings %q", errs, warns)
+		}
+		if !strings.Contains(rec.Body.String(), "No From is set on the email or the account, so it goes as your sign-in address, key@example.com.") ||
+			!strings.Contains(rec.Body.String(), "This email goes from "+shared) {
+			t.Errorf("check doesn't name the default: %s", rec.Body)
+		}
+
+		addedContact(t, h)
+		if _, err := db.Exec(t.Context(), `
+			INSERT INTO credit_transactions (account_id, type, amount, expires_at)
+			SELECT account_id, 'purchase', 100, now() + interval '1 year' FROM campaigns WHERE id = $1`, id); err != nil {
+			t.Fatal(err)
+		}
+		rec = do(t, h, bearer(campaignLaunch(""))(t))
+		for _, want := range []string{`"shared_domain":true`, `"default_from":true`, `"sender":"key@example.com"`, `"email":"` + shared + `"`,
+			`"reply_to":[{"email":"key@example.com","name":""}]`} {
+			if !strings.Contains(rec.Body.String(), want) {
+				t.Errorf("summary lacks %s: %d %s", want, rec.Code, rec.Body)
+			}
+		}
+		code := launchCode(t, rec)
+		if rec := do(t, h, bearer(campaignLaunch(`{"confirm":"`+code+`"}`))(t)); rec.Code != http.StatusOK && rec.Code != http.StatusAccepted {
+			t.Fatalf("launch: %d %s", rec.Code, rec.Body)
+		}
+		var cp struct {
+			From    mail.Address   `json:"from"`
+			ReplyTo []mail.Address `json:"reply_to"`
+		}
+		if err := db.QueryRow(t.Context(), `SELECT launch->'from', launch->'reply_to' FROM campaigns WHERE id = $1`,
+			id).Scan(&cp.From, &cp.ReplyTo); err != nil {
+			t.Fatal(err)
+		}
+		if cp.From.Email != shared || cp.From.Name != "Pat's Bakery" || len(cp.ReplyTo) != 1 || cp.ReplyTo[0].Email != "key@example.com" {
+			t.Errorf("the launched copy goes from %+v, reply-to %+v", cp.From, cp.ReplyTo)
+		}
+		// Nothing was stored: the account's From is still unset.
+		var from *string
+		if err := db.QueryRow(t.Context(), `SELECT from_email FROM accounts WHERE id = (SELECT account_id FROM campaigns WHERE id = $1)`, id).Scan(&from); err != nil || from != nil {
+			t.Errorf("from_email = %v, %v", from, err)
+		}
+	})
+
+	t.Run("an explicit From isn't a default", func(t *testing.T) {
+		srv := sharedServer(t)
+		h := srv.Handler()
+		fullKey(func(*testing.T) *Server { return srv })(t)
+		sharedCampaign(t, h)
+		rec := do(t, h, bearer(campaignTest(""))(t))
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"default_from":false`) {
+			t.Errorf("test: %d %s", rec.Code, rec.Body)
+		}
+		rec = do(t, h, bearer(emailPath(http.MethodPost, "/check", ""))(t))
+		if strings.Contains(rec.Body.String(), "No From is set") {
+			t.Errorf("check: %s", rec.Body)
+		}
+	})
+
+	t.Run("shared off", func(t *testing.T) {
+		h, _, _ := noFrom(t, authServer(t))
+		refused(t, h)
+	})
+
+	t.Run("verified domain", func(t *testing.T) {
+		h, db, id := noFrom(t, sharedServer(t))
+		if _, err := db.Exec(t.Context(), `
+			INSERT INTO domains (account_id, name, mail_from, created_at, check_until, status)
+			SELECT account_id, 'patsbakery.example', 'bounce', now(), now(), 'verified' FROM campaigns WHERE id = $1`, id); err != nil {
+			t.Fatal(err)
+		}
+		refused(t, h)
+	})
+}
+
 // TestSharedSendingRefusals: a From nobody verified, or a Reply-To the
 // shared domain can't carry, stops a test with hints that name both fixes;
 // with shared sending off the wording is as before (MG-85).

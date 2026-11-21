@@ -56,8 +56,9 @@ func (s *Server) CheckEmail(w http.ResponseWriter, r *http.Request, id string) {
 	if n := strings.TrimSpace(e.Document.Settings.FromName); n != "" {
 		fromName = n
 	}
-	// Who it really goes from is worked out as a send would (MG-85).
-	if in.FromEmail != "" && s.Domains != nil {
+	// Who it really goes from is worked out as a send would (MG-85),
+	// including the default for a missing From (MG-108).
+	if s.Domains != nil {
 		var replyTo string
 		if rt := e.Document.Settings.ReplyTo; rt != nil {
 			replyTo = *rt
@@ -66,8 +67,13 @@ func (s *Server) CheckEmail(w http.ResponseWriter, r *http.Request, id string) {
 		sender, err := res.Resolve(r.Context(), c.AccountID, mail.Address{Name: fromName, Email: in.FromEmail}, replyTo)
 		var badReplyTo *senders.ReplyToError
 		switch {
+		case errors.Is(err, senders.ErrNoFrom):
+			// missing_from, as before.
 		case err == nil:
 			in.FromVerified = true
+			if sender.Default {
+				in.FromEmail, in.DefaultFrom = sender.Address, true
+			}
 			if sender.Shared {
 				in.SharedFrom, in.SharedName = sender.From.Email, sender.From.Name
 				in.SharedReplyTo = sender.ReplyTo[0].Email

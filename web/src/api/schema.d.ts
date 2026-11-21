@@ -1662,7 +1662,10 @@ export interface paths {
          *     is false when there are errors.
          *
          *     Error codes: `missing_subject`, `missing_from` (no From on the email
-         *     or the account), `unverified_from` (the From isn't on a verified
+         *     or the account, where no default applies: with shared sending on
+         *     and no verified domain on the account, a missing From is the
+         *     owner's sign-in address, and the check warns `shared_domain`
+         *     instead (MG-108)), `unverified_from` (the From isn't on a verified
          *     sending domain, nor, with shared sending on, a verified sender
          *     address), `unverified_reply_to` (the email would go from the shared
          *     sending domain, and its Reply-To isn't a verified sender or on a
@@ -2799,6 +2802,18 @@ export interface components {
              * @example pats-bakery@send.mailgoose.example
              */
             shared_address: string | null;
+            /**
+             * @description The address an email goes as when neither it nor the account
+             *     sets a From (MG-108): the owner's own sign-in address, when the
+             *     server has shared sending on and the account has no verified
+             *     domain of its own. Such an email goes from `shared_address`,
+             *     under the account's name, with replies to this address. Null
+             *     when shared sending is off or the account has a verified
+             *     domain, where a missing From is refused (`missing_from`).
+             *     Worked out when read, not stored: `from_email` stays null.
+             * @example owner@example.com
+             */
+            default_from_email: string | null;
             /** Format: date-time */
             created_at: string;
         };
@@ -3976,6 +3991,15 @@ export interface components {
             shared_domain: boolean;
             /** @description The verified address the email was set to go from, when `shared_domain`; null otherwise. */
             sender: string | null;
+            /**
+             * @description True when neither the email nor the account sets a From, so the
+             *     test went as the owner's own sign-in address (`sender`) by
+             *     default (MG-108): from the account's shared address, with
+             *     replies to the sign-in address. Only with shared sending on and
+             *     no verified domain on the account; otherwise a missing From is
+             *     refused with `missing_from`.
+             */
+            default_from: boolean;
         };
         MailAddress: {
             name: string;
@@ -4946,12 +4970,15 @@ export interface components {
         /**
          * @description `confirmation_required`: nothing was launched. `details.summary`
          *     (`campaign_id`, `name`, `subject`, `from`, `reply_to`,
-         *     `shared_domain`, `sender`, `recipient_count`, `send_at`, `credits`,
-         *     `balance`, `warnings`) is what the person confirms. `shared_domain`
-         *     is true when the campaign goes from mailgoose's shared sending
-         *     domain (MG-85) because its From isn't on a verified domain: `from`
-         *     is then the account's shared address, and `sender` the verified
-         *     address it was set to go from (null otherwise). Show it, with a
+         *     `shared_domain`, `sender`, `default_from`, `recipient_count`,
+         *     `send_at`, `credits`, `balance`, `warnings`) is what the person
+         *     confirms. `shared_domain` is true when the campaign goes from
+         *     mailgoose's shared sending domain (MG-85) because its From isn't on
+         *     a verified domain: `from` is then the account's shared address, and
+         *     `sender` the verified address it was set to go from (null
+         *     otherwise). `default_from` is true when neither the email nor the
+         *     account sets a From, so it goes as the owner's sign-in address
+         *     (`sender`) by default (MG-108), with replies to it. Show it, with a
          *     nudge to add the sender's domain; `details.code` the code that launches it
          *     once they say yes, and `details.expires_at` when the code stops
          *     working. `campaign_locked`: the campaign isn't a draft and wasn't

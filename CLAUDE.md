@@ -107,7 +107,9 @@ scope; they only show where an idea came from.
   MG-98 (Nov 21): there, mail always goes under the account's name (sign-up
   and rename refuse names with `@`, domain-shaped names, and well-known
   brands and payment terms), and an account with no verified domain stays at
-  the new-account limit (1,000) until it adds one.
+  the new-account limit (1,000) until it adds one. MG-108 (Nov 21): there,
+  a missing From (none on the email or the account) is the owner's sign-in
+  address, worked out when read, not stored.
 - SES backpressure (Nov 21, MG-87): SES throttling, quota and
   paused-sending errors leave copies queued for a minute instead of failing
   them, and `PLATFORM_DAILY_SEND_LIMIT` (default 45,000) caps campaign

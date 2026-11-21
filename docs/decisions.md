@@ -4,6 +4,44 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: A no-domain account's missing From is its sign-in address (MG-108, owner decision; the details are reversible defaults)
+
+From the MG-85 staging check: with `SHARED_SENDING_DOMAIN` set, an account
+with no verified domain could already send from the shared domain with its
+owner's sign-in address as the From, but an email with no From, on an
+account with no default From, was refused with `missing_from` and a hint
+that didn't mention it. The owner said yes on Nov 21: there, a missing From
+defaults to the owner's sign-in address. The mail goes from `<sending
+slug>@<shared domain>` under the account's name (MG-98), with the sign-in
+address as Reply-To, exactly as when that address is set.
+
+- **One place.** `senders.Resolver` applies it (`DefaultFrom`, and
+  `Resolve` with an empty From), so test sends, launches, the email check,
+  form confirmation emails and a form's `no_verified_from` problem agree.
+  Shared sending off, or an account with a verified domain: no default, and
+  a missing From is still `missing_from` (and still stops a double opt-in
+  form).
+- **Worked out when the From is read, not stored.** `from_email` stays null
+  on the account and the email, so adding a domain or turning shared
+  sending off takes effect at the next read. A launch
+  keeps the From it was confirmed with, as for any From.
+- **Said.** The test-send answer and the launch summary gain `default_from`
+  (true when the default was used; `from`, `reply_to` and `sender` already
+  name the shared address and the sign-in address). The account answer
+  gains `default_from_email`: the sign-in address when the default applies,
+  null otherwise. The CLI's `campaign test` and launch summary print "No
+  From is set on the email or the account, so it goes as your sign-in
+  address, ..." with how to set one, above the shared-domain nudge, and
+  `account get` shows the empty From as going as the sign-in address. The
+  email check's `shared_domain` warning starts with the same sentence.
+- **Web app.** The Settings page's empty Default From address shows the
+  sign-in address as its placeholder, with a note under it; the test result
+  and the launch summary's shared-domain note say no From is set, linking
+  to Settings. The designer's own From field is unchanged.
+- **Unchanged:** an explicit From or Reply-To is resolved and checked as
+  before (MG-85); the email's own From name is still never used on the
+  shared domain; no migration.
+
 ## 2026-11-21: `.goreleaser.yaml` waits for the owner's merge too (owner decision)
 
 The owner said yes on Nov 21 to adding `.goreleaser.yaml` to the files only
