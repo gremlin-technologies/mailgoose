@@ -22,8 +22,9 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-const light = tokens(css.slice(css.indexOf(":root {"), css.indexOf("@media (prefers-color-scheme: dark)")));
-const dark = { ...light, ...tokens(css.slice(css.indexOf("@media (prefers-color-scheme: dark)"), css.indexOf("* {"))) };
+const darkStart = css.indexOf(':root[data-theme="dark"]');
+const light = tokens(css.slice(css.indexOf(":root {"), darkStart));
+const dark = { ...light, ...tokens(css.slice(darkStart, css.indexOf("* {"))) };
 
 // Every pair the app draws, and the WCAG 2.2 AA ratio it needs: 4.5 for
 // text, 3 for the edges of controls and the focus ring.

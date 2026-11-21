@@ -9,8 +9,8 @@ editor tickets (MG-41 onward) build their design tokens from this file.
 
 - `brand/wordmark.png`: the goose's head in a mail carrier's cap, then the word
   "mailgoose" in dark charcoal. `brand/wordmark-light.png` is the same with
-  light text, for dark backgrounds. Used in the app's side menu and the public
-  site's header.
+  light text, for dark backgrounds (the app in dark mode). Used in the app's
+  side menu and the public site's header.
 - `brand/goose.png`: the whole goose, walking, with a satchel of letters. Used
   wherever the goose appears on its own: the site's hero and 404 page.
 - The favicons (app and site) are the head from the wordmark, cropped square.

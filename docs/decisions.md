@@ -4,6 +4,26 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Light by default, dark mode a switch in Settings (owner decision; storage is a reversible default)
+
+The owner decided: "light-only by default with a 'dark mode' toggle in
+settings". This replaces "dark mode follows the system" in the two entries
+below.
+
+- **The public site is light only.** It has no settings page, so it has no
+  switch. `scripts/site/tokens.mjs` copies only the app's light tokens, the
+  site pages drop the light-text logo, and `siteTokens.test.ts` fails if any
+  dark styling comes back.
+- **The app is light until dark mode is turned on**, whatever the system
+  setting. Settings has an Appearance panel with a "Dark mode" checkbox. It
+  sets `data-theme="dark"` on `<html>`, which switches to the same dark tokens
+  as before, and the logo swaps to its light-text version. The sign-in, CLI
+  approval and policy pages follow it too.
+- **Kept in the browser (default, reversible).** The choice is saved in
+  `localStorage` (`mailgoose.theme`), so it holds per browser and needs no
+  API, database or CLI change; other open tabs follow it. Keeping it on the
+  account instead would mean a field on `/v1/account` and a CLI flag.
+
 ## 2026-11-21: "Save and exit" in the email editors (MG-83, owner ask; details are reversible defaults)
 
 The owner found it unclear what to do when done editing an email, with going
@@ -151,6 +171,7 @@ redesigned app. The copy is unchanged; this is a styling pass.
   app uses (latin subset), with its licence beside it.
 - **Dark mode follows the system**, as in the app, because the tokens carry
   it. Default; dropping it means a light-only tokens file for the site.
+  (Superseded the same day: the site is light only, see above.)
 - **New logos (owner's, added at the owner's ask).** The wordmark (goose
   head and word) replaces the text wordmark in the app's side menu and the
   site header, with a light-text version in dark mode. The whole goose
@@ -319,6 +340,7 @@ redesigned separately and is left alone. Reasoning and tokens:
   (`lucide-react`), both pinned. The CSP needs no change.
 - **Side menu** gets icons and two headings (Marketing, Account).
 - **Dark mode is kept**, since the app already followed the system setting.
+  (Nov 21: now a switch in Settings, light by default; see the Nov 21 entry.)
 - **Open:** whether "the blue" is the periwinkle used here. Default: yes.
 
 ## 2026-11-20: Public site at mailgoose.app on GitHub Pages (owner ask; hosting is a reversible default)

@@ -6,6 +6,7 @@ import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
 import { FailureNotice, LoadFailed, Loading, PageHeader, useLoad } from "../components";
 import { useSession } from "../session";
+import { setTheme, useTheme } from "../theme";
 
 type Account = components["schemas"]["AccountSettings"];
 type Update = components["schemas"]["UpdateAccountRequest"];
@@ -19,7 +20,7 @@ export function Settings() {
 
   return (
     <section className="page">
-      <PageHeader title="Settings" about="Your account name, the defaults new campaigns start with, and your postal address." />
+      <PageHeader title="Settings" about="Your account name, the defaults new campaigns start with, your postal address, and dark mode." />
       {state.status === "loading" && <Loading />}
       {state.status === "failed" && <LoadFailed failure={state.failure} retry={reload} />}
       {state.status === "ok" && (
@@ -35,6 +36,7 @@ export function Settings() {
             }}
           />
           <SendingMode mode={state.data.sending_mode} />
+          <Appearance />
           <DeleteAccount name={state.data.name} />
         </>
       )}
@@ -220,6 +222,23 @@ function SendingMode({ mode }: { mode: Account["sending_mode"] }) {
       <p>
         <Link to="/test-addresses">Test addresses</Link>
       </p>
+    </div>
+  );
+}
+
+/** Dark mode, kept in this browser (src/theme.ts). The app is light until it's on. */
+function Appearance() {
+  const dark = useTheme() === "dark";
+  return (
+    <div className="panel stack">
+      <h2>Appearance</h2>
+      <label className="check">
+        <input type="checkbox" checked={dark} onChange={(e) => setTheme(e.target.checked ? "dark" : "light")} />
+        <span>
+          Dark mode
+          <small className="muted"> Saved in this browser.</small>
+        </span>
+      </label>
     </div>
   );
 }
