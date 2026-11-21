@@ -39,6 +39,9 @@ type Service struct {
 	Senders     *senders.Resolver
 	Unsubscribe *unsubscribe.Service
 	Mail        mail.Sender
+	// AssetsURL is where the API is reached (PUBLIC_BASE_URL), which serves
+	// the social block's icons (MG-109); empty renders social links as text.
+	AssetsURL string
 	// Limits are the send limits, for showing an account its own.
 	Limits Limits
 	// Slicing is how a new account's campaigns are sliced (MG-62); zero
@@ -214,7 +217,7 @@ func (s *Service) Prepare(ctx context.Context, accountID, campaignID string) (*P
 	}
 	p.PostalAddress = postal
 	if len(problems) == 0 {
-		acct := render.Account{PostalAddress: postal}
+		acct := render.Account{PostalAddress: postal, AssetsURL: s.AssetsURL}
 		if doc.HTML != nil {
 			p.Template, err = render.CompileHTML(doc, acct)
 		} else {

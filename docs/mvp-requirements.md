@@ -103,7 +103,7 @@ An email is either a block document or a raw HTML email. Both end up as email-sa
 ### Blocks
 
 - **DES-1 Block document.** Stored as versioned JSON: email settings (subject, preview text, From, reply-to, background, content width) and an ordered list of blocks, each with a stable ID. The JSON schema is published in the OpenAPI spec. (inferred)
-- **DES-2 Block types:** heading, text (bold, italic, links, lists), image, button, divider, spacer, two-column row (blocks inside each column), social links, and a locked footer with postal address and unsubscribe link. (inferred)
+- **DES-2 Block types:** heading, text (bold, italic, links, lists), image, button, divider, spacer, a column row of 1 to 4 columns (1, 1:1, 1:1:1, 1:1:1:1, 1:2, 2:1, 1:3, 3:1) with blocks inside each column, social links, and a locked footer with postal address and unsubscribe link. (inferred)
 - **DES-3 Drag-and-drop editor** in the web app: add, reorder, duplicate, delete and edit blocks, with a properties panel and autosave. (stated)
 - **DES-4 Blocks from the CLI:** list, add (at a position), update, move and remove blocks by ID, plus get and replace the whole document as JSON. (stated)
 - **DES-5 Images** upload to our storage and are served from our CDN. JPEG, PNG, GIF and WebP, up to 5 MB each. (inferred)

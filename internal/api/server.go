@@ -35,6 +35,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
+	"github.com/gremlin-technologies/mailgoose/internal/socialicons"
 	"github.com/gremlin-technologies/mailgoose/internal/testmode"
 	"github.com/gremlin-technologies/mailgoose/internal/tracking"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
@@ -191,6 +192,8 @@ func (s *Server) Handler() http.Handler {
 	if s.ImageFiles != nil {
 		imageFiles = requestIDs(s.recoverer(http.StripPrefix("/images", s.ImageFiles)))
 	}
+	// The social block's icons (MG-109), which emails load.
+	icons := requestIDs(s.recoverer(socialicons.Handler()))
 	var web http.Handler
 	if s.Web != nil {
 		web = requestIDs(s.recoverer(s.Web))
@@ -201,6 +204,8 @@ func (s *Server) Handler() http.Handler {
 			stripeHook.ServeHTTP(w, r)
 		case imageFiles != nil && strings.HasPrefix(r.URL.Path, "/images/") && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 			imageFiles.ServeHTTP(w, r)
+		case strings.HasPrefix(r.URL.Path, socialicons.Prefix) && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+			icons.ServeHTTP(w, r)
 		case isTrackingPath(r.URL.Path):
 			tracked.ServeHTTP(w, r)
 		case isRecipientPage(r.URL.Path):

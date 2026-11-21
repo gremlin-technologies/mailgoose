@@ -119,3 +119,20 @@ func TestLocalImageFiles(t *testing.T) {
 		t.Errorf("POST served a file")
 	}
 }
+
+// The social block's icons (MG-109) are served without a session, ahead of
+// the web app, so emails can load them.
+func TestSocialIcons(t *testing.T) {
+	s := newServer(nil)
+	s.Web = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Errorf("web app served %s", r.URL.Path) })
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/assets/social/v1/brand/instagram.png", nil))
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" || !strings.Contains(rec.Header().Get("Cache-Control"), "immutable") {
+		t.Errorf("served %d %v", rec.Code, rec.Header())
+	}
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/assets/social/v1/brand/nothing.png", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown icon: %d", rec.Code)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -22,11 +23,12 @@ const everyBlock = `{
     {"id": "bt", "type": "button", "text": "Order", "href": "https://bakery.example/order", "align": "center", "background_color": "#000000", "text_color": "#ffffff"},
     {"id": "d1", "type": "divider", "color": "#cccccc", "thickness": 2},
     {"id": "s1", "type": "spacer", "height": 32},
-    {"id": "c1", "type": "columns", "columns": [
+    {"id": "c1", "type": "columns", "layout": "1:1", "columns": [
       {"blocks": [{"id": "c1a", "type": "text", "text": "Left", "align": "left"}]},
       {"blocks": [{"id": "c1b", "type": "image", "src": "https://cdn.example/x.png", "alt": "", "href": null, "width": null, "align": "center"}]}
     ]},
-    {"id": "so", "type": "social", "links": [{"network": "instagram", "url": "https://instagram.com/bakery"}], "align": "center"},
+    {"id": "so", "type": "social", "links": [{"network": "instagram", "url": "https://instagram.com/bakery"}, {"network": "website", "url": "https://bakery.example", "label": "Our site"}],
+     "display": "icons_and_text", "color": "dark", "size": 40, "spacing": 24, "layout": "vertical", "align": "center"},
     {"id": "ft", "type": "footer", "text": "You signed up at the counter."}
   ]
 }`
@@ -83,6 +85,24 @@ func TestDefaultsIDsAndFooter(t *testing.T) {
 	}
 }
 
+// A social block saved before MG-109 had only links and align; it reads
+// with the new fields' defaults.
+func TestSocialDefaults(t *testing.T) {
+	d, err := ParseDocument(KindBlocks, []byte(`{"blocks":[{"type":"social","links":[{"network":"x","url":"https://x.example"}],"align":"left"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := d.Blocks[0].(*Social)
+	want := Social{base: s.base, Links: s.Links, Display: "icons", Color: "brand", Size: 32, Spacing: 12, Layout: "horizontal", Align: "left"}
+	if !reflect.DeepEqual(*s, want) {
+		t.Errorf("social = %+v, want %+v", *s, want)
+	}
+	raw, _ := json.Marshal(s.Links)
+	if string(raw) != `[{"network":"x","url":"https://x.example"}]` {
+		t.Errorf("links = %s; an empty label stays out", raw)
+	}
+}
+
 func TestDocumentErrors(t *testing.T) {
 	for _, tc := range []struct{ doc, path string }{
 		{`{"blocks":[{"type":"video","src":"x"}]}`, "blocks[0].type"},
@@ -105,12 +125,21 @@ func TestDocumentErrors(t *testing.T) {
 		{`{"blocks":[{"type":"button","text":"Go","href":"/relative"}]}`, "blocks[0].href"},
 		{`{"blocks":[{"type":"button","text":"Go","href":"https://x.example","text_color":"white"}]}`, "blocks[0].text_color"},
 		{`{"blocks":[{"type":"social","links":[{"network":"myspace","url":"https://x.example"}]}]}`, "blocks[0].links[0].network"},
-		{`{"blocks":[{"type":"social","links":[{"network":"x","url":"https://x.example","label":"X"}]}]}`, "blocks[0].links[0].label"},
+		{`{"blocks":[{"type":"social","links":[{"network":"x","url":"https://x.example","handle":"X"}]}]}`, "blocks[0].links[0].handle"},
+		{`{"blocks":[{"type":"social","links":[{"network":"x","url":"https://x.example","label":"X\nY"}]}]}`, "blocks[0].links[0].label"},
+		{`{"blocks":[{"type":"social","display":"logos","links":[{"network":"x","url":"https://x.example"}]}]}`, "blocks[0].display"},
+		{`{"blocks":[{"type":"social","color":"gray","links":[{"network":"x","url":"https://x.example"}]}]}`, "blocks[0].color"},
+		{`{"blocks":[{"type":"social","size":24,"links":[{"network":"x","url":"https://x.example"}]}]}`, "blocks[0].size"},
+		{`{"blocks":[{"type":"social","spacing":60,"links":[{"network":"x","url":"https://x.example"}]}]}`, "blocks[0].spacing"},
+		{`{"blocks":[{"type":"social","layout":"grid","links":[{"network":"x","url":"https://x.example"}]}]}`, "blocks[0].layout"},
 		{`{"blocks":[{"type":"columns","columns":[{"blocks":[]}]}]}`, "blocks[0].columns"},
 		{`{"blocks":[{"type":"columns","columns":[{"blocks":[]},{"blocks":[{"type":"columns","columns":[]}]}]}]}`, "blocks[0].columns[1].blocks[0].type"},
 		{`{"blocks":[{"type":"columns","columns":[{"blocks":[{"type":"footer"}]},{"blocks":[]}]}]}`, "blocks[0].columns[0].blocks[0].type"},
 		{`{"blocks":[{"type":"columns","columns":[{"blocks":[{"type":"text","text":"x","bold":true}]},{"blocks":[]}]}]}`, "blocks[0].columns[0].blocks[0].bold"},
 		{`{"blocks":[{"type":"columns","columns":[{"blocks":[],"width":50},{"blocks":[]}]}]}`, "blocks[0].columns[0].width"},
+		{`{"blocks":[{"type":"columns","layout":"2:2","columns":[{"blocks":[]},{"blocks":[]}]}]}`, "blocks[0].layout"},
+		{`{"blocks":[{"type":"columns","layout":"1:1:1","columns":[{"blocks":[]},{"blocks":[]}]}]}`, "blocks[0].columns"},
+		{`{"blocks":[{"type":"columns","layout":"1","columns":[]}]}`, "blocks[0].columns"},
 		{`{"blocks":[{"type":"footer"},{"type":"spacer"}]}`, "blocks[0]"},
 		{`{"blocks":[{"id":"a","type":"spacer"},{"id":"a","type":"spacer"}]}`, "blocks[1].id"},
 		{`{"blocks":[{"id":"a b","type":"spacer"}]}`, "blocks[0].id"},

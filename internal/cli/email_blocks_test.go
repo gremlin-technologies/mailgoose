@@ -97,3 +97,79 @@ func blockOutline(bs []map[string]any) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// TestEmailBlocksColumnLayouts adds columns with --layout and changes it.
+func TestEmailBlocksColumnLayouts(t *testing.T) {
+	h := liveAPI(t)
+	run := func(args ...string) map[string]any {
+		t.Helper()
+		if code := h.run(append(args, "--json")...); code != ExitOK {
+			t.Fatalf("%v: exit %d %s", args, code, h.errOut)
+		}
+		return h.jsonOut(t)
+	}
+	block := func(out map[string]any) map[string]any {
+		return out["block"].(map[string]any)["block"].(map[string]any)
+	}
+
+	id := run("email", "create", "--name", "Layouts")["id"].(string)
+	cols := block(run("email", "blocks", "add", id, "--type", "columns", "--layout", "1:3"))
+	if cols["layout"] != "1:3" || len(cols["columns"].([]any)) != 2 {
+		t.Errorf("added %v", cols)
+	}
+	colsID := cols["id"].(string)
+	wide := block(run("email", "blocks", "update", id, colsID, "--layout", "1:1:1:1"))
+	if wide["layout"] != "1:1:1:1" || len(wide["columns"].([]any)) != 4 {
+		t.Errorf("updated %v", wide)
+	}
+	run("email", "blocks", "add", id, "--type", "spacer", "--in", colsID, "--column", "3")
+	if code := h.run("email", "blocks", "update", id, colsID, "--layout", "1:1"); code != ExitError || !strings.Contains(h.errOut.String(), "column 3") {
+		t.Errorf("dropping a full column: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("email", "blocks", "list", id); code != ExitOK || !strings.Contains(h.out.String(), "layout 1:1:1:1") {
+		t.Errorf("list: exit %d\n%s", code, h.out)
+	}
+}
+
+// TestEmailBlocksSocial adds a social block with --link and the style
+// flags, then changes them.
+func TestEmailBlocksSocial(t *testing.T) {
+	h := liveAPI(t)
+	run := func(args ...string) map[string]any {
+		t.Helper()
+		if code := h.run(append(args, "--json")...); code != ExitOK {
+			t.Fatalf("%v: exit %d %s", args, code, h.errOut)
+		}
+		return h.jsonOut(t)
+	}
+	block := func(out map[string]any) map[string]any {
+		return out["block"].(map[string]any)["block"].(map[string]any)
+	}
+
+	id := run("email", "create", "--name", "Social")["id"].(string)
+	b := block(run("email", "blocks", "add", id, "--type", "social",
+		"--link", "instagram=https://instagram.com/bakery", "--link", "website=https://bakery.example/?a=b"))
+	links, _ := json.Marshal(b["links"])
+	if string(links) != `[{"network":"instagram","url":"https://instagram.com/bakery"},{"network":"website","url":"https://bakery.example/?a=b"}]` ||
+		b["display"] != "icons" || b["color"] != "brand" || b["size"].(float64) != 32 || b["layout"] != "horizontal" {
+		t.Errorf("added %v", b)
+	}
+	social := b["id"].(string)
+	b = block(run("email", "blocks", "update", id, social, "--display", "icons_and_text", "--color", "light", "--size", "48",
+		"--spacing", "8", "--layout", "vertical", "--link", "x=https://x.com/bakery"))
+	links, _ = json.Marshal(b["links"])
+	if string(links) != `[{"network":"x","url":"https://x.com/bakery"}]` || b["display"] != "icons_and_text" || b["color"] != "light" ||
+		b["size"].(float64) != 48 || b["spacing"].(float64) != 8 || b["layout"] != "vertical" {
+		t.Errorf("updated %v", b)
+	}
+
+	if code := h.run("email", "blocks", "list", id); code != ExitOK || !strings.Contains(h.out.String(), "x") {
+		t.Errorf("list: exit %d\n%s", code, h.out)
+	}
+	if code := h.run("email", "blocks", "update", id, social, "--link", "instagram"); code != ExitUsage || !strings.Contains(h.errOut.String(), "network=url") {
+		t.Errorf("bad --link: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("email", "blocks", "update", id, social, "--size", "24"); code != ExitError || !strings.Contains(h.errOut.String(), "32, 40 or 48") {
+		t.Errorf("bad --size: exit %d %s", code, h.errOut)
+	}
+}

@@ -379,6 +379,42 @@ func (e CodeSentStatus) Valid() bool {
 	}
 }
 
+// Defines values for ColumnsBlockLayout.
+const (
+	ColumnsBlockLayoutN1    ColumnsBlockLayout = "1"
+	ColumnsBlockLayoutN11   ColumnsBlockLayout = "1:1"
+	ColumnsBlockLayoutN111  ColumnsBlockLayout = "1:1:1"
+	ColumnsBlockLayoutN1111 ColumnsBlockLayout = "1:1:1:1"
+	ColumnsBlockLayoutN12   ColumnsBlockLayout = "1:2"
+	ColumnsBlockLayoutN13   ColumnsBlockLayout = "1:3"
+	ColumnsBlockLayoutN21   ColumnsBlockLayout = "2:1"
+	ColumnsBlockLayoutN31   ColumnsBlockLayout = "3:1"
+)
+
+// Valid indicates whether the value is a known member of the ColumnsBlockLayout enum.
+func (e ColumnsBlockLayout) Valid() bool {
+	switch e {
+	case ColumnsBlockLayoutN1:
+		return true
+	case ColumnsBlockLayoutN11:
+		return true
+	case ColumnsBlockLayoutN111:
+		return true
+	case ColumnsBlockLayoutN1111:
+		return true
+	case ColumnsBlockLayoutN12:
+		return true
+	case ColumnsBlockLayoutN13:
+		return true
+	case ColumnsBlockLayoutN21:
+		return true
+	case ColumnsBlockLayoutN31:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ColumnsBlockType.
 const (
 	ColumnsBlockTypeColumns ColumnsBlockType = "columns"
@@ -1402,6 +1438,66 @@ func (e SkipReason) Valid() bool {
 	}
 }
 
+// Defines values for SocialBlockColor.
+const (
+	SocialBlockColorBrand SocialBlockColor = "brand"
+	SocialBlockColorDark  SocialBlockColor = "dark"
+	SocialBlockColorLight SocialBlockColor = "light"
+)
+
+// Valid indicates whether the value is a known member of the SocialBlockColor enum.
+func (e SocialBlockColor) Valid() bool {
+	switch e {
+	case SocialBlockColorBrand:
+		return true
+	case SocialBlockColorDark:
+		return true
+	case SocialBlockColorLight:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SocialBlockDisplay.
+const (
+	SocialBlockDisplayIcons        SocialBlockDisplay = "icons"
+	SocialBlockDisplayIconsAndText SocialBlockDisplay = "icons_and_text"
+	SocialBlockDisplayText         SocialBlockDisplay = "text"
+)
+
+// Valid indicates whether the value is a known member of the SocialBlockDisplay enum.
+func (e SocialBlockDisplay) Valid() bool {
+	switch e {
+	case SocialBlockDisplayIcons:
+		return true
+	case SocialBlockDisplayIconsAndText:
+		return true
+	case SocialBlockDisplayText:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SocialBlockLayout.
+const (
+	SocialBlockLayoutHorizontal SocialBlockLayout = "horizontal"
+	SocialBlockLayoutVertical   SocialBlockLayout = "vertical"
+)
+
+// Valid indicates whether the value is a known member of the SocialBlockLayout enum.
+func (e SocialBlockLayout) Valid() bool {
+	switch e {
+	case SocialBlockLayoutHorizontal:
+		return true
+	case SocialBlockLayoutVertical:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SocialBlockLinksNetwork.
 const (
 	SocialBlockLinksNetworkBluesky   SocialBlockLinksNetwork = "bluesky"
@@ -1435,6 +1531,27 @@ func (e SocialBlockLinksNetwork) Valid() bool {
 	case SocialBlockLinksNetworkX:
 		return true
 	case SocialBlockLinksNetworkYoutube:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SocialBlockSize.
+const (
+	SocialBlockSizeN32 SocialBlockSize = 32
+	SocialBlockSizeN40 SocialBlockSize = 40
+	SocialBlockSizeN48 SocialBlockSize = 48
+)
+
+// Valid indicates whether the value is a known member of the SocialBlockSize enum.
+func (e SocialBlockSize) Valid() bool {
+	switch e {
+	case SocialBlockSizeN32:
+		return true
+	case SocialBlockSizeN40:
+		return true
+	case SocialBlockSizeN48:
 		return true
 	default:
 		return false
@@ -1719,6 +1836,8 @@ type AddEmailBlockRequest struct {
 	Block struct {
 		Type string `json:"type"`
 	} `json:"block"`
+
+	// Column Which column of `parent_id`, 0 first (left).
 	Column *int `json:"column,omitempty"`
 	Index  *int `json:"index,omitempty"`
 
@@ -2425,7 +2544,14 @@ type ColumnContentBlock struct {
 	union json.RawMessage
 }
 
-// ColumnsBlock A row of two columns, each holding blocks other than columns and the footer.
+// ColumnsBlock A row of one to four columns, each holding blocks other than columns
+// and the footer. `layout` gives the columns' relative widths: `1`,
+// `1:1`, `1:1:1` and `1:1:1:1` are equal columns, and `1:2`, `2:1`,
+// `1:3` and `3:1` are uneven splits. `columns` must hold one entry per
+// column in the layout; leave it out when adding a block and it starts
+// with that many empty columns. Changing `layout` with an update adds
+// empty columns, or drops the last ones if they're empty (a 422 if one
+// still holds blocks). Columns stack full-width on narrow screens.
 type ColumnsBlock struct {
 	Columns []struct {
 		Blocks []ColumnContentBlock `json:"blocks"`
@@ -2434,9 +2560,13 @@ type ColumnsBlock struct {
 	// Id Stable for the block's life: edits and moves keep it. Leave it out
 	// when adding a block to get a new one (`b_` and ten letters and
 	// digits). Unique within the document.
-	Id   BlockId          `json:"id"`
-	Type ColumnsBlockType `json:"type"`
+	Id     BlockId            `json:"id"`
+	Layout ColumnsBlockLayout `json:"layout"`
+	Type   ColumnsBlockType   `json:"type"`
 }
+
+// ColumnsBlockLayout defines model for ColumnsBlock.Layout.
+type ColumnsBlockLayout string
 
 // ColumnsBlockType defines model for ColumnsBlock.Type.
 type ColumnsBlockType string
@@ -3764,9 +3894,11 @@ type MoveEmailBlockRequest struct {
 	// After Stable for the block's life: edits and moves keep it. Leave it out
 	// when adding a block to get a new one (`b_` and ten letters and
 	// digits). Unique within the document.
-	After  *BlockId `json:"after,omitempty"`
-	Column *int     `json:"column,omitempty"`
-	Index  *int     `json:"index,omitempty"`
+	After *BlockId `json:"after,omitempty"`
+
+	// Column Which column of `parent_id`, 0 first (left).
+	Column *int `json:"column,omitempty"`
+	Index  *int `json:"index,omitempty"`
 
 	// ParentId Stable for the block's life: edits and moves keep it. Leave it out
 	// when adding a block to get a new one (`b_` and ten letters and
@@ -4082,23 +4214,55 @@ type SkippedRowList struct {
 	NextCursor *string      `json:"next_cursor"`
 }
 
-// SocialBlock defines model for SocialBlock.
+// SocialBlock A row (or column) of links to social profiles, each shown as the
+// network's icon, its name, or both. The icons are PNGs the API serves
+// at `/assets/social/`, in the network's own colors (`brand`), near
+// black (`dark`; Facebook stays blue) or white (`light`, for dark
+// backgrounds). A block saved without the style fields reads with
+// their defaults.
 type SocialBlock struct {
-	Align Align `json:"align"`
+	Align Align            `json:"align"`
+	Color SocialBlockColor `json:"color"`
+
+	// Display Icons only, icons with the link's name, or names only.
+	Display SocialBlockDisplay `json:"display"`
 
 	// Id Stable for the block's life: edits and moves keep it. Leave it out
 	// when adding a block to get a new one (`b_` and ten letters and
 	// digits). Unique within the document.
-	Id    BlockId `json:"id"`
-	Links []struct {
+	Id BlockId `json:"id"`
+
+	// Layout In a row (wrapping on narrow screens) or one link a line.
+	Layout SocialBlockLayout `json:"layout"`
+	Links  []struct {
+		// Label Text shown beside or instead of the icon, and the icon's alt text. Left out, it's the network's name.
+		Label   *string                 `json:"label,omitempty"`
 		Network SocialBlockLinksNetwork `json:"network"`
 		Url     string                  `json:"url"`
 	} `json:"links"`
-	Type SocialBlockType `json:"type"`
+
+	// Size The icons' height in pixels.
+	Size SocialBlockSize `json:"size"`
+
+	// Spacing Pixels between links.
+	Spacing int             `json:"spacing"`
+	Type    SocialBlockType `json:"type"`
 }
+
+// SocialBlockColor defines model for SocialBlock.Color.
+type SocialBlockColor string
+
+// SocialBlockDisplay Icons only, icons with the link's name, or names only.
+type SocialBlockDisplay string
+
+// SocialBlockLayout In a row (wrapping on narrow screens) or one link a line.
+type SocialBlockLayout string
 
 // SocialBlockLinksNetwork defines model for SocialBlock.Links.Network.
 type SocialBlockLinksNetwork string
+
+// SocialBlockSize The icons' height in pixels.
+type SocialBlockSize int
 
 // SocialBlockType defines model for SocialBlock.Type.
 type SocialBlockType string

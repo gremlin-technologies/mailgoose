@@ -71,6 +71,97 @@ are each easy to change:
   used again.
 - **Closing an account** deletes its uploads with the rest of its data.
 
+## 2026-11-21: Reports and segments (M12, MG-111 to MG-116): opens are a normal number (owner, confirmed); three defaults (recommended)
+
+The owner asked for per-campaign reports of opens, clicks and bounces, and
+for segments on engagement (did open or click a given email, never opened,
+never clicked), built through the usual ticket queue after the Mailchimp
+import. The tickets are issues #250 to #255.
+
+- **Opens are shown as a normal number** (the owner, confirmed). Opens come
+  from a tracking pixel, and some mail apps load it without anyone reading
+  the email (Apple Mail Privacy Protection, some security scanners), so open
+  rates run high. The owner's words: "let's de-emphasize the estimate part
+  of it." So opens show as a plain count and share, with no "estimated"
+  label, everywhere: the campaign list, the report page, `mailgoose campaign
+  report`, filters and segments. The reason they run high goes in a quiet
+  help line or tooltip at most. Machine opens aren't detected or left out:
+  "opened" filters count every recorded open. Clicks remain the reliable
+  signal. This replaces the "(estimated)" label from MG-38 and MG-48 (the
+  report page entry of 2026-11-19) and REP-1's "labeled as estimated"; MG-111
+  makes the change on the report page and in the CLI.
+- **How far back "never" looks** (recommended): as far as raw events are kept
+  (12 months), over campaigns sent with tracking on that the contact got. A
+  contact who got none of those isn't "never opened".
+- **Combining conditions** (recommended): every condition must match (AND);
+  no OR or nesting at first.
+- **When a segment is worked out** (recommended): at launch, or at the send
+  time of a scheduled campaign, then fixed, as tag audiences are today.
+
+## 2026-11-21: Social icons (MG-109; reversible defaults)
+
+Asked for by the owner: social links that look like the big builders',
+with the networks' logos instead of plain text links. This replaces MG-21's
+"social links render as text".
+
+- **The icons are ours to serve.** PNGs drawn from Font Awesome Free's
+  brand glyphs (CC BY 4.0, attribution in `internal/socialicons/README.md`),
+  96 pixels so they're sharp at twice their size, committed and served by
+  the API at `PUBLIC_BASE_URL/assets/social/v1/<color>/<network>.png`,
+  cached for a year. A redraw goes in a new version folder, so sent emails
+  keep their icons. No third-party CDN. Without `PUBLIC_BASE_URL` the
+  renderer falls back to text links.
+- **Fields.** `display` (`icons`, `icons_and_text`, `text`; default
+  icons), `color` (`brand`, `dark`, `light`; default brand), `size` (32, 40
+  or 48 pixels; default 32), `spacing` (0 to 48; default 12), `layout`
+  (`horizontal`, wrapping on phones, or `vertical`) and an optional
+  `label` per link (shown with names and used as alt text; default the
+  network's name). Blocks saved before read with these defaults.
+- **Narrower than the issue first proposed, for the networks' brand
+  rules.** Read on each network's own brand page (Nov 21): LinkedIn forbids
+  putting its logo in a circle, Bluesky forbids combining its logo with other
+  design elements, Facebook's logo is already a circle and allows only its
+  blue or white, X only black or white, and only Instagram allows gray. So
+  there's no `icon_style` (no circles or outlines drawn around logos), no
+  gray, `dark` keeps Facebook blue, and the smallest size is 32 pixels
+  (Instagram asks for at least 29). Sizes are pixel numbers rather than
+  small/medium/large.
+- **Open question for the owner: TikTok, YouTube and Threads.** Their
+  brand pages didn't load or don't say whether a logo may link to a profile
+  in an email; TikTok's developer pages restrict logo use. The icons ship
+  for all three (it's how every email builder shows them), but if the owner
+  wants to be strict, they can fall back to text for those three.
+- **Open question for the owner: circles, outlines and gray.** The owner
+  asked for something like Mailchimp's, which offers circles, outlines and
+  gray icons. Offer those for the networks whose brand rules allow them?
+  (Default: no; logos only, in brand, dark or white, at 32 to 48 pixels.
+  MG-109.)
+- **Outlook on Windows** gets a table around the icons (it ignores inline
+  blocks), so it doesn't wrap; everywhere else they wrap on narrow screens.
+
+## 2026-11-21: Column layouts (MG-110; reversible defaults)
+
+Asked for by the owner: drop in column layouts the way other builders do,
+not only a two-column row. This widens DES-2's "two-column row" to these
+layouts, and DES-2 in `docs/mvp-requirements.md` now says so.
+
+- **Layouts.** A columns block has a `layout`: `1`, `1:1`, `1:1:1`,
+  `1:1:1:1`, `1:2`, `2:1`, `1:3` or `3:1`, each number a column's share
+  of the width. A block without one reads as `1:1`, so every saved email
+  keeps working. Columns still can't hold columns.
+- **Adding one.** Given a layout and no columns, the API makes that many
+  empty columns. The designer's palette has a Columns section with a tile
+  per layout; the CLI takes `--type columns --layout 1:2`.
+- **Changing the layout** (`fields.layout` on update, a picker in the
+  designer's properties, `--layout` in the CLI) adds empty columns on the
+  right when going to more, and drops right-hand columns only when they are
+  empty. If one still holds blocks the change is refused with a message
+  saying which column; nothing is ever dropped silently.
+- **Rendering.** Columns are table cells with pixel widths split by the
+  layout's ratio (the last column takes any rounding remainder), so Outlook
+  gets fixed widths, and they still stack full width on phones.
+- **Numbering.** `column` positions count from 0, the leftmost, up to 3.
+
 ## 2026-11-21: Turning Mailchimp templates and campaigns into HTML emails (MG-71; reversible defaults)
 
 `mailchimp.PlanEmails` lists the emails an export would make, with each
@@ -2739,8 +2830,9 @@ Picked while building MG-22; easy to change.
 
 Picked while building MG-21; easy to change.
 
-- **Social links render as text** ("Instagram · Website"), not icons, until
-  image hosting lands (MG-23). Icons need hosted images.
+- ~~**Social links render as text** ("Instagram · Website"), not icons, until
+  image hosting lands (MG-23). Icons need hosted images.~~ Replaced by the
+  icons of MG-109 (2026-11-21).
 - **HTML emails aren't rendered by the block renderer.** MG-22 validates
   them and adds the postal address footer.
 - **No postal address, no render.** `Compile` refuses an account without

@@ -254,3 +254,90 @@ func TestBlockOpsKeepNumbers(t *testing.T) {
 		t.Errorf("image width %v, content width %d", w, d.Settings.ContentWidth)
 	}
 }
+
+func TestColumnLayouts(t *testing.T) {
+	for _, layout := range ColumnLayouts {
+		d, id, err := AddBlock(mustDoc(t, sampleDoc), json.RawMessage(`{"type":"columns","layout":"`+layout+`"}`), Position{})
+		if err != nil {
+			t.Fatalf("%s: %v", layout, err)
+		}
+		info, _ := FindBlock(d, id)
+		c := info.Block.(*Columns)
+		if c.Layout != layout || len(c.Columns) != len(LayoutWidths(layout)) {
+			t.Errorf("%s: got layout %q with %d columns", layout, c.Layout, len(c.Columns))
+		}
+	}
+	// A block saved before layouts reads as 1:1.
+	info, _ := FindBlock(mustDoc(t, sampleDoc), "cols")
+	if c := info.Block.(*Columns); c.Layout != "1:1" {
+		t.Errorf("old block's layout = %q", c.Layout)
+	}
+	// No layout and no columns starts two empty ones.
+	d, id, err := AddBlock(mustDoc(t, sampleDoc), json.RawMessage(`{"type":"columns"}`), Position{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, _ := FindBlock(d, id); len(info.Block.(*Columns).Columns) != 2 {
+		t.Error("a bare columns block doesn't start with two columns")
+	}
+	if got := LayoutWidths("1:3"); len(got) != 2 || got[0] != 1 || got[1] != 3 {
+		t.Errorf("LayoutWidths(1:3) = %v", got)
+	}
+	if LayoutWidths("5") != nil || LayoutWidths("") != nil {
+		t.Error("unknown layouts have widths")
+	}
+}
+
+func TestColumnPositionsFollowLayout(t *testing.T) {
+	d, _, err := AddBlock(mustDoc(t, sampleDoc), json.RawMessage(`{"id":"four","type":"columns","layout":"1:1:1:1"}`), Position{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := AddBlock(d, json.RawMessage(`{"id":"x","type":"spacer"}`), Position{Parent: "four", Column: intp(3)}); err != nil {
+		t.Errorf("column 3 of four: %v", err)
+	}
+	_, _, err = AddBlock(d, json.RawMessage(`{"type":"spacer"}`), Position{Parent: "four", Column: intp(4)})
+	if err == nil || !strings.Contains(err.Error(), "0 to 3") {
+		t.Errorf("column 4 of four: %v", err)
+	}
+}
+
+func TestUpdateColumnLayout(t *testing.T) {
+	// More columns: the new ones start empty and the old ones keep their blocks.
+	d, err := UpdateBlock(mustDoc(t, sampleDoc), "cols", json.RawMessage(`{"layout":"1:1:1"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ids(d), "h cols cols/0:l1 t f"; got != want {
+		t.Errorf("ids %q, want %q", got, want)
+	}
+	info, _ := FindBlock(d, "cols")
+	if c := info.Block.(*Columns); c.Layout != "1:1:1" || len(c.Columns) != 3 {
+		t.Errorf("got %s with %d columns", c.Layout, len(c.Columns))
+	}
+	// Fewer columns, the dropped ones empty: fine.
+	if d, err = UpdateBlock(d, "cols", json.RawMessage(`{"layout":"1"}`)); err != nil {
+		t.Fatalf("to one column: %v", err)
+	}
+	if got, want := ids(d), "h cols cols/0:l1 t f"; got != want {
+		t.Errorf("ids %q, want %q", got, want)
+	}
+	// Same count, new widths.
+	if _, err := UpdateBlock(mustDoc(t, sampleDoc), "cols", json.RawMessage(`{"layout":"1:3"}`)); err != nil {
+		t.Errorf("1:1 to 1:3: %v", err)
+	}
+	// Fewer columns while a dropped one holds blocks: refused, naming it.
+	full, _, err := AddBlock(mustDoc(t, sampleDoc), json.RawMessage(`{"id":"r1","type":"spacer"}`), Position{Parent: "cols", Column: intp(1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = UpdateBlock(full, "cols", json.RawMessage(`{"layout":"1"}`))
+	var de *DocError
+	if !errors.As(err, &de) || de.Path != "fields.layout" || !strings.Contains(err.Error(), "column 1") {
+		t.Errorf("dropping a full column: %v", err)
+	}
+	// An unknown layout is the parser's to refuse.
+	if _, err := UpdateBlock(mustDoc(t, sampleDoc), "cols", json.RawMessage(`{"layout":"5:1"}`)); !errors.As(err, &de) {
+		t.Errorf("unknown layout: %v", err)
+	}
+}
