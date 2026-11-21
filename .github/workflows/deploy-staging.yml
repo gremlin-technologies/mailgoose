@@ -39,7 +39,7 @@ jobs:
   deploy:
     name: Build, push and deploy
     if: >-
-      github.repository == 'gremlin-technologies-dev/mailgoose' &&
+      github.repository == 'gremlin-technologies/mailgoose' &&
       github.ref == 'refs/heads/main' &&
       vars.STAGING_DEPLOY_ROLE_ARN != ''
     runs-on: ubuntu-latest

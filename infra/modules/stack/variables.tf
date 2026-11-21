@@ -139,9 +139,8 @@ variable "log_retention_days" {
 # --- CI ---
 
 variable "github_repository" {
-  description = "owner/name of the GitHub repository that deploys (CodeBuild source and webhook, OIDC trust). Moved to the gremlin-technologies-dev organization on 2026-11-21."
-  type        = string
-  default     = "gremlin-technologies-dev/mailgoose"
+  type    = string
+  default = "gremlin-technologies/mailgoose"
 }
 
 variable "enable_github_deploy" {
