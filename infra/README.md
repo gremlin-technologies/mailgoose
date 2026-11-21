@@ -281,7 +281,81 @@ as the API serves `/images/`; new uploads get CloudFront URLs.
   jobs in the GitHub `production` environment, which can require an approval.
 - The ECS services ignore `task_definition` drift so `terraform apply` never
   rolls back an image CI deployed. When Terraform changes env vars or sizes, it
-  creates a new revision and CI's next deploy picks it up.
+  creates a new revision and the next deploy picks it up, so deploy again
+  right after such an apply (see below).
+
+### After an apply that changes a task definition
+
+A merge to `main` deploys at once, often before its Terraform change is
+applied. The deploy copies the latest task definition revision, so if it ran
+first, the running tasks lack the change (MG-85's `SHARED_SENDING_DOMAIN` went
+missing this way). So after any apply that registers new task definition
+revisions (environment, secrets, CPU or memory), deploy again and check:
+
+1. **Deploy again** (it builds `main`'s head, about 6 minutes):
+   ```sh
+   aws codebuild start-build --project-name mailgoose-staging-deploy --query build.id --output text
+   aws codebuild batch-get-builds --ids <build id> --query 'builds[0].buildStatus' --output text
+   ```
+   Repeat the second command until it says `SUCCEEDED`, or wait for the post
+   in `#deployments`. (Without CodeBuild, the manual deploy above does the
+   same.)
+2. **Check the running tasks have the change**: one deployment, on a
+   revision newer than the apply's, holding the new value. Put the variable
+   the apply changed in for `NAME` (or look at `cpu` and `memory`):
+   ```sh
+   for svc in api worker; do
+     aws ecs describe-services --cluster mailgoose-staging --services mailgoose-staging-$svc \
+       --query 'services[0].deployments[].[status,rolloutState,taskDefinition]' --output text
+     td=$(aws ecs describe-services --cluster mailgoose-staging --services mailgoose-staging-$svc \
+       --query 'services[0].taskDefinition' --output text)
+     aws ecs describe-task-definition --task-definition "$td" --query "taskDefinition.{cpu:cpu,memory:memory,image:containerDefinitions[0].image,value:containerDefinitions[0].environment[?name=='NAME'].value|[0]}"
+   done
+   ```
+   Each service should show one `PRIMARY COMPLETED` deployment, an image
+   tagged with `main`'s commit (not `:bootstrap`), and the new value. A
+   CodeBuild deploy tags the image with the commit's first 12 characters; a
+   manual `make push-ecr` uses `git rev-parse --short HEAD` (usually 7), so
+   compare the tag with the start of `git rev-parse HEAD` on `main`.
+
+### Template for an infra apply prompt
+
+Infra pull requests come with a prompt for the owner's local Claude Code,
+which has the AWS sign-in. Start each one from this and fill in the angle
+brackets; drop step 5 only when the plan registers no task definition
+revision.
+
+````markdown
+Run this from the mailgoose repo after the <ticket> pull request (<what it
+does>) is merged into main. Work only in us-east-2 and only in
+infra/envs/staging. Don't touch prod or infra/global, don't create any IAM
+user or access key, and don't change the AWS plan or spend limit. Ask me
+before anything not written here, and stop and tell me if any command fails.
+
+1. Update the repo and check the account:
+   git checkout main && git pull
+   export AWS_REGION=us-east-2
+   aws sts get-caller-identity --query Account --output text
+
+2. Plan staging and show me the summary:
+   cd infra/envs/staging
+   terraform init -backend-config="bucket=mailgoose-tfstate-<account>"
+   terraform plan -out=tfplan
+   Expected: <each resource added, changed or replaced, and the summary
+   line>. If the plan shows anything else, stop and show me. Wait for my yes.
+
+3. After my yes: terraform apply tfplan
+
+4. Verify: <commands and what each should show>.
+
+5. The apply registered new task definition revisions, so deploy again and
+   check the running tasks have the change, as infra/README.md says in
+   "After an apply that changes a task definition" (<the variable or size
+   to check>).
+
+6. Report back: the plan summary, what the checks showed, and anything that
+   didn't match.
+````
 
 ### Turning on CI deploys (staging)
 
