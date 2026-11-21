@@ -60,3 +60,41 @@ func TestDeliverability(t *testing.T) {
 		t.Fatalf("all = %+v, %v", rep, err)
 	}
 }
+
+// TestDeliverabilityThroughput gives the last 24 hours' send throughput
+// with the report, against the configured rate (MG-91).
+func TestDeliverabilityThroughput(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.svc.Limits = sending.Limits{PerSecond: 10}
+	rep, err := h.svc.Deliverability(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tp := rep.Throughput; tp.Batches != 0 || tp.CopiesPerSecond != nil || tp.SendRatePerSecond != 10 {
+		t.Fatalf("nothing sent: %+v", tp)
+	}
+	var campaign string
+	if err := h.db.QueryRow(ctx, `
+		INSERT INTO campaigns (account_id, name, all_contacts, status, launched_at)
+		VALUES ($1, 'Sent', true, 'sent', $2) RETURNING id`, h.acc, h.now.Add(-time.Hour)).Scan(&campaign); err != nil {
+		t.Fatal(err)
+	}
+	// Two batches of 100 copies, 25 seconds each, one after the other.
+	if _, err := h.db.Exec(ctx, `
+		INSERT INTO send_batch_timings (account_id, campaign_id, started_at, finished_at, batch_size, sent, skipped, failed)
+		VALUES ($1, $2, $3::timestamptz, $3::timestamptz + interval '25 seconds', 100, 100, 0, 0),
+			($1, $2, $3::timestamptz + interval '30 seconds', $3::timestamptz + interval '55 seconds', 100, 100, 0, 0)`,
+		h.acc, campaign, h.now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	rep, err = h.svc.Deliverability(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tp := rep.Throughput
+	if tp.Batches != 2 || tp.Copies != 200 || tp.BusySeconds != 50 || tp.CopiesPerSecond == nil || *tp.CopiesPerSecond != 4 ||
+		tp.SendRatePerSecond != 10 || !tp.Since.Equal(h.now.Add(-24*time.Hour)) {
+		t.Errorf("throughput %+v", tp)
+	}
+}

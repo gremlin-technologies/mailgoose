@@ -4,6 +4,78 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Send throughput is measured per batch; the send pool waits for staging's numbers (MG-91 part 1; details are reversible defaults)
+
+A worker takes one send message at a time (`MaxMessages: 1`) and
+`HandleBatch` sends its rows one after another: claim, pace slot, SES call,
+update. So each copy waits a whole SES round trip plus its database round
+trips, and real throughput may sit well under `SEND_RATE_PER_SECOND` (the
+architecture review guessed 3 to 5 a second against 10; never measured).
+MG-91 measures first. This part adds the measurement; nothing about how a
+batch sends has changed.
+
+- **Logged.** At the end of every batch's send loop the worker logs `send
+  batch finished` at INFO, with `campaign_id`, `account_id`, `attempt`,
+  `rows` (in the batch), `sent`, `skipped` (contact gone or unsubscribed,
+  or left out by test mode), `failed` (marked failed on the last attempt),
+  `ended` (`done`, `halted` for a pause or stop, `retry_later` for an SES
+  "not now", or `error`), `seconds` (wall clock from the loop's start to its
+  end) and `copies_per_second` (`sent` over `seconds`), and the worker's
+  `send_rate_per_second`. No addresses. A batch for a campaign that's
+  already paused or stopped hands its rows back before the loop, as
+  before, and logs nothing.
+- **Recorded.** Each batch that sent at least one copy gets a row in
+  `send_batch_timings` (migration 00044): its start and end, batch size,
+  and copies sent, skipped and failed. The worker prunes rows older than 7
+  days as it writes. Recording is best effort: a failure is logged as a
+  warning and the batch's outcome stands. Deleting an account deletes its
+  rows (they're in `AccountTables`).
+- **Shown.** `mailgoose admin deliverability` (and `send_throughput` in
+  `GET /v1/admin/deliverability`) ends with the last 24 hours across every
+  account: batches, copies, the seconds when at least one batch was sending
+  (overlapping batches merged), copies a second over that time, and the
+  configured `SEND_RATE_PER_SECOND`. It also gives the batches' seconds
+  added up and copies a second over those, which differs only when
+  batches ran at once on several workers and shared the rate. Time between
+  batches (the queue receive, the dispatcher's 2-second tick) isn't in
+  either number; a test campaign's end-to-end rate can be read from the
+  first and last log lines (see below).
+- **SES mailbox simulator copies count** for throughput, since they're real
+  SES calls, though they stay out of the bounce and complaint rates
+  (MG-86). So a simulator-only run shows its throughput even when the
+  report lists no accounts.
+- **What's next (open):** the pool (step 2 of MG-91: a batch's rows sent
+  by a small pool, default 4, each copy taking its own pace slot, keeping
+  `MaxMessages: 1` and "miss one, never send two") is built only if the
+  measured rate is well under `SEND_RATE_PER_SECOND`. The measured numbers
+  are pending the staging run and go in a follow-up entry.
+
+**Measuring on staging** (needs the owner's AWS sign-in; after this is
+deployed):
+
+1. Use an account that's in full sending mode (`mailgoose admin account
+   <id>` says `Mode: full`), not a tester account (MG-86 caps testers at
+   100 copies a day), with at least 400 credits and room for 200 more
+   contacts. Lists of 200 or fewer aren't sliced (MG-62), so each test
+   campaign goes to at most 200.
+2. Make a tag (`mailgoose tags create throughput-test`) and import 200
+   simulator addresses with it: a CSV with an `email` column of
+   `success+tp001@simulator.amazonses.com` to `success+tp200@...`, then
+   `mailgoose import tp.csv --list-source other --list-source-detail "SES
+   mailbox simulator addresses for a send throughput test"
+   --permission-confirmed --tag throughput-test --wait`.
+3. Make a campaign to that tag only (`mailgoose campaign create --name
+   "Throughput test 1" --email <ready email> --tag throughput-test`), send
+   it a test (`mailgoose campaign test <id>`), and launch it (`mailgoose
+   campaign launch <id>`, then `--confirm` with the code once the owner
+   says yes). Repeat once for a second campaign to the same tag, after the
+   first has finished, for 400 copies in all.
+4. Read `mailgoose admin deliverability` (the Throughput line), the worker's
+   `send batch finished` lines (`aws logs filter-log-events --log-group-name
+   /ecs/mailgoose-staging-worker --filter-pattern '{ $.msg = "send batch
+   finished" }'`), and SES's own `MaxSendRate` (`aws sesv2 get-account`).
+   Compare copies a second with `SEND_RATE_PER_SECOND` and with SES's rate.
+
 ## 2026-11-21: A daily cap on each form's new signups (MG-92, from the architecture review; reversible defaults)
 
 Form signups were limited only to 10 a minute per IP and 600 a minute per
@@ -2874,6 +2946,10 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - Which address takes suspension appeals? (Default: `ABUSE_EMAIL`, else
   `abuse@` the system sending domain, which has to be a real mailbox or
   alias. MG-65.)
+- Send a batch's rows with a small pool (MG-91 step 2)? (Default: not yet;
+  built only if staging's measured copies a second are well under
+  `SEND_RATE_PER_SECOND`. The numbers are pending the staging run, see
+  2026-11-21.)
 - Which vendor checks links for phishing and malware? (Default: Google Web
   Risk, licensed for commercial use and free up to 100,000 lookups a month.
   MG-64.)

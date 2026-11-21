@@ -257,6 +257,7 @@ func (s *Server) GetDeliverabilityReport(w http.ResponseWriter, r *http.Request,
 			"min_complaints":      sending.MinComplaints,
 			"min_copies":          sending.HealthMinRecipients,
 		},
+		"send_throughput": rep.Throughput,
 	})
 }
 

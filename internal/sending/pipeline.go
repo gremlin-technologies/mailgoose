@@ -554,19 +554,30 @@ func (p *Pipeline) HandleBatch(ctx context.Context, b Batch, attempt int) error 
 	if s.status != campaigns.StatusSending || s.paused {
 		return p.handBack(ctx, b)
 	}
+	run := p.startRun()
+	err = p.sendBatch(ctx, b, s, attempt, run)
+	p.endRun(ctx, b, attempt, run, err)
+	return err
+}
+
+// sendBatch sends a live campaign's batch, counting what it did in run.
+func (p *Pipeline) sendBatch(ctx context.Context, b Batch, s *sendable, attempt int, run *batchRun) error {
 	var lastErr error
 	for _, id := range b.IDs {
-		err := p.sendOne(ctx, b, s, id)
+		did, err := p.sendOne(ctx, b, s, id)
+		run.count(did)
 		var se *sendFailed
 		switch {
 		case err == nil:
 		case errors.Is(err, errHalted):
 			// Paused or stopped partway through the batch.
+			run.ended = "halted"
 			return p.handBack(ctx, b)
 		case errors.Is(err, errRetryLater):
 			// The provider is throttling or over its quota (MG-87): nothing
 			// failed, so the rest waits for a later batch without using an
 			// attempt, and the message is done with.
+			run.ended = "retry_later"
 			p.log().WarnContext(ctx, "the mail provider asked to retry later; the batch's unsent copies wait",
 				"campaign_id", b.CampaignID, "retry_after", RetryLaterAfter, "err", err)
 			return p.holdBack(ctx, b)
@@ -574,6 +585,7 @@ func (p *Pipeline) HandleBatch(ctx context.Context, b Batch, attempt int) error 
 			if err := p.markFailed(ctx, b, id, se.err); err != nil {
 				return err
 			}
+			run.failed++
 			lastErr = err
 		default:
 			return err
@@ -623,25 +635,55 @@ type sendFailed struct{ err error }
 func (e *sendFailed) Error() string { return "send: " + e.err.Error() }
 func (e *sendFailed) Unwrap() error { return e.err }
 
+// copyOutcome is what sendOne did with a row.
+type copyOutcome int
+
+const (
+	// notSent: the row wasn't sent here (already sent or claimed, or the
+	// send failed or was put off), or the batch stopped.
+	notSent copyOutcome = iota
+	sentCopy
+	// skippedCopy: its contact left, or test mode left it out (claim).
+	skippedCopy
+)
+
 // sendOne sends one row's copy, if it's still waiting.
-func (p *Pipeline) sendOne(ctx context.Context, b Batch, s *sendable, id int64) error {
+func (p *Pipeline) sendOne(ctx context.Context, b Batch, s *sendable, id int64) (copyOutcome, error) {
 	r, ok, err := p.claim(ctx, b, id)
-	if err != nil || !ok {
-		return err
+	if err != nil {
+		return notSent, err
 	}
+	if !ok {
+		if r.skipped {
+			return skippedCopy, nil
+		}
+		return notSent, nil
+	}
+	went, err := p.send(ctx, b, s, id, r)
+	if went {
+		// Out, even if it wasn't recorded (err): it took its slot and its
+		// SES call, so it counts for throughput.
+		return sentCopy, err
+	}
+	return notSent, err
+}
+
+// send sends a claimed row's copy and records it. went says whether the
+// copy was handed to the mail provider, recorded or not.
+func (p *Pipeline) send(ctx context.Context, b Batch, s *sendable, id int64, r claimed) (went bool, _ error) {
 	// Only a copy that will really go out waits for a send slot, so
 	// skipped rows and rows already sent (a redelivery) don't use one.
 	if err := p.paceWait(ctx); err != nil {
 		// Nothing was sent: the claim goes back for a later attempt.
 		if _, rerr := p.DB.Exec(context.WithoutCancel(ctx), `
 			UPDATE campaign_recipients SET status = 'queued', claimed_at = NULL WHERE id = $1 AND status = 'sending'`, id); rerr != nil {
-			return errors.Join(err, rerr)
+			return false, errors.Join(err, rerr)
 		}
-		return err
+		return false, err
 	}
 	url, err := s.signer.URL(strings.TrimRight(p.BaseURL, "/"), r.contactID, b.CampaignID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	m := s.copy.Template.Personalize(render.Recipient{Email: r.email, FirstName: r.first, LastName: r.last, UnsubscribeURL: url})
 	if s.links != nil {
@@ -669,25 +711,25 @@ func (p *Pipeline) sendOne(ctx context.Context, b Batch, s *sendable, id int64) 
 		if ctx.Err() != nil {
 			// Shutting down mid-send: it may have gone out, so the claim
 			// stays and the row ends failed rather than sent twice.
-			return ctx.Err()
+			return false, ctx.Err()
 		}
 		if errors.Is(sendErr, mail.ErrRetryLater) {
 			// Not now (MG-87): take the claim back with no error recorded,
 			// since the copy hasn't failed.
 			if _, err := p.DB.Exec(context.WithoutCancel(ctx), `
 				UPDATE campaign_recipients SET status = 'queued', claimed_at = NULL WHERE id = $1 AND status = 'sending'`, id); err != nil {
-				return err
+				return false, err
 			}
-			return fmt.Errorf("%w: %w", errRetryLater, sendErr)
+			return false, fmt.Errorf("%w: %w", errRetryLater, sendErr)
 		}
 		// Refused: take the claim back so a later attempt can send it.
 		_, err := p.DB.Exec(context.WithoutCancel(ctx), `
 			UPDATE campaign_recipients SET status = 'queued', claimed_at = NULL, error = $2 WHERE id = $1 AND status = 'sending'`,
 			id, truncate(sendErr.Error(), 500))
 		if err != nil {
-			return err
+			return false, err
 		}
-		return &sendFailed{err: sendErr}
+		return false, &sendFailed{err: sendErr}
 	}
 	_, err = p.DB.Exec(context.WithoutCancel(ctx), `
 		UPDATE campaign_recipients SET status = 'sent', sent_at = $2, message_id = $3, error = NULL
@@ -698,11 +740,13 @@ func (p *Pipeline) sendOne(ctx context.Context, b Batch, s *sendable, id int64) 
 		p.log().ErrorContext(ctx, "a sent copy wasn't recorded", "campaign_id", b.CampaignID,
 			"recipient_row", id, "message_id", messageID, "err", err)
 	}
-	return err
+	return true, err
 }
 
 type claimed struct {
 	contactID, email, first, last string
+	// skipped is a row claim skipped rather than claimed.
+	skipped bool
 }
 
 // claim takes a row for sending. A row that's no longer queued isn't
@@ -777,7 +821,11 @@ func (p *Pipeline) claim(ctx context.Context, b Batch, id int64) (claimed, bool,
 		if _, err := credits.Release(ctx, tx, b.AccountID, creditsRef(b.CampaignID), 1, now); err != nil {
 			return r, false, err
 		}
-		return r, false, tx.Commit(ctx)
+		if err := tx.Commit(ctx); err != nil {
+			return r, false, err
+		}
+		r.skipped = true
+		return r, false, nil
 	}
 	r.contactID, r.first, r.last = *contactID, trimmed(first), trimmed(last)
 	return r, true, tx.Commit(ctx)

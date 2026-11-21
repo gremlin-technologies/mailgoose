@@ -2838,6 +2838,11 @@ most copies sent. Each row says whether the account is paused,
 suspended, throttled or in test mode. At most `limit` rows; `total`
 counts them all, and there's no next page.
 
+`send_throughput` (MG-91) is how fast campaign copies went out over
+the last 24 hours, across every account, against the configured
+`SEND_RATE_PER_SECOND`: measured from each send batch's run in the
+worker, SES mailbox simulator copies included.
+
 | Parameter | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
 | `limit` | query | integer |  | Items per page. |
@@ -5238,6 +5243,27 @@ bounces, on `min_copies` or more copies.
 | `min_complaints` | integer | yes |  |
 | `min_copies` | integer | yes |  |
 
+<a id="schema-adminsendthroughput"></a>
+
+### AdminSendThroughput
+
+How fast campaign copies went out over the last 24 hours, across
+every account (MG-91), from the send batches that sent at least one
+copy and finished in the window. SES mailbox simulator copies
+count: they're real SES calls. Rates are rounded to 2 places, and
+null when no time was spent sending.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `since` | string (date-time) | yes | The window's start; it runs to now. |
+| `batches` | integer | yes |  |
+| `copies` | integer | yes | Copies those batches sent. |
+| `busy_seconds` | number | yes | Seconds when at least one batch was sending (overlapping batches merged). Time between batches isn't counted. |
+| `copies_per_second` | number or null | yes | `copies` over `busy_seconds`: the platform's rate while it was sending, to set against `send_rate_per_second`. |
+| `batch_seconds` | number | yes | The batches' send times added up. |
+| `per_batch_copies_per_second` | number or null | yes | `copies` over `batch_seconds`: how fast one batch sends. It matches `copies_per_second` when batches don't overlap (one worker); batches that ran at once shared the rate. |
+| `send_rate_per_second` | integer | yes | The configured `SEND_RATE_PER_SECOND`, the most copies a second across every worker. |
+
 <a id="schema-admindeliverabilityreport"></a>
 
 ### AdminDeliverabilityReport
@@ -5248,6 +5274,7 @@ bounces, on `min_copies` or more copies.
 | `next_cursor` | null | yes |  |
 | `total` | integer | yes | Every account in the report, including those over `limit`. |
 | `early_warning` | [AdminEarlyWarning](#schema-adminearlywarning) | yes |  |
+| `send_throughput` | [AdminSendThroughput](#schema-adminsendthroughput) | yes |  |
 
 <a id="schema-adminheldimport"></a>
 

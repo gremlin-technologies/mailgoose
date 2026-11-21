@@ -11,7 +11,7 @@ import (
 
 // sendingTarget is targetAccount, which sent 1,000 copies of a campaign an
 // hour ago: 30 hard bounced and 2 complained, and it's throttled and in test
-// mode.
+// mode. One of its send batches took 12 seconds.
 func sendingTarget(t *testing.T, h http.Handler) {
 	t.Helper()
 	targetAccount(t, h)
@@ -40,6 +40,9 @@ func sendingTarget(t *testing.T, h http.Handler) {
 		{`INSERT INTO account_throttles (account_id, reason, created_at, until) VALUES ($1, 'x', $2, $3)`,
 			[]any{id, ago, ago.Add(7 * 24 * time.Hour)}},
 		{`UPDATE accounts SET sending_mode = 'test' WHERE id = $1`, []any{id}},
+		// One send batch's timing (MG-91), so send_throughput has numbers.
+		{`INSERT INTO send_batch_timings (account_id, campaign_id, started_at, finished_at, batch_size, sent, skipped, failed)
+			VALUES ($1, $2, $3, $4, 100, 100, 0, 0)`, []any{id, campaign, ago, ago.Add(12 * time.Second)}},
 	} {
 		if _, err := pool.Exec(t.Context(), q.sql, q.args...); err != nil {
 			t.Fatalf("%s: %v", q.sql, err)

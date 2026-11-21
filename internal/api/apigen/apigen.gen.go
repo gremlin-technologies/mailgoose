@@ -1766,6 +1766,13 @@ type AdminDeliverabilityReport struct {
 	EarlyWarning AdminEarlyWarning `json:"early_warning"`
 	NextCursor   any               `json:"next_cursor"`
 
+	// SendThroughput How fast campaign copies went out over the last 24 hours, across
+	// every account (MG-91), from the send batches that sent at least one
+	// copy and finished in the window. SES mailbox simulator copies
+	// count: they're real SES calls. Rates are rounded to 2 places, and
+	// null when no time was spent sending.
+	SendThroughput AdminSendThroughput `json:"send_throughput"`
+
 	// Total Every account in the report, including those over `limit`.
 	Total int `json:"total"`
 }
@@ -1826,6 +1833,39 @@ type AdminRates struct {
 type AdminReasonRequest struct {
 	// Reason Why, for the admin log (and, for a pause, the account). At most 500 characters.
 	Reason string `json:"reason"`
+}
+
+// AdminSendThroughput How fast campaign copies went out over the last 24 hours, across
+// every account (MG-91), from the send batches that sent at least one
+// copy and finished in the window. SES mailbox simulator copies
+// count: they're real SES calls. Rates are rounded to 2 places, and
+// null when no time was spent sending.
+type AdminSendThroughput struct {
+	// BatchSeconds The batches' send times added up.
+	BatchSeconds float32 `json:"batch_seconds"`
+	Batches      int     `json:"batches"`
+
+	// BusySeconds Seconds when at least one batch was sending (overlapping
+	// batches merged). Time between batches isn't counted.
+	BusySeconds float32 `json:"busy_seconds"`
+
+	// Copies Copies those batches sent.
+	Copies int `json:"copies"`
+
+	// CopiesPerSecond `copies` over `busy_seconds`: the platform's rate while it was
+	// sending, to set against `send_rate_per_second`.
+	CopiesPerSecond *float32 `json:"copies_per_second"`
+
+	// PerBatchCopiesPerSecond `copies` over `batch_seconds`: how fast one batch sends. It
+	// matches `copies_per_second` when batches don't overlap (one
+	// worker); batches that ran at once shared the rate.
+	PerBatchCopiesPerSecond *float32 `json:"per_batch_copies_per_second"`
+
+	// SendRatePerSecond The configured `SEND_RATE_PER_SECOND`, the most copies a second across every worker.
+	SendRatePerSecond int `json:"send_rate_per_second"`
+
+	// Since The window's start; it runs to now.
+	Since time.Time `json:"since"`
 }
 
 // AdminThrottle defines model for AdminThrottle.

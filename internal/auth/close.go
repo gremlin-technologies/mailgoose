@@ -27,6 +27,7 @@ var AccountTables = []string{
 	"unsubscribes",
 	"unsubscribe_keys",
 	"test_sends",
+	"send_batch_timings",
 	"send_queue",
 	"campaign_recipients",
 	"campaign_launch_codes",

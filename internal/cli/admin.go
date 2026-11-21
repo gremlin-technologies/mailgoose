@@ -608,6 +608,38 @@ func (d accountDeliverability) state() string {
 	return strings.Join(s, ", ")
 }
 
+// sendThroughput is the API's AdminSendThroughput (MG-91).
+type sendThroughput struct {
+	Since                   time.Time `json:"since"`
+	Batches                 int       `json:"batches"`
+	Copies                  int       `json:"copies"`
+	BusySeconds             float64   `json:"busy_seconds"`
+	CopiesPerSecond         *float64  `json:"copies_per_second"`
+	BatchSeconds            float64   `json:"batch_seconds"`
+	PerBatchCopiesPerSecond *float64  `json:"per_batch_copies_per_second"`
+	SendRatePerSecond       int       `json:"send_rate_per_second"`
+}
+
+// lines says how fast copies went out, against the configured rate.
+func (t sendThroughput) lines() []string {
+	limit := fmt.Sprintf("SEND_RATE_PER_SECOND is %d", t.SendRatePerSecond)
+	if t.Batches == 0 || t.CopiesPerSecond == nil {
+		return []string{"Throughput, last 24 hours: no batch sent a copy (" + limit + ")."}
+	}
+	batches := "batches"
+	if t.Batches == 1 {
+		batches = "batch"
+	}
+	out := []string{fmt.Sprintf("Throughput, last 24 hours: %s copies in %s %s over %s seconds of sending: %s a second (%s).",
+		thousands(t.Copies), thousands(t.Batches), batches, strconv.FormatFloat(t.BusySeconds, 'f', 1, 64),
+		strconv.FormatFloat(*t.CopiesPerSecond, 'f', 2, 64), limit)}
+	if t.PerBatchCopiesPerSecond != nil && t.BatchSeconds > t.BusySeconds*1.05 {
+		out = append(out, fmt.Sprintf("Batches overlapped and shared the rate: one batch sent %s a second (over %s batch-seconds).",
+			strconv.FormatFloat(*t.PerBatchCopiesPerSecond, 'f', 2, 64), strconv.FormatFloat(t.BatchSeconds, 'f', 1, 64)))
+	}
+	return out
+}
+
 // adminDeliverabilityCmd is `mailgoose admin deliverability` (MG-82).
 func (a *App) adminDeliverabilityCmd() *cobra.Command {
 	var limit int
@@ -620,7 +652,12 @@ bounce rate and complaint rate over the last 24 hours and the last 7 days.
 Worst first: accounts over the early warning over 7 days (OVER WARNING) come
 first, then by how far their rates are over it. STATE says whether each is
 suspended, paused, throttled or in test mode. The daily abuse digest lists
-the accounts over the early warning.`,
+the accounts over the early warning.
+
+It ends with the last 24 hours' send throughput across every account:
+copies sent, over the seconds when a batch was sending, against the
+configured SEND_RATE_PER_SECOND. SES mailbox simulator copies count there
+(they're real SES calls), though they're left out of the rates above.`,
 		Example: `  mailgoose admin deliverability
   mailgoose admin deliverability --limit 10 --json`,
 		Args: cobra.NoArgs,
@@ -639,6 +676,7 @@ the accounts over the early warning.`,
 					MinComplaints     int     `json:"min_complaints"`
 					MinCopies         int     `json:"min_copies"`
 				} `json:"early_warning"`
+				SendThroughput sendThroughput `json:"send_throughput"`
 			}
 			if err := a.call(cmd.Context(), http.MethodGet, path, nil, &rep, true); err != nil {
 				return err
@@ -649,6 +687,10 @@ the accounts over the early warning.`,
 			}
 			if len(rep.Data) == 0 {
 				fmt.Fprintln(a.Stdout, "No account sent campaign email in the last 7 days.")
+				fmt.Fprintln(a.Stdout)
+				for _, l := range rep.SendThroughput.lines() {
+					fmt.Fprintln(a.Stdout, l)
+				}
 				return nil
 			}
 			tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
@@ -669,6 +711,9 @@ the accounts over the early warning.`,
 				strconv.FormatFloat(w.HardBouncePercent, 'f', -1, 64), thousands(w.MinCopies))
 			if rep.Total > len(rep.Data) {
 				fmt.Fprintf(a.Stdout, "Showing the worst %d of %d accounts; --limit shows up to 100.\n", len(rep.Data), rep.Total)
+			}
+			for _, l := range rep.SendThroughput.lines() {
+				fmt.Fprintln(a.Stdout, l)
 			}
 			return nil
 		},
