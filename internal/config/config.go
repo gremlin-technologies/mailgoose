@@ -57,6 +57,10 @@ type Config struct {
 	// in 24 hours, across every API task (MG-92): FORM_DAILY_SIGNUP_LIMIT,
 	// default 1000; 0 means no cap.
 	FormDailySignupLimit int
+	// MailchimpImportMaxContacts is the most contacts one Mailchimp import
+	// takes (MG-69, decision 4): MAILCHIMP_IMPORT_MAX_CONTACTS, default
+	// 250000.
+	MailchimpImportMaxContacts int
 	// EarlyWarningComplaintsPer10k and EarlyWarningHardBouncesPer10k are
 	// the early-warning thresholds that throttle an account (MG-61), in
 	// hundredths of a percent, from EARLY_WARNING_COMPLAINT_PERCENT
@@ -261,6 +265,11 @@ func load(getenv func(string) string) (Config, error) {
 	if formSignupLimit < 0 {
 		errs = append(errs, errors.New("FORM_DAILY_SIGNUP_LIMIT must be 0 (no cap) or more"))
 	}
+	mailchimpMax, err := intEnv(getenv, "MAILCHIMP_IMPORT_MAX_CONTACTS", 250000)
+	errs = append(errs, err)
+	if mailchimpMax < 1 {
+		errs = append(errs, errors.New("MAILCHIMP_IMPORT_MAX_CONTACTS must be 1 or more"))
+	}
 
 	// The early-warning thresholds must sit under the 0.1% and 3% that
 	// pause an account (sending.ComplaintsPer10k and HardBouncesPer10k), or
@@ -326,15 +335,16 @@ func load(getenv func(string) string) (Config, error) {
 			SecretARN: getenv("DATABASE_SECRET_ARN"),
 			SSLMode:   orDefault(getenv("DATABASE_SSLMODE"), "require"),
 		},
-		SendQueueURL:             getenv("SEND_QUEUE_URL"),
-		SESEventsQueueURL:        getenv("SES_EVENTS_QUEUE_URL"),
-		SendRatePerSecond:        sendRate,
-		AccountDailySendLimit:    dailyLimit,
-		NewAccountDailySendLimit: newDailyLimit,
-		PlatformDailySendLimit:   platformLimit,
-		FormDailySignupLimit:     formSignupLimit,
-		OpsAlertEmail:            strings.TrimSpace(getenv("OPS_ALERT_EMAIL")),
-		AbuseDigestHour:          digestHour,
+		SendQueueURL:               getenv("SEND_QUEUE_URL"),
+		SESEventsQueueURL:          getenv("SES_EVENTS_QUEUE_URL"),
+		SendRatePerSecond:          sendRate,
+		AccountDailySendLimit:      dailyLimit,
+		NewAccountDailySendLimit:   newDailyLimit,
+		PlatformDailySendLimit:     platformLimit,
+		FormDailySignupLimit:       formSignupLimit,
+		MailchimpImportMaxContacts: mailchimpMax,
+		OpsAlertEmail:              strings.TrimSpace(getenv("OPS_ALERT_EMAIL")),
+		AbuseDigestHour:            digestHour,
 
 		EarlyWarningComplaintsPer10k:  warnComplaints,
 		EarlyWarningHardBouncesPer10k: warnBounces,

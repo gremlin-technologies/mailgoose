@@ -1,0 +1,4 @@
+Email Address,First Name,Last Name,Phone Number,Interests,Marketing Permissions,MEMBER_RATING,OPTIN_TIME,OPTIN_IP,CONFIRM_TIME,CONFIRM_IP,LATITUDE,LONGITUDE,GMTOFF,DSTOFF,TIMEZONE,CC,REGION,LAST_CHANGED,LEID,EUID,NOTES,TAGS
+ada@example.com,Ada,Lovelace,555-0100,"Recipes, Travel",Email,4,2025-03-01 10:00:00,192.0.2.10,2025-03-01 10:05:00,192.0.2.10,,,,,,US,GA,2025-03-01 10:05:00,1001,e1,,"""Customer"",""VIP"""
+grace@example.com,Grace,Hopper,,Travel,"Email, Direct Mail",3,2024-11-20 08:30:00,198.51.100.4,,,,,,,,,,2024-11-20 08:30:00,1002,e2,,"""Smith, Jones"""
+,No,Email,,,,2,,,,,,,,,,,,,1003,e3,,

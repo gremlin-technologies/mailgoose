@@ -39,6 +39,49 @@ line read like an alert when no account was over the early warning; it was
 the legend. It now says how many of the accounts shown are over it, and says
 so when none are.
 
+## 2026-11-21: Reading Mailchimp's exports (MG-69; reversible defaults)
+
+Picked while building the reader, `internal/mailchimp`. Mailchimp's public
+help pages name the columns and kinds of file in its exports, but not exact
+file names, how tags and groups are separated, or timestamp layouts, so these
+are our reading of them. Each is easy to change, and the synthetic fixtures
+should be checked against a real export when one is available.
+
+- **What it reads.** The account export ZIP, an audience export ZIP or one
+  audience CSV. An account export's reports, gallery, ecommerce, SMS, events
+  and appointments folders are ignored and listed, never read.
+- **Status from the file's name.** A member file's status comes from the
+  word in its name (subscribed, unsubscribed, cleaned, nonsubscribed or
+  transactional, archived, pending), or from a status column when it has
+  one. A single CSV whose name and columns don't say is refused
+  (`unknown_status`), rather than guessed as subscribed.
+- **Audience names.** An account export's audience is the folder its files
+  are in. An audience export or a single CSV doesn't name its audience, so
+  the caller names it (default "Mailchimp").
+- **Groups are named, not guessed.** A CSV doesn't say which columns are
+  group categories and which are merge fields, so the reader reads as groups
+  only the columns the caller names; any other column is dropped and listed
+  (decision 6). MG-72 lets the customer name them.
+- **Tags and groups** are split on commas, each name optionally in double
+  quotes so it can hold a comma.
+- **GDPR permissions.** A column named for marketing permissions, or
+  starting "GDPR", lists the permissions a member granted. A member refuses
+  email marketing only when that column has a value with no email
+  permission in it; a blank cell is no information, not a refusal.
+- **Timestamps** are read in several common layouts as UTC; one in a layout
+  the reader doesn't know is kept as written, unparsed.
+- **Size.** The 1 GB limit counts the bytes of the files the reader uses, so
+  a large gallery folder doesn't refuse an export. A template or campaign
+  file over 5 MB is listed as too large rather than read.
+  `MAILCHIMP_IMPORT_MAX_CONTACTS` (default 250,000) caps members across the
+  whole export (decision 4).
+- **Other limits.** A member file with more than 1,000 columns, or an
+  audience whose files have more than 1,000 different columns between them,
+  is refused (`too_many_columns`); Mailchimp allows about 80 merge fields.
+  Only the first 1,000 skipped rows of an audience are listed, with every
+  skipped row counted by reason. A tags, group or permission cell keeps at
+  most 500 names, and the member is marked when some were left out.
+
 ## 2026-11-21: A no-domain account's missing From is its sign-in address (MG-108, owner decision; the details are reversible defaults)
 
 From the MG-85 staging check: with `SHARED_SENDING_DOMAIN` set, an account
@@ -3282,6 +3325,8 @@ Decided by the owner in the PRD scoping call and follow-ups.
 - Mailchimp import: the OAuth path needs a registered Mailchimp app. (Default:
   the upload path ships first; the owner registers the app before MG-73 goes
   live. MG-73.)
+- Mailchimp import: which CSV columns are groups. (Default: only the columns
+  the customer names; any other column is dropped and listed. MG-69, MG-72.)
 - How does prod get DNS? Default is to delegate only `api`, `app` and `mail`
   (see 2026-11-18); awaiting the owner's confirmation and the GoDaddy step.
   (Blocks MG-60.)
