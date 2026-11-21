@@ -34,8 +34,9 @@ type is one clean sans, and spacing sits on a 4px grid.
 ## Tokens
 
 All colors are CSS custom properties on `:root`, with a dark set under
-`prefers-color-scheme: dark`. `web/src/styles.test.ts` checks every text and
-background pair against WCAG 2.2 AA, in both modes.
+`:root[data-theme="dark"]`. The app is light unless dark mode is turned on in
+Settings (`web/src/theme.ts`, kept in the browser). `web/src/styles.test.ts`
+checks every text and background pair against WCAG 2.2 AA, in both modes.
 
 ### Color (light)
 
@@ -84,7 +85,7 @@ the app; the mascot keeps them.
 ## Components
 
 - **Logo.** `Wordmark` in `components.tsx`: `brand/wordmark.png`, with the
-  light-text version in dark mode. 28px tall in the side menu, 36px above the
+  light-text version when dark mode is on. 28px tall in the side menu, 36px above the
   sign-in and policy cards.
 - **Side menu.** 240px, on `--surface-subtle`. The logo, then an account
   box, then the menu in three runs: Dashboard on its own, **Marketing**
@@ -111,8 +112,9 @@ the app; the mascot keeps them.
 - Hover and focus change color, border or shadow over 120ms. No transforms.
 - `prefers-reduced-motion` turns the transitions off.
 - Links are blue and underline on hover; buttons never underline.
-- Dark mode follows the system setting, with the same structure: hairlines and
-  shadows are re-tuned rather than inverted.
+- Light by default. Dark mode is a switch in Settings, not the system setting
+  (owner, Nov 21), with the same structure: hairlines and shadows are re-tuned
+  rather than inverted. The public site is light only.
 
 ## The email editor
 
@@ -171,5 +173,3 @@ here, run `node scripts/site/tokens.mjs`. The site's own stylesheet,
 
 - Is "the blue" the deep periwinkle (`#5562a3`) used here, or a different
   blue? Changing it is one token plus a run of `styles.test.ts`.
-- Dark mode is kept because the app already had it. Dropping it would shrink
-  the token set by half.

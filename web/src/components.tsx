@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 
 import type { Failure, Result } from "./api/result";
+import { useTheme } from "./theme";
 
 /**
  * The logo: the goose's head and the word (docs/brand.md), with light text in
@@ -9,12 +10,16 @@ import type { Failure, Result } from "./api/result";
  * above the sign-in and policy cards.
  */
 export function Wordmark({ size }: { size: "menu" | "page" }) {
+  const dark = useTheme() === "dark";
   const [width, height] = size === "menu" ? [116, 28] : [149, 36];
   return (
-    <picture>
-      <source srcSet="/brand/wordmark-light.png" media="(prefers-color-scheme: dark)" />
-      <img className={`wordmark wordmark-${size}`} src="/brand/wordmark.png" width={width} height={height} alt="mailgoose" />
-    </picture>
+    <img
+      className={`wordmark wordmark-${size}`}
+      src={dark ? "/brand/wordmark-light.png" : "/brand/wordmark.png"}
+      width={width}
+      height={height}
+      alt="mailgoose"
+    />
   );
 }
 

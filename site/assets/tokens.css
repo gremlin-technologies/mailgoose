@@ -62,46 +62,11 @@
   --radius-lg: 12px;
   --ease: 120ms ease;
 
-  color-scheme: light dark;
+  color-scheme: light;
   font-family: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 16px;
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1115;
-    --surface: #16181d;
-    --surface-subtle: #1b1e24;
-    --surface-hover: #23272e;
-    --text: #f2f3f5;
-    --muted: #a3aab8;
-    --border: #2a2e36;
-    --line-strong: #3a3f49;
-    --input-border: #7d8493;
-    --accent: #9aa7e0;
-    --accent-hover: #b3bdea;
-    --accent-text: #0f1115;
-    --accent-soft: #232846;
-    --accent-soft-text: #c9d0f2;
-    --focus: #9aa7e0;
-    --focus-ring: rgba(154, 167, 224, 0.28);
-    --brand-mark: #f68a3f;
-    --good-bg: #1e3324;
-    --good-text: #a7d8b0;
-    --warn-bg: #3a2a18;
-    --warn-text: #f5c18e;
-    --error-bg: #3f1d19;
-    --error-text: #f4b4aa;
-    --danger: #f08c82;
-    --danger-text: #0f1115;
-    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px -2px rgba(0, 0, 0, 0.35);
-    --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 32px -8px rgba(0, 0, 0, 0.6);
-    --shadow-button: 0 0 0 1px var(--line-strong), 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-button-primary: 0 1px 2px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  }
 }

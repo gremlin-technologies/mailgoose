@@ -294,6 +294,29 @@ describe("settings", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Mars/Olympus isn't a time zone.");
   });
 
+  it("turns dark mode on and off, keeps it in this browser, and swaps the logo", async () => {
+    const api = fakeApi({ ...signedIn, "GET /v1/account": () => ({ status: 200, body: account }) });
+    const user = userEvent.setup();
+    renderApp("/settings", api.fetch);
+
+    const toggle = (await screen.findByRole("checkbox", { name: /Dark mode/ })) as HTMLInputElement;
+    const logo = () => (screen.getByAltText("mailgoose") as HTMLImageElement).getAttribute("src");
+    expect(toggle.checked).toBe(false);
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(logo()).toBe("/brand/wordmark.png");
+
+    await user.click(toggle);
+    expect(toggle.checked).toBe(true);
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(window.localStorage.getItem("mailgoose.theme")).toBe("dark");
+    expect(logo()).toBe("/brand/wordmark-light.png");
+
+    await user.click(toggle);
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(window.localStorage.getItem("mailgoose.theme")).toBeNull();
+    expect(logo()).toBe("/brand/wordmark.png");
+  });
+
   it("deletes the account only after its exact name is typed, then signs out", async () => {
     let confirm: string | null = null;
     const api = fakeApi({

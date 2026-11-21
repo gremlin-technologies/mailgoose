@@ -41,7 +41,7 @@ export const navPages: NavPage[] = [
     icon: CreditCard,
     group: "Account",
   },
-  { path: "/settings", label: "Settings", about: "Your account name, sending defaults and postal address.", icon: Settings, group: "Account" },
+  { path: "/settings", label: "Settings", about: "Your account name, sending defaults, postal address and dark mode.", icon: Settings, group: "Account" },
 ];
 
 /** navPages split into the runs the side menu shows under each heading. */

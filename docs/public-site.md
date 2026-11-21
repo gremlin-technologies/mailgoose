@@ -8,7 +8,7 @@ the CloudFront or OIDC blocks (`docs/decisions.md`).
 
 - `site/index.html`: the landing page.
 - `site/assets/tokens.css`: the web app's design tokens and Inter, generated
-  from `web/src/styles.css`. Don't edit it by hand; after changing the app's
+  from the light tokens in `web/src/styles.css` (the site is light only). Don't edit it by hand; after changing the app's
   tokens, run `node scripts/site/tokens.mjs` from the repository root.
   `web/src/pages/siteTokens.test.ts` fails if they drift. `site.css` lays the
   page out with them, following `docs/design-system.md`.
