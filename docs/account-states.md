@@ -16,7 +16,7 @@ Every admin action takes `--reason`, which is logged with who did it
 
 | State | Stored in | Set by | Cleared by | What it blocks | Admin commands |
 | --- | --- | --- | --- | --- | --- |
-| **Sign-up review** (MG-66) | `accounts.review = 'waiting'` (then `approved` or `rejected`; null means never reviewed) | Sign-up, while `SIGNUP_REVIEW` is `all` (the default), or `flagged` and the sign-up was flagged. Only at sign-up: changing the setting doesn't touch existing accounts. | An admin approving or rejecting it. Rejecting also suspends. | With full sending: launches (`account_in_review`) and form signups (403 `form_closed`). Building, imports and test sends work. In test mode it blocks nothing more than test mode does. | `admin signups`; `admin approve-signup <id>`; `admin reject-signup <id> --reason` |
+| **Sign-up review** (MG-66) | `accounts.review = 'waiting'` (then `approved` or `rejected`; null means never reviewed) | Sign-up, while `SIGNUP_REVIEW` is `all` (the default), or `flagged` and the sign-up was flagged. Only at sign-up: changing the setting doesn't touch existing accounts. | An admin approving or rejecting it. Rejecting also suspends. A rejected review stays until it's approved, even after `unsuspend` (MG-106). | With full sending, while waiting or rejected: launches (`account_in_review`, or `signup_rejected` once rejected) and form signups (403 `form_closed`). Building, imports and test sends work. In test mode it blocks nothing more than test mode does. | `admin signups`; `admin approve-signup <id>`; `admin reject-signup <id> --reason` |
 | **Test mode** (MG-80) | `accounts.sending_mode = 'test'` | Sign-up, while `NEW_ACCOUNTS_TEST_MODE` is on (the default); `admin set-test-mode`; `admin tester revoke`. | `admin allow-full-sending`; `admin tester grant`. | Sending to anyone but its confirmed test addresses (at most 5) and the owner's sign-in address: launches (`test_mode`), test sends (422 `test_mode`) and form signups (403 `test_mode`) are refused, and a queued copy for anyone else is skipped at send time with its credit back. | `admin test-mode`; `admin allow-full-sending <id>`; `admin set-test-mode <id>` |
 | **Tester account** (MG-86) | `accounts.tester_started_at`, `tester_until`, `tester_credits` | `admin tester grant <id>` (30 days and 500 credits unless `--until` and `--credits` say otherwise; granting again extends it and keeps its start). Refused while the review is waiting or rejected, or the account is suspended. | `admin tester revoke`. Reaching `tester_until` doesn't clear it: it's then an ended tester. | Launches and test sends that need more tester credits than are left, or after its end (`tester_limit`). After its end, queued copies wait as for a pause. At most 100 campaign copies a day and 500 contacts. A stricter pause (below). SES mailbox simulator addresses use no tester credits. | `admin tester grant <id> [--until] [--credits]`; `admin tester revoke <id>` |
 | **Sliced first send** (MG-62), per campaign | `campaigns.slice_state`, `campaign_recipients.in_slice` | The launch, when the account is in its first 30 days from activation or has launched fewer than 3 other campaigns (whichever ends later), and the campaign has more than `SLICE_MIN` (200) recipients. The slice is `SLICE_PERCENT` (10%) rounded up, at least 200. | The send pipeline, `SLICE_WAIT` (an hour) after the slice is out: `released`, `held` (until the account's throttle lifts), or `stopped` (over the pause limits: the account is paused, the rest skipped and the campaign cancelled). A cancel, stop or suspension marks it `cancelled`. | The rest of that campaign, until its slice has been checked. | None to see or release it. The owner sees it in `mailgoose campaign get`; `admin stop-campaign <id> --reason --yes` ends the campaign. |
@@ -54,7 +54,12 @@ never refuses a launch: copies over it wait for the next day's room.
   waiting or was rejected, and (`account_suspended`) while suspended.
 - `reject-signup` suspends the account with the rejection as the reason. A
   suspended account rejected keeps its suspension and reason as they were.
-- `approve-signup` works on a suspended account; it stays suspended.
+- `approve-signup` works on a suspended account; it stays suspended. It
+  also takes a rejected sign-up (logged with `review_was`), while
+  `reject-signup` takes only a waiting one.
+- `unsuspend` leaves a rejected review rejected, so the account still can't
+  launch or take form signups with full sending until `approve-signup`.
+  While it's suspended, only `account_suspended` is reported.
 
 **Test mode and tester accounts**
 - `tester grant` gives full sending (the log keeps the mode it had);
@@ -133,8 +138,5 @@ never refuses a launch: copies over it wait for the next day's room.
 
 Found while checking this page against the code, and not fixed yet.
 
-- Only a `waiting` review blocks, so unsuspending a rejected sign-up lets it
-  launch and take signups as if approved, while `tester grant` still refuses
-  it as rejected.
 - An ended tester's batches already on the send queue when it ends still go
   out; only new batches are held.

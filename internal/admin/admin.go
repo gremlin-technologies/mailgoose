@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -72,8 +73,9 @@ var (
 	ErrSuspended = errors.New("the account is suspended already")
 	// ErrNotSuspended is unsuspending an account that isn't suspended.
 	ErrNotSuspended = errors.New("the account isn't suspended")
-	// ErrNotWaiting is approving or rejecting an account that isn't waiting
-	// for its sign-up review (MG-66).
+	// ErrNotWaiting is rejecting an account that isn't waiting for its
+	// sign-up review (MG-66), or approving one whose review neither waits
+	// nor was rejected (MG-106).
 	ErrNotWaiting = errors.New("the account isn't waiting for review")
 	// ErrSendingModeUnchanged is allowing full sending to an account that
 	// has it, or putting one in test mode that's in it already (MG-80).
@@ -554,7 +556,9 @@ func (s *Service) Suspend(ctx context.Context, actor Actor, accountID, reason st
 
 // Unsuspend lets a suspended account sign in and send again. Its API keys
 // and CLI logins stay revoked: the owner makes new ones. A pause stays
-// until it's lifted on its own (Unpause).
+// until it's lifted on its own (Unpause), and so does a rejected sign-up
+// review (MG-106): the account can't launch or take form signups until
+// ApproveSignup.
 func (s *Service) Unsuspend(ctx context.Context, actor Actor, accountID, reason string) (*Account, error) {
 	reason, err := cleanReason(reason)
 	if err != nil {
@@ -562,11 +566,11 @@ func (s *Service) Unsuspend(ctx context.Context, actor Actor, accountID, reason 
 	}
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
 		now := s.now()
-		var was, by *string
+		var was, by, review *string
 		err := tx.QueryRow(ctx, `
 			UPDATE accounts a SET suspended_at = NULL, suspended_reason = NULL, suspended_by = NULL, updated_at = $2
 			FROM accounts old WHERE a.id = $1 AND old.id = a.id
-			RETURNING old.suspended_reason, old.suspended_by`, accountID, now).Scan(&was, &by)
+			RETURNING old.suspended_reason, old.suspended_by, a.review`, accountID, now).Scan(&was, &by, &review)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
@@ -576,8 +580,11 @@ func (s *Service) Unsuspend(ctx context.Context, actor Actor, accountID, reason 
 		if was == nil {
 			return ErrNotSuspended
 		}
-		_, err = s.record(ctx, tx, actor, ActionUnsuspend, &accountID, nil, reason,
-			map[string]any{"suspended_reason": was, "suspended_by": by}, now)
+		details := map[string]any{"suspended_reason": was, "suspended_by": by}
+		if deref(review) == "rejected" {
+			details["signup_review"] = "rejected"
+		}
+		_, err = s.record(ctx, tx, actor, ActionUnsuspend, &accountID, nil, reason, details, now)
 		return err
 	})
 	if err != nil {
@@ -606,9 +613,9 @@ func (s *Service) ListSignups(ctx context.Context, limit int) ([]AccountSummary,
 	})
 }
 
-// endReview moves a waiting account's review to outcome and logs it as
-// action, inside tx.
-func (s *Service) endReview(ctx context.Context, tx pgx.Tx, actor Actor, accountID, outcome, action, reason string, now time.Time) error {
+// endReview moves an account's review from one of from to outcome and
+// logs it as action, inside tx.
+func (s *Service) endReview(ctx context.Context, tx pgx.Tx, actor Actor, accountID, outcome, action, reason string, now time.Time, from ...string) error {
 	var review *string
 	var flags []string
 	err := tx.QueryRow(ctx, `SELECT review, review_flags FROM accounts WHERE id = $1 FOR UPDATE`, accountID).Scan(&review, &flags)
@@ -618,25 +625,29 @@ func (s *Service) endReview(ctx context.Context, tx pgx.Tx, actor Actor, account
 	if err != nil {
 		return err
 	}
-	if deref(review) != "waiting" {
+	if !slices.Contains(from, deref(review)) {
 		return ErrNotWaiting
 	}
 	if _, err := tx.Exec(ctx, `UPDATE accounts SET review = $2, updated_at = $3 WHERE id = $1`, accountID, outcome, now); err != nil {
 		return err
 	}
-	_, err = s.record(ctx, tx, actor, action, &accountID, nil, reason, map[string]any{"review_flags": flags}, now)
+	_, err = s.record(ctx, tx, actor, action, &accountID, nil, reason,
+		map[string]any{"review_flags": flags, "review_was": deref(review)}, now)
 	return err
 }
 
 // ApproveSignup ends a waiting account's review (MG-66): it can launch
-// campaigns and take form signups.
+// campaigns and take form signups. A rejected one can be approved too
+// (MG-106), which is the only way it launches again: lifting its
+// suspension leaves the review rejected. Approving doesn't lift a
+// suspension; Unsuspend does.
 func (s *Service) ApproveSignup(ctx context.Context, actor Actor, accountID, reason string) (*Account, error) {
 	reason, err := cleanReason(reason)
 	if err != nil {
 		return nil, err
 	}
 	if err := s.inTx(ctx, func(tx pgx.Tx) error {
-		return s.endReview(ctx, tx, actor, accountID, "approved", ActionApproveSignup, reason, s.now())
+		return s.endReview(ctx, tx, actor, accountID, "approved", ActionApproveSignup, reason, s.now(), "waiting", "rejected")
 	}); err != nil {
 		return nil, err
 	}
@@ -654,7 +665,7 @@ func (s *Service) RejectSignup(ctx context.Context, actor Actor, accountID, reas
 	var sus *sending.Suspension
 	err = s.inTx(ctx, func(tx pgx.Tx) error {
 		now := s.now()
-		if err := s.endReview(ctx, tx, actor, accountID, "rejected", ActionRejectSignup, reason, now); err != nil {
+		if err := s.endReview(ctx, tx, actor, accountID, "rejected", ActionRejectSignup, reason, now, "waiting"); err != nil {
 			return err
 		}
 		sus, err = sending.Suspend(ctx, tx, accountID, sending.Suspender{UserID: actor.UserID, Email: actor.Email}, reason,

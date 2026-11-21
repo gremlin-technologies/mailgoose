@@ -4,6 +4,39 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: A rejected sign-up stays held after its suspension is lifted (MG-106, bug fix; reversible defaults)
+
+Only a waiting review held back launches and forms (MG-66), so after
+`mailgoose admin reject-signup` and then `mailgoose admin unsuspend` the
+account launched campaigns and took form signups as if it had been
+approved, while `mailgoose admin tester grant` already refused it with
+`signup_not_approved`. The two now agree. The details below are reversible
+defaults.
+
+- **A rejected review holds the account back like a waiting one**, whatever
+  the suspension state: launches are refused with the problem
+  `signup_rejected` ("This account's sign-up review was rejected ...", at
+  the summary and again at the confirm), and forms answer 403
+  `form_closed`, storing nothing and sending nothing. While the account is
+  also suspended, only `account_suspended` is reported, as before.
+- **Test mode** (MG-80) is treated as for a waiting review: a rejected
+  account in test mode may still launch to its confirmed test addresses and
+  take their form signups, since it reaches no one else. Test sends work as
+  for a waiting account.
+- **`unsuspend` doesn't approve.** It leaves the review rejected, and the CLI
+  says so and points to `mailgoose admin approve-signup`; the admin log
+  records `signup_review: rejected` on the unsuspend.
+- **`approve-signup` takes a rejected sign-up too**, not only a waiting one,
+  and records what the review was (`review_was`). It doesn't lift a
+  suspension: approving one that's still suspended leaves it suspended, and
+  the CLI points to `unsuspend`. `reject-signup` still takes only a waiting
+  review. Approving one that's already approved still answers 409
+  `signup_not_waiting`.
+- **Unchanged:** the web app's review banner and `in_review` on the session
+  still mean waiting only; a rejected account that's been unsuspended sees
+  the reason when it tries to launch. Nothing is migrated: rows already
+  rejected are read the new way.
+
 ## 2026-11-21: Only test copies that may have gone count toward the day's tests (MG-101, bug fix; the details are reversible defaults)
 
 `reserveTests` counted every copy of a test toward the 50 a day (MG-29)

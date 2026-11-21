@@ -2229,7 +2229,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `confirmation_required`: nothing was launched. `details.summary` (`campaign_id`, `name`, `subject`, `from`, `reply_to`, `shared_domain`, `sender`, `recipient_count`, `send_at`, `credits`, `balance`, `warnings`) is what the person confirms. `shared_domain` is true when the campaign goes from mailgoose's shared sending domain (MG-85) because its From isn't on a verified domain: `from` is then the account's shared address, and `sender` the verified address it was set to go from (null otherwise). Show it, with a nudge to add the sender's domain; `details.code` the code that launches it once they say yes, and `details.expires_at` when the code stops working. `campaign_locked`: the campaign isn't a draft and wasn't launched; `details.status` is its status. [Error](#schema-error)
-- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from` (with `from_email` and `shared_sending`, as for a test), `unverified_reply_to` (on the shared sending domain, the Reply-To must be a verified sender or on a verified domain), `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up review; not for an account in test mode), `test_mode` (the account is in test mode and the campaign reaches anyone but its confirmed test addresses and its owner; `details.recipients` and `details.not_test_addresses`), `new_terms_not_accepted` (the terms changed and the account hasn't accepted the new version; `details.current_version` and `details.accepted_version`, then `acceptTerms`), `subscription_past_due` (sending is paused until the paid plan's payment goes through; listed after `account_paused` when another pause took over the past-due one, which then stays after the payment until it's lifted), `no_recipients`, `credits_short` with `details.needed`, `details.balance` and `details.short`, and `tester_limit` (a tester account, MG-86, that has ended, or whose campaign needs more tester credits than are left; `details.needed`, `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`). `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
+- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from` (with `from_email` and `shared_sending`, as for a test), `unverified_reply_to` (on the shared sending domain, the Reply-To must be a verified sender or on a verified domain), `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up review; not for an account in test mode), `signup_rejected` (the account's sign-up review was rejected and its suspension lifted without approving it; not for an account in test mode), `test_mode` (the account is in test mode and the campaign reaches anyone but its confirmed test addresses and its owner; `details.recipients` and `details.not_test_addresses`), `new_terms_not_accepted` (the terms changed and the account hasn't accepted the new version; `details.current_version` and `details.accepted_version`, then `acceptTerms`), `subscription_past_due` (sending is paused until the paid plan's payment goes through; listed after `account_paused` when another pause took over the past-due one, which then stays after the payment until it's lifted), `no_recipients`, `credits_short` with `details.needed`, `details.balance` and `details.short`, and `tester_limit` (a tester account, MG-86, that has ended, or whose campaign needs more tester credits than are left; `details.needed`, `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`). `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-cancelcampaign"></a>
@@ -2670,7 +2670,9 @@ Responses:
 mailgoose staff only (MG-65): the account can sign in and send
 again. Its API keys and CLI logins stay revoked, so the owner makes
 new ones; its stopped campaigns stay stopped, and a pause stays
-until it's lifted with `unpauseAccount`. An account that isn't
+until it's lifted with `unpauseAccount`. A rejected sign-up review
+stays rejected (MG-106): the account can't launch campaigns or take
+form signups until `approveSignup`. An account that isn't
 suspended answers 409 `account_not_suspended`.
 
 | Parameter | In | Type | Required | Description |
@@ -2731,8 +2733,10 @@ Responses:
 - Needs a `full`-scope key
 
 mailgoose staff only (MG-66): the account stops waiting for review
-and can launch campaigns and take form signups. An account that
-isn't waiting answers 409 `signup_not_waiting`.
+and can launch campaigns and take form signups. A rejected sign-up
+can be approved too (MG-106); that doesn't lift its suspension,
+which `unsuspendAccount` does. An account whose review neither
+waits nor was rejected answers 409 `signup_not_waiting`.
 
 | Parameter | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
@@ -2747,7 +2751,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `409`: `signup_not_waiting`: the account isn't waiting for its sign-up review. [Error](#schema-error)
+- `409`: `signup_not_waiting`: the account isn't waiting for its sign-up review (or, to approve, its review neither waits nor was rejected). [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
@@ -2779,7 +2783,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `409`: `signup_not_waiting`: the account isn't waiting for its sign-up review. [Error](#schema-error)
+- `409`: `signup_not_waiting`: the account isn't waiting for its sign-up review (or, to approve, its review neither waits nor was rejected). [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)

@@ -55,8 +55,8 @@ var (
 	// verified sending domain, so no confirmation email can go.
 	ErrNotReady = errors.New("the form can't send confirmation emails yet")
 	// ErrFormClosed means a form whose account can't take signups now: it's
-	// suspended (MG-65), or waiting for its sign-up review (MG-66) with full
-	// sending.
+	// suspended (MG-65), or its sign-up review (MG-66) waits or was rejected
+	// (MG-106) and it has full sending.
 	ErrFormClosed = errors.New("the form isn't taking signups")
 	// ErrTestMode means a signup from an address that isn't a confirmed
 	// test address (or the owner's) of an account in test mode (MG-80).
@@ -563,12 +563,14 @@ func (s *Service) inTx(ctx context.Context, f func(pgx.Tx) error) error {
 }
 
 // accepting returns ErrFormClosed when the account can't take signups now.
-// An account in test mode that's waiting for review takes them, since only
-// its test addresses can sign up (MG-80).
+// An account in test mode whose review waits or was rejected takes them,
+// since only its test addresses can sign up (MG-80). A rejected review
+// closes the form even once the suspension that came with it is lifted
+// (MG-106); approving the sign-up opens it.
 func (s *Service) accepting(ctx context.Context, accountID string) error {
 	var closed bool
 	if err := s.DB.QueryRow(ctx, `
-		SELECT suspended_at IS NOT NULL OR (coalesce(review = 'waiting', false) AND sending_mode <> 'test')
+		SELECT suspended_at IS NOT NULL OR (coalesce(review IN ('waiting', 'rejected'), false) AND sending_mode <> 'test')
 		FROM accounts WHERE id = $1`,
 		accountID).Scan(&closed); err != nil {
 		return err

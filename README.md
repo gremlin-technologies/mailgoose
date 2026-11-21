@@ -954,7 +954,9 @@ import contacts and send tests to its own addresses, and sees a note that
 it's being reviewed; it can't launch (`account_in_review`) or take form
 signups. When it confirms its address, `OPS_ALERT_EMAIL` gets an email.
 `mailgoose admin signups` lists waiting accounts with their flags;
-`approve-signup` lets one go, and `reject-signup` suspends it.
+`approve-signup` lets one go, and `reject-signup` suspends it. Lifting that
+suspension (`unsuspend`) leaves the review rejected: the account still can't
+launch (`signup_rejected`) or take form signups until `approve-signup`.
 The local stack (`make dev`) sets `SIGNUP_REVIEW=off` unless you set it, so
 local sign-ups can launch at once.
 

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +15,9 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/admin"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/forms"
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
+	"github.com/gremlin-technologies/mailgoose/internal/signups"
 )
 
 // targetAccounts holds the customer account targetAccount made.
@@ -265,5 +269,80 @@ func TestWaitingForReview(t *testing.T) {
 	acc, err := srv.Admin.RejectSignup(ctx, admin.Server, other, "Throwaway address.")
 	if err != nil || acc.SuspendedAt == nil {
 		t.Fatalf("reject: %+v %v", acc, err)
+	}
+}
+
+// TestRejectedThenUnsuspended: an account rejected at its sign-up review
+// and then unsuspended can't launch or take form signups, and the launch
+// says why; approve-signup lets it do both (MG-106).
+func TestRejectedThenUnsuspended(t *testing.T) {
+	srv := fullKey(authServer)(t)
+	h := srv.Handler()
+	readyCampaign(t, h)
+	ctx := context.Background()
+	pool := srv.DB.(*pgxpool.Pool)
+	campaignID, _ := addedCampaigns.Load(t)
+	var accountID string
+	if err := pool.QueryRow(ctx, `SELECT account_id FROM campaigns WHERE id = $1`, campaignID).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+	name := "Footer"
+	fields := []forms.Field{{Name: forms.FieldEmail, Required: true}}
+	f, err := srv.Forms.Create(ctx, accountID, forms.Changes{Name: &name, Fields: &fields})
+	if err != nil {
+		t.Fatal(err)
+	}
+	submit := func(email string) error {
+		elapsed := 4 * time.Second
+		_, err := srv.Signups.Submit(ctx, f.ID, signups.Submission{Email: email,
+			Stamp: forms.Stamp(f.SigningKey, f.ID, time.Now().Add(-time.Hour)), Elapsed: &elapsed, IP: "192.0.2.10"}, "https://app.mailgoose.test/")
+		return err
+	}
+	launchCodes := func() map[string]sending.Problem {
+		t.Helper()
+		_, err := srv.Sending.Launch(ctx, accountID, campaignID.(string), "", nil)
+		var nr *sending.NotReadyError
+		if !errors.As(err, &nr) {
+			t.Fatalf("launch: %v", err)
+		}
+		out := map[string]sending.Problem{}
+		for _, p := range nr.Problems {
+			out[p.Code] = p
+		}
+		return out
+	}
+
+	if _, err := pool.Exec(ctx, `UPDATE accounts SET review = 'waiting', review_at = now() WHERE id = $1`, accountID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.Admin.RejectSignup(ctx, admin.Server, accountID, "Throwaway address."); err != nil {
+		t.Fatal(err)
+	}
+	acc, err := srv.Admin.Unsuspend(ctx, admin.Server, accountID, "Appeal accepted.")
+	if err != nil || acc.SuspendedAt != nil || deref(acc.Review) != "rejected" {
+		t.Fatalf("unsuspend: %+v %v", acc, err)
+	}
+	codes := launchCodes()
+	if p, ok := codes[sending.SignupRejected]; !ok || !strings.Contains(p.Message, "rejected") {
+		t.Errorf("launch once unsuspended: %v", codes)
+	}
+	if _, ok := codes[sending.AccountSuspended]; ok {
+		t.Errorf("still reported suspended: %v", codes)
+	}
+	if err := submit("ann@example.com"); !errors.Is(err, signups.ErrFormClosed) {
+		t.Errorf("form once unsuspended: %v", err)
+	}
+
+	if _, err := srv.Admin.ApproveSignup(ctx, admin.Server, accountID, "Real bakery after all."); err != nil {
+		t.Fatal(err)
+	}
+	codes = launchCodes() // the campaign is untested, so it still has problems
+	for _, c := range []string{sending.SignupRejected, sending.AccountInReview, sending.AccountSuspended} {
+		if _, ok := codes[c]; ok {
+			t.Errorf("approved, still %s: %v", c, codes)
+		}
+	}
+	if err := submit("ann@example.com"); err != nil {
+		t.Errorf("form once approved: %v", err)
 	}
 }

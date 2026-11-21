@@ -99,3 +99,59 @@ func TestRejectSuspendedSignup(t *testing.T) {
 		t.Errorf("= %+v", acc.AccountSummary)
 	}
 }
+
+// TestUnsuspendRejectedSignup: lifting a rejected sign-up's suspension
+// leaves the review rejected (MG-106); approve-signup then approves it,
+// and a second approve or a reject is refused. Approving one that's still
+// suspended leaves the suspension as it is.
+func TestUnsuspendRejectedSignup(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.waiting(t, h.acc, "ip_burst")
+	if _, err := h.svc.RejectSignup(ctx, h.staff, h.acc, "Throwaway address."); err != nil {
+		t.Fatal(err)
+	}
+	acc, err := h.svc.Unsuspend(ctx, h.staff, h.acc, "Appeal accepted.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deref(acc.Review) != "rejected" || acc.SuspendedAt != nil {
+		t.Fatalf("unsuspended = %+v", acc.AccountSummary)
+	}
+	var detail string
+	if err := h.db.QueryRow(ctx, `SELECT coalesce(details->>'signup_review', '') FROM admin_actions WHERE action = $1`, ActionUnsuspend).
+		Scan(&detail); err != nil || detail != "rejected" {
+		t.Errorf("unsuspend logged signup_review %q (%v)", detail, err)
+	}
+
+	if acc, err = h.svc.ApproveSignup(ctx, h.staff, h.acc, "Real bakery after all."); err != nil {
+		t.Fatal(err)
+	}
+	if deref(acc.Review) != "approved" || acc.SuspendedAt != nil {
+		t.Errorf("approved = %+v", acc.AccountSummary)
+	}
+	var was string
+	if err := h.db.QueryRow(ctx, `SELECT details->>'review_was' FROM admin_actions WHERE action = $1`, ActionApproveSignup).
+		Scan(&was); err != nil || was != "rejected" {
+		t.Errorf("approve logged review_was %q (%v)", was, err)
+	}
+	if _, err := h.svc.ApproveSignup(ctx, h.staff, h.acc, "Again."); !errors.Is(err, ErrNotWaiting) {
+		t.Errorf("approve again: %v", err)
+	}
+
+	// Approving while still suspended approves only.
+	lee := h.account(t, "Lee's Shop", "lee@mailinator.com")
+	h.waiting(t, lee)
+	if _, err := h.svc.RejectSignup(ctx, h.staff, lee, "Throwaway address."); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.RejectSignup(ctx, h.staff, lee, "Again."); !errors.Is(err, ErrNotWaiting) {
+		t.Errorf("reject a rejected one: %v", err)
+	}
+	if acc, err = h.svc.ApproveSignup(ctx, h.staff, lee, "Changed my mind."); err != nil {
+		t.Fatal(err)
+	}
+	if deref(acc.Review) != "approved" || acc.SuspendedAt == nil {
+		t.Errorf("approved while suspended = %+v", acc.AccountSummary)
+	}
+}
