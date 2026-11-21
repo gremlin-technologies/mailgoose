@@ -19,8 +19,9 @@ Requirement IDs (AUTH-1, CAM-4 ...) point to `docs/mvp-requirements.md`.
   screenshot).
 - **Merge.** The reviewer agent merges when CI is green, every acceptance
   criterion is met and the PR follows `CLAUDE.md`. Tickets marked
-  **Owner merges** touch `infra/` or `.github/workflows/`; the reviewer
-  reviews them and the owner merges.
+  **Owner merges** touch `infra/`, `.github/workflows/`, `scripts/ci/`, the
+  `Dockerfile`, the `Makefile` or `compose.yaml`; the reviewer reviews them and
+  the owner merges.
 - **Needs owner** means part of the ticket is something only the owner can do (an
   AWS apply, a Stripe or DNS setting, legal text). The code part still goes
   through a PR; the PR says exactly what the owner has to do.

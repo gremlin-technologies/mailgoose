@@ -501,6 +501,32 @@ still matters after prod gets its own account.
   nearing the quota, and reading the real quota from SES `GetAccount`
   instead of a configured number.
 
+## 2026-11-21: More paths wait for the owner's merge (owner decision, "fine for now")
+
+From the architecture review (#195, F2; ticket MG-97, #206). Every merge to
+`main` deploys staging through CodeBuild, and the deploy runs
+`scripts/ci/deploy-ecs.sh` with a role that can start an ECS task. A change to
+the deploy script or the image build reached that role with only the
+reviewer's check.
+
+- **Owner-merge paths:** `scripts/ci/`, the `Dockerfile`, the `Makefile` and
+  `compose.yaml` join `infra/` and `.github/workflows/`. The reviewer still
+  reviews those PRs, checks the diff's file list before merging anything, and
+  leaves a PR that touches any of them for the owner. The owner: "Yes, fine
+  for now."
+- **Authors (default, not yet confirmed):** the reviewer merges only PRs opened
+  from a branch of this repository by the owner or the project's own agents,
+  never from a fork or another author. Making the repository private, which
+  the owner plans, makes this mostly moot; it's easy to drop.
+- **The owner's settings, outside the repo:** branch protection on `main`
+  (require a pull request and the four CI checks, Build and test, End-to-end,
+  Lint and Docker build (no push); block force-pushes and deletion), and
+  making the repository private. The public site moves to its own public
+  repository first (see the entry below), since a private repository on
+  GitHub's free plan can't publish GitHub Pages.
+- Prod's own deploy route (a tag or branch the owner moves) is in MG-52 (#61)
+  and MG-99 (#208).
+
 ## 2026-11-21: Public site moved to its own repository; CLI releases through package managers (owner decisions; the details are reversible defaults)
 
 The owner wants this repository private. GitHub Pages on a free personal
