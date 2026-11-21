@@ -302,7 +302,9 @@ revisions (environment, secrets, CPU or memory), deploy again and check:
    same.)
 2. **Check the running tasks have the change**: one deployment, on a
    revision newer than the apply's, holding the new value. Put the variable
-   the apply changed in for `NAME` (or look at `cpu` and `memory`):
+   the apply changed in for `NAME` (or look at `cpu` and `memory`). For a
+   changed secret, the new ARN shows under
+   `containerDefinitions[0].secrets[?name=='NAME'].valueFrom`, not in `value`:
    ```sh
    for svc in api worker; do
      aws ecs describe-services --cluster mailgoose-staging --services mailgoose-staging-$svc \
@@ -718,7 +720,7 @@ notifies the `<env>-alerts` SNS topic when it fires and again when it clears:
 | Alarm | Fires when |
 | --- | --- |
 | `<queue>-queue-age` | The send or SES events queue's oldest message has waited over 15 minutes. |
-| `<queue>-dlq` | Anything is on a dead-letter queue (a message failed five times). |
+| `<queue>-dlq` | Anything is on a dead-letter queue (a message failed five times). What to do: [A dead-letter queue alarm fired](#a-dead-letter-queue-alarm-fired). |
 | `api-5xx-rate` | Over 5% of API requests in 5 minutes end in a 5xx (only judged from 20 requests). |
 | `api-no-healthy-tasks` | The load balancer has had no healthy API task for 5 minutes. |
 | `<service>-not-running` | No api or worker task has reported in for 10 minutes. |
@@ -761,6 +763,148 @@ the latest revision by hand: that rolls it back to that image. Deploy with
 `scripts/ci/deploy-ecs.sh` instead, which copies the latest revision with
 only the image swapped (see "How deploys work"); once OIDC is allowed,
 `deploy-staging` runs it.
+
+## A dead-letter queue alarm fired
+
+`mailgoose-<env>-send-dlq` or `mailgoose-<env>-ses-events-dlq` fired (each
+alarm has its queue's name): a message failed five times and SQS set it
+aside on the dead-letter queue (DLQ). The queues per environment:
+
+| Queue | Its dead-letter queue | What's on it |
+| --- | --- | --- |
+| `mailgoose-staging-send` | `mailgoose-staging-send-dlq` | Send batches: `{"account_id", "campaign_id", "ids"}`, up to 100 `campaign_recipients` rows. |
+| `mailgoose-staging-ses-events` | `mailgoose-staging-ses-events-dlq` | SES bounce, complaint, delivery and other events. |
+
+Prod's are the same with `prod` for `staging`. A DLQ keeps messages 14 days.
+The source queues keep them 4 days, and SQS may count a message's age from
+when it was first queued, so move messages back within a few days of the
+alarm. From a machine signed in to the AWS project, for staging (for prod:
+`ENV=prod` and `API_HOST=api.mailgoose.app`):
+
+```sh
+export AWS_REGION=us-east-2 ENV=staging API_HOST=api.staging.mailgoose.app
+```
+
+**First, find the cause** in the worker's log. Each failed try logs
+`message left on queue` with `queue`, `message_id`, `receive_count` and
+`err`:
+
+```sh
+aws logs filter-log-events --log-group-name /ecs/mailgoose-$ENV-worker \
+  --start-time $(( ($(date +%s) - 86400) * 1000 )) \
+  --filter-pattern '{ $.msg = "message left on queue" }' \
+  --query 'events[].message' --output text | tail -n 20
+```
+
+Fix that first. Moving messages back while the cause is still there only
+sends them through five more failures and back to the DLQ.
+
+### `ses-events`
+
+Usually the database was down or locked for 10 minutes or more (an outage, a
+long migration). Until these events are handled, their bounces and
+complaints don't suppress contacts or count toward an account's pause.
+Handling is idempotent by event key, so an event handled before is skipped
+when it comes again.
+
+1. **Check the database is healthy:** the instance says `available` and
+   `/readyz` answers 200. Then check that the `err` lines above stopped.
+   ```sh
+   aws rds describe-db-instances --db-instance-identifier mailgoose-$ENV \
+     --query 'DBInstances[0].DBInstanceStatus' --output text
+   curl -s -o /dev/null -w '%{http_code}\n' https://$API_HOST/readyz
+   ```
+2. **Move the messages back** to `ses-events`:
+   ```sh
+   DLQ_ARN=$(aws sqs get-queue-attributes --attribute-names QueueArn \
+     --queue-url "$(aws sqs get-queue-url --queue-name mailgoose-$ENV-ses-events-dlq --query QueueUrl --output text)" \
+     --query Attributes.QueueArn --output text)
+   aws sqs start-message-move-task --source-arn "$DLQ_ARN" \
+     --destination-arn "${DLQ_ARN%-dlq}" --max-number-of-messages-per-second 10
+   ```
+3. **Watch it finish and the alarm clear** (below).
+
+### `send`
+
+A batch dead-letters when its fifth try ends in an error. Moving it back
+never sends a copy twice and never charges for a refunded one: a worker only
+claims rows that are still `queued`, so rows already sent, skipped or failed
+are passed over. A copy marked failed was refunded and stays failed; moving
+the batch doesn't send it, and a customer who wants those recipients reached
+sends a new campaign. So the question per message is only whether its cause
+is fixed, and what the move will do.
+
+1. **Read the messages** without removing them. Each comes back to the DLQ
+   after 60 seconds:
+   ```sh
+   DLQ_URL=$(aws sqs get-queue-url --queue-name mailgoose-$ENV-send-dlq --query QueueUrl --output text)
+   aws sqs receive-message --queue-url "$DLQ_URL" --max-number-of-messages 10 \
+     --visibility-timeout 60 --attribute-names All \
+     --query 'Messages[].[MessageId,Attributes.ApproximateReceiveCount,Body]' --output text
+   ```
+2. **Read the worker's lines for each one**, by its campaign and message id:
+   ```sh
+   aws logs filter-log-events --log-group-name /ecs/mailgoose-$ENV-worker \
+     --start-time $(( ($(date +%s) - 4 * 86400) * 1000 )) \
+     --filter-pattern '{ ($.campaign_id = "CAMPAIGN_ID") || ($.message_id = "MESSAGE_ID") }' \
+     --query 'events[].message' --output text
+   ```
+   Look at the last try: the `message left on queue` line's `err`, and the
+   `send batch finished` line with `"attempt":5`, if there is one.
+   - **`err` starts with `some copies failed after`:** the batch
+     ran to its end. SES refused the `failed` copies on every try; they're
+     marked failed with SES's reason in `campaign_recipients.error`, and
+     refunded. Every row is finished, so there is nothing left to send.
+     Safe to move: the worker finds nothing queued and deletes the message,
+     which clears the alarm. If many copies of one campaign were refused,
+     read the reason before moving on: it may be the account's From or
+     content.
+   - **Any other `err`** (the database, a timeout, a deploy): the batch
+     stopped partway. Rows it didn't reach are still `queued`. While the
+     campaign is sending, the dispatcher puts them in a new batch an hour
+     after they were queued, so they may have gone out already. A row cut
+     off mid-send is marked failed after 10 minutes and refunded, never
+     resent. Safe to move once the cause is fixed: the move sends whatever
+     is still `queued`, once.
+   - **Not safe yet:** the same `err` still shows in lines from the last few
+     minutes. Fix it first; the message keeps on the DLQ.
+
+   SQS may carry the receive count over on the move. If it does, the worker
+   treats a moved batch as its last try, so a copy SES refuses again is
+   marked failed and refunded at once instead of after five tries.
+3. **Move the messages back** to `send`:
+   ```sh
+   DLQ_ARN=$(aws sqs get-queue-attributes --queue-url "$DLQ_URL" --attribute-names QueueArn \
+     --query Attributes.QueueArn --output text)
+   aws sqs start-message-move-task --source-arn "$DLQ_ARN" \
+     --destination-arn "${DLQ_ARN%-dlq}" --max-number-of-messages-per-second 10
+   ```
+   Then check the campaigns' new `send batch finished` lines say
+   `"ended":"done"`.
+
+The rows themselves (`campaign_recipients.status` and `error`) can't be read
+from outside the VPC today; the worker's lines above carry the same counts.
+
+### Watching the move and the alarm
+
+With `DLQ_ARN` and `DLQ_URL` set for the queue you moved (for `ses-events`,
+`DLQ_URL=$(aws sqs get-queue-url --queue-name mailgoose-$ENV-ses-events-dlq --query QueueUrl --output text)`):
+
+```sh
+aws sqs list-message-move-tasks --source-arn "$DLQ_ARN" --max-results 1 \
+  --query 'Results[0].[Status,ApproximateNumberOfMessagesMoved,ApproximateNumberOfMessagesToMove,FailureReason]' --output text
+aws sqs get-queue-attributes --queue-url "$DLQ_URL" \
+  --attribute-names ApproximateNumberOfMessages ApproximateNumberOfMessagesNotVisible --output text
+aws cloudwatch describe-alarms --alarm-names "${DLQ_ARN##*:}" \
+  --query 'MetricAlarms[0].StateValue' --output text
+```
+
+The task says `RUNNING`, then `COMPLETED` with every message moved. The DLQ
+then shows `0 0`, and the alarm goes back to `OK` within about 10 minutes
+(it looks at 5-minute periods) and emails that it cleared. If the alarm
+fires again later, the moved messages failed five more times: the cause
+isn't fixed, so go back to the log lines. To stop a move partway, use
+`aws sqs cancel-message-move-task --task-handle <TaskHandle from the start command>`.
 
 ## Not here yet
 
