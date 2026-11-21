@@ -20,7 +20,7 @@ describe("public site design tokens", () => {
   });
 
   it("is light only: no dark tokens, dark logo or dark theme color", () => {
-    const pages = ["index.html", "404.html", "terms/index.html", "privacy/index.html", "anti-spam/index.html", "dpa/index.html"];
+    const pages = ["index.html", "404.html", "terms/index.html", "privacy/index.html", "anti-spam/index.html", "dpa/index.html", "alpha/index.html"];
     for (const file of ["assets/tokens.css", "assets/site.css", ...pages]) {
       const text = readFileSync(resolve(root, "site", file), "utf8");
       expect(text, file).not.toMatch(/prefers-color-scheme|data-theme|wordmark-light/);

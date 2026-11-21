@@ -4,6 +4,22 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Alpha tester guide at mailgoose.app/alpha/ (owner ask; the details are reversible defaults)
+
+The owner asked for a guide for alpha testers: how to test each area of the
+app, as a page on mailgoose.app. It's `site/alpha/index.html`, in the site's
+style and light only like the rest of the site.
+
+- **Unlisted (default).** Nothing on the site links to it, and it carries
+  `noindex, nofollow`; tester invites link to it. Adding it to the site's nav
+  is one line in `site/index.html`.
+- **Bug reports go by replying to the tester's invite email (default).**
+  There's no mailgoose.app mailbox yet; swap in a dedicated address once one
+  exists.
+- **It documents only what's on `main`.** The Mailchimp import, the shared
+  sending domain on staging (MG-85's infra, PR 193) and a CLI installer are
+  under "Coming soon"; the CLI is installed with `go install` meanwhile.
+
 ## 2026-11-21: Staging auto-deploy is live; how the GitHub connection is set up (confirmed on staging)
 
 The owner set up the CodeBuild deploy from the runbook on Nov 21. Every merge
