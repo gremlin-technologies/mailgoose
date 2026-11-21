@@ -2879,7 +2879,7 @@ type Form struct {
 	Id     string      `json:"id"`
 	Name   string      `json:"name"`
 
-	// Problems Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from.
+	// Problems Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. `signup_cap_reached`: the form has added its daily cap of new contacts (1,000 by default) in the last 24 hours, so its public endpoint answers 429 `form_signup_limit` until older signups age out; the message says when.
 	Problems *[]FormProblem `json:"problems,omitempty"`
 
 	// RedirectUrl Where people go after signing up, instead of seeing the success message.

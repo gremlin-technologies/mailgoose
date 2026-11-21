@@ -463,6 +463,37 @@ func TestFormSignupContactLimit(t *testing.T) {
 	}
 }
 
+// TestFormSignupDailyCap: past its daily cap (MG-92) a form answers 429
+// form_signup_limit, as JSON or as a page, with Retry-After saying when
+// it takes signups again, and adds nobody.
+func TestFormSignupDailyCap(t *testing.T) {
+	f := newSignupFixture(t, `{"name":"Footer","double_opt_in":false}`)
+	f.canSend(t)
+	f.srv.Signups.DailyCap = 1
+	if rec := f.post(f.values("ann@example.com"), "192.0.2.10", acceptJSON); rec.Code != http.StatusOK {
+		t.Fatalf("ann: %d %s", rec.Code, rec.Body)
+	}
+	rec := f.post(f.values("bo@example.com"), "192.0.2.11", acceptJSON)
+	if rec.Code != http.StatusTooManyRequests || decode[ErrorBody](t, rec).Error.Code != "form_signup_limit" {
+		t.Fatalf("bo: %d %s", rec.Code, rec.Body)
+	}
+	retry, err := strconv.Atoi(rec.Header().Get("Retry-After"))
+	if err != nil || retry < 86000 || retry > 86400 {
+		t.Errorf("Retry-After %q", rec.Header().Get("Retry-After"))
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Error("no CORS header on the 429")
+	}
+	rec = f.post(f.values("bo@example.com"), "192.0.2.12")
+	if rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), "Please try again tomorrow") ||
+		!strings.Contains(rec.Body.String(), "all the signups it can for today") {
+		t.Fatalf("bo's page: %d %s", rec.Code, rec.Body)
+	}
+	if f.status(t, "bo@example.com") != "none" {
+		t.Error("bo was added past the cap")
+	}
+}
+
 func TestConfirmLinkPages(t *testing.T) {
 	f := newSignupFixture(t, `{"name":"Footer"}`)
 	f.canSend(t)
