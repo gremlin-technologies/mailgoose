@@ -69,7 +69,9 @@ func TestResolve(t *testing.T) {
 		wantReplyErr  bool
 	}{
 		{name: "owner's own address", from: "Owner@Shop.example", wantFrom: shared, wantName: "Pat's Bakery", wantReplyTo: "Owner@Shop.example"},
-		{name: "confirmed sender, own From name", from: "pat@example.com", fromName: "Pat", wantFrom: shared, wantName: "Pat", wantReplyTo: "pat@example.com"},
+		// MG-98: the email's own From name is used only on a verified domain.
+		{name: "confirmed sender, own From name", from: "pat@example.com", fromName: "Pat", wantFrom: shared, wantName: "Pat's Bakery", wantReplyTo: "pat@example.com"},
+		{name: "From name of a brand", from: "pat@example.com", fromName: "PayPal Support", wantFrom: shared, wantName: "Pat's Bakery", wantReplyTo: "pat@example.com"},
 		{name: "Reply-To another verified sender", from: "pat@example.com", replyTo: "owner@shop.example", wantFrom: shared, wantName: "Pat's Bakery", wantReplyTo: "owner@shop.example"},
 		{name: "Reply-To on a verified domain", from: "pat@example.com", replyTo: "help@patsbakery.com", wantFrom: shared, wantName: "Pat's Bakery", wantReplyTo: "help@patsbakery.com"},
 		{name: "Reply-To the From itself", from: "pat@example.com", replyTo: "PAT@example.com", wantFrom: shared, wantName: "Pat's Bakery", wantReplyTo: "PAT@example.com"},

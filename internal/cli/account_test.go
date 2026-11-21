@@ -235,3 +235,48 @@ func TestAccountAcceptTerms(t *testing.T) {
 		t.Errorf("--json output %s (%v)", h.out, err)
 	}
 }
+
+// TestAccountSendLimitNeedsDomain: an account held at the new-account limit
+// for want of a domain of its own is told why and how to add one (MG-98).
+func TestAccountSendLimitNeedsDomain(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"a1","name":"Pat's Bakery","plan":"free","time_zone":"UTC","missing_for_send":[],"created_at":"2026-11-18T12:00:00Z",` +
+			`"send_limit":{"daily":1000,"usual":10000,"reason":"Accounts without a verified domain of their own send at most 1,000 a day, from mailgoose's shared domain. ` +
+			`Add your own domain to send more: the limit then doubles each week of clean sending, up to 10,000 a day.","lowered_until":null,"needs_domain":true},` +
+			`"terms":{"accepted_version":"2026-11-19","accepted_at":"2026-11-18T12:00:00Z","current_version":"2026-11-19","current_effective":"2026-11-19",` +
+			`"acceptance_needed":false},"sending_mode":"full"}`))
+	}))
+	t.Cleanup(srv.Close)
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_key"
+	if code := h.run("account", "get"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	for _, want := range []string{"Send limit:  1,000 a day\n             Accounts without a verified domain of their own",
+		"\n             Add your own domain to send more: mailgoose domain add <your-domain>\n"} {
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, h.out)
+		}
+	}
+}
+
+// TestAccountRenameRefused: a name refused for passing as someone else on
+// the shared domain says why (MG-98).
+func TestAccountRenameRefused(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = io.WriteString(w, `{"error":{"code":"account_name_not_allowed","message":"An account name can't include \"PayPal\", a well-known brand. `+
+			`Emails sent from mailgoose's shared domain go out under your account's name, so it can't pass for a company or a bank's or shop's own messages. Choose another name."}}`)
+	}))
+	t.Cleanup(srv.Close)
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_key"
+	if code := h.run("account", "update", "--name", "PayPal Support"); code == ExitOK ||
+		!strings.Contains(h.errOut.String(), `can't include "PayPal"`) || !strings.Contains(h.errOut.String(), "shared domain") {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+}

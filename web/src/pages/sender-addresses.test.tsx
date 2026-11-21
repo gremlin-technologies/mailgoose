@@ -39,7 +39,7 @@ function account(shared: string | null) {
         time_zone: "Europe/London",
         missing_for_send: [],
         sending_mode: "full",
-        send_limit: { daily: 1000, usual: 10000, reason: "New accounts start at 1,000 a day.", lowered_until: null },
+        send_limit: { daily: 1000, usual: 10000, reason: "New accounts start at 1,000 a day.", lowered_until: null, needs_domain: false },
         sending_slug: "pats-bakery",
         shared_address: shared,
         created_at: "2026-11-18T10:00:00Z",

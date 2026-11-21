@@ -2891,7 +2891,10 @@ export interface components {
          *     New accounts start low and double each week of clean sending up to
          *     the usual limit. A campaign whose spam complaints or hard bounces
          *     pass the early-warning limits (0.05% and 2% by default) lowers it to
-         *     the new-account limit for 7 days.
+         *     the new-account limit for 7 days. Where the server has a shared
+         *     sending domain, an account with no verified domain of its own stays
+         *     at the new-account limit (`needs_domain`), and one that verifies a
+         *     domain grows from when it did.
          */
         SendLimit: {
             /** @example 1000 */
@@ -2908,6 +2911,13 @@ export interface components {
              * @description When a lowered limit lifts; null when it isn't lowered.
              */
             lowered_until: string | null;
+            /**
+             * @description True when `daily` is held at the new-account limit because the
+             *     account has no verified domain of its own and sends from the
+             *     shared sending domain: adding a domain (`createDomain`) is how it
+             *     sends more.
+             */
+            needs_domain: boolean;
         };
         /**
          * @description Which version of mailgoose's terms the account accepted, and the
@@ -2949,8 +2959,19 @@ export interface components {
             version: string;
         };
         UpdateAccountRequest: {
+            /**
+             * @description A new name is checked as at sign-up (`account_name` in
+             *     `createSignup`): one that could pass for someone else on the
+             *     shared sending domain is a 422 `account_name_not_allowed`. The
+             *     current name, sent back unchanged, is never refused.
+             */
             name?: string;
-            /** @description One line, without quotes or angle brackets. `null` removes it. */
+            /**
+             * @description One line, without quotes or angle brackets. `null` removes it.
+             *     It's used only for email from a domain verified for the account;
+             *     email from the shared sending domain goes under the account's
+             *     name.
+             */
             from_name?: string | null;
             /**
              * Format: email
@@ -3214,7 +3235,16 @@ export interface components {
              * @example pat@example.com
              */
             email: string;
-            /** @example Pat's Bakery */
+            /**
+             * @description Emails from mailgoose's shared sending domain go out under the
+             *     account's name, so a name with an `@`, one shaped like a domain
+             *     (`example.com`), or one carrying a well-known brand or a payment
+             *     term (`PayPal Support`, `Billing`) is refused with a 422
+             *     `account_name_not_allowed` whose message says why. Names are
+             *     compared ignoring case, accents, spaces, punctuation and common
+             *     lookalike characters.
+             * @example Pat's Bakery
+             */
             account_name: string;
             /**
              * @description Must be `true`: the person accepts the current version of the
@@ -4481,7 +4511,7 @@ export interface components {
         /**
          * @description The request is well formed but a field is wrong. `code` says which
          *     problem, such as `invalid_email`, `invalid_account_name`,
-         *     `terms_not_accepted` or `invalid_code`.
+         *     `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`.
          */
         ValidationFailed: {
             headers: {

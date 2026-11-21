@@ -4,6 +4,81 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Shared-domain mail goes under the account's name, and doesn't ramp without a domain (MG-98, owner decision; the lists and normalisation are reversible defaults)
+
+The owner said yes (Nov 21) to closing MG-85's open question 1 ("tighter
+limits for shared-domain senders?"). On the shared sending domain, the From
+was `<the email's From name> <slug@shared domain>`, so an account could send
+as "PayPal Support" from mailgoose's domain, and shared-domain senders grew
+to the same 10,000 a day as accounts with a verified domain.
+
+- **Name (owner decision).** On the shared domain the display name is always
+  the account's name; an email's own From name (or the account's default
+  From name) is used only on a verified domain of the account.
+  `senders.Resolver` does it, so test sends, launches, signup confirmations
+  and the email check agree. The email check's `shared_domain` warning names
+  the account name it goes under.
+- **Refused account names (owner decision; the details are reversible
+  defaults).** Sign-up and rename refuse, with a 422
+  `account_name_not_allowed` whose message says why, a name that contains
+  `@`, one shaped like a domain (two or more labels and a top-level domain of
+  letters, such as `paypal.com`, so `St.Louis` is refused too and `St. Louis`
+  isn't), or one carrying a term on these lists (`internal/accountname`):
+  - Brands refused anywhere in the name, even inside a word: PayPal,
+    Mastercard, American Express, Wells Fargo, Bank of America, Citibank,
+    JPMorgan, Chase Bank, Capital One, Western Union, MoneyGram, Cash App,
+    Venmo, Coinbase, Binance, Apple Pay, Apple ID, Apple Support, iCloud,
+    iTunes, Google Pay, Microsoft, Facebook, Instagram, WhatsApp, LinkedIn,
+    Netflix, DocuSign, QuickBooks, Mailchimp, mailgoose, Mailer Daemon,
+    Postmaster, Amazon Pay, Amazon Prime, Amazon Support.
+  - Brands refused as a word or words of the name ("Amazon Store", not
+    "Amazonia Coffee"): Amazon, Google, Gmail, eBay, Zelle, Stripe, Shopify,
+    Klarna, Afterpay, Revolut, Amex, Intuit, FedEx, DHL, USPS, IRS, HMRC,
+    Yahoo.
+  - Brands that are everyday words, refused only when the name is the brand
+    with at most generic words such as support, team, billing, account,
+    security, service, store, official, the, inc or llc ("Apple Support",
+    not "Big Apple Bagels"): Apple, Chase, Visa, Square, Meta, Discover,
+    Citi, Target, Wise, Uber.
+  - Payment and account-security terms, refused as a word or words: Billing,
+    Invoice(s), Payment(s), Refund(s), Chargeback, Fraud, Wire Transfer, Bank
+    Transfer, Direct Deposit, Tax Refund, Account Security, Security Alert,
+    Account Verification, Verification, Password.
+- **Normalisation (reversible default).** Done in Go, not SQL, so it doesn't
+  depend on the database's encoding (the PR 192 review's point about
+  `translate()`): NFKC then NFKD, combining accents and invisible format
+  characters (zero-width spaces, joiners, soft hyphens) dropped, case
+  folded, the ideographic full stop read as a dot, common lookalikes mapped
+  (Cyrillic and Greek letters that look Latin, `0` to o, `1`, `i` and `|` to
+  l, `3` e, `4` a, `5` and `$` s, `7` t, `8` b, `rn` m, `vv` w), then
+  anything that isn't a letter or digit splits words. A brand spelt across
+  words is caught ("Pay Pal", "P.a.y.P.a.l").
+- **Names taken before this stay** until they're changed: sending the current
+  name back unchanged in an update isn't refused, so the rest of the settings
+  can still be saved. Nothing checks existing accounts' names.
+- **Limit (owner decision).** With `SHARED_SENDING_DOMAIN` set, an account
+  with no verified domain of its own stays at the new-account daily limit
+  (`NEW_ACCOUNT_DAILY_SEND_LIMIT`, 1,000) and doesn't ramp. Its send limit
+  says why, "Add your own domain to send more", with `needs_domain: true` in
+  `GET /v1/account` (and the admin account view), a link to Domains in the
+  web app's Settings, and `mailgoose domain add <your-domain>` in
+  `mailgoose account get`. With the variable unset, nothing changes.
+- **Details picked (reversible defaults):**
+  - "Verified domain" means any domain of the account with status
+    `verified`, whichever From a campaign uses; one that later fails puts the
+    hold back.
+  - Once it has one, the limit grows from when the account verified its
+    first still-verified domain, if that's later than when it started (or
+    than a lifted throttle), so a new domain starts at 1,000 too and doubles
+    each clean week. An account that verified a domain long ago ramps as
+    before.
+  - A throttle (MG-61) still wins, and a limit staff set by hand
+    (`daily_send_limit`, including a tester's 100) still stands over the
+    hold.
+- **The nudge stays** in test results, launch summaries and the email check.
+- **MG-85's open question 1 is closed**; question 2 (which domain is the
+  shared one in prod) stays open.
+
 ## 2026-11-21: SES throttling and quota errors wait; a platform daily send cap (MG-87, from the architecture review; details are reversible defaults)
 
 The architecture review (#195, F3) found that any SES error failed a
@@ -165,9 +240,11 @@ address.
   - Locally (`scripts/dev.sh`, `make run-api`, `compose.yaml`) the shared
     domain is `shared.localhost`.
 - **Open questions for the owner:**
-  1. **Tighter limits for shared-domain senders?** Default: the same send
+  1. ~~**Tighter limits for shared-domain senders?** Default: the same send
      limits, review and test mode as any other account for now; nothing extra
-     is built.
+     is built.~~ Closed Nov 21 (MG-98, above): mail there goes under the
+     account's name, and accounts without a verified domain stay at the
+     new-account limit.
   2. **Which domain is the shared one?** Default: `SHARED_SENDING_DOMAIN`
      stays unset in prod, so prod is unchanged. Staging gets a subdomain of
      `staging.mailgoose.app` (assumed `shared.staging.mailgoose.app`) in a

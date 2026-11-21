@@ -1444,7 +1444,10 @@ type AccountSettings struct {
 	// New accounts start low and double each week of clean sending up to
 	// the usual limit. A campaign whose spam complaints or hard bounces
 	// pass the early-warning limits (0.05% and 2% by default) lowers it to
-	// the new-account limit for 7 days.
+	// the new-account limit for 7 days. Where the server has a shared
+	// sending domain, an account with no verified domain of its own stays
+	// at the new-account limit (`needs_domain`), and one that verifies a
+	// domain grows from when it did.
 	SendLimit SendLimit `json:"send_limit"`
 
 	// SendingMode `test` while the account is in test mode (MG-80): it sends only to
@@ -1571,7 +1574,10 @@ type AdminAccount struct {
 	// New accounts start low and double each week of clean sending up to
 	// the usual limit. A campaign whose spam complaints or hard bounces
 	// pass the early-warning limits (0.05% and 2% by default) lowers it to
-	// the new-account limit for 7 days.
+	// the new-account limit for 7 days. Where the server has a shared
+	// sending domain, an account with no verified domain of its own stays
+	// at the new-account limit (`needs_domain`), and one that verifies a
+	// domain grows from when it did.
 	SendLimit SendLimit `json:"send_limit"`
 
 	// SendingMode `test` while the account is in test mode (MG-80): it sends only to
@@ -3392,13 +3398,22 @@ type RescheduleCampaignRequest struct {
 // New accounts start low and double each week of clean sending up to
 // the usual limit. A campaign whose spam complaints or hard bounces
 // pass the early-warning limits (0.05% and 2% by default) lowers it to
-// the new-account limit for 7 days.
+// the new-account limit for 7 days. Where the server has a shared
+// sending domain, an account with no verified domain of its own stays
+// at the new-account limit (`needs_domain`), and one that verifies a
+// domain grows from when it did.
 type SendLimit struct {
 	// Daily Examples: 1000
 	Daily int `json:"daily"`
 
 	// LoweredUntil When a lowered limit lifts; null when it isn't lowered.
 	LoweredUntil *time.Time `json:"lowered_until"`
+
+	// NeedsDomain True when `daily` is held at the new-account limit because the
+	// account has no verified domain of its own and sends from the
+	// shared sending domain: adding a domain (`createDomain`) is how it
+	// sends more.
+	NeedsDomain bool `json:"needs_domain"`
 
 	// Reason Why `daily` is under `usual` (or set by mailgoose); null at the usual limit.
 	Reason *string `json:"reason"`
@@ -3472,7 +3487,16 @@ type SignupRequest struct {
 	// the time. Anything else is a 422 `terms_not_accepted`.
 	AcceptedTerms bool `json:"accepted_terms"`
 
-	// AccountName Examples: Pat's Bakery
+	// AccountName Emails from mailgoose's shared sending domain go out under the
+	// account's name, so a name with an `@`, one shaped like a domain
+	// (`example.com`), or one carrying a well-known brand or a payment
+	// term (`PayPal Support`, `Billing`) is refused with a 422
+	// `account_name_not_allowed` whose message says why. Names are
+	// compared ignoring case, accents, spaces, punctuation and common
+	// lookalike characters.
+	//
+	//
+	// Examples: Pat's Bakery
 	AccountName string `json:"account_name"`
 
 	// Email Examples: pat@example.com
@@ -3723,8 +3747,16 @@ type UpdateAccountRequest struct {
 	FromEmail *string `json:"from_email,omitempty"`
 
 	// FromName One line, without quotes or angle brackets. `null` removes it.
+	// It's used only for email from a domain verified for the account;
+	// email from the shared sending domain goes under the account's
+	// name.
 	FromName *string `json:"from_name,omitempty"`
-	Name     *string `json:"name,omitempty"`
+
+	// Name A new name is checked as at sign-up (`account_name` in
+	// `createSignup`): one that could pass for someone else on the
+	// shared sending domain is a 422 `account_name_not_allowed`. The
+	// current name, sent back unchanged, is never refused.
+	Name *string `json:"name,omitempty"`
 
 	// PostalAddress Up to 8 lines separated by `\n`; blank lines are dropped. `null` removes it.
 	PostalAddress *string `json:"postal_address,omitempty"`

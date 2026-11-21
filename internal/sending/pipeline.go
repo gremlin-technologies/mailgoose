@@ -90,6 +90,11 @@ type Limits struct {
 	// NewDaily its limit in that week. An account's own daily_send_limit
 	// overrides both.
 	Daily, NewDaily int
+	// SharedDomain is true when shared sending is on (SHARED_SENDING_DOMAIN,
+	// MG-85). An account with no verified domain of its own then stays at
+	// NewDaily, and one that has one grows from when it verified its first
+	// (MG-98).
+	SharedDomain bool
 	// PlatformDaily is the most campaign copies sent in 24 hours across
 	// every account together, kept under the SES account's daily quota
 	// (MG-87). Zero means no platform cap.

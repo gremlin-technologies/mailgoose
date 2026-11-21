@@ -145,7 +145,7 @@ func accountJSON(st *auth.Settings, limit sending.SendLimit, ts *tester.Status) 
 		TimeZone:       st.TimeZone,
 		MissingForSend: append([]string{}, st.MissingForSend()...),
 		SendLimit: apigen.SendLimit{Daily: limit.Daily, Usual: limit.Usual, Reason: limit.Reason,
-			LoweredUntil: limit.LoweredUntil},
+			LoweredUntil: limit.LoweredUntil, NeedsDomain: limit.NeedsDomain},
 		Terms:       termsJSON(st),
 		SendingMode: apigen.SendingMode(st.SendingMode),
 		Tester:      tj,

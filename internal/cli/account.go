@@ -87,13 +87,18 @@ type sendLimit struct {
 	Usual        int        `json:"usual"`
 	Reason       *string    `json:"reason"`
 	LoweredUntil *time.Time `json:"lowered_until"`
+	NeedsDomain  bool       `json:"needs_domain"`
 }
 
-// String is the limit, with why it's lower than usual.
+// String is the limit, with why it's lower than usual, and, when it's held
+// for want of a domain of the account's own (MG-98), how to add one.
 func (l sendLimit) String() string {
 	s := thousands(l.Daily) + " a day"
 	if l.Reason != nil {
 		s += "\n             " + *l.Reason
+	}
+	if l.NeedsDomain {
+		s += "\n             Add your own domain to send more: mailgoose domain add <your-domain>"
 	}
 	return s
 }
@@ -143,7 +148,12 @@ version of mailgoose's terms the account accepted; when the terms change,
 		Short: "Change account settings; only the flags given change",
 		Long: `Changes only the settings whose flags are given. An empty value removes the
 default From name, From address or postal address. Give a multi-line postal
-address with --postal-address-file, or with \n between lines.`,
+address with --postal-address-file, or with \n between lines.
+
+Email from mailgoose's shared sending domain goes under the account's name
+(--name); the From name is used only from a domain verified for the account.
+So a name with an @, one shaped like a domain, or one carrying a well-known
+brand or a payment term (PayPal, Billing) is refused, with why.`,
 		Example: `  mailgoose account update --from-name "Pat's Bakery" --from-email news@patsbakery.example
   mailgoose account update --postal-address "Pat's Bakery\n12 Main St\nSpringfield, IL 62701"
   mailgoose account update --postal-address-file address.txt --time-zone America/Chicago

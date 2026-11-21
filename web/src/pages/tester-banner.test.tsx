@@ -13,7 +13,7 @@ const account = {
   time_zone: "UTC",
   missing_for_send: [],
   created_at: "2026-11-18T10:00:00Z",
-  send_limit: { daily: 100, usual: 10000, reason: null, lowered_until: null },
+  send_limit: { daily: 100, usual: 10000, reason: null, lowered_until: null, needs_domain: false },
   sending_mode: "full",
 };
 

@@ -27,6 +27,7 @@ type accountBody struct {
 		Usual        int        `json:"usual"`
 		Reason       *string    `json:"reason"`
 		LoweredUntil *time.Time `json:"lowered_until"`
+		NeedsDomain  bool       `json:"needs_domain"`
 	} `json:"send_limit"`
 }
 
@@ -65,9 +66,50 @@ func TestAccountThroughTheAPI(t *testing.T) {
 		t.Errorf("after clearing from_email = %+v", a)
 	}
 
+	// A name that could pass for someone else on the shared domain is
+	// refused, saying why (MG-98).
+	rec := do(t, h, withSession(jsonRequest(http.MethodPatch, "/v1/account", `{"name":"PayPal Support"}`))(t))
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), `"code":"account_name_not_allowed"`) ||
+		!strings.Contains(rec.Body.String(), "shared domain") {
+		t.Errorf("brand name: %d %s", rec.Code, rec.Body)
+	}
+	if a := read(request(http.MethodGet, "/v1/account"), http.StatusOK); a.Name != "Pat's Bakery" || a.SendLimit.NeedsDomain {
+		t.Errorf("after a refused rename = %+v", a)
+	}
+
 	read(jsonRequest(http.MethodPatch, "/v1/account", `{"time_zone":"EST5EDT "}`), http.StatusUnprocessableEntity)
 	read(jsonRequest(http.MethodPatch, "/v1/account", `{"plan":"paid"}`), http.StatusBadRequest)
 	read(jsonRequest(http.MethodPatch, "/v1/account", `{"name":5}`), http.StatusBadRequest)
+}
+
+// With shared sending on, an account with no verified domain of its own is
+// held at the new-account limit and told to add one; a verified domain
+// lifts the hold (MG-98).
+func TestAccountNeedsDomainLimit(t *testing.T) {
+	srv := sharedServer(t)
+	h := srv.Handler()
+	signedIn(t, h)
+	get := func() accountBody {
+		t.Helper()
+		rec := do(t, h, withSession(request(http.MethodGet, "/v1/account"))(t))
+		var a accountBody
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &a) != nil {
+			t.Fatalf("%d %s", rec.Code, rec.Body)
+		}
+		return a
+	}
+	l := get().SendLimit
+	if l.Daily != 1000 || !l.NeedsDomain || l.Reason == nil || !strings.Contains(*l.Reason, "Add your own domain to send more") {
+		t.Errorf("no domain: %+v", l)
+	}
+	if _, err := srv.DB.(*pgxpool.Pool).Exec(context.Background(), `
+		INSERT INTO domains (account_id, name, mail_from, created_at, check_until, status, verified_at)
+		SELECT account_id, 'patsbakery.com', 'bounce', now(), now(), 'verified', now() FROM users WHERE email = 'pat@example.com'`); err != nil {
+		t.Fatal(err)
+	}
+	if l := get().SendLimit; l.Daily != 1000 || l.NeedsDomain || l.Reason == nil || !strings.Contains(*l.Reason, "Growing from when your domain was verified") {
+		t.Errorf("with a domain: %+v", l)
+	}
 }
 
 // A throttled account sees its lower limit, why, and until when (MG-61).

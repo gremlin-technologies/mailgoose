@@ -284,7 +284,7 @@ Responses:
 
 - `202`: A code is on its way, if the address can receive one. [CodeSent](#schema-codesent)
 - `400`: The request is malformed. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -310,7 +310,7 @@ Responses:
 
 - `202`: A code is on its way, if the address has an account. [CodeSent](#schema-codesent)
 - `400`: The request is malformed. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -339,7 +339,7 @@ Responses:
 - `201`: Signed in; the token is shown only here. [DeviceLoginToken](#schema-devicelogintoken)
 - `400`: The request is malformed. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -365,7 +365,7 @@ Responses:
 
 - `201`: Signed in. [Session](#schema-session)
 - `400`: The request is malformed. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -469,7 +469,7 @@ Responses:
 - `200`: The account after the change. [AccountSettings](#schema-accountsettings)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -504,7 +504,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `502`: `payment_provider_error`: Stripe couldn't make the Checkout page; try again shortly. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
@@ -538,7 +538,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -596,7 +596,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -850,7 +850,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `409`: `domain_exists`: this account already has the domain. `domain_taken`: another mailgoose account has it. `domain_unavailable`: the domain is already set up in Amazon SES outside mailgoose's reach. Contact support for either of the last two. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -993,7 +993,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `402`: `contact_limit`: a free account, or a tester account (MG-86) on any plan, holds at most 500 counted contacts (unconfirmed and subscribed). `details.limit` is the limit and `details.count` the counted contacts now. Other paid accounts have no cap. [Error](#schema-error)
 - `409`: `contact_exists`: the account already has a contact with that address. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -1082,7 +1082,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `contact_exists`: the account already has a contact with that address. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -1194,7 +1194,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `409`: `tag_exists`: the account already has a tag with that name, ignoring case. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -1223,7 +1223,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `tag_exists`: the account already has a tag with that name, ignoring case. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -1279,7 +1279,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -1307,7 +1307,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -3944,7 +3944,10 @@ How many campaign recipients the account may send to in 24 hours.
 New accounts start low and double each week of clean sending up to
 the usual limit. A campaign whose spam complaints or hard bounces
 pass the early-warning limits (0.05% and 2% by default) lowers it to
-the new-account limit for 7 days.
+the new-account limit for 7 days. Where the server has a shared
+sending domain, an account with no verified domain of its own stays
+at the new-account limit (`needs_domain`), and one that verifies a
+domain grows from when it did.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -3952,6 +3955,7 @@ the new-account limit for 7 days.
 | `usual` | integer | yes | The limit for an established account in good standing. |
 | `reason` | string or null | yes | Why `daily` is under `usual` (or set by mailgoose); null at the usual limit. |
 | `lowered_until` | string (date-time) or null | yes | When a lowered limit lifts; null when it isn't lowered. |
+| `needs_domain` | boolean | yes | True when `daily` is held at the new-account limit because the account has no verified domain of its own and sends from the shared sending domain: adding a domain (`createDomain`) is how it sends more. |
 
 <a id="schema-termsstatus"></a>
 
@@ -3983,8 +3987,8 @@ in each is on the web app's `/policies/changes` page.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `name` | string |  |  |
-| `from_name` | string or null |  | One line, without quotes or angle brackets. `null` removes it. |
+| `name` | string |  | A new name is checked as at sign-up (`account_name` in `createSignup`): one that could pass for someone else on the shared sending domain is a 422 `account_name_not_allowed`. The current name, sent back unchanged, is never refused. |
+| `from_name` | string or null |  | One line, without quotes or angle brackets. `null` removes it. It's used only for email from a domain verified for the account; email from the shared sending domain goes under the account's name. |
 | `from_email` | string (email) or null |  | `null` removes it. |
 | `postal_address` | string or null |  | Up to 8 lines separated by `\n`; blank lines are dropped. `null` removes it. |
 | `time_zone` | string |  | An IANA time zone name, such as `America/New_York` or `UTC`. |
@@ -4217,7 +4221,7 @@ Type: string: one of `grant`, `purchase`, `reserve`, `release`, `spend`, `fee`, 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `email` | string (email) | yes |  |
-| `account_name` | string | yes |  |
+| `account_name` | string | yes | Emails from mailgoose's shared sending domain go out under the account's name, so a name with an `@`, one shaped like a domain (`example.com`), or one carrying a well-known brand or a payment term (`PayPal Support`, `Billing`) is refused with a 422 `account_name_not_allowed` whose message says why. Names are compared ignoring case, accents, spaces, punctuation and common lookalike characters. |
 | `accepted_terms` | boolean | yes | Must be `true`: the person accepts the current version of the terms of service and the anti-spam policy, which is recorded with the time. Anything else is a 422 `terms_not_accepted`. |
 
 <a id="schema-signinrequest"></a>

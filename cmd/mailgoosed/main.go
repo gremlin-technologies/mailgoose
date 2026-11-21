@@ -504,6 +504,9 @@ func sendLimits(cfg config.Config) sending.Limits {
 		PerSecond: cfg.SendRatePerSecond,
 		Daily:     cfg.AccountDailySendLimit,
 		NewDaily:  cfg.NewAccountDailySendLimit,
+		// MG-98: with shared sending on, an account without a domain of
+		// its own doesn't grow past NewDaily.
+		SharedDomain: cfg.SharedSendingDomain != "",
 		// The platform cap (MG-87); only the dispatcher reads it.
 		PlatformDaily: cfg.PlatformDailySendLimit,
 	}

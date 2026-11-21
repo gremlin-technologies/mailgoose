@@ -100,6 +100,10 @@ scope; they only show where an idea came from.
   shared domain, with replies to an address it verified (the owner's sign-in
   address or a confirmed sender address, up to 10). The app nudges toward
   adding a domain. Off in prod for now; details are reversible defaults.
+  MG-98 (Nov 21): there, mail always goes under the account's name (sign-up
+  and rename refuse names with `@`, domain-shaped names, and well-known
+  brands and payment terms), and an account with no verified domain stays at
+  the new-account limit (1,000) until it adds one.
 - SES backpressure (Nov 21, MG-87): SES throttling, quota and
   paused-sending errors leave copies queued for a minute instead of failing
   them, and `PLATFORM_DAILY_SEND_LIMIT` (default 45,000) caps campaign
