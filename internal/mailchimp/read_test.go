@@ -1,0 +1,521 @@
+package mailchimp
+
+import (
+	"archive/zip"
+	"bytes"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
+	"testing"
+	"time"
+)
+
+// zipDir zips a testdata folder in memory, each path under prefix.
+func zipDir(t *testing.T, dir, prefix string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, _ := filepath.Rel(dir, p)
+		w, err := zw.Create(prefix + filepath.ToSlash(rel))
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(data)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// zipFiles zips the named files in memory, in order.
+func zipFiles(t *testing.T, files ...[2]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, f := range files {
+		w, err := zw.Create(f[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(f[1])); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func read(t *testing.T, data []byte, name string, opts Options) (*Bundle, error) {
+	t.Helper()
+	return Read(bytes.NewReader(data), int64(len(data)), name, opts)
+}
+
+func mustRead(t *testing.T, data []byte, name string, opts Options) *Bundle {
+	t.Helper()
+	b, err := read(t, data, name, opts)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	return b
+}
+
+func wantRefused(t *testing.T, err error, code string) {
+	t.Helper()
+	var e *Error
+	if !errors.As(err, &e) {
+		t.Fatalf("err = %v, want a refusal %s", err, code)
+	}
+	if e.Code != code {
+		t.Fatalf("code = %s (%s), want %s", e.Code, e.Message, code)
+	}
+	if e.Message == "" {
+		t.Error("a refusal needs a message")
+	}
+}
+
+func audience(t *testing.T, b *Bundle, name string) *Audience {
+	t.Helper()
+	for _, a := range b.Audiences {
+		if a.Name == name {
+			return a
+		}
+	}
+	t.Fatalf("no audience %q in %v", name, audienceNames(b))
+	return nil
+}
+
+func audienceNames(b *Bundle) []string {
+	var names []string
+	for _, a := range b.Audiences {
+		names = append(names, a.Name)
+	}
+	return names
+}
+
+func member(t *testing.T, a *Audience, email string) *Member {
+	t.Helper()
+	for _, m := range a.Members {
+		if m.Email == email {
+			return m
+		}
+	}
+	t.Fatalf("no member %s in %s", email, a.Name)
+	return nil
+}
+
+func TestAccountExport(t *testing.T) {
+	b := mustRead(t, zipDir(t, "testdata/account_export", ""), "mailchimp_export.zip",
+		Options{GroupColumns: []string{"interests"}})
+	if b.Source != SourceAccountExport {
+		t.Errorf("Source = %s", b.Source)
+	}
+	if got := audienceNames(b); !reflect.DeepEqual(got, []string{"Newsletter", "Recipe Club"}) {
+		t.Fatalf("audiences = %v", got)
+	}
+	if b.Members() != 7 {
+		t.Errorf("Members() = %d, want 7", b.Members())
+	}
+
+	news := audience(t, b, "Newsletter")
+	if len(news.Files) != 4 {
+		t.Errorf("Newsletter files = %v", news.Files)
+	}
+	ada := member(t, news, "ada@example.com")
+	if ada.Status != Subscribed || ada.FirstName != "Ada" || ada.LastName != "Lovelace" {
+		t.Errorf("ada = %+v", ada)
+	}
+	if !reflect.DeepEqual(ada.Tags, []string{"Customer", "VIP"}) {
+		t.Errorf("ada tags = %q", ada.Tags)
+	}
+	if want := []Group{{"Interests", "Recipes"}, {"Interests", "Travel"}}; !reflect.DeepEqual(ada.Groups, want) {
+		t.Errorf("ada groups = %v", ada.Groups)
+	}
+	if ada.OptinTime != "2025-03-01 10:00:00" || ada.OptinIP != "192.0.2.10" || ada.ConfirmIP != "192.0.2.10" {
+		t.Errorf("ada opt-in = %q %q %q", ada.OptinTime, ada.OptinIP, ada.ConfirmIP)
+	}
+	if ada.OptinAt == nil || !ada.OptinAt.Equal(time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)) {
+		t.Errorf("ada OptinAt = %v", ada.OptinAt)
+	}
+	if ada.ConfirmAt == nil || !ada.ConfirmAt.Equal(time.Date(2025, 3, 1, 10, 5, 0, 0, time.UTC)) {
+		t.Errorf("ada ConfirmAt = %v", ada.ConfirmAt)
+	}
+	if !ada.PermissionsKnown || !reflect.DeepEqual(ada.Permissions, []string{"Email"}) || ada.RefusesEmail() {
+		t.Errorf("ada permissions = %v %v", ada.PermissionsKnown, ada.Permissions)
+	}
+	if ada.File != "audiences/Newsletter/subscribed_members_export_0a1b2c.csv" || ada.Row != 2 {
+		t.Errorf("ada from %s row %d", ada.File, ada.Row)
+	}
+
+	grace := member(t, news, "grace@example.com")
+	if !reflect.DeepEqual(grace.Tags, []string{"Smith, Jones"}) {
+		t.Errorf("a quoted tag keeps its comma: %q", grace.Tags)
+	}
+	if grace.ConfirmTime != "" || grace.ConfirmAt != nil {
+		t.Errorf("blank confirm time = %q %v", grace.ConfirmTime, grace.ConfirmAt)
+	}
+	if !reflect.DeepEqual(grace.Permissions, []string{"Email", "Direct Mail"}) {
+		t.Errorf("grace permissions = %q", grace.Permissions)
+	}
+	if s := member(t, news, "linus@example.com").Status; s != Unsubscribed {
+		t.Errorf("linus = %s", s)
+	}
+	if s := member(t, news, "bounce@example.com").Status; s != Cleaned {
+		t.Errorf("bounce = %s", s)
+	}
+	if s := member(t, news, "receipt@example.com").Status; s != Transactional {
+		t.Errorf("receipt = %s", s)
+	}
+	if want := []SkippedRow{{File: "audiences/Newsletter/subscribed_members_export_0a1b2c.csv", Row: 4, Reason: SkipNoEmail}}; !reflect.DeepEqual(news.Skipped, want) {
+		t.Errorf("skipped = %+v", news.Skipped)
+	}
+	for _, f := range []string{"Phone Number", "MEMBER_RATING", "LATITUDE", "NOTES", "LEID", "EUID", "UNSUB_TIME", "CLEAN_TIME"} {
+		if !slices.Contains(news.DroppedFields, f) {
+			t.Errorf("dropped fields %v lack %s", news.DroppedFields, f)
+		}
+	}
+	for _, f := range []string{"Email Address", "First Name", "TAGS", "OPTIN_TIME", "Interests", "Marketing Permissions"} {
+		if slices.Contains(news.DroppedFields, f) {
+			t.Errorf("%s is read, not dropped", f)
+		}
+	}
+	if !slices.IsSorted(news.DroppedFields) {
+		t.Errorf("dropped fields aren't sorted: %v", news.DroppedFields)
+	}
+	if !reflect.DeepEqual(news.GroupColumns, []string{"Interests"}) || !reflect.DeepEqual(news.PermissionColumns, []string{"Marketing Permissions"}) {
+		t.Errorf("group %v, permission %v columns", news.GroupColumns, news.PermissionColumns)
+	}
+
+	club := audience(t, b, "Recipe Club")
+	if got := member(t, club, "ada@example.com"); got.Status != Subscribed || !reflect.DeepEqual(got.Tags, []string{"Baker"}) {
+		t.Errorf("ada in the club = %+v", got)
+	}
+	if member(t, club, "grace@example.com").Status != Unsubscribed {
+		t.Error("grace unsubscribed from the club")
+	}
+
+	if len(b.Templates) != 1 || b.Templates[0].Name != "Monthly_newsletter" || !strings.Contains(b.Templates[0].HTML, "*|FNAME|*") {
+		t.Errorf("templates = %+v", b.Templates)
+	}
+	if len(b.Campaigns) != 2 {
+		t.Fatalf("campaigns = %+v", b.Campaigns)
+	}
+	sale := b.Campaigns[0]
+	if sale.Name != "abc123" || sale.Subject != "Spring sale: 20% off, this week" || sale.Title != "Spring sale" ||
+		sale.SentAt == nil || !sale.SentAt.Equal(time.Date(2025, 4, 1, 14, 0, 0, 0, time.UTC)) ||
+		!strings.Contains(sale.Text, "*|UNSUB|*") || !strings.Contains(sale.HTML, "<h1>Spring sale</h1>") {
+		t.Errorf("sale = %+v", sale)
+	}
+	if b.Campaigns[1].Subject != "Welcome aboard" || b.Campaigns[1].Text != "" {
+		t.Errorf("welcome = %+v", b.Campaigns[1])
+	}
+
+	var ignored []string
+	for _, f := range b.Ignored {
+		ignored = append(ignored, f.Path+" "+f.Reason)
+	}
+	want := []string{"events.csv unknown_file", "gallery/logo.gif unknown_file", "reports/granular_activity/unsubscribed.csv unknown_file"}
+	if !reflect.DeepEqual(ignored, want) {
+		t.Errorf("ignored = %v, want %v", ignored, want)
+	}
+}
+
+func TestAccountExportWithoutGroupColumns(t *testing.T) {
+	b := mustRead(t, zipDir(t, "testdata/account_export", ""), "x.zip", Options{})
+	news := audience(t, b, "Newsletter")
+	if ada := member(t, news, "ada@example.com"); ada.Groups != nil {
+		t.Errorf("groups without GroupColumns = %v", ada.Groups)
+	}
+	if !slices.Contains(news.DroppedFields, "Interests") {
+		t.Errorf("an unnamed group column is dropped: %v", news.DroppedFields)
+	}
+}
+
+func TestAccountExportInARootFolder(t *testing.T) {
+	b := mustRead(t, zipDir(t, "testdata/account_export", "export-2026-11-20/"), "x.zip", Options{})
+	if b.Source != SourceAccountExport || !reflect.DeepEqual(audienceNames(b), []string{"Newsletter", "Recipe Club"}) || len(b.Templates) != 1 {
+		t.Errorf("source %s, audiences %v, %d templates", b.Source, audienceNames(b), len(b.Templates))
+	}
+	if p := b.Templates[0].Path; p != "export-2026-11-20/templates/Monthly_newsletter.html" {
+		t.Errorf("paths keep the root folder: %s", p)
+	}
+}
+
+func TestAudienceExport(t *testing.T) {
+	b := mustRead(t, zipDir(t, "testdata/audience_export", ""), "audience.zip",
+		Options{AudienceName: "Main list", GroupColumns: []string{"Interests"}})
+	if b.Source != SourceAudienceExport || !reflect.DeepEqual(audienceNames(b), []string{"Main list"}) {
+		t.Fatalf("source %s, audiences %v", b.Source, audienceNames(b))
+	}
+	a := b.Audiences[0]
+	for email, want := range map[string]Status{"sub@example.com": Subscribed, "unsub@example.com": Unsubscribed,
+		"clean@example.com": Cleaned, "trans@example.com": Transactional} {
+		if got := member(t, a, email).Status; got != want {
+			t.Errorf("%s = %s, want %s", email, got, want)
+		}
+	}
+	sub := member(t, a, "sub@example.com")
+	if sub.OptinAt == nil || !sub.OptinAt.Equal(time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC)) {
+		t.Errorf("RFC 3339 opt-in = %v", sub.OptinAt)
+	}
+	if !reflect.DeepEqual(sub.Groups, []Group{{"Interests", "Recipes"}}) || sub.PermissionsKnown || sub.RefusesEmail() {
+		t.Errorf("sub = %+v", sub)
+	}
+}
+
+func TestAudienceExportDefaultName(t *testing.T) {
+	b := mustRead(t, zipDir(t, "testdata/audience_export", ""), "audience.zip", Options{})
+	if !reflect.DeepEqual(audienceNames(b), []string{DefaultAudienceName}) {
+		t.Errorf("audiences = %v", audienceNames(b))
+	}
+}
+
+func TestSingleCSV(t *testing.T) {
+	data, err := os.ReadFile("testdata/audience_export/cleaned_members_export_77aa.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := mustRead(t, data, `C:\Downloads\cleaned_members_export_77aa.csv`, Options{})
+	if b.Source != SourceAudienceCSV || len(b.Audiences) != 1 || b.Audiences[0].Name != DefaultAudienceName {
+		t.Fatalf("bundle = %+v", b)
+	}
+	a := b.Audiences[0]
+	if len(a.Members) != 1 || a.Members[0].Status != Cleaned || a.Members[0].File != "cleaned_members_export_77aa.csv" {
+		t.Errorf("members = %+v", a.Members)
+	}
+}
+
+func TestStatusColumn(t *testing.T) {
+	data, err := os.ReadFile("testdata/status_column.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The status column wins over the file's name, and a byte-order mark
+	// before the header is dropped.
+	b := mustRead(t, data, "subscribed_export.csv", Options{})
+	a := b.Audiences[0]
+	for email, want := range map[string]Status{"P@Example.com": Pending, "A@example.com": Archived, "S@example.com": Subscribed} {
+		if got := member(t, a, email).Status; got != want {
+			t.Errorf("%s = %s, want %s", email, got, want)
+		}
+	}
+	if p := member(t, a, "P@Example.com"); p.FirstName != "Pen" || p.LastName != "Ding" {
+		t.Errorf("merge tags FNAME and LNAME: %+v", p)
+	}
+	if want := []SkippedRow{{File: "subscribed_export.csv", Row: 5, Reason: SkipUnknownStatus}}; !reflect.DeepEqual(a.Skipped, want) {
+		t.Errorf("skipped = %+v", a.Skipped)
+	}
+	// With no status in its name, the column alone decides.
+	b = mustRead(t, data, "contacts.csv", Options{})
+	if len(b.Audiences[0].Members) != 3 {
+		t.Errorf("members = %d", len(b.Audiences[0].Members))
+	}
+}
+
+func TestStatusFromName(t *testing.T) {
+	for name, want := range map[string]Status{
+		"subscribed_members_export_1.csv":    Subscribed,
+		"unsubscribed_members_export_1.csv":  Unsubscribed,
+		"cleaned_members_export_1.csv":       Cleaned,
+		"nonsubscribed_members_export_1.csv": Transactional,
+		"non-subscribed members.csv":         Transactional,
+		"transactional_members_export_1.csv": Transactional,
+		"archived_members_export_1.csv":      Archived,
+		"pending_members.csv":                Pending,
+		"Subscribed Members Export (2).CSV":  Subscribed,
+		"members_export_1.csv":               "",
+		"campaigns.csv":                      "",
+	} {
+		if got := statusFromName(name); got != want {
+			t.Errorf("statusFromName(%q) = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestSplitList(t *testing.T) {
+	for in, want := range map[string][]string{
+		"":                           nil,
+		"VIP":                        {"VIP"},
+		"VIP, Customer":              {"VIP", "Customer"},
+		`"VIP","Customer"`:           {"VIP", "Customer"},
+		`"Smith, Jones",VIP`:         {"Smith, Jones", "VIP"},
+		`"Smith, Jones", "VIP", VIP`: {"Smith, Jones", "VIP"},
+		" a ,, b ":                   {"a", "b"},
+		`odd "quote, here`:           {`odd "quote`, "here"},
+	} {
+		if got := splitList(in); !reflect.DeepEqual(got, want) {
+			t.Errorf("splitList(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestParseTime(t *testing.T) {
+	want := time.Date(2025, 3, 1, 10, 0, 0, 0, time.UTC)
+	for _, v := range []string{"2025-03-01 10:00:00", "2025-03-01T10:00:00Z", "2025-03-01T05:00:00-05:00", "2025-03-01T10:00:00", "03/01/2025 10:00"} {
+		if got := parseTime(v); got == nil || !got.Equal(want) {
+			t.Errorf("parseTime(%q) = %v", v, got)
+		}
+	}
+	for _, v := range []string{"", "  ", "yesterday", "2025-13-40 00:00:00"} {
+		if got := parseTime(v); got != nil {
+			t.Errorf("parseTime(%q) = %v, want nil", v, got)
+		}
+	}
+}
+
+func TestRefusesEmail(t *testing.T) {
+	for _, c := range []struct {
+		m    Member
+		want bool
+	}{
+		{Member{}, false},
+		{Member{PermissionsKnown: true, Permissions: []string{"Email"}}, false},
+		{Member{PermissionsKnown: true, Permissions: []string{"Direct Mail", "e-mail newsletters"}}, false},
+		{Member{PermissionsKnown: true, Permissions: []string{"Direct Mail"}}, true},
+		{Member{PermissionsKnown: true}, true},
+	} {
+		if got := c.m.RefusesEmail(); got != c.want {
+			t.Errorf("RefusesEmail(%v) = %v", c.m.Permissions, got)
+		}
+	}
+}
+
+func TestMissingColumns(t *testing.T) {
+	// Only an email column: the rest are blank.
+	b := mustRead(t, []byte("Email\nmin@example.com\n"), "subscribed.csv", Options{})
+	m := b.Audiences[0].Members[0]
+	if m.Email != "min@example.com" || m.FirstName != "" || m.Tags != nil || m.OptinAt != nil || len(b.Audiences[0].DroppedFields) != 0 {
+		t.Errorf("member = %+v", m)
+	}
+	// A short row reads its missing cells as blank.
+	b = mustRead(t, []byte("Email Address,First Name,Last Name,TAGS\nshort@example.com,Shorty\n"), "subscribed.csv", Options{})
+	if m := b.Audiences[0].Members[0]; m.FirstName != "Shorty" || m.LastName != "" {
+		t.Errorf("short row = %+v", m)
+	}
+	// A blank line is passed over without a skip.
+	b = mustRead(t, []byte("Email Address\na@example.com\n,\nb@example.com\n"), "subscribed.csv", Options{})
+	if len(b.Audiences[0].Members) != 2 || len(b.Audiences[0].Skipped) != 0 {
+		t.Errorf("members %d, skipped %+v", len(b.Audiences[0].Members), b.Audiences[0].Skipped)
+	}
+	// A header with no rows is an empty audience, not an error.
+	b = mustRead(t, []byte("Email Address\n"), "subscribed.csv", Options{})
+	if len(b.Audiences[0].Members) != 0 {
+		t.Error("no members expected")
+	}
+}
+
+func TestRefusals(t *testing.T) {
+	member := [2]string{"subscribed_members_export_1.csv", "Email Address\na@example.com\n"}
+	for name, c := range map[string]struct {
+		data []byte
+		file string
+		opts Options
+		code string
+	}{
+		"path traversal":   {zipFiles(t, member, [2]string{"../../etc/subscribed.csv", "Email Address\n"}), "x.zip", Options{}, ErrUnsafePath},
+		"traversal inside": {zipFiles(t, [2]string{"audiences/../../x.csv", "x"}), "x.zip", Options{}, ErrUnsafePath},
+		"absolute path":    {zipFiles(t, [2]string{"/tmp/subscribed.csv", "Email Address\n"}), "x.zip", Options{}, ErrUnsafePath},
+		"windows path":     {zipFiles(t, [2]string{`..\subscribed.csv`, "Email Address\n"}), "x.zip", Options{}, ErrUnsafePath},
+		"drive letter":     {zipFiles(t, [2]string{"C:/subscribed.csv", "Email Address\n"}), "x.zip", Options{}, ErrUnsafePath},
+		"symlink":          {symlinkZip(t), "x.zip", Options{}, ErrUnsafePath},
+		"too large":        {zipFiles(t, [2]string{"subscribed.csv", "Email Address\n" + strings.Repeat("a@example.com\n", 100)}), "x.zip", Options{MaxBytes: 500}, ErrTooLarge},
+		"large CSV":        {[]byte("Email Address\n" + strings.Repeat("a@example.com\n", 100)), "subscribed.csv", Options{MaxBytes: 500}, ErrTooLarge},
+		"too many members": {zipDir(t, "testdata/account_export", ""), "x.zip", Options{MaxMembers: 6}, ErrTooManyMembers},
+		"binary":           {[]byte{0x89, 'P', 'N', 'G', 0, 0, 1, 2}, "logo.png", Options{}, ErrNotZipOrCSV},
+		"empty file":       {nil, "subscribed.csv", Options{}, ErrNotZipOrCSV},
+		"broken zip":       {append([]byte("PK\x03\x04"), bytes.Repeat([]byte{7}, 64)...), "x.zip", Options{}, ErrBadZip},
+		"nothing in zip":   {zipFiles(t, [2]string{"gallery/logo.gif", "GIF89a"}, [2]string{"notes.txt", "hi"}), "x.zip", Options{}, ErrNothingToRead},
+		"no email column":  {[]byte("Name,Phone\nAda,555\n"), "subscribed.csv", Options{}, ErrNoEmailColumn},
+		"no email in zip":  {zipFiles(t, [2]string{"subscribed.csv", "Name\nAda\n"}), "x.zip", Options{}, ErrNoEmailColumn},
+		"unknown status":   {[]byte("Email Address\na@example.com\n"), "contacts.csv", Options{}, ErrUnknownStatus},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := read(t, c.data, c.file, c.opts)
+			wantRefused(t, err, c.code)
+		})
+	}
+}
+
+func symlinkZip(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	h := &zip.FileHeader{Name: "templates/link.html"}
+	h.SetMode(fs.ModeSymlink | 0o777)
+	w, err := zw.CreateHeader(h)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.Write([]byte("/etc/passwd"))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestMemberLimitIsExact(t *testing.T) {
+	b := mustRead(t, zipDir(t, "testdata/account_export", ""), "x.zip", Options{MaxMembers: 7})
+	if b.Members() != 7 {
+		t.Errorf("Members() = %d", b.Members())
+	}
+}
+
+func TestIgnoredAndOversizedFiles(t *testing.T) {
+	big := "<html>" + strings.Repeat("x", MaxHTMLFileBytes) + "</html>"
+	b := mustRead(t, zipFiles(t,
+		[2]string{"templates/big.html", big},
+		[2]string{"templates/ok.html", "<p>ok</p>"},
+		[2]string{"templates/readme.pdf", "%PDF"},
+		[2]string{"__MACOSX/templates/._ok.html", "junk"},
+		[2]string{"templates/.DS_Store", "junk"},
+		[2]string{"campaigns_content/zzz.txt", "text with no HTML"},
+	), "x.zip", Options{})
+	if len(b.Templates) != 1 || b.Templates[0].Name != "ok" {
+		t.Errorf("templates = %+v", b.Templates)
+	}
+	got := map[string]string{}
+	for _, f := range b.Ignored {
+		got[f.Path] = f.Reason
+	}
+	want := map[string]string{
+		"templates/big.html":           IgnoreTooLarge,
+		"templates/readme.pdf":         IgnoreUnknown,
+		"__MACOSX/templates/._ok.html": IgnoreUnknown,
+		"templates/.DS_Store":          IgnoreUnknown,
+		"campaigns_content/zzz.txt":    IgnoreUnknown,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ignored = %v", got)
+	}
+	if b.Source != SourceAccountExport || len(b.Audiences) != 0 {
+		t.Errorf("source %s, audiences %d", b.Source, len(b.Audiences))
+	}
+}
+
+func TestUnreadableRow(t *testing.T) {
+	// A quote inside an unquoted cell is taken as written (lazy quotes); a
+	// row too broken to read is skipped and the file read on.
+	b := mustRead(t, []byte("Email Address,First Name\nq@example.com,O\"Brien\nok@example.com,Ok\n"), "subscribed.csv", Options{})
+	a := b.Audiences[0]
+	if len(a.Members) != 2 || a.Members[0].FirstName != `O"Brien` {
+		t.Errorf("members = %+v, skipped %+v", a.Members, a.Skipped)
+	}
+}
