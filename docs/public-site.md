@@ -17,6 +17,11 @@ the CloudFront or OIDC blocks (`docs/decisions.md`).
   `Policies.tsx`, then run `node scripts/site/policies.mjs` from the repository
   root. `web/src/pages/sitePolicies.test.ts` fails if they drift. Their text is
   still the placeholder outline, marked as such on each page.
+- `site/alpha/`: the alpha tester guide at mailgoose.app/alpha/. Hand-written
+  (not generated), unlisted (no link from the site, `noindex`) and meant to be
+  linked from tester invites. It documents only what's on `main`; when a
+  feature ships or changes, update its section, and move items out of
+  "Coming soon" as they land.
 - `site/assets/`: stylesheets, favicons, Inter (`fonts/`, with its licence),
   the social card, and `brand/` (downsized copies of the logos in
   `docs/brand/`).
