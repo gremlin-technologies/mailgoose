@@ -1868,6 +1868,40 @@ type AdminSendThroughput struct {
 	Since time.Time `json:"since"`
 }
 
+// AdminStorageReport defines model for AdminStorageReport.
+type AdminStorageReport struct {
+	// ComparedWithDay The UTC day, 7 days before today, whose recorded sizes the change is against.
+	ComparedWithDay openapi_types.Date `json:"compared_with_day"`
+
+	// Data `campaign_recipients` and `send_events` first, then the largest other tables.
+	Data       []AdminTableSize `json:"data"`
+	NextCursor any              `json:"next_cursor"`
+
+	// Total Every table in the database, including those over `limit`.
+	Total int `json:"total"`
+
+	// TotalBytes Every table's `total_bytes` added up.
+	TotalBytes int64 `json:"total_bytes"`
+}
+
+// AdminTableSize defines model for AdminTableSize.
+type AdminTableSize struct {
+	// Change7DaysBytes `total_bytes` less `total_bytes_7_days_ago` (negative when it
+	// shrank); null with no record from `compared_with_day`.
+	Change7DaysBytes *int64 `json:"change_7_days_bytes"`
+
+	// RowEstimate The planner's estimate of its rows (`pg_class.reltuples`), not an
+	// exact count; null when the table has never been analysed.
+	RowEstimate *int64 `json:"row_estimate"`
+	Table       string `json:"table"`
+
+	// TotalBytes Its size with indexes and TOAST (`pg_total_relation_size`).
+	TotalBytes int64 `json:"total_bytes"`
+
+	// TotalBytes7DaysAgo Its size as recorded on `compared_with_day`; null with no record from that day.
+	TotalBytes7DaysAgo *int64 `json:"total_bytes_7_days_ago"`
+}
+
 // AdminThrottle defines model for AdminThrottle.
 type AdminThrottle struct {
 	CampaignId *string   `json:"campaign_id"`
@@ -4120,6 +4154,12 @@ type ListSignupReviewsParams struct {
 	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// GetStorageReportParams defines parameters for GetStorageReport.
+type GetStorageReportParams struct {
+	// Limit How many tables to list, `campaign_recipients` and `send_events` included.
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListTestModeAccountsParams defines parameters for ListTestModeAccounts.
 type ListTestModeAccountsParams struct {
 	// Limit Items per page.
@@ -5211,6 +5251,9 @@ type ServerInterface interface {
 	// ListSignupReviews List sign-ups waiting for review (admin)
 	// (GET /v1/admin/signups)
 	ListSignupReviews(w http.ResponseWriter, r *http.Request, params ListSignupReviewsParams)
+	// GetStorageReport Table sizes (admin)
+	// (GET /v1/admin/storage)
+	GetStorageReport(w http.ResponseWriter, r *http.Request, params GetStorageReportParams)
 	// ListTestModeAccounts List accounts in test mode (admin)
 	// (GET /v1/admin/test-mode)
 	ListTestModeAccounts(w http.ResponseWriter, r *http.Request, params ListTestModeAccountsParams)
@@ -6121,6 +6164,39 @@ func (siw *ServerInterfaceWrapper) ListSignupReviews(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListSignupReviews(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetStorageReport operation middleware
+func (siw *ServerInterfaceWrapper) GetStorageReport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetStorageReportParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetStorageReport(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8760,6 +8836,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/reject-signup", wrapper.RejectSignup)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/test-mode", wrapper.ListTestModeAccounts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/deliverability", wrapper.GetDeliverabilityReport)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/storage", wrapper.GetStorageReport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/allow-full-sending", wrapper.AllowFullSending)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/set-test-mode", wrapper.SetTestMode)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/accounts/{account_id}/grant-tester", wrapper.GrantTester)

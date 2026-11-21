@@ -2111,6 +2111,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/admin/storage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Table sizes (admin)
+         * @description mailgoose staff only (MG-95): the database's table sizes, for
+         *     watching storage grow. Every copy sent is one `campaign_recipients`
+         *     row and one or two `send_events` rows, kept 12 months, so those two
+         *     come first; then the largest other tables. At most `limit` tables;
+         *     `total` counts every table and `total_bytes` adds up all their
+         *     sizes, and there's no next page.
+         *
+         *     `total_bytes` is `pg_total_relation_size`: the table with its
+         *     indexes and TOAST. `row_estimate` is the planner's estimate
+         *     (`pg_class.reltuples`), as fresh as the table's last ANALYZE, and
+         *     null for a table never analysed; it isn't an exact count. The
+         *     change is against the sizes the daily digest job recorded on
+         *     `compared_with_day`, 7 days before today (UTC); it's null where
+         *     there's no record from that day (the job runs only with an ops
+         *     address set, and keeps 8 weeks).
+         */
+        get: operations["getStorageReport"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/admin/accounts/{account_id}/allow-full-sending": {
         parameters: {
             query?: never;
@@ -4291,6 +4325,48 @@ export interface components {
             total: number;
             early_warning: components["schemas"]["AdminEarlyWarning"];
             send_throughput: components["schemas"]["AdminSendThroughput"];
+        };
+        AdminTableSize: {
+            table: string;
+            /**
+             * Format: int64
+             * @description The planner's estimate of its rows (`pg_class.reltuples`), not an
+             *     exact count; null when the table has never been analysed.
+             */
+            row_estimate: number | null;
+            /**
+             * Format: int64
+             * @description Its size with indexes and TOAST (`pg_total_relation_size`).
+             */
+            total_bytes: number;
+            /**
+             * Format: int64
+             * @description Its size as recorded on `compared_with_day`; null with no record from that day.
+             */
+            total_bytes_7_days_ago: number | null;
+            /**
+             * Format: int64
+             * @description `total_bytes` less `total_bytes_7_days_ago` (negative when it
+             *     shrank); null with no record from `compared_with_day`.
+             */
+            change_7_days_bytes: number | null;
+        };
+        AdminStorageReport: {
+            /** @description `campaign_recipients` and `send_events` first, then the largest other tables. */
+            data: components["schemas"]["AdminTableSize"][];
+            next_cursor: null;
+            /** @description Every table in the database, including those over `limit`. */
+            total: number;
+            /**
+             * Format: int64
+             * @description Every table's `total_bytes` added up.
+             */
+            total_bytes: number;
+            /**
+             * Format: date
+             * @description The UTC day, 7 days before today, whose recorded sizes the change is against.
+             */
+            compared_with_day: string;
         };
         AdminHeldImport: {
             /** Format: uuid */
@@ -8385,6 +8461,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminDeliverabilityReport"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getStorageReport: {
+        parameters: {
+            query?: {
+                /** @description How many tables to list, `campaign_recipients` and `send_events` included. */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The table sizes. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStorageReport"];
                 };
             };
             400: components["responses"]["BadRequest"];
