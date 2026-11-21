@@ -4,6 +4,22 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: The past-due pause doesn't count toward automatic suspension (MG-104, bug fix; reversible default)
+
+An account is suspended on its second automatic pause in 30 days (MG-65),
+counted from the `auto_pause` rows in the admin log. Billing logs its
+past-due pause (`subscription_past_due`) as `auto_pause` too, so one failed
+card and one complaints pause in a month suspended the account.
+
+- **Only sending pauses count** (`suspendOnRepeat` in
+  `internal/sending/suspend.go`): complaints and bounces, an account-level
+  health pause, and an unsafe link at launch. The count leaves out
+  `auto_pause` rows whose details `code` is `subscription_past_due`, so any
+  new kind of sending pause counts without a change here.
+- **Nothing is rewritten.** Existing rows stay as they are and are read the
+  new way. The past-due pause is still logged as `auto_pause`, and the daily
+  digest, `mailgoose admin log` and `mailgoose admin account` still show it.
+
 ## 2026-11-21: A campaign keeps at most 10 batches on the send queue (MG-89; details are reversible defaults)
 
 The dispatcher put up to 2,000 of a campaign's rows on the send queue every
@@ -84,8 +100,10 @@ details below were picked while building it and are easy to change.
   get this one too, like the usual campaign limits. With at most 500
   credits for life it can only fire on a tester's whole budget.
 - **No re-pause loop.** After an admin unpauses an account (an `unpause` by
-  a person), or after any automatic pause for a campaign (an `auto_pause`
-  with a campaign), only copies sent since then count, and only bounces and
+  a person), or after any automatic pause logged with a campaign (an
+  `auto_pause` with a `target_id`: a campaign's own pause, and also an
+  account-level pause, which logs the campaign whose event tipped it), only
+  copies sent since then count, and only bounces and
   complaints on those copies, so late complaints on copies already looked
   at don't count against new ones. The account needs 500 new copies over
   the line to be paused again; the reason then says "since sending was last
@@ -1022,7 +1040,8 @@ as the ticket says.
 - **Unsuspend** restores sign-in and sending only. Keys stay revoked, stopped
   campaigns stay stopped, and a pause stays until `mailgoose admin unpause`.
 - **Automatic suspension** happens in the same transaction as the second
-  automatic pause in 30 days, counted from the `auto_pause` log. Its actor is
+  automatic pause in 30 days, counted from the `auto_pause` log (sending
+  pauses only, not the past-due one, since MG-104). Its actor is
   `automatic`, logged as `auto_suspend`. Other triggers call the same
   `sending.Suspend`.
 - **Appeals** go by replying to the suspension email, whose Reply-To is

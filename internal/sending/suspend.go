@@ -23,14 +23,15 @@ import (
 // signups. Its owner can still sign in, to a read-only page that explains
 // the suspension and offers the data export for SuspensionExport. Credits
 // are left as they are. An admin suspends with `mailgoose admin suspend`;
-// the system suspends on a second automatic pause in 30 days, and other
-// automatic triggers call Suspend from their own code.
+// the system suspends on a second automatic sending pause in 30 days, and
+// other automatic triggers call Suspend from their own code.
 const (
 	// SuspensionExport is how long a suspended account's owner can still
 	// export its contacts and campaigns.
 	SuspensionExport = 30 * 24 * time.Hour
-	// SuspendAfterPauses is how many automatic pauses within HealthWindow
-	// suspend the account.
+	// SuspendAfterPauses is how many automatic sending pauses within
+	// HealthWindow suspend the account. The past-due pause isn't one
+	// (MG-104); see suspendOnRepeat.
 	SuspendAfterPauses = 2
 )
 
@@ -207,16 +208,26 @@ func stopForSuspension(ctx context.Context, tx pgx.Tx, accountID, campaignID str
 }
 
 // suspendOnRepeat suspends the account when this is its
-// SuspendAfterPauses-th automatic pause within HealthWindow (MG-65). It
-// runs in CheckCampaign's transaction, after the pause is logged.
+// SuspendAfterPauses-th automatic sending pause within HealthWindow
+// (MG-65). It runs in CheckCampaign's transaction, after the pause is
+// logged.
+//
+// Every automatic pause is logged as 'auto_pause', but only those about
+// the account's sending count: complaints, bounces, an account-level pause
+// and an unsafe link. The pause billing makes while the paid plan's payment
+// is past due is logged the same way, with details code
+// SubscriptionPastDue; a failed card says nothing about what the account
+// sends, so it's left out (MG-104). The digest and the admin log still list
+// it.
 func suspendOnRepeat(ctx context.Context, tx pgx.Tx, ap *AutoPause, now time.Time) (*Suspension, error) {
 	var pauses int
 	var suspended bool
 	if err := tx.QueryRow(ctx, `
 		SELECT
-			(SELECT count(*) FROM admin_actions WHERE account_id = $1 AND action = 'auto_pause' AND created_at > $2),
+			(SELECT count(*) FROM admin_actions WHERE account_id = $1 AND action = 'auto_pause' AND created_at > $2
+				AND details->>'code' IS DISTINCT FROM $3),
 			(SELECT suspended_at IS NOT NULL FROM accounts WHERE id = $1)`,
-		ap.AccountID, now.Add(-HealthWindow)).Scan(&pauses, &suspended); err != nil {
+		ap.AccountID, now.Add(-HealthWindow), SubscriptionPastDue).Scan(&pauses, &suspended); err != nil {
 		return nil, err
 	}
 	if pauses < SuspendAfterPauses || suspended {

@@ -203,7 +203,8 @@ type AutoPause struct {
 	Reason string
 	At     time.Time
 	// Suspension is set when this pause suspended the account too: its
-	// second automatic pause in 30 days (MG-65).
+	// second automatic sending pause in 30 days (MG-65; the past-due pause
+	// doesn't count, MG-104).
 	Suspension *Suspension
 }
 
