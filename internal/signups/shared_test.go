@@ -54,3 +54,69 @@ func TestSharedSendingConfirmations(t *testing.T) {
 		t.Errorf("message from %+v reply-to %+v", m.From, m.ReplyTo)
 	}
 }
+
+// TestSharedSendingDefaultFrom: with no From set on the account, shared
+// sending on and no verified domain, a form's confirmation email goes as the
+// owner's sign-in address: from the account's slug on the shared domain,
+// with replies to that address (MG-108). With shared sending off, or a
+// verified domain, a missing From still stops the form.
+func TestSharedSendingDefaultFrom(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if _, err := h.db.Exec(ctx, `UPDATE accounts SET from_email = NULL WHERE id = $1`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.Exec(ctx, `INSERT INTO users (account_id, email) VALUES ($1, 'pat@example.com')`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	refused := func(what string) {
+		t.Helper()
+		if probs, err := h.svc.Problems(ctx, h.form); err != nil || len(probs) != 1 || probs[0].Code != "no_verified_from" {
+			t.Errorf("%s: problems %+v %v", what, probs, err)
+		}
+		if _, err := h.submit(h.post("bob@example.com")); err == nil {
+			t.Errorf("%s: signup taken", what)
+		}
+	}
+
+	// Shared sending off, verified domain or not: refused as before.
+	refused("shared off, verified domain")
+	if _, err := h.db.Exec(ctx, `DELETE FROM domains WHERE account_id = $1`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	refused("shared off, no domain")
+
+	// Shared on with a verified domain: refused as before.
+	h.svc.Senders = &senders.Resolver{DB: h.db, Domains: &domains.Service{DB: h.db}, Shared: "shared.test.example"}
+	if _, err := h.db.Exec(ctx, `
+		INSERT INTO domains (account_id, name, mail_from, created_at, check_until, status) VALUES ($1, 'patsbakery.com', 'bounce', now(), now(), 'verified')`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	refused("shared on, verified domain")
+	if _, err := h.db.Exec(ctx, `DELETE FROM domains WHERE account_id = $1`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+
+	// Shared on, no domain: the sign-in address by default.
+	if probs, err := h.svc.Problems(ctx, h.form); err != nil || len(probs) != 0 {
+		t.Fatalf("problems with the default From: %+v %v", probs, err)
+	}
+	n := len(h.fake.Sent())
+	if _, err := h.submit(h.post("ann@example.com")); err != nil {
+		t.Fatal(err)
+	}
+	sent, ok := h.fake.Last()
+	if !ok || len(h.fake.Sent()) != n+1 {
+		t.Fatal("no confirmation sent")
+	}
+	m := sent.Message
+	want := mail.Address{Name: "Pat's Bakery", Email: "pats-bakery@shared.test.example"}
+	if m.Kind != mail.KindConfirm || m.To.Email != "ann@example.com" || m.From != want ||
+		len(m.ReplyTo) != 1 || m.ReplyTo[0].Email != "pat@example.com" {
+		t.Errorf("message from %+v reply-to %+v", m.From, m.ReplyTo)
+	}
+	var from *string
+	if err := h.db.QueryRow(ctx, `SELECT from_email FROM accounts WHERE id = $1`, h.acc).Scan(&from); err != nil || from != nil {
+		t.Errorf("from_email stored: %v %v", from, err)
+	}
+}

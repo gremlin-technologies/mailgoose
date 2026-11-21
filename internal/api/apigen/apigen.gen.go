@@ -1417,6 +1417,19 @@ type AccountStatus string
 type AccountSettings struct {
 	CreatedAt time.Time `json:"created_at"`
 
+	// DefaultFromEmail The address an email goes as when neither it nor the account
+	// sets a From (MG-108): the owner's own sign-in address, when the
+	// server has shared sending on and the account has no verified
+	// domain of its own. Such an email goes from `shared_address`,
+	// under the account's name, with replies to this address. Null
+	// when shared sending is off or the account has a verified
+	// domain, where a missing From is refused (`missing_from`).
+	// Worked out when read, not stored: `from_email` stays null.
+	//
+	//
+	// Examples: owner@example.com
+	DefaultFromEmail *string `json:"default_from_email"`
+
 	// FromEmail The default From address for new campaigns.
 	//
 	// Examples: news@patsbakery.example
@@ -3759,9 +3772,17 @@ type TestSendResult struct {
 	Campaign Campaign `json:"campaign"`
 
 	// DailyLimit Test emails an account can send in any 24 hours.
-	DailyLimit int           `json:"daily_limit"`
-	From       MailAddress   `json:"from"`
-	ReplyTo    []MailAddress `json:"reply_to"`
+	DailyLimit int `json:"daily_limit"`
+
+	// DefaultFrom True when neither the email nor the account sets a From, so the
+	// test went as the owner's own sign-in address (`sender`) by
+	// default (MG-108): from the account's shared address, with
+	// replies to the sign-in address. Only with shared sending on and
+	// no verified domain on the account; otherwise a missing From is
+	// refused with `missing_from`.
+	DefaultFrom bool          `json:"default_from"`
+	From        MailAddress   `json:"from"`
+	ReplyTo     []MailAddress `json:"reply_to"`
 
 	// Sender The verified address the email was set to go from, when `shared_domain`; null otherwise.
 	Sender *string `json:"sender"`

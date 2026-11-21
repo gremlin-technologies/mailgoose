@@ -113,11 +113,14 @@ type TestResult struct {
 	SentToday int
 	// From and ReplyTo are who the copies went from. SharedDomain is true
 	// when that's the shared sending domain (MG-85), and Sender is then the
-	// verified address the email was set to go from.
+	// verified address the email was set to go from. DefaultFrom is true
+	// when no From was set, so Sender is the owner's sign-in address by
+	// default (MG-108).
 	From         mail.Address
 	ReplyTo      []mail.Address
 	SharedDomain bool
 	Sender       string
+	DefaultFrom  bool
 }
 
 // Test sends one copy of the campaign's email to each address in to, or to
@@ -214,7 +217,7 @@ func (s *Service) Test(ctx context.Context, accountID, campaignID string, to []s
 	}
 	p.Campaign.LastTest = &t
 	return &TestResult{Campaign: p.Campaign, To: recipients, SentToday: sentToday,
-		From: p.From, ReplyTo: p.ReplyTo, SharedDomain: p.Shared, Sender: p.Sender}, nil
+		From: p.From, ReplyTo: p.ReplyTo, SharedDomain: p.Shared, Sender: p.Sender, DefaultFrom: p.DefaultFrom}, nil
 }
 
 func (s *Service) ownerEmail(ctx context.Context, accountID string) (string, error) {

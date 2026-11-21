@@ -29,7 +29,10 @@ type account struct {
 	Tester        *testerStatus `json:"tester"`
 	SendingSlug   string        `json:"sending_slug"`
 	SharedAddress *string       `json:"shared_address"`
-	CreatedAt     time.Time     `json:"created_at"`
+	// DefaultFromEmail is what a missing From goes as (MG-108): the
+	// owner's sign-in address, or nil when a From has to be set.
+	DefaultFromEmail *string   `json:"default_from_email"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // testerStatus is the API's TesterStatus.
@@ -296,7 +299,11 @@ func (a *App) printAccount(acct account) {
 	fmt.Fprintf(a.Stdout, "Account:     %s (%s plan)\n", acct.Name, acct.Plan)
 	fmt.Fprintf(a.Stdout, "ID:          %s\n", acct.ID)
 	fmt.Fprintf(a.Stdout, "From name:   %s\n", orNone(acct.FromName))
-	fmt.Fprintf(a.Stdout, "From email:  %s\n", orNone(acct.FromEmail))
+	if acct.FromEmail == nil && acct.DefaultFromEmail != nil {
+		fmt.Fprintf(a.Stdout, "From email:  (not set: emails without one go as your sign-in address, %s)\n", *acct.DefaultFromEmail)
+	} else {
+		fmt.Fprintf(a.Stdout, "From email:  %s\n", orNone(acct.FromEmail))
+	}
 	addr := orNone(acct.PostalAddress)
 	fmt.Fprintf(a.Stdout, "Postal:      %s\n", strings.ReplaceAll(addr, "\n", "\n             "))
 	fmt.Fprintf(a.Stdout, "Time zone:   %s\n", acct.TimeZone)

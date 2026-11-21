@@ -524,7 +524,8 @@ account can send 50 test emails in any 24 hours.
 
 The email has to be ready to send: a From on a verified domain (or, where
 the server has shared sending on, a verified sender address: see
-` + "`mailgoose sender-addresses`" + `), a subject, the account's postal
+` + "`mailgoose sender-addresses`" + `; there, with no verified domain and no
+From set, it goes as your sign-in address), a subject, the account's postal
 address, and merge tags that can be filled in. If it isn't, nothing is sent
 and each problem is listed with how to fix it.`,
 		Example: `  mailgoose campaign test 3f1c...
@@ -548,6 +549,7 @@ and each problem is listed with how to fix it.`,
 				ReplyTo      []mailAddr `json:"reply_to"`
 				SharedDomain bool       `json:"shared_domain"`
 				Sender       *string    `json:"sender"`
+				DefaultFrom  bool       `json:"default_from"`
 			}
 			if err := a.call(cmd.Context(), http.MethodPost, campaignPath(id)+"/test", body, &out, true); err != nil {
 				return listSendProblems(err, "The campaign can't be sent yet, so nothing was sent.")
@@ -562,6 +564,9 @@ and each problem is listed with how to fix it.`,
 				replyTo := *out.Sender
 				if len(out.ReplyTo) > 0 {
 					replyTo = out.ReplyTo[0].Email
+				}
+				if out.DefaultFrom {
+					fmt.Fprintln(a.Stdout, defaultFromNote(*out.Sender))
 				}
 				fmt.Fprintln(a.Stdout, sharedNudge(out.From.Email, replyTo, *out.Sender))
 			}
@@ -771,6 +776,9 @@ func (a *App) launchError(ctx context.Context, id string, err error) error {
 				replyTo = str(m, "email")
 			}
 			m, _ := sum["from"].(map[string]any)
+			if d, _ := sum["default_from"].(bool); d {
+				fmt.Fprintln(a.Stdout, defaultFromNote(sender))
+			}
 			fmt.Fprintln(a.Stdout, sharedNudge(str(m, "email"), replyTo, sender))
 		}
 	}
@@ -803,6 +811,13 @@ func sharedNudge(from, replyTo, sender string) string {
 	}
 	return fmt.Sprintf("Sending from %s, mailgoose's shared domain, with replies to %s.\n"+
 		"Add your own domain for better deliverability and trust: mailgoose domain add %s", from, replyTo, domain)
+}
+
+// defaultFromNote says no From was set, so a send goes as the owner's
+// sign-in address (MG-108).
+func defaultFromNote(signIn string) string {
+	return fmt.Sprintf("No From is set on the email or the account, so it goes as your sign-in address, %s.\n"+
+		"Set one with: mailgoose account update --from-email <address>", signIn)
 }
 
 // listSendProblems puts every problem in a not_ready error's message, one

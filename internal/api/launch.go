@@ -124,6 +124,7 @@ func summaryJSON(s *sending.Summary) map[string]any {
 		"reply_to":         replyTo,
 		"shared_domain":    s.SharedDomain,
 		"sender":           sender,
+		"default_from":     s.DefaultFrom,
 		"recipient_count":  s.RecipientCount,
 		"send_at":          sendAt,
 		"credits":          s.Credits,

@@ -143,6 +143,61 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+// TestResolveDefaultFrom: with shared sending on and no verified domain, a
+// missing From is the owner's sign-in address, going from the shared domain
+// with replies to it, exactly as when that address is set (MG-108). With
+// shared sending off, or a verified domain, a missing From is still
+// ErrNoFrom.
+func TestResolveDefaultFrom(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	r := &Resolver{DB: h.db, Domains: &domains.Service{DB: h.db}, Shared: "shared.mailgoose.test"}
+	off := &Resolver{DB: h.db, Domains: &domains.Service{DB: h.db}}
+
+	if d, err := r.DefaultFrom(ctx, h.acc); err != nil || d != "Owner@Shop.example" {
+		t.Fatalf("DefaultFrom = %q, %v", d, err)
+	}
+	set, err := r.Resolve(ctx, h.acc, mail.Address{Email: "Owner@Shop.example"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, from := range []string{"", "  "} {
+		s, err := r.Resolve(ctx, h.acc, mail.Address{Name: "PayPal Support", Email: from}, "")
+		if err != nil {
+			t.Fatalf("%q: %v", from, err)
+		}
+		if !s.Default || !s.Shared || s.From != set.From || s.From.Email != "pats-bakery@shared.mailgoose.test" ||
+			s.From.Name != "Pat's Bakery" || s.Address != "Owner@Shop.example" ||
+			len(s.ReplyTo) != 1 || s.ReplyTo[0].Email != "Owner@Shop.example" {
+			t.Errorf("%q: sender = %+v", from, s)
+		}
+	}
+	if set.Default {
+		t.Error("an explicit From isn't a default")
+	}
+	// The email's own Reply-To is still checked, and used.
+	if _, err := r.Resolve(ctx, h.acc, mail.Address{}, "boss@example.org"); !errors.As(err, new(*ReplyToError)) {
+		t.Errorf("unverified Reply-To: %v", err)
+	}
+
+	// Shared sending off: no default.
+	if d, err := off.DefaultFrom(ctx, h.acc); err != nil || d != "" {
+		t.Errorf("off: DefaultFrom = %q, %v", d, err)
+	}
+	if _, err := off.Resolve(ctx, h.acc, mail.Address{}, ""); !errors.Is(err, ErrNoFrom) {
+		t.Errorf("off: %v", err)
+	}
+
+	// A verified domain of its own: no default either.
+	h.verifiedDomain(t, "patsbakery.com")
+	if d, err := r.DefaultFrom(ctx, h.acc); err != nil || d != "" {
+		t.Errorf("verified domain: DefaultFrom = %q, %v", d, err)
+	}
+	if _, err := r.Resolve(ctx, h.acc, mail.Address{}, ""); !errors.Is(err, ErrNoFrom) {
+		t.Errorf("verified domain: %v", err)
+	}
+}
+
 // TestCheckShared: the guard's check passes only the account's own slug
 // with Reply-To addresses it verified.
 func TestCheckShared(t *testing.T) {

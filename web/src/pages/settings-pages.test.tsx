@@ -258,6 +258,42 @@ describe("settings send limit without a domain", () => {
   });
 });
 
+describe("settings default From", () => {
+  const body = {
+    id: "7c1d0f7e-8f43-4a8e-9d35-2b8a7c6e1a10",
+    name: "Pat's Bakery",
+    plan: "free",
+    from_name: null,
+    from_email: null,
+    postal_address: "12 Main St",
+    time_zone: "UTC",
+    missing_for_send: [],
+    sending_mode: "full",
+    sending_slug: "pats-bakery",
+    shared_address: "pats-bakery@shared.mailgoose.test",
+    default_from_email: "pat@example.com",
+    send_limit: { daily: 1000, usual: 10000, reason: "", lowered_until: null, needs_domain: true },
+    created_at: "2026-11-18T10:00:00Z",
+  };
+
+  it("shows the sign-in address as the empty From's placeholder, and says it's used (MG-108)", async () => {
+    const api = fakeApi({ ...signedIn, "GET /v1/account": () => ({ status: 200, body }) });
+    renderApp("/settings", api.fetch);
+    const field = (await screen.findByLabelText("Default From address")) as HTMLInputElement;
+    expect(field.value).toBe("");
+    expect(field.placeholder).toBe("pat@example.com");
+    expect(screen.getByText(/Empty: emails without a From of their own go as your sign-in address, pat@example.com/)).toBeTruthy();
+  });
+
+  it("keeps the usual placeholder when no default applies", async () => {
+    const api = fakeApi({ ...signedIn, "GET /v1/account": () => ({ status: 200, body: { ...body, default_from_email: null } }) });
+    renderApp("/settings", api.fetch);
+    const field = (await screen.findByLabelText("Default From address")) as HTMLInputElement;
+    expect(field.placeholder).toBe("news@example.com");
+    expect(screen.queryByText(/go as your sign-in address/)).toBeNull();
+  });
+});
+
 describe("settings", () => {
   const account = {
     id: "7c1d0f7e-8f43-4a8e-9d35-2b8a7c6e1a10",

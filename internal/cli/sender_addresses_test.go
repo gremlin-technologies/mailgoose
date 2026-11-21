@@ -136,6 +136,77 @@ func TestSharedSendingNudges(t *testing.T) {
 	}
 }
 
+// TestSharedSendingDefaultFrom: with shared sending on and no domain, an
+// email with no From, on an account with none, tests and launches as the
+// owner's sign-in address, and the CLI says so; `account get` names the
+// default (MG-108). Shared sending off, it's refused as before.
+func TestSharedSendingDefaultFrom(t *testing.T) {
+	noFromDoc := strings.Replace(springDoc, `, "from_email": "news@bakery.example"`, "", 1)
+	setup := func(t *testing.T, h *harness) string {
+		t.Helper()
+		h.app.Stdin = strings.NewReader(noFromDoc)
+		if code := h.run("email", "create", "--name", "Spring", "--file", "-", "--json"); code != ExitOK {
+			t.Fatalf("email: exit %d %s", code, h.errOut)
+		}
+		emailID := h.jsonOut(t)["id"].(string)
+		if code := h.run("campaign", "create", "--name", "Spring", "--email", emailID, "--all", "--json"); code != ExitOK {
+			t.Fatalf("create: exit %d %s", code, h.errOut)
+		}
+		id := h.jsonOut(t)["id"].(string)
+		if code := h.run("account", "update", "--postal-address", "12 Main St"); code != ExitOK {
+			t.Fatalf("postal: exit %d %s", code, h.errOut)
+		}
+		return id
+	}
+
+	t.Run("shared on", func(t *testing.T) {
+		h := liveAPIShared(t, "shared.test.example")
+		id := setup(t, h)
+		if code := h.run("account", "get"); code != ExitOK ||
+			!strings.Contains(h.out.String(), "From email:  (not set: emails without one go as your sign-in address, pat@example.com)") {
+			t.Errorf("account get: exit %d %s", code, h.out)
+		}
+		note := "No From is set on the email or the account, so it goes as your sign-in address, pat@example.com.\n" +
+			"Set one with: mailgoose account update --from-email <address>\n" +
+			"Sending from test@shared.test.example, mailgoose's shared domain, with replies to pat@example.com."
+		if code := h.run("campaign", "test", id); code != ExitOK {
+			t.Fatalf("test: exit %d %s", code, h.errOut)
+		}
+		if !strings.Contains(h.out.String(), note) {
+			t.Errorf("test lacks the note:\n%s", h.out)
+		}
+		if code := h.run("contact", "add", "sam@example.org"); code != ExitOK {
+			t.Fatalf("contact: exit %d %s", code, h.errOut)
+		}
+		v, _ := liveDBs.Load(t)
+		if _, err := v.(*pgxpool.Pool).Exec(t.Context(), `
+			INSERT INTO credit_transactions (account_id, type, amount, expires_at)
+			SELECT id, 'purchase', 100, now() + interval '1 year' FROM accounts`); err != nil {
+			t.Fatal(err)
+		}
+		if code := h.run("campaign", "launch", id); code != ExitNeedsConfirmation {
+			t.Fatalf("summary: exit %d %s", code, h.errOut)
+		}
+		out := h.out.String()
+		for _, want := range []string{note, "test@shared.test.example", "Reply-To:  pat@example.com"} {
+			if !strings.Contains(out, want) {
+				t.Errorf("summary lacks %q:\n%s", want, out)
+			}
+		}
+	})
+
+	t.Run("shared off", func(t *testing.T) {
+		h := liveAPI(t)
+		id := setup(t, h)
+		if code := h.run("campaign", "test", id); code != ExitError || !strings.Contains(h.errOut.String(), "There's no From address.") {
+			t.Errorf("test: exit %d %s", code, h.errOut)
+		}
+		if code := h.run("account", "get"); code != ExitOK || !strings.Contains(h.out.String(), "From email:  (not set)\n") {
+			t.Errorf("account get: exit %d %s", code, h.out)
+		}
+	})
+}
+
 // TestNoNudgeWithoutSharedSending: shared sending off, a From with no
 // verified domain is refused as before, with no word of sender addresses.
 func TestNoNudgeWithoutSharedSending(t *testing.T) {
