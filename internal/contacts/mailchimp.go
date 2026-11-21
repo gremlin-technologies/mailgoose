@@ -41,8 +41,12 @@ const (
 )
 
 // ImportWaiting is a Mailchimp import whose subscribed part waits for a plan
-// that covers it.
-const ImportWaiting = "waiting"
+// that covers it, and ImportCancelled one the customer cancelled while it
+// waited.
+const (
+	ImportWaiting   = "waiting"
+	ImportCancelled = "cancelled"
+)
 
 // Why a Mailchimp row was skipped, beyond the CSV import's reasons.
 const (

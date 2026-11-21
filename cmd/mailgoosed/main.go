@@ -42,6 +42,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/images"
 	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/mailchimp"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
 	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
@@ -155,6 +156,13 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		if srv.Images, srv.ImageFiles, err = newImages(ctx, cfg, pool, log); err != nil {
 			return err
 		}
+		// Mailchimp exports (MG-72) are uploaded to the API, which also makes
+		// their emails, since only the API may store images.
+		srv.Contacts.Prices = srv.Billing.Prices
+		srv.Mailchimp = &mailchimp.Store{DB: pool}
+		srv.MailchimpMaxMembers = cfg.MailchimpImportMaxContacts
+		mailchimpEmails := &mailchimp.EmailJob{Store: srv.Mailchimp, MaxMembers: cfg.MailchimpImportMaxContacts,
+			Importer: &mailchimp.EmailImporter{Emails: srv.Emails, Images: srv.Images}}
 
 		sender, err := mail.New(ctx, cfg)
 		if err != nil {
@@ -235,6 +243,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		// Pending domains are re-checked here rather than in the worker,
 		// because only the API's role may read SES identities.
 		go srv.Domains.RecheckLoop(ctx, time.Minute)
+		go mailchimpEmails.Run(ctx, log.With("job", "mailchimp-emails"), 5*time.Second)
 	} else {
 		log.Warn("no database configured; /readyz will report unavailable and idempotency keys stay in memory")
 	}
@@ -405,7 +414,11 @@ func runWorker(ctx context.Context, log *slog.Logger) error {
 
 	var wg sync.WaitGroup
 	run := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }
-	imports := &contacts.Service{DB: pool}
+	prices, err := billing.ParsePrices(cfg.Stripe.PlanPrices)
+	if err != nil {
+		return err
+	}
+	imports := &contacts.Service{DB: pool, Prices: prices}
 	run(func() { imports.RunImports(ctx, log.With("job", "import"), 2*time.Second) })
 	// Scheduled campaigns start within 15 seconds of their time.
 	run(func() { sending.RunScheduler(ctx, pool, 15*time.Second, log.With("job", "schedule")) })

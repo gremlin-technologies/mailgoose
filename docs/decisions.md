@@ -4,6 +4,57 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Uploading and confirming a Mailchimp export (MG-72; reversible defaults)
+
+`POST /v1/imports/mailchimp/bundles` takes Mailchimp's export as a
+multipart upload (part `file`, with `audience_name` and repeated
+`group_columns`), reads it (MG-69) and answers with an upload id and its
+preview: audiences by status, the contacts and tags it would make (MG-70),
+the emails it would make (MG-71) and the plan it needs. Nothing is imported
+until `POST .../{id}/confirm` with `permission_confirmed: true`, which queues
+the contacts import (kind `mailchimp`) and the emails. The CLI has
+`mailgoose import mailchimp upload|preview|confirm`. These defaults are each
+easy to change:
+
+- **Size.** An upload is at most 100 MB, and the API reads at most two at
+  once per task. The upload may take 10 minutes to arrive, past the API's
+  usual 30-second read timeout. A larger account exports each audience on its
+  own.
+- **Storage.** The file is kept in Postgres (`mailchimp_bundles`), like a CSV
+  import's file, and the preview is worked out again on each read. An
+  unconfirmed upload is deleted after 7 days; a confirmed one keeps its file
+  until its emails are made.
+- **Where the emails are made.** A job in the API, not the worker, since only
+  the API's task may store images. It carries on where it stopped after a
+  restart, and gives up after three tries with an error on the upload.
+  Without image storage the emails are still made, keeping their Mailchimp
+  image links with a warning each.
+- **An export with no contacts** (only templates or campaigns) can be
+  confirmed; it makes emails and no contacts import.
+- **Confirming again** answers with the same upload and import. The import's
+  idempotency key is the export's own hash unless the request gives one.
+- **Import status.** `GET /v1/imports/{id}` gives a Mailchimp import's
+  `kind`, its existing-contact counts and `mailchimp` (the upload id and the
+  emails made). The status `waiting` and the skip reasons `not_subscribed` and
+  `archived` are new in the API, CLI and web app.
+- **Stored rows.** A confirm whose contacts would take over 256 MB to store
+  is refused (`export_too_large`), well under Postgres's 1 GB for one value;
+  a 100 MB zip can unpack to much more. The customer exports the audiences
+  one at a time.
+- **Templates past the first 100** (MG-71's cap) are listed in the preview's
+  `ignored_files` with the reason `too_many_templates`.
+- **Waits that won't end.** A waiting import goes on only once the account is
+  on the paid plan and isn't a tester, so a tester's never does, and deleting
+  contacts on the free plan doesn't restart one. `waiting_note` on the
+  import says so, and `POST /v1/imports/{id}/cancel` (`mailgoose import
+  cancel`, and a button on the import's page) cancels a waiting import, to
+  the new status `cancelled`. Only a waiting import can be cancelled (409
+  `import_not_waiting`). What it already imported (its unsubscribed and
+  bounced contacts) stays. A cancelled import, like a failed one, doesn't
+  count toward the large-first-import check, and its idempotency key can be
+  used again.
+- **Closing an account** deletes its uploads with the rest of its data.
+
 ## 2026-11-21: Turning Mailchimp templates and campaigns into HTML emails (MG-71; reversible defaults)
 
 `mailchimp.PlanEmails` lists the emails an export would make, with each

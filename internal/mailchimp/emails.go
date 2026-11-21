@@ -119,11 +119,13 @@ func plan(from, file, name, src, subject string) EmailPlan {
 		// The email is made empty, so none of its images is copied.
 		p.Images = 0
 	}
-	p.Errors = slices.Clone(conv.Errors)
-	p.Warnings = slices.Clone(conv.Warnings)
+	p.Errors, p.Warnings = notes(conv.Errors), notes(conv.Warnings)
 	p.check(conv.HTML)
 	return p
 }
+
+// notes copies ns, never nil, so it shows as [] in JSON.
+func notes(ns []Note) []Note { return append([]Note{}, ns...) }
 
 // check adds what the email checks find in h. A size over what an email can
 // store is an error of its own.
@@ -195,6 +197,8 @@ type Fetcher func(ctx context.Context, rawURL string) ([]byte, error)
 // EmailImporter makes the emails of a bundle.
 type EmailImporter struct {
 	Emails *emails.Service
+	// Images stores the copies; nil leaves every image on Mailchimp, with
+	// a note.
 	Images *images.Service
 	// Fetch gets a Mailchimp-hosted image; nil means FetchImage.
 	Fetch Fetcher
@@ -213,6 +217,19 @@ var (
 // import. It fetches at most MaxImportImages images, none for an email too
 // large to keep, and none once the account can keep no more.
 func (im *EmailImporter) Import(ctx context.Context, accountID string, b *Bundle, campaigns int) ([]ImportedEmail, error) {
+	var out []ImportedEmail
+	err := im.ImportFrom(ctx, accountID, b, campaigns, 0, func(e ImportedEmail) error {
+		out = append(out, e)
+		return nil
+	})
+	return out, err
+}
+
+// ImportFrom makes the emails PlanEmails lists from the one at index from,
+// calling made after each; an error from made stops it. A job that stopped
+// carries on this way without making an email twice, except one made just
+// before the stop and not yet recorded.
+func (im *EmailImporter) ImportFrom(ctx context.Context, accountID string, b *Bundle, campaigns, from int, made func(ImportedEmail) error) error {
 	fetch := im.Fetch
 	if fetch == nil {
 		fetch = FetchImage
@@ -224,11 +241,14 @@ func (im *EmailImporter) Import(ctx context.Context, accountID string, b *Bundle
 		stop = errNoImageStorage
 	}
 	fetches := 0
-	var out []ImportedEmail
-	for _, p := range PlanEmails(b, campaigns) {
+	plans := PlanEmails(b, campaigns)
+	for _, p := range plans[min(from, len(plans)):] {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		h := p.conv.HTML
 		// The plan's checks were on the HTML before relinking; check again.
-		p.Errors, p.Warnings = slices.Clone(p.conv.Errors), slices.Clone(p.conv.Warnings)
+		p.Errors, p.Warnings = notes(p.conv.Errors), notes(p.conv.Warnings)
 		if len(h) <= emails.MaxHTMLBytes {
 			var notCopied []imageFailure
 			for _, src := range p.conv.Images {
@@ -268,19 +288,21 @@ func (im *EmailImporter) Import(ctx context.Context, accountID string, b *Bundle
 		// The stored document has to read back; make sure it does.
 		raw, err := json.Marshal(doc)
 		if err != nil {
-			return out, err
+			return err
 		}
 		if doc, err = emails.ParseDocument(emails.KindHTML, raw); err != nil {
-			return out, fmt.Errorf("email from %s: %w", p.File, err)
+			return fmt.Errorf("email from %s: %w", p.File, err)
 		}
 		e, err := im.Emails.Create(ctx, accountID, p.Name, emails.KindHTML, doc)
 		if err != nil {
-			return out, fmt.Errorf("make email from %s: %w", p.File, err)
+			return fmt.Errorf("make email from %s: %w", p.File, err)
 		}
 		p.conv = nil
-		out = append(out, ImportedEmail{EmailPlan: p, EmailID: e.ID})
+		if err := made(ImportedEmail{EmailPlan: p, EmailID: e.ID}); err != nil {
+			return err
+		}
 	}
-	return out, nil
+	return nil
 }
 
 // relink points each image address in h that copied has at its copy. Only

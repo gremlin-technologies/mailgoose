@@ -1417,6 +1417,36 @@ Responses:
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
+<a id="op-cancelimport"></a>
+
+### Cancel a waiting import
+
+`POST /v1/imports/{import_id}/cancel`
+
+- Operation: `cancelImport`
+- CLI: `mailgoose import cancel`
+
+Cancels a Mailchimp import that is `waiting` for the paid plan. The
+contacts it already took off the list (unsubscribed and bounced) stay
+as they are; the rest never come in. Its `waiting_note` says when a
+wait won't end by itself. Cancelling a cancelled import changes
+nothing. Any other import can't be cancelled (409
+`import_not_waiting`).
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `import_id` | path | string (uuid) | yes | The import's `id`. |
+
+Responses:
+
+- `200`: Cancelled, now or before. [Import](#schema-import)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `import_not_waiting`: only an import that's waiting for the paid plan can be cancelled. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
 <a id="op-listimportskippedrows"></a>
 
 ### List an import's skipped rows
@@ -1440,6 +1470,111 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-createmailchimpbundle"></a>
+
+### Upload a Mailchimp export
+
+`POST /v1/imports/mailchimp/bundles`
+
+- Operation: `createMailchimpBundle`
+- CLI: `mailgoose import mailchimp upload`
+
+Reads a Mailchimp export and keeps it for 7 days, unconfirmed: the
+account export ZIP (Account > Settings > Manage my data > Export
+data), an audience export ZIP, or one audience CSV. Nothing is
+imported yet. The response holds the preview: the audiences found,
+what importing the contacts would do, and the HTML emails the
+templates and the newest campaigns would become.
+`confirmMailchimpBundle` starts the import.
+
+Send the file as `multipart/form-data`, in the part `file`, at most
+100 MB. A CSV doesn't say which columns are Mailchimp groups, so name
+them in `group_columns` (one part each) to bring them in as tags;
+`audience_name` names the audience of an export that doesn't say
+(default "Mailchimp"). Other columns, beyond email, names, tags,
+status, opt-in data and GDPR permissions, aren't imported and are
+listed in `preview.contacts.dropped_fields`.
+
+Request body (`multipart/form-data`, required): [CreateMailchimpBundleRequest](#schema-createmailchimpbundlerequest)
+
+Responses:
+
+- `201`: The upload, unconfirmed, with its preview. [MailchimpBundle](#schema-mailchimpbundle)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `413`: `request_too_large`: the request body is over the operation's limit. [Error](#schema-error)
+- `422`: The export can't be read or imported, and nothing was kept or queued. `code` says why: `not_zip_or_csv`, `bad_zip`, `unsafe_path`, `too_large` (over 1 GB unpacked), `too_many_members` (over the import's limit), `too_many_columns`, `no_email_column`, `unknown_status`, `nothing_to_read`, `file_required`, `invalid_audience_name`, `invalid_group_column`, `too_many_group_columns`, `permission_required`, `too_many_tags`, `invalid_campaigns`, `invalid_idempotency_key`, `idempotency_key_reused` or `upload_used` (the file was already imported and removed). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-getmailchimpbundle"></a>
+
+### Get an uploaded Mailchimp export
+
+`GET /v1/imports/mailchimp/bundles/{bundle_id}`
+
+- Operation: `getMailchimpBundle`
+- CLI: `mailgoose import mailchimp confirm`, `mailgoose import mailchimp preview`
+
+The upload with its preview, worked out again against the account as
+it is now. Once confirmed, it also says how far its emails have got;
+`preview` is null once the file has been used and removed.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `bundle_id` | path | string (uuid) | yes | The uploaded export's `id`, from `createMailchimpBundle`. |
+
+Responses:
+
+- `200`: The upload. [MailchimpBundle](#schema-mailchimpbundle)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-confirmmailchimpbundle"></a>
+
+### Import an uploaded Mailchimp export
+
+`POST /v1/imports/mailchimp/bundles/{bundle_id}/confirm`
+
+- Operation: `confirmMailchimpBundle`
+- CLI: `mailgoose import mailchimp confirm`
+
+Starts the import: the contacts as a Mailchimp import (follow it with
+`getImport` and `import_id`), and the HTML emails, which this upload
+reports in `emails`. Both run in the background.
+
+`permission_confirmed` must be true: it says these people agreed to
+get your email. Mailchimp's subscribed contacts come in subscribed,
+with no confirmation email; pending ones come in unconfirmed,
+unsubscribed ones unsubscribed and cleaned ones bounced. `campaigns`
+is how many of the newest campaigns become emails (default 10, at
+most 100); every template does.
+
+Confirming again returns the upload as it is. `idempotency_key`
+(default: the hash of the contacts) makes a second upload of the same
+export return the import already made.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `bundle_id` | path | string (uuid) | yes | The uploaded export's `id`, from `createMailchimpBundle`. |
+
+Request body (`application/json`, required): [ConfirmMailchimpBundleRequest](#schema-confirmmailchimpbundlerequest)
+
+Responses:
+
+- `202`: The upload, confirmed; its import and emails are queued. [MailchimpBundle](#schema-mailchimpbundle)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `422`: The export can't be read or imported, and nothing was kept or queued. `code` says why: `not_zip_or_csv`, `bad_zip`, `unsafe_path`, `too_large` (over 1 GB unpacked), `too_many_members` (over the import's limit), `too_many_columns`, `no_email_column`, `unknown_status`, `nothing_to_read`, `file_required`, `invalid_audience_name`, `invalid_group_column`, `too_many_group_columns`, `permission_required`, `too_many_tags`, `invalid_campaigns`, `invalid_idempotency_key`, `idempotency_key_reused` or `upload_used` (the file was already imported and removed). [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -3691,12 +3826,20 @@ What the checks found in the file when the import was queued.
 
 ### ImportStatus
 
-Type: string: one of `queued`, `running`, `done`, `failed`
+`waiting`: a Mailchimp import whose subscribed contacts would take
+the account past its contact limit. Its unsubscribed and bounced
+contacts are in; the rest follow by themselves once the account is on
+the paid plan, and `waiting_note` says when that won't happen.
+`cancelled`: a waiting import cancelled with `cancelImport`.
+
+Type: string: one of `queued`, `running`, `waiting`, `done`, `failed`, `cancelled`
 
 <a id="schema-skipreason"></a>
 
 ### SkipReason
 
+`not_subscribed` and `archived` are Mailchimp imports' only: a
+non-subscribed (transactional) or archived member.
 `invalid_email`: not an email address. `invalid_row`: the row
 couldn't be read as CSV (a stray quote, say). `duplicate`: the same
 address is on an earlier row. `exists`: the account already has the
@@ -3704,7 +3847,7 @@ contact, which is left as it is. `suppressed`: the address
 unsubscribed, bounced or complained before. `over_limit`: a free
 account, or a tester account (MG-86), was full.
 
-Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `suppressed`, `over_limit`
+Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `suppressed`, `over_limit`, `not_subscribed`, `archived`
 
 <a id="schema-import"></a>
 
@@ -3713,6 +3856,7 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `id` | string (uuid) | yes |  |
+| `kind` | string: one of `csv`, `mailchimp` | yes | A CSV file (`createImport`) or a Mailchimp export (`confirmMailchimpBundle`). |
 | `file_name` | string or null | yes |  |
 | `status` | [ImportStatus](#schema-importstatus) | yes |  |
 | `contact_status` | string: one of `subscribed`, `unconfirmed` | yes | The status added contacts get; `subscribed` only when permission was confirmed. |
@@ -3723,16 +3867,155 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 | `imported` | integer | yes | Contacts added. |
 | `skipped` | integer | yes |  |
 | `skipped_by_reason` | object | yes |  |
+| `existing_tagged` | integer | yes | A Mailchimp import's addresses that were already contacts and only gained tags; 0 for a CSV. |
+| `existing_suppressed` | integer | yes | Of those, how many Mailchimp's unsubscribe or clean took off the mailing list. |
 | `review` | string: one of `none`, `held`, `approved` | yes | A `held` import's contacts aren't mailed until mailgoose approves it. |
 | `hold_reason` | string or null | yes | Why a held import is held: `shared_list` (many of its addresses are on other accounts' lists), `risky_addresses` (many role or disposable addresses), `invalid_addresses` (many rows that aren't addresses), `large_first_import` or `over_contact_limit`. |
 | `hold_message` | string or null | yes | Why the import is held, in plain words, for showing to the account; null when it isn't held. |
 | `list_source` | null or [ListSource](#schema-listsource) | yes | Where the account said the people came from; null for imports made before it was asked. |
 | `list_source_detail` | string or null | yes |  |
 | `checks` | [ImportChecks](#schema-importchecks) | yes |  |
+| `mailchimp` | null or object | yes | For a Mailchimp import, the upload it came from and how far its emails have got; null for a CSV. |
+| `waiting_note` | string or null | yes | For a `waiting` import, what it waits for. A tester account's wait never ends, and deleting contacts doesn't restart one, so the note says to cancel it (`cancelImport`). Null otherwise. |
 | `error` | string or null | yes | Why a `failed` import stopped. |
 | `created_at` | string (date-time) | yes |  |
 | `started_at` | string (date-time) or null | yes |  |
 | `finished_at` | string (date-time) or null | yes |  |
+
+<a id="schema-createmailchimpbundlerequest"></a>
+
+### CreateMailchimpBundleRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `file` | string (binary) | yes | The export, as Mailchimp gave it, at most 100 MB. |
+| `audience_name` | string |  | The audience's name when the export doesn't say (an audience export or a CSV). Default "Mailchimp". |
+| `group_columns` | array of string |  | Member-file columns that are Mailchimp groups; each group becomes a tag `Category: Group`. |
+
+<a id="schema-confirmmailchimpbundlerequest"></a>
+
+### ConfirmMailchimpBundleRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `permission_confirmed` | boolean | yes | True says these people agreed to get your email. Required. |
+| `campaigns` | integer |  | How many of the newest campaigns become HTML emails. |
+| `idempotency_key` | string |  | Confirming the same export again with this key returns the import already made. |
+
+<a id="schema-mailchimpbundle"></a>
+
+### MailchimpBundle
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | yes |  |
+| `file_name` | string or null | yes |  |
+| `bytes` | integer | yes | The uploaded file's size. |
+| `status` | string: one of `unconfirmed`, `confirmed` | yes |  |
+| `created_at` | string (date-time) | yes |  |
+| `expires_at` | string (date-time) | yes | When an unconfirmed upload is deleted. |
+| `confirmed_at` | string (date-time) or null | yes |  |
+| `import_id` | string (uuid) or null | yes | The contacts import, once confirmed; null when the export had no contacts. |
+| `campaigns` | integer | yes | How many of the newest campaigns become emails. |
+| `preview` | null or [MailchimpPreview](#schema-mailchimppreview) | yes | What importing would do; null once the file has been used and removed. |
+| `emails` | [MailchimpEmailProgress](#schema-mailchimpemailprogress) | yes |  |
+
+<a id="schema-mailchimppreview"></a>
+
+### MailchimpPreview
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `source` | string: one of `account_export`, `audience_export`, `audience_csv` | yes |  |
+| `audiences` | array of [MailchimpAudience](#schema-mailchimpaudience) | yes |  |
+| `contacts` | null or [MailchimpContactsPreview](#schema-mailchimpcontactspreview) | yes | What importing the contacts would do; null when the export has none. |
+| `emails` | array of [MailchimpEmail](#schema-mailchimpemail) | yes | The emails confirming with the default `campaigns` would make, templates first, then campaigns newest first. |
+| `campaigns_available` | integer | yes | Campaigns in the export with HTML, of which `campaigns` come over. |
+| `ignored_files` | array of object | yes |  |
+
+<a id="schema-mailchimpaudience"></a>
+
+### MailchimpAudience
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes |  |
+| `members` | integer | yes |  |
+| `by_status` | [MailchimpStatusCounts](#schema-mailchimpstatuscounts) | yes |  |
+
+<a id="schema-mailchimpstatuscounts"></a>
+
+### MailchimpStatusCounts
+
+Member rows by their Mailchimp status.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `subscribed` | integer | yes |  |
+| `unsubscribed` | integer | yes |  |
+| `cleaned` | integer | yes |  |
+| `pending` | integer | yes |  |
+| `transactional` | integer | yes |  |
+| `archived` | integer | yes |  |
+
+<a id="schema-mailchimpcontactspreview"></a>
+
+### MailchimpContactsPreview
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `new` | object | yes | Addresses that would become new contacts, by the status they'd have. |
+| `existing_tagged` | integer | yes | Addresses already contacts here, which would only gain tags. |
+| `existing_suppressed` | integer | yes | Of those, how many Mailchimp's unsubscribe or clean would take off the mailing list. |
+| `skipped` | object | yes |  |
+| `tags_to_create` | array of string | yes |  |
+| `merge_suppressed` | integer | yes | Addresses subscribed in one audience but unsubscribed or cleaned in another, so suppressed. |
+| `merge_suppressed_examples` | array of string | yes | Up to 100 of them. |
+| `dropped_fields` | array of string | yes | Columns that aren't imported. |
+| `renamed_tags` | array of object | yes |  |
+| `names_cut` | integer | yes | Members with a tags, group or permission cell too long to read whole. |
+| `with_optin_time` | integer | yes | Subscribed addresses with a Mailchimp opt-in time. |
+| `newest_optin` | string (date-time) or null | yes |  |
+| `plan` | object | yes | The plan the account would need after the import, and its price. |
+| `holds` | array of string | yes | Why the import would be held for review, as `hold_reason` codes, the first being the one recorded. |
+| `waits` | boolean | yes | True when the subscribed contacts would take the account past its limit, so they wait until the plan covers them. |
+
+<a id="schema-mailchimpemail"></a>
+
+### MailchimpEmail
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `from` | string: one of `template`, `campaign` | yes |  |
+| `file` | string | yes | The export file it came from. |
+| `name` | string | yes |  |
+| `subject` | string | yes |  |
+| `preview_text` | string | yes |  |
+| `images` | integer | yes | Mailchimp-hosted images copied into mailgoose. |
+| `errors` | array of [MailchimpEmailNote](#schema-mailchimpemailnote) | yes | What stops it being sent until it's fixed; the email is made anyway. |
+| `warnings` | array of [MailchimpEmailNote](#schema-mailchimpemailnote) | yes |  |
+| `email_id` | string (uuid) or null | yes | The email made; null in a preview. |
+
+<a id="schema-mailchimpemailnote"></a>
+
+### MailchimpEmailNote
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `code` | string: one of `mailchimp_tag_removed`, `mailchimp_conditional`, `mailchimp_tracking_link`, `image_not_copied`, `invalid_html`, `html_warning`, `too_large` | yes |  |
+| `message` | string | yes |  |
+| `line` | integer |  |  |
+
+<a id="schema-mailchimpemailprogress"></a>
+
+### MailchimpEmailProgress
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `status` | string: one of `none`, `queued`, `running`, `done`, `failed` | yes | `none` until confirmed. |
+| `total` | integer | yes |  |
+| `made` | array of [MailchimpEmail](#schema-mailchimpemail) | yes |  |
+| `error` | string or null | yes |  |
 
 <a id="schema-importlist"></a>
 
@@ -3750,6 +4033,7 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `row` | integer | yes | The row's line in the file, where the header is 1. |
+| `source` | string or null | yes | For a Mailchimp import, the export file and row it came from, as `file:row`; null for a CSV. |
 | `email` | string | yes | The email cell as written; empty when the row couldn't be read. |
 | `reason` | [SkipReason](#schema-skipreason) | yes |  |
 

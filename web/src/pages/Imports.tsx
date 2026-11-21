@@ -252,8 +252,10 @@ export function ImportContacts() {
 const importStatus: Record<Import["status"], { label: string; tone: Tone }> = {
   queued: { label: "Waiting to start", tone: "neutral" },
   running: { label: "Importing", tone: "info" },
+  waiting: { label: "Waiting for the paid plan", tone: "neutral" },
   done: { label: "Done", tone: "good" },
   failed: { label: "Failed", tone: "bad" },
+  cancelled: { label: "Cancelled", tone: "neutral" },
 };
 
 export const skipReasons: Record<SkipReason, string> = {
@@ -263,6 +265,8 @@ export const skipReasons: Record<SkipReason, string> = {
   exists: "Already a contact",
   suppressed: "Unsubscribed, bounced or complained before",
   over_limit: "Over the free plan's contact limit",
+  not_subscribed: "Never subscribed in Mailchimp",
+  archived: "Archived in Mailchimp",
 };
 
 /** One import: progress while it runs, then what was added and what was skipped. */
@@ -322,6 +326,13 @@ export function ImportDetail() {
           <p className="hint">Contacts it added before stopping stay. Fix the file and import it again.</p>
         </div>
       )}
+      {im.status === "waiting" && <WaitingImport im={im} onCancelled={reload} />}
+      {im.status === "cancelled" && (
+        <div className="notice" role="status">
+          <p>This import was cancelled while it waited for the paid plan.</p>
+          <p className="hint">The contacts it took off your list stay off; the rest weren't added.</p>
+        </div>
+      )}
       {im.review === "held" && (
         <div className="notice notice-warn" role="status">
           <p>{im.hold_message ?? "mailgoose checks this import before these contacts get campaigns."}</p>
@@ -379,6 +390,40 @@ export function ImportDetail() {
         <Link to="/contacts">Back to contacts</Link>
       </p>
     </section>
+  );
+}
+
+/** A Mailchimp import waiting for the paid plan: what it waits for, and a way to cancel it. */
+function WaitingImport({ im, onCancelled }: { im: Import; onCancelled: () => void }) {
+  const api = useApi();
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<Failure>();
+
+  async function cancel() {
+    setBusy(true);
+    setFailure(undefined);
+    const res = await attempt(() =>
+      api.POST("/v1/imports/{import_id}/cancel", { params: { path: { import_id: im.id } } }),
+    );
+    setBusy(false);
+    if (!res.ok) setFailure(res.failure);
+    else onCancelled();
+  }
+
+  return (
+    <div className="notice notice-warn stack" role="status">
+      <p>
+        Its unsubscribed and bounced contacts are in. The rest would take your account past its contact limit, so
+        they wait.
+      </p>
+      <p className="hint">{im.waiting_note ?? "It carries on once the account is on the paid plan."}</p>
+      <FailureNotice failure={failure} />
+      <div>
+        <button type="button" className="button danger" disabled={busy} onClick={() => void cancel()}>
+          {busy ? "Cancelling…" : "Cancel import"}
+        </button>
+      </div>
+    </div>
   );
 }
 

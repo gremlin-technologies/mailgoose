@@ -628,7 +628,7 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 	// Lock the account so two first imports can't both count as first.
 	var first bool
 	if err := tx.QueryRow(ctx, `
-		SELECT NOT EXISTS (SELECT 1 FROM imports WHERE account_id = a.id AND status <> 'failed')
+		SELECT NOT EXISTS (SELECT 1 FROM imports WHERE account_id = a.id AND status NOT IN ('failed', 'cancelled'))
 		FROM accounts a WHERE a.id = $1 FOR UPDATE`, accountID).Scan(&first); err != nil {
 		return nil, fmt.Errorf("lock account: %w", err)
 	}

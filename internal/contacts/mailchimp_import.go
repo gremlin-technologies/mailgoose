@@ -130,7 +130,7 @@ func (s *Service) assess(ctx context.Context, q querier, accountID string, p *mc
 	if a.limit, a.plan, err = accountLimit(ctx, q, accountID); err != nil {
 		return nil, err
 	}
-	if err := q.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM imports WHERE account_id = $1 AND status <> 'failed')`,
+	if err := q.QueryRow(ctx, `SELECT NOT EXISTS (SELECT 1 FROM imports WHERE account_id = $1 AND status NOT IN ('failed', 'cancelled'))`,
 		accountID).Scan(&a.first); err != nil {
 		return nil, err
 	}
@@ -297,6 +297,10 @@ type MailchimpImportInput struct {
 	IdempotencyKey string
 }
 
+// maxMailchimpImportBytes is the most a Mailchimp import's stored rows may
+// take, well under Postgres's 1 GB for one value; a var so tests can lower it.
+var maxMailchimpImportBytes = 256 << 20
+
 // CreateMailchimpImport queues a bundle's import. created is false when an
 // import with the same key was already made, which is returned unchanged.
 func (s *Service) CreateMailchimpImport(ctx context.Context, accountID string, in MailchimpImportInput) (im *Import, created bool, err error) {
@@ -314,6 +318,10 @@ func (s *Service) CreateMailchimpImport(ctx context.Context, accountID string, i
 	data, err := p.data()
 	if err != nil {
 		return nil, false, err
+	}
+	if len(data) > maxMailchimpImportBytes {
+		return nil, false, invalidImport("export_too_large", "bundle", fmt.Sprintf(
+			"The export's contacts come to over %d MB to store. Export the audiences one at a time and upload each.", maxMailchimpImportBytes>>20))
 	}
 	hash := contentHash(data)
 	key := strings.TrimSpace(in.IdempotencyKey)
@@ -345,7 +353,7 @@ func (s *Service) CreateMailchimpImport(ctx context.Context, accountID string, i
 	}
 	var id string
 	var oldHash []byte
-	err = tx.QueryRow(ctx, `SELECT id, content_hash FROM imports WHERE account_id = $1 AND idempotency_key = $2 AND status <> 'failed'`,
+	err = tx.QueryRow(ctx, `SELECT id, content_hash FROM imports WHERE account_id = $1 AND idempotency_key = $2 AND status NOT IN ('failed', 'cancelled')`,
 		accountID, key).Scan(&id, &oldHash)
 	switch {
 	case err == nil:
@@ -684,4 +692,42 @@ func insertSkips(ctx context.Context, tx pgx.Tx, importID string, skips []Skippe
 		FROM unnest($2::int[], $3::text[], $4::text[], $5::text[]) AS x(row_number, email, reason, source_row)
 		ON CONFLICT DO NOTHING`, importID, lines, emails, reasons, sources)
 	return err
+}
+
+// ErrImportNotWaiting means the import isn't waiting, so it can't be
+// cancelled.
+var ErrImportNotWaiting = invalidImport("import_not_waiting", "import_id",
+	"Only an import that's waiting for the paid plan can be cancelled.")
+
+// CancelImport cancels a waiting Mailchimp import. What it already imported
+// (its suppressions) stays.
+func (s *Service) CancelImport(ctx context.Context, accountID, id string) (*Import, error) {
+	tag, err := s.DB.Exec(ctx, `UPDATE imports SET status = 'cancelled', finished_at = $3
+		WHERE account_id = $1 AND id = $2 AND status = 'waiting'`, accountID, id, s.now())
+	if err != nil {
+		return nil, err
+	}
+	im, err := s.GetImport(ctx, accountID, id)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 && im.Status != ImportCancelled {
+		return nil, ErrImportNotWaiting
+	}
+	return im, nil
+}
+
+// WaitNote says what a waiting import in the account waits for, and what to
+// do when nothing will end the wait.
+func (s *Service) WaitNote(ctx context.Context, accountID string) (string, error) {
+	var isTester bool
+	if err := s.DB.QueryRow(ctx, `SELECT tester_started_at IS NOT NULL FROM accounts WHERE id = $1`, accountID).Scan(&isTester); err != nil {
+		return "", fmt.Errorf("read plan: %w", err)
+	}
+	if isTester {
+		return fmt.Sprintf("A tester account keeps at most %d contacts, so this import won't carry on. "+
+			"Cancel it; the contacts it already took off the list stay off.", tester.Contacts), nil
+	}
+	return "It carries on once the account is on the paid plan. Deleting contacts to make room doesn't restart it: " +
+		"cancel it and import the export again.", nil
 }

@@ -3,6 +3,7 @@ package contacts
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/mailchimp"
 )
 
@@ -388,5 +390,71 @@ func TestMailchimpImportOf100kIsQuick(t *testing.T) {
 	}
 	if took > 5*time.Minute {
 		t.Errorf("took %s", took)
+	}
+}
+
+func TestMailchimpImportCanBeCancelledWhileItWaits(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if _, err := h.svc.DB.Exec(ctx, `
+		INSERT INTO contacts (account_id, email, status, source)
+		SELECT $1, 'c' || n || '@example.com', 'subscribed', 'api' FROM generate_series(1, 499) AS n`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	im := h.mailchimpImport(t, mcBundle(mcAudience("List", "a@example.com subscribed", "b@example.com subscribed",
+		"out@example.com unsubscribed")))
+	if im.Status != ImportWaiting {
+		t.Fatalf("import = %+v", im)
+	}
+	note, err := h.svc.WaitNote(ctx, h.acc)
+	if err != nil || !strings.Contains(note, "paid plan") || !strings.Contains(note, "cancel it") {
+		t.Errorf("free note %q, %v", note, err)
+	}
+	if _, err := h.svc.DB.Exec(ctx, `UPDATE accounts SET tester_started_at = now(), tester_until = now() + interval '30 days',
+		tester_credits = 500 WHERE id = $1`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	if note, err = h.svc.WaitNote(ctx, h.acc); err != nil || !strings.Contains(note, "tester account") || !strings.Contains(note, "won't carry on") {
+		t.Errorf("tester note %q, %v", note, err)
+	}
+
+	for range 2 { // a second cancel changes nothing
+		c, err := h.svc.CancelImport(ctx, h.acc, im.ID)
+		if err != nil || c.Status != ImportCancelled || c.FinishedAt == nil {
+			t.Fatalf("cancel = %+v, %v", c, err)
+		}
+	}
+	// It stays cancelled when the account could take it, and what it
+	// already did stays.
+	if _, err := h.svc.DB.Exec(ctx, `UPDATE accounts SET plan = 'paid', tester_started_at = NULL, tester_until = NULL,
+		tester_credits = NULL WHERE id = $1`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	if ran, err := h.svc.RunNextImport(ctx); ran || err != nil {
+		t.Fatalf("a cancelled import ran: %v %v", ran, err)
+	}
+	if h.statusOf(t, "out@example.com") != StatusUnsubscribed || h.statusOf(t, "a@example.com") != "" {
+		t.Errorf("out %q, a %q", h.statusOf(t, "out@example.com"), h.statusOf(t, "a@example.com"))
+	}
+
+	done := h.mailchimpImport(t, mcBundle(mcAudience("Other", "z@example.com subscribed")))
+	if _, err := h.svc.CancelImport(ctx, h.acc, done.ID); !errors.Is(err, ErrImportNotWaiting) {
+		t.Errorf("cancel a done import: %v", err)
+	}
+	if _, err := h.svc.CancelImport(ctx, h.acc, "00000000-0000-4000-8000-000000000000"); !errors.Is(err, ErrImportNotFound) {
+		t.Errorf("cancel an unknown import: %v", err)
+	}
+}
+
+func TestMailchimpImportRefusesRowsTooLargeToStore(t *testing.T) {
+	h := newHarness(t)
+	old := maxMailchimpImportBytes
+	maxMailchimpImportBytes = 10
+	t.Cleanup(func() { maxMailchimpImportBytes = old })
+	_, _, err := h.svc.CreateMailchimpImport(context.Background(), h.acc,
+		MailchimpImportInput{Bundle: mcBundle(mcAudience("List", "a@example.com subscribed")), PermissionConfirmed: true})
+	var ve *auth.ValidationError
+	if !errors.As(err, &ve) || ve.Code != "export_too_large" {
+		t.Errorf("err = %v", err)
 	}
 }
