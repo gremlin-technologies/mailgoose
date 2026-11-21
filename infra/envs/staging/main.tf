@@ -35,6 +35,17 @@ module "stack" {
   worker_desired_count = 1
   log_retention_days   = 14
 
+  # Launch settings (MG-93), set to the app's defaults. Staging stays like this
+  # through launch: test mode on, every sign-up reviewed.
+  app_settings = {
+    NEW_ACCOUNTS_TEST_MODE    = "on"
+    SIGNUP_REVIEW             = "all"
+    ABUSE_EMAIL               = "abuse@mail.staging.${var.domain}"
+    SEND_RATE_PER_SECOND      = "10"
+    ACCOUNT_DAILY_SEND_LIMIT  = "10000"
+    PLATFORM_DAILY_SEND_LIMIT = "45000"
+  }
+
   # Off until the AWS project allows the GitHub OIDC provider (see
   # docs/decisions.md). When on, any push to main deploys staging.
   enable_github_deploy   = false

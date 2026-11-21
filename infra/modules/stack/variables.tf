@@ -52,6 +52,12 @@ variable "dmarc_report_email" {
   default = ""
 }
 
+variable "dmarc_policy" {
+  description = "DMARC policy for sending_domain, which carries only mailgoose's own mail: none, quarantine or reject. The shared sending domain stays at none whatever this is."
+  type        = string
+  default     = "none"
+}
+
 # --- network ---
 
 variable "vpc_cidr" {
@@ -148,6 +154,44 @@ variable "log_retention_days" {
   default = 30
 }
 
+variable "app_settings" {
+  description = <<-EOT
+    Plain app settings set as environment variables on the API and worker
+    (MG-93), such as NEW_ACCOUNTS_TEST_MODE, SIGNUP_REVIEW, ABUSE_EMAIL,
+    SEND_RATE_PER_SECOND, ACCOUNT_DAILY_SEND_LIMIT and
+    PLATFORM_DAILY_SEND_LIMIT. A setting left out takes the app's default.
+    No secrets: they go in the <env>/app secret. Names Terraform already sets
+    (DATABASE_HOST, OPS_ALERT_EMAIL ...) are refused.
+  EOT
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition     = alltrue([for k in keys(var.app_settings) : can(regex("^[A-Z][A-Z0-9_]*$", k))])
+    error_message = "app_settings names must be environment variable names: capital letters, digits and underscores."
+  }
+
+  validation {
+    condition = alltrue([for k in keys(var.app_settings) : !contains([
+      "APP_ENV", "AWS_REGION", "DATABASE_HOST", "DATABASE_PORT", "DATABASE_NAME", "DATABASE_SECRET_ARN",
+      "DATABASE_URL", "SEND_QUEUE_URL", "SES_EVENTS_QUEUE_URL", "SES_CONFIGURATION_SET", "SYSTEM_SENDING_DOMAIN",
+      "SES_IDENTITY_TAG", "PUBLIC_BASE_URL", "OPS_ALERT_EMAIL", "SHARED_SENDING_DOMAIN", "PORT", "IMAGES_BUCKET",
+      "IMAGES_BASE_URL", "APP_SECRETS_JSON",
+    ], k)])
+    error_message = "app_settings can't set a variable Terraform sets itself (database, queues, SES, URLs, OPS_ALERT_EMAIL, images, APP_SECRETS_JSON)."
+  }
+
+  validation {
+    condition     = alltrue([for k in keys(var.app_settings) : !can(regex("(SECRET|PASSWORD|TOKEN|_KEY$)", k))])
+    error_message = "app_settings is for plain settings. Secrets go in the <env>/app secret in Secrets Manager, never in Terraform."
+  }
+
+  validation {
+    condition     = can(tonumber(lookup(var.app_settings, "PLATFORM_DAILY_SEND_LIMIT", "0")))
+    error_message = "PLATFORM_DAILY_SEND_LIMIT must be a whole number (0 means no cap)."
+  }
+}
+
 # --- CI ---
 
 variable "github_repository" {
@@ -192,7 +236,13 @@ variable "alert_email" {
 }
 
 variable "ses_reputation_alarms" {
-  description = "Alarm on SES's account-wide bounce and complaint rates. Both environments share one AWS account, so only one turns this on: staging until prod is running, then prod."
+  description = "Alarm on SES's account-wide bounce and complaint rates, and on its account-wide send count nearing the platform's daily cap. Both environments share one AWS account, so only one turns this on: staging until prod is running, then prod."
   type        = bool
   default     = false
+}
+
+variable "ses_daily_quota" {
+  description = "SES's daily sending quota for the AWS account (aws sesv2 get-account, SendQuota.Max24HourSend). The SES sends alarm nears it only when PLATFORM_DAILY_SEND_LIMIT is 0 (no cap); otherwise it nears the cap."
+  type        = number
+  default     = 50000
 }

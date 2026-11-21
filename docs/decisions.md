@@ -4,6 +4,51 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Launch settings in Terraform, two SES alarms and a stricter system DMARC (MG-93, from the architecture review; details are reversible defaults)
+
+The settings prod changes at launch had no Terraform variable, so launch day
+would have meant a rushed `infra/` change. Nothing alarmed on SES sends
+nearing the platform cap (MG-87), or on SES saying "not now" for a long time,
+which is how a paused or suspended SES account shows since MG-87.
+
+- **`app_settings`** (`map(string)`) on `modules/stack`, set as environment
+  variables on the API and worker. Each root sets `NEW_ACCOUNTS_TEST_MODE`,
+  `SIGNUP_REVIEW`, `ABUSE_EMAIL`, `SEND_RATE_PER_SECOND`,
+  `ACCOUNT_DAILY_SEND_LIMIT` and `PLATFORM_DAILY_SEND_LIMIT` explicitly, at
+  the app's defaults (test mode `on`, review `all`, `abuse@` the system
+  sending domain, 10 a second, 10,000 and 45,000). Prod's comments mark what
+  changes at launch: test mode `off`; review stays `all` for the launch
+  month, then `flagged`. Those launch values are still the owner's to set.
+- **Plain settings only (reversible default):** the map can't set a name
+  Terraform already sets (the database, queues, SES, URLs,
+  `OPS_ALERT_EMAIL`, images, `APP_SECRETS_JSON`), and names with `SECRET`,
+  `PASSWORD`, `TOKEN` or ending in `_KEY` are refused, since secrets go in
+  `<env>/app`. Terraform's own values win anyway.
+- **SES sends alarm** (`<env>-ses-daily-sends`): SES's account-wide `Send`
+  count summed over CloudWatch's one-day period, at 80% of
+  `PLATFORM_DAILY_SEND_LIMIT` (36,000), or of SES's quota
+  (`ses_daily_quota`, 50,000) when the cap is 0. It's on the environment
+  with `ses_reputation_alarms` (staging until prod runs). It counts all of
+  SES's mail, so it can fire a little early, which is the safe side.
+  CloudWatch's day may not line up with SES's rolling 24 hours, so it's an
+  early warning; the cap is the hard stop.
+- **Retry-later alarm** (`<env>-ses-retry-later`, each environment): a log
+  metric filter on the worker's WARN line "the mail provider asked to retry
+  later; the batch's unsent copies wait", alarming when lines show up in
+  every 5 minutes for 30 minutes. The filter matches the message exactly, so
+  a change to that line in `internal/sending/pipeline.go` needs the same
+  change in `modules/monitoring`.
+- **DMARC:** `dmarc_policy` on the stack sets the system sending domain's
+  policy. Prod's `mail.mailgoose.app` is `quarantine`, since it carries only
+  mailgoose's own mail; staging stays `none`. The shared sending domain has
+  its own policy, `none`, until its reports are clean.
+- **Cost:** two more alarms on staging (daily sends and retry later), one
+  on prod while its reputation alarms are off, and one log metric in each,
+  about $0.10 a month apiece past CloudWatch's free tier.
+- **Not here:** reading SES's real quota from `GetAccount` instead of a
+  configured number (app code), and the prod deploy route, which belongs
+  with the account split (MG-99).
+
 ## 2026-11-21: Terraform keeps old ECS task definition revisions (MG-102; reversible default)
 
 An apply that changed the API or worker task definition replaced it and

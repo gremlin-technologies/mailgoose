@@ -50,6 +50,23 @@ variable "ses_reputation_alarms" {
   default     = false
 }
 
+variable "ses_sends_alarm" {
+  description = "Alarm on SES's account-wide Send count over a day nearing ses_daily_send_limit. Like ses_reputation_alarms, the metric belongs to the AWS account, so only one environment turns this on."
+  type        = bool
+  default     = false
+}
+
+variable "ses_daily_send_limit" {
+  description = "The day's sends the SES sends alarm measures against: the platform's daily cap (PLATFORM_DAILY_SEND_LIMIT), or SES's own quota when the cap is off."
+  type        = number
+  default     = 45000
+
+  validation {
+    condition     = var.ses_daily_send_limit > 0
+    error_message = "ses_daily_send_limit must be over 0."
+  }
+}
+
 # --- Thresholds (reversible defaults, chosen in MG-53) ---
 
 variable "queue_age_threshold_seconds" {
@@ -74,6 +91,28 @@ variable "error_log_threshold" {
   description = "Alarm when a service logs at least this many ERROR lines in 5 minutes."
   type        = number
   default     = 5
+}
+
+variable "ses_sends_alarm_percent" {
+  description = "Alarm when a day's SES sends reach this percent of ses_daily_send_limit (MG-93)."
+  type        = number
+  default     = 80
+
+  validation {
+    condition     = var.ses_sends_alarm_percent > 0 && var.ses_sends_alarm_percent <= 100
+    error_message = "ses_sends_alarm_percent must be over 0 and at most 100."
+  }
+}
+
+variable "ses_retry_later_minutes" {
+  description = "Alarm when the worker has logged SES retry-later warnings in every 5 minutes for this long (MG-93): SES keeps saying not now, as a paused or suspended SES account does. A multiple of 5."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.ses_retry_later_minutes >= 5 && var.ses_retry_later_minutes % 5 == 0
+    error_message = "ses_retry_later_minutes must be a multiple of 5, at least 5."
+  }
 }
 
 variable "ses_bounce_rate_threshold" {

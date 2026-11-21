@@ -49,12 +49,12 @@ resource "aws_cloudwatch_metric_alarm" "queue_age" {
 }
 
 # A message failed five times and was set aside. Nothing is lost, but
-# someone has to look at it and redrive it.
+# someone has to look at it and move it back (see infra/README.md).
 resource "aws_cloudwatch_metric_alarm" "dlq_depth" {
   for_each = var.dead_letter_queues
 
   alarm_name        = "${var.name}-${each.key}-dlq"
-  alarm_description = "Messages are waiting on the ${each.key} dead-letter queue: they failed five times. Read the worker's logs for their message_id, fix the cause, then redrive them from the SQS console."
+  alarm_description = "Messages are waiting on the ${each.key} dead-letter queue: they failed five times. Before moving them back, follow \"A dead-letter queue alarm fired\" in infra/README.md: find the cause in the worker's logs, then move only what is safe to move."
 
   namespace   = "AWS/SQS"
   metric_name = "ApproximateNumberOfMessagesVisible"
@@ -300,6 +300,77 @@ resource "aws_cloudwatch_metric_alarm" "ses_complaint_rate_warning" {
   evaluation_periods  = 1
   comparison_operator = "GreaterThanThreshold"
   threshold           = var.ses_complaint_rate_warning_threshold
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+}
+
+# --- SES sends (account-wide, MG-93) ---
+
+# The SES quota and its daily send count belong to the AWS account, so this
+# sits with the reputation alarms on one environment. It counts every
+# message SES sent (both environments, sign-in and system mail, mailbox
+# simulator copies), while the platform cap counts campaign copies only, so
+# it fires a little early, which is the safe side.
+resource "aws_cloudwatch_metric_alarm" "ses_daily_sends" {
+  count = var.ses_sends_alarm ? 1 : 0
+
+  alarm_name        = "${var.name}-ses-daily-sends"
+  alarm_description = "SES sent ${local.ses_sends_threshold} or more emails in a day for the AWS account, ${var.ses_sends_alarm_percent}% of ${var.ses_daily_send_limit}. The platform cap (PLATFORM_DAILY_SEND_LIMIT) holds campaign copies back once it's reached, and SES refuses everything past its own quota. Check the quota with aws sesv2 get-account, and the busiest accounts with mailgoose admin deliverability."
+
+  namespace   = "AWS/SES"
+  metric_name = "Send"
+  statistic   = "Sum"
+  period      = 86400
+
+  evaluation_periods  = 1
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  threshold           = local.ses_sends_threshold
+  treat_missing_data  = "notBreaching"
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+}
+
+locals {
+  ses_sends_threshold = floor(var.ses_daily_send_limit * var.ses_sends_alarm_percent / 100)
+}
+
+# --- SES keeps saying "not now" (MG-93) ---
+
+# Since MG-87 a throttled, paused or suspended SES account doesn't fail
+# copies: each waiting campaign tries again once a minute and the worker logs
+# one WARN line per try (internal/sending/pipeline.go, sendBatch). The
+# pattern matches that line's message exactly, so change both together.
+# Lines in every 5 minutes for ses_retry_later_minutes means SES isn't
+# coming back by itself.
+resource "aws_cloudwatch_log_metric_filter" "ses_retry_later" {
+  name           = "${var.name}-worker-ses-retry-later"
+  log_group_name = var.services["worker"].log_group_name
+  pattern        = "{ $.level = \"WARN\" && $.msg = \"the mail provider asked to retry later; the batch's unsent copies wait\" }"
+
+  metric_transformation {
+    namespace     = local.log_namespace
+    name          = "worker-ses-retry-later-lines"
+    value         = "1"
+    default_value = "0"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "ses_retry_later" {
+  alarm_name        = "${var.name}-ses-retry-later"
+  alarm_description = "For ${var.ses_retry_later_minutes} minutes SES has kept telling the worker to retry later, so campaign copies are waiting, not sending. A paused or suspended SES account looks like this: check aws sesv2 get-account (SendingEnabled, EnforcementStatus) and the SES console. Copies keep waiting and go out once SES sends again."
+
+  namespace   = local.log_namespace
+  metric_name = aws_cloudwatch_log_metric_filter.ses_retry_later.metric_transformation[0].name
+  statistic   = "Sum"
+  period      = 300
+
+  evaluation_periods  = var.ses_retry_later_minutes / 5
+  datapoints_to_alarm = var.ses_retry_later_minutes / 5
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  threshold           = 1
   treat_missing_data  = "notBreaching"
 
   alarm_actions = local.alarm_actions
