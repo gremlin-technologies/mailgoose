@@ -9,3 +9,7 @@ output "role_arn" {
 output "log_group" {
   value = aws_cloudwatch_log_group.this.name
 }
+
+output "slack_webhook_secret_name" {
+  value = one(aws_secretsmanager_secret.slack_webhook[*].name)
+}

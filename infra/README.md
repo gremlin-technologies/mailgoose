@@ -319,7 +319,7 @@ export AWS_REGION=us-east-2
 4. **Create the deploy project:**
    ```sh
    cd infra/envs/staging
-   terraform plan   # adds only module.stack.module.codebuild_deploy[0].* (6 resources)
+   terraform plan   # adds only module.stack.module.codebuild_deploy[0].* (8 resources)
    terraform apply
    cd ../../..
    ```
@@ -334,6 +334,34 @@ export AWS_REGION=us-east-2
 
 Turning it off: `enable_codebuild_deploy = false` in `infra/envs/staging` and
 apply. Deploys by hand keep working either way.
+
+### Deploy posts in Slack
+
+Each CodeBuild deploy posts its result to `#deployments` in the Gremlin
+Technologies Slack: deployed or failed, the commit, its title and author, and
+a link to the build log. A build skipped because `main` moved on posts
+nothing. The Slack incoming-webhook URL lives in the Secrets Manager secret
+`mailgoose-staging-deploy-slack-webhook` (about $0.40 a month), never in the
+repo or in Terraform state; Terraform makes the secret empty, and until it has
+a value deploys skip the post.
+
+1. **Slack** (a workspace admin): https://api.slack.com/apps > **Create New
+   App** > **From scratch** > name `mailgoose deploys`, workspace Gremlin
+   Technologies > **Create App**. In the app: **Incoming Webhooks** > turn
+   **Activate Incoming Webhooks** on > **Add New Webhook** (at the bottom) >
+   pick `#deployments` > **Allow**. Copy the webhook URL
+   (`https://hooks.slack.com/services/...`). Treat it like a password: anyone
+   with it can post to the channel.
+2. **AWS**, in a terminal yourself (not through an AI agent, so the URL stays
+   out of chats), after the staging apply in step 4 above:
+   ```sh
+   read -rsp "Slack webhook URL: " url; echo
+   aws secretsmanager put-secret-value --region us-east-2 \
+     --secret-id mailgoose-staging-deploy-slack-webhook --secret-string "$url"
+   unset url
+   ```
+   The next deploy posts. To stop the posts, delete the webhook in the Slack
+   app; to change the channel, add a new webhook and put its URL in the same way.
 
 ### Turning on GitHub OIDC deploys instead (later)
 

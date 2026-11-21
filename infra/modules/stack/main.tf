@@ -431,6 +431,8 @@ module "codebuild_deploy" {
   worker_service_name = module.worker.service_name
   readyz_url          = "https://${var.hostnames[0]}/readyz"
   log_retention_days  = var.log_retention_days
+  environment_label   = var.environment
+  slack_notifications = var.codebuild_deploy_slack
 
   ecr_repository_arns  = [data.aws_ecr_repository.app.arn]
   ecs_service_arns     = [module.api.service_arn, module.worker.service_arn]

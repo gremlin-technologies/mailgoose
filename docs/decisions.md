@@ -36,6 +36,11 @@ The owner asked what it takes to deploy staging automatically on merge.
 - **Overlapping merges:** up to two builds run at once; each checks that its
   commit is still `main`'s head right before it deploys and stops quietly if
   not, so the newer merge wins.
+- **Slack posts (owner ask, Nov 21):** each CodeBuild deploy posts deployed or
+  failed to `#deployments` through a Slack incoming webhook. The URL is a
+  secret, so it sits in Secrets Manager (empty until set by hand, read by the
+  build role only), not in the repo, Terraform state or GitHub: GitHub
+  secrets would not reach a CodeBuild build.
 - **After every deploy (both routes, and by hand):** `deploy-ecs.sh` waits
   for `/readyz` to answer 200 with the new commit when `READYZ_URL` and
   `EXPECT_COMMIT` are set, and fails the deploy otherwise.

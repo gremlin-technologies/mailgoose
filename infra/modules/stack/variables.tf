@@ -165,6 +165,12 @@ variable "codebuild_deploy_branch" {
   default = "main"
 }
 
+variable "codebuild_deploy_slack" {
+  description = "Post CodeBuild deploy results to Slack (see modules/codebuild-deploy, slack_notifications)."
+  type        = bool
+  default     = false
+}
+
 # --- monitoring ---
 
 variable "alert_email" {

@@ -27,6 +27,16 @@ resource "aws_cloudwatch_log_group" "this" {
   retention_in_days = var.log_retention_days
 }
 
+# Slack incoming-webhook URL for #deployments posts. Terraform makes only the
+# empty secret; the URL goes in by hand (infra/README.md), so it never touches
+# the repo or Terraform state. With no value yet, deploys just skip the post.
+resource "aws_secretsmanager_secret" "slack_webhook" {
+  count = var.slack_notifications ? 1 : 0
+
+  name        = "${var.name}-slack-webhook"
+  description = "Slack incoming webhook URL that ${var.name} posts deploy results to."
+}
+
 data "aws_iam_policy_document" "trust" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -94,6 +104,24 @@ data "aws_iam_policy_document" "build" {
     ]
     resources = [var.github_connection_arn]
   }
+}
+
+data "aws_iam_policy_document" "slack" {
+  count = var.slack_notifications ? 1 : 0
+
+  statement {
+    sid       = "SlackWebhookUrl"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.slack_webhook[0].arn]
+  }
+}
+
+resource "aws_iam_role_policy" "slack" {
+  count = var.slack_notifications ? 1 : 0
+
+  name   = "slack"
+  role   = aws_iam_role.this.id
+  policy = data.aws_iam_policy_document.slack[0].json
 }
 
 resource "aws_iam_role_policy" "build" {
@@ -169,6 +197,15 @@ resource "aws_codebuild_project" "this" {
     environment_variable {
       name  = "DEPLOY_BRANCH"
       value = var.branch
+    }
+    environment_variable {
+      name  = "DEPLOY_ENVIRONMENT"
+      value = var.environment_label
+    }
+    # The secret's name, not its value: the script reads it when it posts.
+    environment_variable {
+      name  = "SLACK_WEBHOOK_SECRET_ID"
+      value = join("", aws_secretsmanager_secret.slack_webhook[*].name)
     }
   }
 

@@ -39,6 +39,9 @@ module "stack" {
   # Meanwhile CodeBuild deploys every push to main (docs/decisions.md,
   # 2026-11-21). Apply infra/global first: it makes the GitHub connection.
   enable_codebuild_deploy = true
+  # Each deploy's result goes to #deployments in Slack once the webhook URL is
+  # in the secret this makes (infra/README.md, "Deploy posts in Slack").
+  codebuild_deploy_slack = true
 
   # Alarms email this address once it confirms AWS's subscription email.
   alert_email = var.alert_email

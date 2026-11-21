@@ -8,6 +8,11 @@
 # Two merges close together start two builds. Each one checks that its commit
 # is still the branch's head before it touches the services, and stops quietly
 # if not, so an older build can't roll staging back over a newer one.
+#
+# When SLACK_WEBHOOK_SECRET_ID names a Secrets Manager secret holding a Slack
+# incoming-webhook URL, the result (deployed or failed) is posted there. A
+# build that stops because main moved on posts nothing. If the secret has no
+# value yet, or Slack doesn't answer, the deploy's result is unchanged.
 set -euo pipefail
 
 : "${ECR_REPO:?}" "${CLUSTER:?}" "${API_SERVICE:?}" "${WORKER_SERVICE:?}"
@@ -26,7 +31,28 @@ still_head() {
   fi
 }
 
+# notify <deployed|failed>: one Slack post, best effort.
+notify() {
+  local result="$1" url subject author emoji text
+  [ -n "${SLACK_WEBHOOK_SECRET_ID:-}" ] || return 0
+  if ! url="$(aws secretsmanager get-secret-value --secret-id "$SLACK_WEBHOOK_SECRET_ID" \
+    --query SecretString --output text 2>/dev/null)" || [[ "$url" != https://hooks.slack.com/* ]]; then
+    echo "No Slack webhook URL in $SLACK_WEBHOOK_SECRET_ID yet; not posting."
+    return 0
+  fi
+  subject="$(git log -1 --format=%s "$sha" 2>/dev/null || echo "?")"
+  author="$(git log -1 --format=%an "$sha" 2>/dev/null || echo "?")"
+  if [ "$result" = deployed ]; then emoji=":white_check_mark:"; else emoji=":x:"; fi
+  text="${emoji} ${DEPLOY_ENVIRONMENT:-$CLUSTER} ${result}: <https://github.com/${GITHUB_REPOSITORY}/commit/${sha}|${tag::7}> ${subject} (${author}). <${CODEBUILD_BUILD_URL:-}|Build log>"
+  jq -n --arg text "$text" '{text: $text}' |
+    curl -fsS --max-time 10 -X POST -H 'Content-Type: application/json' --data @- "$url" >/dev/null ||
+    echo "Slack post failed; the deploy result stands." >&2
+}
+
 still_head || exit 0
+
+# From here on, every exit posts its result.
+trap 'status=$?; if [ "$status" = 0 ]; then notify deployed; else notify failed; fi; exit "$status"' EXIT
 
 account="$(aws sts get-caller-identity --query Account --output text)"
 registry="${account}.dkr.ecr.${region}.amazonaws.com"
@@ -45,9 +71,12 @@ else
   docker push "$image"
 fi
 
-still_head || exit 0
+if ! still_head; then
+  trap - EXIT
+  exit 0
+fi
 
 export IMAGE="$image"
 export STARTED_BY="codebuild-${tag}"
 export EXPECT_COMMIT="$sha"
-exec scripts/ci/deploy-ecs.sh
+scripts/ci/deploy-ecs.sh

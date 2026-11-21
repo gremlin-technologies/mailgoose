@@ -46,6 +46,17 @@ variable "readyz_url" {
   type        = string
 }
 
+variable "environment_label" {
+  description = "Shown in Slack posts, e.g. staging."
+  type        = string
+}
+
+variable "slack_notifications" {
+  description = "Post each deploy's result to Slack. Makes an empty secret <name>-slack-webhook for the incoming-webhook URL; until it has a value, deploys skip the post."
+  type        = bool
+  default     = false
+}
+
 variable "log_retention_days" {
   type    = number
   default = 30
