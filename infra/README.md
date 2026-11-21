@@ -376,6 +376,65 @@ a value deploys skip the post.
    The next deploy posts. To stop the posts, delete the webhook in the Slack
    app; to change the channel, add a new webhook and put its URL in the same way.
 
+### Rolling back to an earlier revision
+
+A Terraform apply that changes a task definition (environment, secrets, CPU
+or memory) replaces it, and the old revision stays registered
+(`skip_destroy`, MG-102), so every revision a deploy or an apply made is still
+there to go back to. Revisions deregistered before that was applied (such
+as the staging API's `:5`) are gone. From a machine signed in to the AWS
+project, for staging (for prod once it runs: `ENV=prod` and
+`API_HOST=api.mailgoose.app`):
+
+```sh
+export AWS_REGION=us-east-2 ENV=staging API_HOST=api.staging.mailgoose.app
+```
+
+1. **List the recent revisions and their images**, newest first, and see
+   which one each service runs now:
+   ```sh
+   for svc in api worker; do
+     echo "== $svc, running: $(aws ecs describe-services --cluster mailgoose-$ENV \
+       --services mailgoose-$ENV-$svc --query 'services[0].taskDefinition' --output text)"
+     for td in $(aws ecs list-task-definitions --family-prefix mailgoose-$ENV-$svc \
+         --status ACTIVE --sort DESC --max-items 10 --query 'taskDefinitionArns[]' --output text); do
+       echo "${td##*/}  $(aws ecs describe-task-definition --task-definition "$td" \
+         --query "taskDefinition.containerDefinitions[?name=='app'].image | [0]" --output text)"
+     done
+   done
+   ```
+   Each image's tag is the first 12 characters of the commit it was built
+   from. Pick the newest revision of each service with the last good commit.
+   Skip revisions whose image ends in `:bootstrap`: Terraform registered
+   those, and that image is the placeholder from the first apply.
+2. **Point both services at it** (put the revision numbers in for `N` and
+   `M`), then wait and check:
+   ```sh
+   aws ecs update-service --cluster mailgoose-$ENV --service mailgoose-$ENV-api \
+     --task-definition mailgoose-$ENV-api:N >/dev/null
+   aws ecs update-service --cluster mailgoose-$ENV --service mailgoose-$ENV-worker \
+     --task-definition mailgoose-$ENV-worker:M >/dev/null
+   aws ecs wait services-stable --cluster mailgoose-$ENV \
+     --services mailgoose-$ENV-api mailgoose-$ENV-worker
+   curl -s https://$API_HOST/readyz
+   ```
+   `/readyz` should report the commit you rolled back to.
+
+What to know before you do it:
+
+- **Migrations stay.** They're additive (`docs/mvp-tickets.md`, "Done for
+  every ticket"), so the older code runs on the newer schema.
+- **An old revision has the settings it had then.** A variable an apply added
+  since is missing from it. To roll back the code but keep today's settings,
+  run the manual deploy in "How deploys work" with the older image tag in
+  `IMAGE` instead: it copies the latest revision and swaps only the image.
+- **The next deploy ends the rollback.** Terraform ignores which revision a
+  service runs, so an apply leaves it alone, but the next merge to `main`
+  deploys as usual. Revert the bad change on `main` rather than holding
+  merges back.
+- Kept revisions cost nothing. `aws ecs deregister-task-definition` removes
+  one by hand if the list ever gets in the way.
+
 ### Turning on GitHub OIDC deploys instead (later)
 
 Only if the AWS project ever allows the OIDC provider (today that means
