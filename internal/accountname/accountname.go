@@ -51,9 +51,8 @@ func Check(name string) *Refusal {
 		return &Refusal{Message: fmt.Sprintf("An account name can't look like a domain, as %q does. %s, so it can't look like a web or email address.", d[1], why)}
 	}
 	tokens := Tokens(name)
-	joined := strings.Join(tokens, "")
 	for _, t := range terms {
-		if t.matches(tokens, joined) {
+		if t.matches(tokens) {
 			kind := "a well-known brand"
 			if t.kind == payment {
 				kind = "a payment or account-security term"
@@ -222,10 +221,18 @@ var terms = func() []term {
 
 func skeleton(s string) string { return strings.Join(Tokens(s), "") }
 
-func (t term) matches(tokens []string, joined string) bool {
+func (t term) matches(tokens []string) bool {
 	switch t.kind {
 	case anywhere:
-		return strings.Contains(joined, t.skel)
+		// Inside one word ("PayPalSupport"), or spelled by whole words
+		// ("Pay Pal"), never across a word's edge: "Coastal Tunes" doesn't
+		// spell iTunes.
+		for _, w := range tokens {
+			if strings.Contains(w, t.skel) {
+				return true
+			}
+		}
+		return wordRun(tokens, t.skel)
 	case alone:
 		var rest strings.Builder
 		for _, w := range tokens {

@@ -87,6 +87,11 @@ func TestCheckAllows(t *testing.T) {
 		"Micrsoft",
 		"Bill's Diner",
 		"Paid in Full Bakery",
+		// A brand doesn't run across a word's edge (PR 218 review).
+		"Coastal Tunes",
+		"Small Cloud Studio",
+		"Purchase Banking Co",
+		"Apple Ideas",
 	} {
 		if r := Check(name); r != nil {
 			t.Errorf("Check(%q) = %q; want allowed", name, r.Message)
