@@ -20,7 +20,7 @@ ECR_REPO    ?= mailgoose
 
 TEST_DB_URL ?= postgres://mailgoose:mailgoose@localhost:5432/mailgoose_test?sslmode=disable
 
-.PHONY: help dev e2e-cli e2e-web web web-dev web-check mail build test test-db vet lint lint-api generate docs fmt tidy run-api run-worker migrate up down image push-ecr clean
+.PHONY: help dev e2e-cli e2e-web web web-dev web-check mail build release-snapshot test test-db vet lint lint-api generate docs fmt tidy run-api run-worker migrate up down image push-ecr clean
 
 help: ## List targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-12s %s\n", $$1, $$2}'
@@ -49,6 +49,9 @@ mail: ## List the newest mail the local fake sender captured
 build: ## Build bin/mailgoose (CLI) and bin/mailgoosed (server)
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o bin/mailgoose ./cmd/mailgoose
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o bin/mailgoosed ./cmd/mailgoosed
+
+release-snapshot: ## Build every CLI release artifact into dist/ without publishing (needs GoReleaser v2)
+	goreleaser release --snapshot --clean --skip=publish
 
 test: ## Unit tests (database tests skip without a database)
 	$(GO) test -race ./...

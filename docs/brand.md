@@ -16,7 +16,8 @@ editor tickets (MG-41 onward) build their design tokens from this file.
 - The favicons (app and site) are the head from the wordmark, cropped square.
 
 These are transparent cut-outs of the owner's artwork, which came on black.
-The web copies (`web/public/brand/`, `site/assets/brand/`, the favicons) are
+The web copies (`web/public/brand/`, the public site's `site/assets/brand/`
+in gremlin-technologies/mailgoose-public, the favicons) are
 downsized and palette-compressed from these. `brand/mascot.png` is the earlier
 mascot and is no longer used.
 
