@@ -15,7 +15,12 @@ module "stack" {
   }
 
   dmarc_report_email = var.dmarc_report_email
-  initial_image_tag  = var.initial_image_tag
+  # mail.<domain> carries only mailgoose's own mail (sign-in codes, notices,
+  # alerts), so it can be strict from the start (MG-93). Staging and the
+  # shared sending domain stay at none.
+  dmarc_policy = "quarantine"
+
+  initial_image_tag = var.initial_image_tag
 
   vpc_cidr = "10.20.0.0/16"
 
@@ -34,6 +39,21 @@ module "stack" {
   api_desired_count    = 2 # one per AZ behind the load balancer
   worker_desired_count = 1
   log_retention_days   = 30
+
+  # Launch settings (MG-93): the beta values, which are the app's safe
+  # defaults. Change them here, then plan, apply and deploy again
+  # (infra/README.md, "Launch settings").
+  app_settings = {
+    # Launch: "off", so new accounts start with full sending.
+    NEW_ACCOUNTS_TEST_MODE = "on"
+    # Launch: stays "all" for the launch month, then "flagged" (only flagged
+    # sign-ups wait for review; docs/decisions.md, 2026-11-19).
+    SIGNUP_REVIEW             = "all"
+    ABUSE_EMAIL               = "abuse@mail.${var.domain}"
+    SEND_RATE_PER_SECOND      = "10"
+    ACCOUNT_DAILY_SEND_LIMIT  = "10000"
+    PLATFORM_DAILY_SEND_LIMIT = "45000"
+  }
 
   # Off until the staging deploy has run cleanly and the AWS project allows the
   # GitHub OIDC provider (docs/decisions.md). Must stay explicit: the module's

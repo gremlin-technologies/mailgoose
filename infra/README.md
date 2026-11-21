@@ -615,7 +615,7 @@ export AWS_REGION=us-east-2
    agent's shell or any shell without a TTY.
 
 7. **Admin commands.** `./bin/mailgoose admin signups` lists accounts waiting
-   for sign-up review (staging leaves `SIGNUP_REVIEW` unset, so every new
+   for sign-up review (staging sets `SIGNUP_REVIEW` to `all`, so every new
    account waits), and `./bin/mailgoose admin approve-signup <account> --reason "..."`
    lets one in. Both need a build from Nov 19 or later (MG-66), on the server
    and in the CLI. New accounts start in test mode; accounts made before test
@@ -669,6 +669,35 @@ export AWS_REGION=us-east-2
   as long as the object says.
 - Containers run with a read-only root filesystem; write temp files to a mounted
   volume or memory if needed.
+
+## Launch settings (MG-93)
+
+The settings prod changes at launch are Terraform values, so launch day is
+a one-line change, not a rushed `infra/` edit. Each environment's root sets
+`app_settings` on `modules/stack`, which become environment variables on the
+API and worker: `NEW_ACCOUNTS_TEST_MODE`, `SIGNUP_REVIEW`, `ABUSE_EMAIL`,
+`SEND_RATE_PER_SECOND`, `ACCOUNT_DAILY_SEND_LIMIT` and
+`PLATFORM_DAILY_SEND_LIMIT` (see the root README for what each does). Both
+environments set the app's defaults today. In `envs/prod/main.tf`, a comment
+marks each value that changes at launch: test mode goes `off`, and sign-up
+review stays `all` for the launch month, then `flagged`.
+
+Plain settings only: names Terraform already sets, and names that look like
+secrets (`SECRET`, `PASSWORD`, `TOKEN`, `..._KEY`), are refused at plan.
+Secrets go in the `<env>/app` secret. A setting left out of the map takes
+the app's default.
+
+To change one: edit the value, `terraform plan` (it should replace only the
+API and worker task definitions, with that one variable changed), apply,
+then deploy again so the running tasks get it (for staging, `aws codebuild
+start-build --project-name mailgoose-staging-deploy`), and check the
+running task definition has the new value. Changing `PLATFORM_DAILY_SEND_LIMIT` also moves
+the threshold of the SES sends alarm.
+
+The system sending domain's DMARC policy is a stack variable too,
+`dmarc_policy`: prod's `mail.mailgoose.app` is `quarantine`, since it
+carries only mailgoose's own mail, and staging's is `none`. The shared
+sending domain stays at `none` until its DMARC reports are clean.
 
 ## Shared sending domain (MG-85)
 
@@ -725,7 +754,9 @@ notifies the `<env>-alerts` SNS topic when it fires and again when it clears:
 | `api-no-healthy-tasks` | The load balancer has had no healthy API task for 5 minutes. |
 | `<service>-not-running` | No api or worker task has reported in for 10 minutes. |
 | `<service>-errors` | A service logged 5 or more `ERROR` lines in 5 minutes. |
-| `ses-bounce-rate`, `ses-complaint-rate` | Prod only, since they cover the whole AWS account: bounces over 4%, complaints over 0.08%. |
+| `ses-bounce-rate`, `ses-complaint-rate` | Bounces over 4%, complaints over 0.08%, with `-warning` alarms at 2.5% and 0.05%. They cover the whole AWS account, so only the environment with `ses_reputation_alarms` has them (staging until prod runs). |
+| `ses-daily-sends` | SES sent 80% of `PLATFORM_DAILY_SEND_LIMIT` (36,000 of 45,000) or more in a day, across the whole AWS account. On the same environment as the reputation alarms. With the cap at 0 it measures against SES's quota (`ses_daily_quota`, 50,000). |
+| `ses-retry-later` | For 30 minutes, the worker has logged SES "retry later" warnings in every 5 minutes: copies are waiting on a throttled, paused or suspended SES account. Check `aws sesv2 get-account` (`SendingEnabled`, `EnforcementStatus`). |
 
 Errors are tracked in CloudWatch itself: the app writes JSON lines, a metric
 filter counts the `ERROR` ones. To read them, use CloudWatch Logs Insights on

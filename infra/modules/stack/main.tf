@@ -154,6 +154,7 @@ module "email" {
   sending_domain     = var.sending_domain
   zone_id            = data.aws_route53_zone.this[local.zone_name_for[var.sending_domain]].zone_id
   dmarc_report_email = var.dmarc_report_email
+  dmarc_policy       = var.dmarc_policy
 
   shared_sending_domain = var.shared_sending_domain
   shared_zone_id        = var.shared_sending_domain == "" ? "" : data.aws_route53_zone.this[local.zone_name_for[var.shared_sending_domain]].zone_id
@@ -193,8 +194,10 @@ locals {
   # OPS_ALERT_EMAIL is the same address as the alarms (var.alert_email): it
   # gets automatic pauses, throttles, suspensions, sign-ups waiting for
   # review and the daily abuse digest. Left unset when alert_email is empty,
-  # so the app only logs them.
-  common_env = merge({
+  # so the app only logs them. app_settings (MG-93) comes first, so nothing
+  # in it can replace what Terraform sets (its validation refuses those
+  # names too).
+  common_env = merge(var.app_settings, {
     APP_ENV               = var.environment
     AWS_REGION            = data.aws_region.current.region
     DATABASE_HOST         = module.database.address
@@ -489,4 +492,15 @@ module "monitoring" {
   }
 
   ses_reputation_alarms = var.ses_reputation_alarms
+
+  # SES's Send count is the AWS account's, like its reputation, so the
+  # environment that watches the reputation watches it too. It alarms near
+  # the platform's daily cap (MG-87; the app's default is 45,000), or near
+  # SES's own quota when the cap is off (0).
+  ses_sends_alarm      = var.ses_reputation_alarms
+  ses_daily_send_limit = local.platform_daily_send_limit > 0 ? local.platform_daily_send_limit : var.ses_daily_quota
+}
+
+locals {
+  platform_daily_send_limit = tonumber(lookup(var.app_settings, "PLATFORM_DAILY_SEND_LIMIT", "45000"))
 }

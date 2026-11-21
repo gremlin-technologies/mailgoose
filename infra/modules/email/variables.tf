@@ -39,9 +39,25 @@ variable "mail_from_subdomain" {
 }
 
 variable "dmarc_policy" {
-  description = "Start at none, move to quarantine once reports look clean."
+  description = "DMARC policy for sending_domain, the system domain: none, quarantine or reject. Start at none, move to quarantine once reports look clean."
   type        = string
   default     = "none"
+
+  validation {
+    condition     = contains(["none", "quarantine", "reject"], var.dmarc_policy)
+    error_message = "dmarc_policy must be none, quarantine or reject."
+  }
+}
+
+variable "shared_dmarc_policy" {
+  description = "DMARC policy for shared_sending_domain, which carries customers' mail: none, quarantine or reject. Stays none until its reports are clean."
+  type        = string
+  default     = "none"
+
+  validation {
+    condition     = contains(["none", "quarantine", "reject"], var.shared_dmarc_policy)
+    error_message = "shared_dmarc_policy must be none, quarantine or reject."
+  }
 }
 
 variable "dmarc_report_email" {

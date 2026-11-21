@@ -5,11 +5,13 @@ locals {
   mail_from_domain = "${var.mail_from_subdomain}.${var.sending_domain}"
   shared           = var.shared_sending_domain != ""
   shared_mail_from = "${var.mail_from_subdomain}.${var.shared_sending_domain}"
-  dmarc_value = join("; ", compact([
+  # The system domain carries only mailgoose's own mail, so it can take a
+  # stricter policy than the shared domain, which carries customers' mail.
+  dmarc_value = { for k, policy in { system = var.dmarc_policy, shared = var.shared_dmarc_policy } : k => join("; ", compact([
     "v=DMARC1",
-    "p=${var.dmarc_policy}",
+    "p=${policy}",
     var.dmarc_report_email != "" ? "rua=mailto:${var.dmarc_report_email}" : "",
-  ]))
+  ])) }
 }
 
 # --- Configuration set: every send passes this name so events are captured. ---
@@ -142,7 +144,7 @@ resource "aws_route53_record" "dmarc" {
   name    = "_dmarc.${var.sending_domain}"
   type    = "TXT"
   ttl     = 600
-  records = [local.dmarc_value]
+  records = [local.dmarc_value["system"]]
 }
 
 # --- Shared sending domain (MG-85), only when shared_sending_domain is set ---
@@ -219,5 +221,5 @@ resource "aws_route53_record" "shared_dmarc" {
   name    = "_dmarc.${var.shared_sending_domain}"
   type    = "TXT"
   ttl     = 600
-  records = [local.dmarc_value]
+  records = [local.dmarc_value["shared"]]
 }
