@@ -7554,7 +7554,7 @@ components:
       type: object
       required: [id, name, status, plan, owner_email, sending_paused_at, sending_paused_reason,
         suspended_at, suspended_reason, suspended_by, review, review_flags, review_at, sending_mode,
-        test_addresses_confirmed, test_addresses_pending, created_at]
+        test_addresses_confirmed, test_addresses_pending, tester_until, created_at]
       properties:
         id:
           type: string
@@ -7606,6 +7606,14 @@ components:
         test_addresses_pending:
           type: integer
           description: Test addresses whose link hasn't been used yet.
+        tester_until:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            When a tester account's period ends or ended (MG-86); null when
+            it isn't a tester. Once it has passed the account sends nothing,
+            including batches already on the send queue (MG-107), until an
+            admin extends or revokes it.
         created_at:
           type: string
           format: date-time

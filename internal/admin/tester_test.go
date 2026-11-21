@@ -134,3 +134,36 @@ func TestTesterGrantRefused(t *testing.T) {
 		t.Errorf("unknown revoke: %v", err)
 	}
 }
+
+// TestEndedTesterInAdminViews: the account view and the find results say
+// when a tester's period ends, so an ended one shows as not sending
+// (MG-107); a revoked one has no end.
+func TestEndedTesterInAdminViews(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	until := h.now.AddDate(0, 0, 1)
+	if _, err := h.svc.GrantTester(ctx, h.staff, h.acc, &until, 0, "Invited to test mailgoose."); err != nil {
+		t.Fatal(err)
+	}
+	h.now = h.now.AddDate(0, 0, 2)
+	acc, err := h.svc.GetAccount(ctx, h.acc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if acc.Tester == nil || !acc.Tester.Ended || acc.TesterUntil == nil || !acc.TesterUntil.Equal(until) {
+		t.Errorf("account: tester %+v, until %v", acc.Tester, acc.TesterUntil)
+	}
+	found, err := h.svc.FindAccounts(ctx, "patsbakery", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(found) != 1 || found[0].TesterUntil == nil || !found[0].TesterUntil.Equal(until) {
+		t.Errorf("find = %+v", found)
+	}
+	if acc, err = h.svc.RevokeTester(ctx, h.staff, h.acc, "Testing finished."); err != nil {
+		t.Fatal(err)
+	}
+	if acc.TesterUntil != nil {
+		t.Errorf("revoked, until %v", acc.TesterUntil)
+	}
+}

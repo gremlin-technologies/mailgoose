@@ -5225,6 +5225,7 @@ Copies sent, and the recipients who hard bounced or complained.
 | `sending_mode` | [SendingMode](#schema-sendingmode) | yes |  |
 | `test_addresses_confirmed` | integer | yes | Test addresses whose link was used (MG-80). |
 | `test_addresses_pending` | integer | yes | Test addresses whose link hasn't been used yet. |
+| `tester_until` | string (date-time) or null | yes | When a tester account's period ends or ended (MG-86); null when it isn't a tester. Once it has passed the account sends nothing, including batches already on the send queue (MG-107), until an admin extends or revokes it. |
 | `created_at` | string (date-time) | yes |  |
 
 <a id="schema-adminaccountlist"></a>

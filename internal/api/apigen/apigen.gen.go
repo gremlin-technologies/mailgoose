@@ -1612,6 +1612,12 @@ type AdminAccount struct {
 	// Tester Its tester state (MG-86); null when it isn't a tester account.
 	Tester *TesterStatus `json:"tester"`
 
+	// TesterUntil When a tester account's period ends or ended (MG-86); null when
+	// it isn't a tester. Once it has passed the account sends nothing,
+	// including batches already on the send queue (MG-107), until an
+	// admin extends or revokes it.
+	TesterUntil *time.Time `json:"tester_until"`
+
 	// Throttles Its early-warning throttles in the last 30 days, newest first.
 	Throttles []AdminThrottle `json:"throttles"`
 }
@@ -1711,6 +1717,12 @@ type AdminAccountSummary struct {
 
 	// TestAddressesPending Test addresses whose link hasn't been used yet.
 	TestAddressesPending int `json:"test_addresses_pending"`
+
+	// TesterUntil When a tester account's period ends or ended (MG-86); null when
+	// it isn't a tester. Once it has passed the account sends nothing,
+	// including batches already on the send queue (MG-107), until an
+	// admin extends or revokes it.
+	TesterUntil *time.Time `json:"tester_until"`
 }
 
 // AdminAccountSummaryReview The sign-up review (MG-66); null for an account that never needed one.
