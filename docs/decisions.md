@@ -13,22 +13,38 @@ preview: audiences by status, the contacts and tags it would make (MG-70),
 the emails it would make (MG-71) and the plan it needs. Nothing is imported
 until `POST .../{id}/confirm` with `permission_confirmed: true`, which queues
 the contacts import (kind `mailchimp`) and the emails. The CLI has
-`mailgoose import mailchimp upload|preview|confirm`. These defaults are each
-easy to change:
+`mailgoose import mailchimp upload|preview|confirm|delete`. These defaults
+are each easy to change:
 
-- **Size.** An upload is at most 100 MB, and the API reads at most two at
-  once per task. The upload may take 10 minutes to arrive, past the API's
-  usual 30-second read timeout. A larger account exports each audience on its
-  own.
+- **Size and memory.** An upload is at most 25 MB; a larger account exports
+  each audience on its own. An API task takes in at most two uploads at
+  once (a third waits 20 seconds, then gets 503 `uploads_busy`), and reads,
+  previews or stores one export at a time, a slot the email job and confirm
+  take too; the job keeps only the emails once it has read the file. An
+  upload may take 5 minutes to arrive, past the API's usual 30-second read
+  timeout. Measured: a 24 MB audience CSV of 222,000 contacts (near the
+  250,000 cap) holds about 235 MB live while it's read and previewed, and
+  the heap peaked at about 310 MB. The server now sets Go's soft memory
+  limit to 80% of the container's (unless `GOMEMLIMIT` is set), so the heap
+  stays near what's live; on a 512 MB API task that's about 410 MB.
+- **Per account.** An account sends one upload at a time on a task (409
+  `upload_in_progress`) and keeps at most 3 unconfirmed uploads (409
+  `too_many_uploads`); `DELETE /v1/imports/mailchimp/bundles/{id}`
+  (`mailgoose import mailchimp delete`) frees one, and so does confirming.
+  So an account holds at most 75 MB of unconfirmed files.
 - **Storage.** The file is kept in Postgres (`mailchimp_bundles`), like a CSV
-  import's file, and the preview is worked out again on each read. An
-  unconfirmed upload is deleted after 7 days; a confirmed one keeps its file
-  until its emails are made.
+  import's file, with the preview worked out once on upload; `GET` returns
+  that stored preview, against the account as it was then. An unconfirmed
+  upload is deleted after 7 days; a confirmed one keeps its file until its
+  emails are made.
 - **Where the emails are made.** A job in the API, not the worker, since only
   the API's task may store images. It carries on where it stopped after a
   restart, and gives up after three tries with an error on the upload.
   Without image storage the emails are still made, keeping their Mailchimp
-  image links with a warning each.
+  image links with a warning each. The job renews its claim every minute
+  while it works, and stops if another task has taken it. `MaxImportImages`
+  counts per run, so an import that's retried fetches at most three times
+  that.
 - **An export with no contacts** (only templates or campaigns) can be
   confirmed; it makes emails and no contacts import.
 - **Confirming again** answers with the same upload and import. The import's
@@ -39,7 +55,7 @@ easy to change:
   `archived` are new in the API, CLI and web app.
 - **Stored rows.** A confirm whose contacts would take over 256 MB to store
   is refused (`export_too_large`), well under Postgres's 1 GB for one value;
-  a 100 MB zip can unpack to much more. The customer exports the audiences
+  a 25 MB zip can unpack to much more. The customer exports the audiences
   one at a time.
 - **Templates past the first 100** (MG-71's cap) are listed in the preview's
   `ignored_files` with the reason `too_many_templates`.

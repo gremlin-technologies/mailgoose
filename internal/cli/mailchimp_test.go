@@ -71,6 +71,8 @@ func mailchimpStub(t *testing.T) (*harness, *[]seenRequest, *seenUpload) {
 			}
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(testBundleConfirmed("queued", 0)))
+		case r.Method == http.MethodDelete && r.URL.Path == one:
+			w.WriteHeader(http.StatusNoContent)
 		case r.URL.Path == one:
 			polls++
 			if polls == 1 {
@@ -211,5 +213,21 @@ func TestImportCancelAndTheWaitingNote(t *testing.T) {
 	if code := h.run("import", "cancel", "00000000-0000-4000-8000-000000000000"); code == ExitOK ||
 		!strings.Contains(h.errOut.String(), "waiting for the paid plan") {
 		t.Errorf("exit %d: %s", code, h.errOut)
+	}
+}
+
+func TestImportMailchimpDelete(t *testing.T) {
+	h, seen, _ := mailchimpStub(t)
+	if code := h.run("import", "mailchimp", "delete", testBundleID); code != ExitUsage || !strings.Contains(h.errOut.String(), "--yes") {
+		t.Fatalf("without --yes: exit %d, %s", code, h.errOut)
+	}
+	if len(*seen) != 0 {
+		t.Fatalf("requests without --yes: %v", *seen)
+	}
+	if code := h.run("import", "mailchimp", "delete", testBundleID, "--yes"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if !strings.Contains(h.out.String(), "Deleted upload "+testBundleID) || len(*seen) != 1 || (*seen)[0].method != http.MethodDelete {
+		t.Errorf("out %q, seen %v", h.out, *seen)
 	}
 }

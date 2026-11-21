@@ -3,12 +3,14 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
@@ -26,11 +28,23 @@ const mailchimpUploadPath = "/v1/imports/mailchimp/bundles"
 const MaxMailchimpBodyBytes = mailchimp.MaxUploadBytes + 1<<20
 
 // mailchimpUploadTime is how long an upload may take to arrive.
-const mailchimpUploadTime = 10 * time.Minute
+const mailchimpUploadTime = 5 * time.Minute
 
-// mailchimpUploads limits how many exports one API task reads at once, since
-// each is held in memory while it's read.
-var mailchimpUploads = make(chan struct{}, 2)
+// mailchimpReceiving limits how many uploads one API task takes in at once,
+// since each is held in memory as it arrives. Reading one takes
+// mailchimp.HoldRead as well.
+var mailchimpReceiving = make(chan struct{}, 2)
+
+// mailchimpReceiveWait is how long an upload waits for a place before it's
+// refused as busy.
+var mailchimpReceiveWait = 20 * time.Second
+
+// mailchimpSending is the accounts with an upload arriving on this task: an
+// account sends one at a time.
+var mailchimpSending sync.Map
+
+var errMailchimpBusy = (&Error{Status: http.StatusServiceUnavailable, Code: "uploads_busy",
+	Message: "Too many Mailchimp exports are arriving just now."}).WithHint("Try again in a minute.")
 
 // mailchimpCaller is the caller of a Mailchimp import endpoint, or nil after
 // writing the error.
@@ -63,6 +77,11 @@ func (s *Server) mailchimpError(w http.ResponseWriter, r *http.Request, err erro
 	case errors.Is(err, mailchimp.ErrUploadNotFound):
 		WriteError(w, NotFound("not_found", "No uploaded Mailchimp export with that id in this account; uploads are kept for 7 days.").
 			WithHint("`mailgoose import mailchimp upload <file>` uploads it again."))
+	case errors.Is(err, mailchimp.ErrTooManyUploads):
+		WriteError(w, Conflict("too_many_uploads", fmt.Sprintf("This account already has %d uploaded exports waiting to be confirmed.", mailchimp.MaxUnconfirmedUploads)).
+			WithHint("Confirm or delete one first: `mailgoose import mailchimp delete <id>`. Unconfirmed uploads are deleted after 7 days."))
+	case errors.Is(err, mailchimp.ErrUploadConfirmed):
+		WriteError(w, Conflict("upload_confirmed", "This export was confirmed, so it stays with its import."))
 	case errors.Is(err, mailchimp.ErrUploadUsed):
 		WriteError(w, Unprocessable("upload_used", "This export was already imported, and its file removed.").
 			WithHint("Upload it again to import it again."))
@@ -110,7 +129,10 @@ func readMailchimpUpload(w http.ResponseWriter, r *http.Request) (name string, d
 			}
 			seenFile = true
 			name = p.FileName()
-			if data, perr = io.ReadAll(io.LimitReader(p, mailchimp.MaxUploadBytes+1)); perr != nil {
+			// Sized from the request, so reading doesn't hold growing copies.
+			buf := bytes.NewBuffer(make([]byte, 0, min(max(r.ContentLength, 0), MaxMailchimpBodyBytes)+bytes.MinRead))
+			_, perr = buf.ReadFrom(io.LimitReader(p, mailchimp.MaxUploadBytes+1))
+			if data = buf.Bytes(); perr != nil {
 				if e := tooBig(perr); e != nil {
 					return "", nil, opts, e
 				}
@@ -153,10 +175,29 @@ func (s *Server) CreateMailchimpBundle(w http.ResponseWriter, r *http.Request) {
 	if c == nil {
 		return
 	}
+	ctx := r.Context()
+	if n, err := s.Mailchimp.Unconfirmed(ctx, c.AccountID); s.mailchimpError(w, r, err) {
+		return
+	} else if n >= mailchimp.MaxUnconfirmedUploads {
+		s.mailchimpError(w, r, mailchimp.ErrTooManyUploads)
+		return
+	}
+	if _, busy := mailchimpSending.LoadOrStore(c.AccountID, struct{}{}); busy {
+		WriteError(w, Conflict("upload_in_progress", "Another Mailchimp export for this account is still arriving.").
+			WithHint("Wait for it to finish, then upload again."))
+		return
+	}
+	defer mailchimpSending.Delete(c.AccountID)
+	wait := time.NewTimer(mailchimpReceiveWait)
+	defer wait.Stop()
 	select {
-	case mailchimpUploads <- struct{}{}:
-		defer func() { <-mailchimpUploads }()
-	case <-r.Context().Done():
+	case mailchimpReceiving <- struct{}{}:
+		defer func() { <-mailchimpReceiving }()
+	case <-wait.C:
+		w.Header().Set("Retry-After", "60")
+		WriteError(w, errMailchimpBusy)
+		return
+	case <-ctx.Done():
 		return
 	}
 	// An export takes longer to send than the server's usual 30 seconds.
@@ -174,41 +215,55 @@ func (s *Server) CreateMailchimpBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opts.MaxMembers = s.MailchimpMaxMembers
+	release, err := mailchimp.HoldRead(ctx)
+	if err != nil {
+		return
+	}
+	defer release()
 	b, err := mailchimp.Read(bytes.NewReader(data), int64(len(data)), name, opts)
 	if s.mailchimpError(w, r, err) {
 		return
 	}
-	u, err := s.Mailchimp.Save(r.Context(), c.AccountID, name, data, opts)
+	// The preview is worked out once, here, and stored with the file.
+	p, err := s.mailchimpPreviewJSON(ctx, c.AccountID, b, mailchimp.DefaultCampaigns)
 	if s.mailchimpError(w, r, err) {
 		return
 	}
-	out, err := s.mailchimpBundleJSON(r.Context(), c.AccountID, u, b)
+	raw, err := json.Marshal(p)
+	if s.mailchimpError(w, r, err) {
+		return
+	}
+	u, err := s.Mailchimp.Save(ctx, c.AccountID, name, data, raw, opts)
+	if s.mailchimpError(w, r, err) {
+		return
+	}
+	release()
+	out, err := s.mailchimpBundleJSON(u)
 	if s.mailchimpError(w, r, err) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, out)
 }
 
-// loadMailchimpBundle reads an upload's export again, or nil once its file
-// is gone.
-func (s *Server) loadMailchimpBundle(ctx context.Context, accountID string, u *mailchimp.Upload) (*mailchimp.Bundle, error) {
+// loadMailchimpBundle reads an upload's export again, holding the read slot
+// until release is called, or nil once its file is gone.
+func (s *Server) loadMailchimpBundle(ctx context.Context, accountID string, u *mailchimp.Upload) (b *mailchimp.Bundle, release func(), err error) {
+	release = func() {}
 	if !u.HasData {
-		return nil, nil
+		return nil, release, nil
 	}
-	select {
-	case mailchimpUploads <- struct{}{}:
-		defer func() { <-mailchimpUploads }()
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	if release, err = mailchimp.HoldRead(ctx); err != nil {
+		return nil, func() {}, err
 	}
 	data, err := s.Mailchimp.Data(ctx, accountID, u.ID)
 	if errors.Is(err, mailchimp.ErrUploadUsed) {
-		return nil, nil
+		return nil, release, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, release, err
 	}
-	return mailchimp.Read(bytes.NewReader(data), int64(len(data)), u.FileName, u.Options(s.MailchimpMaxMembers))
+	b, err = mailchimp.Read(bytes.NewReader(data), int64(len(data)), u.FileName, u.Options(s.MailchimpMaxMembers))
+	return b, release, err
 }
 
 // GetMailchimpBundle is GET /v1/imports/mailchimp/bundles/{bundle_id}.
@@ -221,17 +276,23 @@ func (s *Server) GetMailchimpBundle(w http.ResponseWriter, r *http.Request, id a
 	if s.mailchimpError(w, r, err) {
 		return
 	}
-	var b *mailchimp.Bundle
-	if u.ConfirmedAt == nil {
-		if b, err = s.loadMailchimpBundle(r.Context(), c.AccountID, u); s.mailchimpError(w, r, err) {
-			return
-		}
-	}
-	out, err := s.mailchimpBundleJSON(r.Context(), c.AccountID, u, b)
+	out, err := s.mailchimpBundleJSON(u)
 	if s.mailchimpError(w, r, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// DeleteMailchimpBundle is DELETE /v1/imports/mailchimp/bundles/{bundle_id}.
+func (s *Server) DeleteMailchimpBundle(w http.ResponseWriter, r *http.Request, id apigen.BundleId) {
+	c := s.mailchimpCaller(w, r)
+	if c == nil || !validBundleID(w, id) {
+		return
+	}
+	if s.mailchimpError(w, r, s.Mailchimp.Delete(r.Context(), c.AccountID, id)) {
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ConfirmMailchimpBundle is POST /v1/imports/mailchimp/bundles/{bundle_id}/confirm.
@@ -265,7 +326,8 @@ func (s *Server) ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	if u.ConfirmedAt == nil {
-		b, err := s.loadMailchimpBundle(ctx, c.AccountID, u)
+		b, release, err := s.loadMailchimpBundle(ctx, c.AccountID, u)
+		defer release()
 		if s.mailchimpError(w, r, err) {
 			return
 		}
@@ -286,7 +348,7 @@ func (s *Server) ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 	}
-	out, err := s.mailchimpBundleJSON(ctx, c.AccountID, u, nil)
+	out, err := s.mailchimpBundleJSON(u)
 	if s.mailchimpError(w, r, err) {
 		return
 	}
@@ -301,9 +363,9 @@ func validBundleID(w http.ResponseWriter, id string) bool {
 	return true
 }
 
-// mailchimpBundleJSON is an upload as the API shows it, with the preview of b
-// when b is set.
-func (s *Server) mailchimpBundleJSON(ctx context.Context, accountID string, u *mailchimp.Upload, b *mailchimp.Bundle) (apigen.MailchimpBundle, error) {
+// mailchimpBundleJSON is an upload as the API shows it, with the preview
+// stored on upload while it's unconfirmed.
+func (s *Server) mailchimpBundleJSON(u *mailchimp.Upload) (apigen.MailchimpBundle, error) {
 	out := apigen.MailchimpBundle{Id: u.ID, Bytes: u.Bytes, Status: "unconfirmed", CreatedAt: u.CreatedAt.UTC(),
 		ExpiresAt: u.ExpiresAt.UTC(), ConfirmedAt: utcPtr(u.ConfirmedAt), ImportId: u.ImportID, Campaigns: u.Campaigns,
 		Emails: mailchimpProgressJSON(u)}
@@ -313,9 +375,18 @@ func (s *Server) mailchimpBundleJSON(ctx context.Context, accountID string, u *m
 	if u.ConfirmedAt != nil {
 		out.Status = "confirmed"
 	}
-	if b == nil {
-		return out, nil
+	if u.ConfirmedAt == nil && u.Preview != nil {
+		var p apigen.MailchimpPreview
+		if err := json.Unmarshal(u.Preview, &p); err != nil {
+			return out, fmt.Errorf("read stored mailchimp preview: %w", err)
+		}
+		out.Preview = &p
 	}
+	return out, nil
+}
+
+// mailchimpPreviewJSON is the preview of b, against the account as it is now.
+func (s *Server) mailchimpPreviewJSON(ctx context.Context, accountID string, b *mailchimp.Bundle, campaigns int) (*apigen.MailchimpPreview, error) {
 	p := &apigen.MailchimpPreview{Source: apigen.MailchimpPreviewSource(b.Source), Audiences: []apigen.MailchimpAudience{},
 		Emails: []apigen.MailchimpEmail{}, CampaignsAvailable: len(b.Campaigns)}
 	for _, a := range b.Audiences {
@@ -338,7 +409,7 @@ func (s *Server) mailchimpBundleJSON(ctx context.Context, accountID string, u *m
 		}
 		p.Audiences = append(p.Audiences, apigen.MailchimpAudience{Name: a.Name, Members: len(a.Members), ByStatus: by})
 	}
-	for _, e := range mailchimp.PlanEmails(b, u.Campaigns) {
+	for _, e := range mailchimp.PlanEmails(b, campaigns) {
 		p.Emails = append(p.Emails, mailchimpEmailJSON(e, nil))
 	}
 	p.IgnoredFiles = make([]struct {
@@ -357,12 +428,11 @@ func (s *Server) mailchimpBundleJSON(ctx context.Context, accountID string, u *m
 	if b.Members() > 0 {
 		cp, err := s.Contacts.PreviewMailchimpImport(ctx, accountID, b)
 		if err != nil {
-			return out, err
+			return nil, err
 		}
 		p.Contacts = mailchimpContactsJSON(cp)
 	}
-	out.Preview = p
-	return out, nil
+	return p, nil
 }
 
 func mailchimpContactsJSON(cp *contacts.MailchimpPreview) *apigen.MailchimpContactsPreview {

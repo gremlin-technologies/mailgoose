@@ -1491,7 +1491,8 @@ templates and the newest campaigns would become.
 `confirmMailchimpBundle` starts the import.
 
 Send the file as `multipart/form-data`, in the part `file`, at most
-100 MB. A CSV doesn't say which columns are Mailchimp groups, so name
+25 MB; a larger account exports one audience at a time. An account
+keeps at most 3 unconfirmed uploads and sends one at a time. A CSV doesn't say which columns are Mailchimp groups, so name
 them in `group_columns` (one part each) to bring them in as tags;
 `audience_name` names the audience of an export that doesn't say
 (default "Mailchimp"). Other columns, beyond email, names, tags,
@@ -1506,6 +1507,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `409`: `too_many_uploads`: the account already has 3 unconfirmed uploads; confirm or delete one (`deleteMailchimpBundle`), or wait for one to expire. `upload_in_progress`: another upload for the account is still arriving. `upload_confirmed`: a confirmed upload can't be deleted. [Error](#schema-error)
 - `413`: `request_too_large`: the request body is over the operation's limit. [Error](#schema-error)
 - `422`: The export can't be read or imported, and nothing was kept or queued. `code` says why: `not_zip_or_csv`, `bad_zip`, `unsafe_path`, `too_large` (over 1 GB unpacked), `too_many_members` (over the import's limit), `too_many_columns`, `no_email_column`, `unknown_status`, `nothing_to_read`, `file_required`, `invalid_audience_name`, `invalid_group_column`, `too_many_group_columns`, `permission_required`, `too_many_tags`, `invalid_campaigns`, `invalid_idempotency_key`, `idempotency_key_reused` or `upload_used` (the file was already imported and removed). [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
@@ -1520,9 +1522,9 @@ Responses:
 - Operation: `getMailchimpBundle`
 - CLI: `mailgoose import mailchimp confirm`, `mailgoose import mailchimp preview`
 
-The upload with its preview, worked out again against the account as
-it is now. Once confirmed, it also says how far its emails have got;
-`preview` is null once the file has been used and removed.
+The upload with its preview as it was worked out on upload. Once
+confirmed, it says how far its emails have got, and `preview` is
+null.
 
 | Parameter | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
@@ -1534,6 +1536,34 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-deletemailchimpbundle"></a>
+
+### Delete an unconfirmed Mailchimp export
+
+`DELETE /v1/imports/mailchimp/bundles/{bundle_id}`
+
+- Operation: `deleteMailchimpBundle`
+- CLI: `mailgoose import mailchimp delete`
+
+Deletes an upload that hasn't been confirmed, with its file, freeing
+one of the account's 3 unconfirmed uploads. A confirmed upload stays
+with its import.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `bundle_id` | path | string (uuid) | yes | The uploaded export's `id`, from `createMailchimpBundle`. |
+
+Responses:
+
+- `204`: Deleted.
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `too_many_uploads`: the account already has 3 unconfirmed uploads; confirm or delete one (`deleteMailchimpBundle`), or wait for one to expire. `upload_in_progress`: another upload for the account is still arriving. `upload_confirmed`: a confirmed upload can't be deleted. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -3888,7 +3918,7 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `file` | string (binary) | yes | The export, as Mailchimp gave it, at most 100 MB. |
+| `file` | string (binary) | yes | The export, as Mailchimp gave it, at most 25 MB. |
 | `audience_name` | string |  | The audience's name when the export doesn't say (an audience export or a CSV). Default "Mailchimp". |
 | `group_columns` | array of string |  | Member-file columns that are Mailchimp groups; each group becomes a tag `Category: Group`. |
 

@@ -350,7 +350,8 @@ Manage my data) or an audience, then:
   1. mailgoose import mailchimp upload <export.zip>   shows what it would do
   2. mailgoose import mailchimp confirm <id> --permission-confirmed   does it
 
-Nothing is imported until you confirm. An upload is kept for 7 days.`,
+Nothing is imported until you confirm. An upload is kept for 7 days, and an
+account keeps at most 3 unconfirmed uploads; delete one you don't need.`,
 	}
 
 	var audience string
@@ -359,7 +360,8 @@ Nothing is imported until you confirm. An upload is kept for 7 days.`,
 		Use:   "upload <export.zip|audience.csv>",
 		Short: "Upload a Mailchimp export and show what importing it would do",
 		Long: `Uploads Mailchimp's export, the .zip of the account or an audience, or one
-audience CSV from it, up to 100 MB. Nothing is imported: it shows the
+audience CSV from it, up to 25 MB (export a larger account one audience at a
+time). Nothing is imported: it shows the
 contacts by status, the tags to create, the emails it would make and the plan
 the contacts need, and gives the upload's id to confirm.
 
@@ -451,6 +453,30 @@ Confirming again shows the same import.`,
 	confirm.Flags().StringVar(&key, "idempotency-key", "", "a key that makes retrying return the same import (default: the export's own)")
 	confirm.Flags().BoolVar(&wait, "wait", false, "wait until the emails are made")
 
-	cmd.AddCommand(upload, preview, confirm)
+	var yes bool
+	del := calls("deleteMailchimpBundle", &cobra.Command{
+		Use:     "delete <id>",
+		Short:   "Delete an upload that hasn't been confirmed",
+		Long:    "Deletes an unconfirmed upload with its file. A confirmed upload stays with its import.",
+		Example: `  mailgoose import mailchimp delete 3f1c... --yes`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !yes {
+				return needFlag("yes", "Confirmation (the upload's file is deleted)")
+			}
+			if err := a.call(cmd.Context(), http.MethodDelete, "/v1/imports/mailchimp/bundles/"+url.PathEscape(args[0]), nil, nil, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(map[string]any{"deleted": args[0]})
+				return nil
+			}
+			fmt.Fprintf(a.Stdout, "Deleted upload %s.\n", args[0])
+			return nil
+		},
+	})
+	del.Flags().BoolVar(&yes, "yes", false, "confirm the delete")
+
+	cmd.AddCommand(upload, preview, confirm, del)
 	return cmd
 }

@@ -411,7 +411,7 @@ func otherExportFolder(dir string) bool {
 // "nonsubscribed" both contain "subscribed".
 func statusFromName(name string) Status {
 	n := strings.ToLower(stem(name))
-	n = strings.NewReplacer("-", "", "_", "", " ", "", ".", "").Replace(n)
+	n = nameSeparators.Replace(n)
 	switch {
 	case strings.Contains(n, "unsubscribed"):
 		return Unsubscribed
@@ -429,9 +429,15 @@ func statusFromName(name string) Status {
 	return ""
 }
 
+// Replacers are costly to build, so these are built once.
+var (
+	nameSeparators  = strings.NewReplacer("-", "", "_", "", " ", "", ".", "")
+	valueSeparators = strings.NewReplacer("-", "", "_", "", " ", "")
+)
+
 // statusFromValue reads a status column's value.
 func statusFromValue(v string) (Status, bool) {
-	switch strings.NewReplacer("-", "", "_", "", " ", "").Replace(normalize(v)) {
+	switch valueSeparators.Replace(normalize(v)) {
 	case "subscribed":
 		return Subscribed, true
 	case "unsubscribed":
@@ -738,14 +744,23 @@ func splitList(v string) (names []string, cut bool) {
 	if v == "" {
 		return nil, false
 	}
-	cr := csv.NewReader(strings.NewReader(v))
-	cr.LazyQuotes = true
-	cr.TrimLeadingSpace = true
-	cr.FieldsPerRecord = -1
+	// Most cells have no quotes or line breaks, and split on commas as the
+	// CSV rules would; reading each cell as CSV costs a buffer per cell.
+	plain := !strings.ContainsAny(v, "\"\r\n")
+	var cr *csv.Reader
+	if !plain {
+		cr = csv.NewReader(strings.NewReader(v))
+		cr.LazyQuotes = true
+		cr.TrimLeadingSpace = true
+		cr.FieldsPerRecord = -1
+	}
 	seen := map[string]bool{}
-	for {
-		rec, err := cr.Read()
-		if errors.Is(err, io.EOF) {
+	for done := false; !done; {
+		var rec []string
+		var err error
+		if plain {
+			rec, done = strings.Split(v, ","), true
+		} else if rec, err = cr.Read(); errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

@@ -2736,7 +2736,7 @@ type CreateMailchimpBundleRequest struct {
 	// Examples: Newsletter
 	AudienceName *string `json:"audience_name,omitempty"`
 
-	// File The export, as Mailchimp gave it, at most 100 MB.
+	// File The export, as Mailchimp gave it, at most 25 MB.
 	File openapi_types.File `json:"file"`
 
 	// GroupColumns Member-file columns that are Mailchimp groups; each group becomes a tag `Category: Group`.
@@ -4532,6 +4532,9 @@ type LaunchRefused = Error
 // MailchimpRefused defines model for MailchimpRefused.
 type MailchimpRefused = Error
 
+// MailchimpUploadConflict defines model for MailchimpUploadConflict.
+type MailchimpUploadConflict = Error
+
 // NotFound defines model for NotFound.
 type NotFound = Error
 
@@ -5940,6 +5943,9 @@ type ServerInterface interface {
 	// CreateMailchimpBundle Upload a Mailchimp export
 	// (POST /v1/imports/mailchimp/bundles)
 	CreateMailchimpBundle(w http.ResponseWriter, r *http.Request)
+	// DeleteMailchimpBundle Delete an unconfirmed Mailchimp export
+	// (DELETE /v1/imports/mailchimp/bundles/{bundle_id})
+	DeleteMailchimpBundle(w http.ResponseWriter, r *http.Request, bundleId BundleId)
 	// GetMailchimpBundle Get an uploaded Mailchimp export
 	// (GET /v1/imports/mailchimp/bundles/{bundle_id})
 	GetMailchimpBundle(w http.ResponseWriter, r *http.Request, bundleId BundleId)
@@ -8547,6 +8553,32 @@ func (siw *ServerInterfaceWrapper) CreateMailchimpBundle(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// DeleteMailchimpBundle operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMailchimpBundle(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "bundle_id" -------------
+	var bundleId BundleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bundle_id", r.PathValue("bundle_id"), &bundleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bundle_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMailchimpBundle(w, r, bundleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetMailchimpBundle operation middleware
 func (siw *ServerInterfaceWrapper) GetMailchimpBundle(w http.ResponseWriter, r *http.Request) {
 
@@ -9394,6 +9426,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/{import_id}/cancel", wrapper.CancelImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}/skipped-rows", wrapper.ListImportSkippedRows)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/mailchimp/bundles", wrapper.CreateMailchimpBundle)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/imports/mailchimp/bundles/{bundle_id}", wrapper.DeleteMailchimpBundle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/mailchimp/bundles/{bundle_id}", wrapper.GetMailchimpBundle)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/mailchimp/bundles/{bundle_id}/confirm", wrapper.ConfirmMailchimpBundle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/forms", wrapper.ListForms)

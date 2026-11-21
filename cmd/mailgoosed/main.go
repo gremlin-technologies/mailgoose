@@ -65,6 +65,7 @@ func main() {
 	log := slog.New(worker.LogWithJobs(api.LogWithRequestIDs(
 		slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))))
 	slog.SetDefault(log)
+	setMemoryLimit(log)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

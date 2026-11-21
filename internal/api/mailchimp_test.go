@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -132,6 +133,23 @@ func bundlePath(method, suffix, body string) func(*testing.T) *http.Request {
 
 const confirmBody = `{"permission_confirmed":true}`
 
+// fullUploads uploads as many exports as an account may keep unconfirmed.
+func fullUploads(t *testing.T, h http.Handler) {
+	t.Helper()
+	for range mailchimp.MaxUnconfirmedUploads {
+		addedBundle(t, h)
+	}
+}
+
+// confirmedBundle is addedBundle, confirmed.
+func confirmedBundle(t *testing.T, h http.Handler) {
+	t.Helper()
+	addedBundle(t, h)
+	if rec := do(t, h, bearer(bundlePath(http.MethodPost, "/confirm", confirmBody))(t)); rec.Code != http.StatusAccepted {
+		t.Fatalf("confirm: %d %s", rec.Code, rec.Body)
+	}
+}
+
 // waitingImport is addedImport, waiting for the paid plan.
 func waitingImport(t *testing.T, h http.Handler) {
 	t.Helper()
@@ -164,6 +182,7 @@ var mailchimpContractCases = map[string][]contractCase{
 		{name: "not multipart", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/imports/mailchimp/bundles", `{}`)), status: http.StatusBadRequest},
 		{name: "too large", server: fullKey(authServer), req: bearer(tooLargeMailchimpUpload), status: http.StatusRequestEntityTooLarge},
 		{name: "not an export", server: fullKey(authServer), req: bearer(mailchimpUpload("list.csv", func(*testing.T) []byte { return []byte("name\nPat\n") })), status: http.StatusUnprocessableEntity},
+		{name: "too many uploads", server: fullKey(authServer), before: fullUploads, req: bearer(mailchimpExportUpload), status: http.StatusConflict},
 		{name: "no credentials", server: authServer, req: mailchimpExportUpload, status: http.StatusUnauthorized},
 		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(mailchimpExportUpload)), status: http.StatusForbidden},
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/imports"))), req: bearer(mailchimpExportUpload), status: http.StatusTooManyRequests},
@@ -176,6 +195,16 @@ var mailchimpContractCases = map[string][]contractCase{
 		{name: "no credentials", server: authServer, req: bundlePath(http.MethodGet, "", ""), status: http.StatusUnauthorized},
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/imports"))), req: bearer(bundlePath(http.MethodGet, "", "")), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(bundlePath(http.MethodGet, "", "")), status: http.StatusServiceUnavailable},
+	},
+	"deleteMailchimpBundle": {
+		{name: "deleted", server: draftKey(authServer), before: addedBundle, req: bearer(bundlePath(http.MethodDelete, "", "")), status: http.StatusNoContent},
+		{name: "bad id", server: fullKey(authServer), req: bearer(request(http.MethodDelete, "/v1/imports/mailchimp/bundles/export")), status: http.StatusBadRequest},
+		{name: "unknown", server: fullKey(authServer), req: bearer(bundlePath(http.MethodDelete, "", "")), status: http.StatusNotFound},
+		{name: "confirmed", server: fullKey(authServer), before: confirmedBundle, req: bearer(bundlePath(http.MethodDelete, "", "")), status: http.StatusConflict},
+		{name: "no credentials", server: authServer, req: bundlePath(http.MethodDelete, "", ""), status: http.StatusUnauthorized},
+		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(bundlePath(http.MethodDelete, "", ""))), status: http.StatusForbidden},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/imports"))), req: bearer(bundlePath(http.MethodDelete, "", "")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(bundlePath(http.MethodDelete, "", "")), status: http.StatusServiceUnavailable},
 	},
 	"confirmMailchimpBundle": {
 		{name: "confirmed", server: draftKey(authServer), before: addedBundle, req: bearer(bundlePath(http.MethodPost, "/confirm", confirmBody)), status: http.StatusAccepted},
@@ -358,5 +387,72 @@ func TestMailchimpUploadRefusals(t *testing.T) {
 		if rec.Code != http.StatusUnprocessableEntity || e.Error.Code != tc.code {
 			t.Errorf("%s: %d %s", tc.name, rec.Code, rec.Body)
 		}
+	}
+}
+
+func TestMailchimpPreviewIsStoredOnUpload(t *testing.T) {
+	s := draftKey(authServer)(t)
+	h := s.Handler()
+	addedBundle(t, h)
+	id, _ := addedBundles.Load(t)
+	// The preview comes from what was stored, not from reading the file
+	// again.
+	db, _ := testDBs.Load(t)
+	if _, err := db.(*pgxpool.Pool).Exec(t.Context(), `UPDATE mailchimp_bundles SET data = 'not a zip' WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+	rec := do(t, h, bearer(bundlePath(http.MethodGet, "", ""))(t))
+	var b bundleJSON
+	decodeInto(t, rec, &b)
+	if rec.Code != http.StatusOK || b.Preview == nil || len(b.Preview.Audiences) != 2 || len(b.Preview.Emails) != 3 {
+		t.Fatalf("get: %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestMailchimpUploadsOneAtATime(t *testing.T) {
+	s := fullKey(authServer)(t)
+	h := s.Handler()
+	// Another upload of the same account is still arriving.
+	rec := do(t, h, bearer(request(http.MethodGet, "/v1/whoami"))(t))
+	var who struct {
+		Account struct {
+			ID string `json:"id"`
+		} `json:"account"`
+	}
+	decodeInto(t, rec, &who)
+	mailchimpSending.Store(who.Account.ID, struct{}{})
+	rec = do(t, h, bearer(mailchimpExportUpload)(t))
+	mailchimpSending.Delete(who.Account.ID)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "upload_in_progress") {
+		t.Fatalf("in progress: %d %s", rec.Code, rec.Body)
+	}
+
+	// Every place on the task is taken.
+	old := mailchimpReceiveWait
+	mailchimpReceiveWait = 10 * time.Millisecond
+	for range cap(mailchimpReceiving) {
+		mailchimpReceiving <- struct{}{}
+	}
+	rec = do(t, h, bearer(mailchimpExportUpload)(t))
+	for range cap(mailchimpReceiving) {
+		<-mailchimpReceiving
+	}
+	mailchimpReceiveWait = old
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "uploads_busy") || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("busy: %d %s", rec.Code, rec.Body)
+	}
+
+	// Past the cap, the hint says how to free a place.
+	fullUploads(t, h)
+	rec = do(t, h, bearer(mailchimpExportUpload)(t))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "too_many_uploads") ||
+		!strings.Contains(rec.Body.String(), "mailgoose import mailchimp delete") {
+		t.Fatalf("too many: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, bearer(bundlePath(http.MethodDelete, "", ""))(t)); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete: %d %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, bearer(mailchimpExportUpload)(t)); rec.Code != http.StatusCreated {
+		t.Fatalf("after delete: %d %s", rec.Code, rec.Body)
 	}
 }

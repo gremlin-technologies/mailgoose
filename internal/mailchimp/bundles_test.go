@@ -26,7 +26,7 @@ func storeWithAccount(t *testing.T) (*Store, *pgxpool.Pool, string) {
 func savedExport(t *testing.T, s *Store, acct string) *Upload {
 	t.Helper()
 	data := zipDir(t, "testdata/account_export", "")
-	u, err := s.Save(t.Context(), acct, "export.zip", data, Options{})
+	u, err := s.Save(t.Context(), acct, "export.zip", data, []byte(`{}`), Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,5 +165,114 @@ func TestEmailJobGivesUpAfterThreeTries(t *testing.T) {
 	}
 	if got.EmailsStatus != EmailsFailed || got.EmailsError == nil || got.HasData || emailCount(t, db, acct) != 0 {
 		t.Fatalf("failed = %+v", got)
+	}
+}
+
+func TestStoreCapsUnconfirmedUploadsAndDeletes(t *testing.T) {
+	s, _, acct := storeWithAccount(t)
+	ctx := t.Context()
+	var ids []string
+	for range MaxUnconfirmedUploads {
+		ids = append(ids, savedExport(t, s, acct).ID)
+	}
+	if n, err := s.Unconfirmed(ctx, acct); err != nil || n != MaxUnconfirmedUploads {
+		t.Fatalf("unconfirmed = %d, %v", n, err)
+	}
+	if _, err := s.Save(ctx, acct, "x.zip", []byte("x"), []byte(`{}`), Options{}); !errors.Is(err, ErrTooManyUploads) {
+		t.Fatalf("past the cap: %v", err)
+	}
+	// Confirming one frees a place, and so does deleting one.
+	if _, err := s.Confirm(ctx, acct, ids[0], nil, 1, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, acct, ids[0]); !errors.Is(err, ErrUploadConfirmed) {
+		t.Errorf("delete confirmed: %v", err)
+	}
+	if err := s.Delete(ctx, "00000000-0000-4000-8000-000000000000", ids[1]); !errors.Is(err, ErrUploadNotFound) {
+		t.Errorf("another account's delete: %v", err)
+	}
+	if err := s.Delete(ctx, acct, ids[1]); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(ctx, acct, ids[1]); !errors.Is(err, ErrUploadNotFound) {
+		t.Errorf("delete again: %v", err)
+	}
+	if n, _ := s.Unconfirmed(ctx, acct); n != 1 {
+		t.Errorf("unconfirmed after = %d", n)
+	}
+	u := savedExport(t, s, acct)
+	if string(u.Preview) != `{}` {
+		t.Errorf("preview = %s", u.Preview)
+	}
+	c, err := s.Confirm(ctx, acct, u.ID, nil, 1, 1)
+	if err != nil || c.Preview != nil {
+		t.Errorf("preview after confirm = %s, %v", c.Preview, err)
+	}
+	// An expired upload doesn't count.
+	s.Now = func() time.Time { return time.Now().Add(UploadTTL + time.Minute) }
+	if n, _ := s.Unconfirmed(ctx, acct); n != 0 {
+		t.Errorf("unconfirmed past expiry = %d", n)
+	}
+}
+
+func TestHoldReadIsOneAtATime(t *testing.T) {
+	release, err := HoldRead(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := HoldRead(ctx); err == nil {
+		t.Fatal("a second hold got the slot")
+	}
+	release()
+	release() // a second release gives nothing back twice
+	r2, err := HoldRead(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx2, cancel2 := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel2()
+	if _, err := HoldRead(ctx2); err == nil {
+		t.Fatal("the slot was freed twice")
+	}
+	r2()
+}
+
+func TestTheEmailJobKeepsItsLeaseAndStopsWhenItLosesIt(t *testing.T) {
+	s, db, acct := storeWithAccount(t)
+	ctx := t.Context()
+	u := savedExport(t, s, acct)
+	var token string
+	if err := db.QueryRow(ctx, `UPDATE mailchimp_bundles SET lease_token = gen_random_uuid(), lease_until = now()
+		WHERE id = $1 RETURNING lease_token`, u.ID).Scan(&token); err != nil {
+		t.Fatal(err)
+	}
+	lctx, stop := s.keepLease(ctx, u.ID, token, 10*time.Millisecond)
+	defer stop()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var until time.Time
+		if err := db.QueryRow(ctx, `SELECT lease_until FROM mailchimp_bundles WHERE id = $1`, u.ID).Scan(&until); err != nil {
+			t.Fatal(err)
+		}
+		if until.After(time.Now().Add(emailLease - time.Minute)) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the lease wasn't renewed")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := db.Exec(ctx, `UPDATE mailchimp_bundles SET lease_token = gen_random_uuid() WHERE id = $1`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-lctx.Done():
+		if !errors.Is(context.Cause(lctx), errLostLease) {
+			t.Errorf("cause = %v", context.Cause(lctx))
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("still running after losing the lease")
 	}
 }

@@ -1253,7 +1253,8 @@ export interface paths {
          *     `confirmMailchimpBundle` starts the import.
          *
          *     Send the file as `multipart/form-data`, in the part `file`, at most
-         *     100 MB. A CSV doesn't say which columns are Mailchimp groups, so name
+         *     25 MB; a larger account exports one audience at a time. An account
+         *     keeps at most 3 unconfirmed uploads and sends one at a time. A CSV doesn't say which columns are Mailchimp groups, so name
          *     them in `group_columns` (one part each) to bring them in as tags;
          *     `audience_name` names the audience of an export that doesn't say
          *     (default "Mailchimp"). Other columns, beyond email, names, tags,
@@ -1276,14 +1277,20 @@ export interface paths {
         };
         /**
          * Get an uploaded Mailchimp export
-         * @description The upload with its preview, worked out again against the account as
-         *     it is now. Once confirmed, it also says how far its emails have got;
-         *     `preview` is null once the file has been used and removed.
+         * @description The upload with its preview as it was worked out on upload. Once
+         *     confirmed, it says how far its emails have got, and `preview` is
+         *     null.
          */
         get: operations["getMailchimpBundle"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete an unconfirmed Mailchimp export
+         * @description Deletes an upload that hasn't been confirmed, with its file, freeing
+         *     one of the account's 3 unconfirmed uploads. A confirmed upload stays
+         *     with its import.
+         */
+        delete: operations["deleteMailchimpBundle"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2803,7 +2810,7 @@ export interface components {
         CreateMailchimpBundleRequest: {
             /**
              * Format: binary
-             * @description The export, as Mailchimp gave it, at most 100 MB.
+             * @description The export, as Mailchimp gave it, at most 25 MB.
              */
             file: string;
             /**
@@ -4974,6 +4981,21 @@ export interface components {
          *     10,000).
          */
         InvalidAdminRequest: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `too_many_uploads`: the account already has 3 unconfirmed uploads;
+         *     confirm or delete one (`deleteMailchimpBundle`), or wait for one to
+         *     expire. `upload_in_progress`: another upload for the account is still
+         *     arriving. `upload_confirmed`: a confirmed upload can't be deleted.
+         */
+        MailchimpUploadConflict: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -7643,6 +7665,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["CrossOrigin"];
+            409: components["responses"]["MailchimpUploadConflict"];
             413: components["responses"]["RequestTooLarge"];
             422: components["responses"]["MailchimpRefused"];
             429: components["responses"]["TooManyRequests"];
@@ -7674,6 +7697,35 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteMailchimpBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The uploaded export's `id`, from `createMailchimpBundle`. */
+                bundle_id: components["parameters"]["BundleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["MailchimpUploadConflict"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

@@ -2425,7 +2425,8 @@ paths:
         `confirmMailchimpBundle` starts the import.
 
         Send the file as `multipart/form-data`, in the part `file`, at most
-        100 MB. A CSV doesn't say which columns are Mailchimp groups, so name
+        25 MB; a larger account exports one audience at a time. An account
+        keeps at most 3 unconfirmed uploads and sends one at a time. A CSV doesn't say which columns are Mailchimp groups, so name
         them in `group_columns` (one part each) to bring them in as tags;
         `audience_name` names the audience of an export that doesn't say
         (default "Mailchimp"). Other columns, beyond email, names, tags,
@@ -2457,6 +2458,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/MailchimpUploadConflict"
         "413":
           $ref: "#/components/responses/RequestTooLarge"
         "422":
@@ -2470,9 +2473,9 @@ paths:
       operationId: getMailchimpBundle
       summary: Get an uploaded Mailchimp export
       description: |
-        The upload with its preview, worked out again against the account as
-        it is now. Once confirmed, it also says how far its emails have got;
-        `preview` is null once the file has been used and removed.
+        The upload with its preview as it was worked out on upload. Once
+        confirmed, it says how far its emails have got, and `preview` is
+        null.
       tags: [imports]
       security:
         - apiKey: []
@@ -2495,6 +2498,39 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: deleteMailchimpBundle
+      summary: Delete an unconfirmed Mailchimp export
+      description: |
+        Deletes an upload that hasn't been confirmed, with its file, freeing
+        one of the account's 3 unconfirmed uploads. A confirmed upload stays
+        with its import.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/BundleId"
+      responses:
+        "204":
+          description: Deleted.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/MailchimpUploadConflict"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "503":
@@ -5404,7 +5440,7 @@ components:
         file:
           type: string
           format: binary
-          description: The export, as Mailchimp gave it, at most 100 MB.
+          description: The export, as Mailchimp gave it, at most 25 MB.
         audience_name:
           type: string
           maxLength: 100
@@ -8774,6 +8810,19 @@ components:
         500 characters), `amount` (not 1 to 1,000,000), or for a tester
         grant `until` (passed, or over 366 days away) or `credits` (not 1 to
         10,000).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    MailchimpUploadConflict:
+      description: |
+        `too_many_uploads`: the account already has 3 unconfirmed uploads;
+        confirm or delete one (`deleteMailchimpBundle`), or wait for one to
+        expire. `upload_in_progress`: another upload for the account is still
+        arriving. `upload_confirmed`: a confirmed upload can't be deleted.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"
