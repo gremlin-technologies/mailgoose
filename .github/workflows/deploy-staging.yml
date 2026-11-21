@@ -11,6 +11,10 @@ name: Deploy staging
 #
 # The role trusts only this repository's main branch (infra/envs/staging), so a
 # run from any other ref or repository cannot assume it.
+#
+# While the AWS project denies the OIDC provider, staging deploys from CodeBuild
+# instead (infra/modules/codebuild-deploy, same deploy script). Turn this
+# workflow on only after turning that off, or each merge deploys twice.
 
 on:
   push:
@@ -95,4 +99,6 @@ jobs:
         env:
           IMAGE: ${{ steps.image.outputs.ref }}
           STARTED_BY: gh-${{ github.run_id }}
+          READYZ_URL: https://api.staging.mailgoose.app/readyz
+          EXPECT_COMMIT: ${{ github.sha }}
         run: scripts/ci/deploy-ecs.sh

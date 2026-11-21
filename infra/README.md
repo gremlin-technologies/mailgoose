@@ -243,17 +243,32 @@ as the API serves `/images/`; new uploads get CloudFront URLs.
 ## How deploys work
 
 - Infra changes: a person runs `terraform plan` / `apply` locally.
-- App deploys, today: a person runs `make push-ecr` (images), then, from a
-  machine signed in to AWS, the same script CI will run:
+- App deploys to staging, automatic: every push to `main` (a merged PR)
+  starts the CodeBuild project `mailgoose-staging-deploy`
+  (`infra/modules/codebuild-deploy`). It builds the ARM64 image on an ARM
+  build machine, pushes it to ECR tagged with the commit's first 12
+  characters, and runs `scripts/ci/deploy-ecs.sh`: migrations as a one-off
+  task (a failed migration stops the deploy), then both services, then a
+  check that `https://api.staging.mailgoose.app/readyz` answers with the new
+  commit. Its result shows as a check on the commit in GitHub, and its log is
+  in CloudWatch under `/codebuild/mailgoose-staging-deploy`. A build whose
+  commit is no longer `main`'s head stops before touching the services, so two
+  quick merges can't leave staging on the older one. No AWS keys exist for
+  this: CodeBuild runs as the role `mailgoose-staging-deploy-codebuild`, with
+  the same permissions the GitHub deploy role would have, and reaches GitHub
+  through the CodeConnections connection `mailgoose-github` (infra/global).
+  Pull requests never start it, including ones from forks.
+- App deploys by hand (prod later, or staging if CodeBuild is down):
+  `make push-ecr`, then, from a machine signed in to AWS:
   ```sh
   CLUSTER=mailgoose-staging \
   IMAGE=<account>.dkr.ecr.us-east-2.amazonaws.com/mailgoose:<commit> \
   API_SERVICE=mailgoose-staging-api WORKER_SERVICE=mailgoose-staging-worker \
+  READYZ_URL=https://api.staging.mailgoose.app/readyz EXPECT_COMMIT=<commit> \
   scripts/ci/deploy-ecs.sh
   ```
-  It needs the AWS CLI and `jq`. GitHub OIDC is off because the AWS project's
-  managed service control policy denies creating the OIDC provider
-  (`docs/decisions.md`, 2026-11-18).
+  It needs the AWS CLI and `jq`. `READYZ_URL` and `EXPECT_COMMIT` are
+  optional.
 - App deploys, once OIDC is allowed: `.github/workflows/deploy-staging.yml`
   assumes `mailgoose-staging-github-deploy` through OIDC (no AWS keys stored in
   GitHub), pushes the image to ECR tagged with the commit, runs
@@ -269,18 +284,97 @@ as the API serves `/images/`; new uploads get CloudFront URLs.
 
 ### Turning on CI deploys (staging)
 
-Do these in order, only after the AWS project allows the OIDC provider:
+GitHub OIDC can't be used while the AWS project's managed service control
+policy denies `iam:CreateOpenIDConnectProvider` (`docs/decisions.md`,
+2026-11-21), so staging deploys from CodeBuild. Once, from the repo root on
+`main`, on a machine signed in to the AWS project:
+
+```sh
+export AWS_REGION=us-east-2
+```
+
+1. **Create the GitHub connection.** It starts `PENDING`:
+   ```sh
+   cd infra/global
+   terraform init -backend-config="bucket=mailgoose-tfstate-<account>"
+   terraform plan -var github_connection_ready=false   # adds only aws_codestarconnections_connection.github
+   terraform apply -var github_connection_ready=false
+   terraform output github_connection_status            # "PENDING"
+   ```
+2. **Finish it in the console** (needs an owner of the GitHub organization):
+   AWS Console, Region US East (Ohio) > Developer Tools > Settings >
+   Connections > `mailgoose-github` > **Update pending connection** > **Install
+   a new app** > on GitHub, install "AWS Connector for GitHub" on
+   `gremlin-technologies` with **Only select repositories** = `mailgoose` >
+   back in AWS, **Connect**. Then:
+   ```sh
+   aws codeconnections get-connection --connection-arn "$(terraform output -raw github_connection_arn)" \
+     --query Connection.ConnectionStatus --output text   # "AVAILABLE"
+   ```
+3. **Make it CodeBuild's GitHub credential:**
+   ```sh
+   terraform apply        # adds only aws_codebuild_source_credential.github
+   cd ../..
+   ```
+4. **Create the deploy project:**
+   ```sh
+   cd infra/envs/staging
+   terraform plan   # adds only module.stack.module.codebuild_deploy[0].* (8 resources)
+   terraform apply
+   cd ../../..
+   ```
+5. **Try it** before relying on merges:
+   ```sh
+   id=$(aws codebuild start-build --project-name mailgoose-staging-deploy --query build.id --output text)
+   aws logs tail /codebuild/mailgoose-staging-deploy --follow   # Ctrl-C once it says "Deployed"
+   aws codebuild batch-get-builds --ids "$id" --query 'builds[0].buildStatus' --output text   # SUCCEEDED
+   curl -s https://api.staging.mailgoose.app/readyz
+   ```
+   After that, every merge to `main` deploys by itself.
+
+Turning it off: `enable_codebuild_deploy = false` in `infra/envs/staging` and
+apply. Deploys by hand keep working either way.
+
+### Deploy posts in Slack
+
+Each CodeBuild deploy posts its result to `#deployments` in the Gremlin
+Technologies Slack: deployed or failed, the commit, its title and author, and
+a link to the build log. A build skipped because `main` moved on posts
+nothing. The Slack incoming-webhook URL lives in the Secrets Manager secret
+`mailgoose-staging-deploy-slack-webhook` (about $0.40 a month), never in the
+repo or in Terraform state; Terraform makes the secret empty, and until it has
+a value deploys skip the post.
+
+1. **Slack** (a workspace admin): https://api.slack.com/apps > **Create New
+   App** > **From scratch** > name `mailgoose deploys`, workspace Gremlin
+   Technologies > **Create App**. In the app: **Incoming Webhooks** > turn
+   **Activate Incoming Webhooks** on > **Add New Webhook** (at the bottom) >
+   pick `#deployments` > **Allow**. Copy the webhook URL
+   (`https://hooks.slack.com/services/...`). Treat it like a password: anyone
+   with it can post to the channel.
+2. **AWS**, in a terminal yourself (not through an AI agent, so the URL stays
+   out of chats), after the staging apply in step 4 above:
+   ```sh
+   read -rsp "Slack webhook URL: " url; echo
+   aws secretsmanager put-secret-value --region us-east-2 \
+     --secret-id mailgoose-staging-deploy-slack-webhook --secret-string "$url"
+   unset url
+   ```
+   The next deploy posts. To stop the posts, delete the webhook in the Slack
+   app; to change the channel, add a new webhook and put its URL in the same way.
+
+### Turning on GitHub OIDC deploys instead (later)
+
+Only if the AWS project ever allows the OIDC provider (today that means
+activating advanced features, which can't be undone; see `docs/decisions.md`):
 
 1. `infra/global/terraform.tfvars`: set `create_github_oidc_provider = true`,
    then `terraform apply` in `infra/global`.
-2. `infra/envs/staging/main.tf`: set `enable_github_deploy = true`, then
-   `terraform plan` (it should add only the deploy role and its policy) and
-   `apply`.
+2. `infra/envs/staging/main.tf`: set `enable_github_deploy = true` and
+   `enable_codebuild_deploy = false`, then `terraform plan` and `apply`.
 3. In GitHub, add the repository **variable** (not a secret)
    `STAGING_DEPLOY_ROLE_ARN` with `terraform output github_deploy_role_arn`.
-   Until it is set, the deploy job is skipped.
-4. Raise `api_desired_count` and `worker_desired_count` in staging once the
-   first deployed image is healthy.
+   Until it is set, `.github/workflows/deploy-staging.yml` skips itself.
 
 ## Bringing up staging for testing
 

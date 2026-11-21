@@ -43,6 +43,15 @@ output "github_deploy_role_arn" {
   value = one(module.deploy_role[*].role_arn)
 }
 
+output "codebuild_deploy_project" {
+  value = one(module.codebuild_deploy[*].project_name)
+}
+
+output "deploy_slack_webhook_secret" {
+  description = "Put the #deployments incoming-webhook URL in this secret (infra/README.md)."
+  value       = one(module.codebuild_deploy[*].slack_webhook_secret_name)
+}
+
 output "images_bucket" {
   value = module.images.bucket_name
 }

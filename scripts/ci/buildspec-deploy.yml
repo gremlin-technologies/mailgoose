@@ -1,0 +1,13 @@
+# CodeBuild buildspec for deploys on push (infra/modules/codebuild-deploy).
+# Everything lives in scripts/ci/codebuild-deploy.sh, so the steps can be read
+# and run like any other script. The project sets ECR_REPO, CLUSTER,
+# API_SERVICE, WORKER_SERVICE, READYZ_URL, GITHUB_REPOSITORY and DEPLOY_BRANCH.
+version: 0.2
+
+env:
+  shell: bash
+
+phases:
+  build:
+    commands:
+      - scripts/ci/codebuild-deploy.sh

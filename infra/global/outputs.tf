@@ -14,3 +14,12 @@ output "github_oidc_provider_arn" {
 output "ecr_repository_urls" {
   value = { for k, r in aws_ecr_repository.this : k => r.repository_url }
 }
+
+output "github_connection_arn" {
+  description = "Pass to envs/*/ as github_connection_arn to turn on CodeBuild deploys."
+  value       = one(aws_codestarconnections_connection.github[*].arn)
+}
+
+output "github_connection_status" {
+  value = one(aws_codestarconnections_connection.github[*].connection_status)
+}

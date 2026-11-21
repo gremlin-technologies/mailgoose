@@ -31,6 +31,18 @@ variable "create_github_oidc_provider" {
   default     = true
 }
 
+variable "create_github_connection" {
+  description = "Create the CodeConnections connection to GitHub that CodeBuild deploys use. It starts PENDING until finished in the console."
+  type        = bool
+  default     = false
+}
+
+variable "github_connection_ready" {
+  description = "Set true once the GitHub connection shows Available, to make it CodeBuild's GitHub credential."
+  type        = bool
+  default     = false
+}
+
 variable "ecr_repositories" {
   description = "Container image repositories. One Go image serves both the API and the workers (different start commands)."
   type        = list(string)
