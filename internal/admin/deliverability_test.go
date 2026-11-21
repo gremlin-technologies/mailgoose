@@ -98,3 +98,22 @@ func TestDeliverabilityThroughput(t *testing.T) {
 		t.Errorf("throughput %+v", tp)
 	}
 }
+
+// TestStorage lists the tables' sizes, campaign_recipients and send_events
+// first, 10 by default (MG-95).
+func TestStorage(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	rep, err := h.svc.Storage(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rep.Tables) != sending.DefaultStorageTables || rep.Tables[0].Name != "campaign_recipients" ||
+		rep.Tables[1].Name != "send_events" || rep.TotalTables <= len(rep.Tables) ||
+		!rep.CompareDay.Equal(time.Date(2026, 11, 11, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("report = %+v", rep)
+	}
+	if rep, err = h.svc.Storage(ctx, 2); err != nil || len(rep.Tables) != 2 {
+		t.Fatalf("limit 2 = %+v, %v", rep, err)
+	}
+}

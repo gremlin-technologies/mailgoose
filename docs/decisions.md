@@ -4,6 +4,41 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Table sizes in the CLI and the daily digest (MG-95; details are reversible defaults)
+
+Every copy sent is one `campaign_recipients` row and one or two
+`send_events` rows, kept 12 months, so those two tables are the first
+growth cost (RDS storage, then the 30-day account queries), and nothing
+showed how big they were. The details below were picked while building it
+and are easy to change.
+
+- **Where.** `mailgoose admin storage` (`GET /v1/admin/storage`, admins
+  only): `campaign_recipients` and `send_events` first, then the largest
+  other tables by size, 10 in all by default (`--limit` 1 to 50). `total`
+  and `total_bytes` count every table in the schema.
+- **What.** Size is `pg_total_relation_size` (the table with its indexes
+  and TOAST). Rows are the planner's estimate, `pg_class.reltuples`, shown
+  as an estimate; it's null ("not analysed") for a table never analysed
+  (reltuples -1). No exact `count(*)`: on these tables it would read
+  millions of rows.
+- **History.** A new table, `table_size_snapshots` (migration 00045), gets
+  every table's size and row estimate once a UTC day, written by the daily
+  digest job in the transaction that claims the day, quiet day or not.
+  Rows older than 8 weeks are deleted by the same job. So history exists
+  only where the digest job runs (`OPS_ALERT_EMAIL` set).
+- **The change over 7 days** is today's size less the size recorded on the
+  UTC day exactly 7 days before. With no row from that day (the first week,
+  or a day the job didn't run), the command shows "-", the API null, and
+  the digest says "no size from 7 days ago to compare" rather than a
+  number from another day.
+- **The digest line** is the last line of the digest, one line for both
+  tables: "Storage: campaign_recipients 1.2 GB (+80 MB in 7 days),
+  send_events 640 MB (...)". It doesn't make a quiet day's digest go.
+- **Not here:** the NAT gateway's per-GB cost on SES calls in prod and the
+  SES interface endpoint as the switch past a few million sends a month
+  belong in `infra/README.md`'s cost notes, which the owner merges, so they
+  go with MG-93 or MG-99.
+
 ## 2026-11-21: Send throughput is measured per batch; the send pool waits for staging's numbers (MG-91 part 1; details are reversible defaults)
 
 A worker takes one send message at a time (`MaxMessages: 1`) and

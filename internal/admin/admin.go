@@ -732,6 +732,21 @@ func (s *Service) Deliverability(ctx context.Context, limit int) (*Deliverabilit
 	return &Deliverability{Accounts: all[:min(limit, len(all))], Total: len(all), Warning: w, Throughput: tp}, nil
 }
 
+// Storage is the database's table sizes (MG-95): campaign_recipients and
+// send_events first, then the largest other tables, at most limit (1 to
+// sending.MaxStorageTables; 0 is sending.DefaultStorageTables) of them,
+// each with its size 7 days before where the digest job recorded one.
+func (s *Service) Storage(ctx context.Context, limit int) (*sending.StorageReport, error) {
+	if limit == 0 {
+		limit = sending.DefaultStorageTables
+	}
+	rep, err := sending.StorageSizes(ctx, s.DB, s.now(), limit)
+	if err != nil {
+		return nil, err
+	}
+	return &rep, nil
+}
+
 // AllowFullSending takes an account out of test mode (MG-80): it can send
 // to its whole audience. It doesn't approve a sign-up review; a waiting
 // account still needs that to launch to anyone but its test addresses.

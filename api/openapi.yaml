@@ -4237,6 +4237,61 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/admin/storage:
+    get:
+      operationId: getStorageReport
+      summary: Table sizes (admin)
+      description: |
+        mailgoose staff only (MG-95): the database's table sizes, for
+        watching storage grow. Every copy sent is one `campaign_recipients`
+        row and one or two `send_events` rows, kept 12 months, so those two
+        come first; then the largest other tables. At most `limit` tables;
+        `total` counts every table and `total_bytes` adds up all their
+        sizes, and there's no next page.
+
+        `total_bytes` is `pg_total_relation_size`: the table with its
+        indexes and TOAST. `row_estimate` is the planner's estimate
+        (`pg_class.reltuples`), as fresh as the table's last ANALYZE, and
+        null for a table never analysed; it isn't an exact count. The
+        change is against the sizes the daily digest job recorded on
+        `compared_with_day`, 7 days before today (UTC); it's null where
+        there's no record from that day (the job runs only with an ops
+        address set, and keeps 8 weeks).
+      tags: [admin]
+      x-required-scope: full
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: How many tables to list, `campaign_recipients` and `send_events` included.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        "200":
+          description: The table sizes.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminStorageReport"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/admin/accounts/{account_id}/allow-full-sending:
     post:
       operationId: allowFullSending
@@ -7693,6 +7748,54 @@ components:
           $ref: "#/components/schemas/AdminEarlyWarning"
         send_throughput:
           $ref: "#/components/schemas/AdminSendThroughput"
+    AdminTableSize:
+      type: object
+      required: [table, row_estimate, total_bytes, total_bytes_7_days_ago, change_7_days_bytes]
+      properties:
+        table:
+          type: string
+        row_estimate:
+          type: [integer, "null"]
+          format: int64
+          description: |
+            The planner's estimate of its rows (`pg_class.reltuples`), not an
+            exact count; null when the table has never been analysed.
+        total_bytes:
+          type: integer
+          format: int64
+          description: Its size with indexes and TOAST (`pg_total_relation_size`).
+        total_bytes_7_days_ago:
+          type: [integer, "null"]
+          format: int64
+          description: Its size as recorded on `compared_with_day`; null with no record from that day.
+        change_7_days_bytes:
+          type: [integer, "null"]
+          format: int64
+          description: |
+            `total_bytes` less `total_bytes_7_days_ago` (negative when it
+            shrank); null with no record from `compared_with_day`.
+    AdminStorageReport:
+      type: object
+      required: [data, next_cursor, total, total_bytes, compared_with_day]
+      properties:
+        data:
+          type: array
+          description: "`campaign_recipients` and `send_events` first, then the largest other tables."
+          items:
+            $ref: "#/components/schemas/AdminTableSize"
+        next_cursor:
+          type: "null"
+        total:
+          type: integer
+          description: Every table in the database, including those over `limit`.
+        total_bytes:
+          type: integer
+          format: int64
+          description: Every table's `total_bytes` added up.
+        compared_with_day:
+          type: string
+          format: date
+          description: The UTC day, 7 days before today, whose recorded sizes the change is against.
     AdminHeldImport:
       type: object
       required: [id, file_name, total_rows, hold_reason, status, list_source, list_source_detail, checks, created_at]

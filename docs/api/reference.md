@@ -2856,6 +2856,45 @@ Responses:
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
+<a id="op-getstoragereport"></a>
+
+### Table sizes (admin)
+
+`GET /v1/admin/storage`
+
+- Operation: `getStorageReport`
+- CLI: `mailgoose admin storage`
+- Needs a `full`-scope key
+
+mailgoose staff only (MG-95): the database's table sizes, for
+watching storage grow. Every copy sent is one `campaign_recipients`
+row and one or two `send_events` rows, kept 12 months, so those two
+come first; then the largest other tables. At most `limit` tables;
+`total` counts every table and `total_bytes` adds up all their
+sizes, and there's no next page.
+
+`total_bytes` is `pg_total_relation_size`: the table with its
+indexes and TOAST. `row_estimate` is the planner's estimate
+(`pg_class.reltuples`), as fresh as the table's last ANALYZE, and
+null for a table never analysed; it isn't an exact count. The
+change is against the sizes the daily digest job recorded on
+`compared_with_day`, 7 days before today (UTC); it's null where
+there's no record from that day (the job runs only with an ops
+address set, and keeps 8 weeks).
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `limit` | query | integer |  | How many tables to list, `campaign_recipients` and `send_events` included. |
+
+Responses:
+
+- `200`: The table sizes. [AdminStorageReport](#schema-adminstoragereport)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
 <a id="op-allowfullsending"></a>
 
 ### Allow full sending (admin)
@@ -5275,6 +5314,30 @@ null when no time was spent sending.
 | `total` | integer | yes | Every account in the report, including those over `limit`. |
 | `early_warning` | [AdminEarlyWarning](#schema-adminearlywarning) | yes |  |
 | `send_throughput` | [AdminSendThroughput](#schema-adminsendthroughput) | yes |  |
+
+<a id="schema-admintablesize"></a>
+
+### AdminTableSize
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `table` | string | yes |  |
+| `row_estimate` | integer or null | yes | The planner's estimate of its rows (`pg_class.reltuples`), not an exact count; null when the table has never been analysed. |
+| `total_bytes` | integer | yes | Its size with indexes and TOAST (`pg_total_relation_size`). |
+| `total_bytes_7_days_ago` | integer or null | yes | Its size as recorded on `compared_with_day`; null with no record from that day. |
+| `change_7_days_bytes` | integer or null | yes | `total_bytes` less `total_bytes_7_days_ago` (negative when it shrank); null with no record from `compared_with_day`. |
+
+<a id="schema-adminstoragereport"></a>
+
+### AdminStorageReport
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `data` | array of [AdminTableSize](#schema-admintablesize) | yes | `campaign_recipients` and `send_events` first, then the largest other tables. |
+| `next_cursor` | null | yes |  |
+| `total` | integer | yes | Every table in the database, including those over `limit`. |
+| `total_bytes` | integer | yes | Every table's `total_bytes` added up. |
+| `compared_with_day` | string (date) | yes | The UTC day, 7 days before today, whose recorded sizes the change is against. |
 
 <a id="schema-adminheldimport"></a>
 

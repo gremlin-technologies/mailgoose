@@ -973,7 +973,22 @@ two complaints, or 2% hard bounces by default), on 500 or more copies, as for
 one account. A row in `ops_digests` claims each
 day, so the digest goes at most once a day however many worker tasks run or
 restart; one started after the hour sends that day's late. With no
-`OPS_ALERT_EMAIL` the job doesn't run.
+`OPS_ALERT_EMAIL` the job doesn't run. Its last line gives the sizes of
+`campaign_recipients` and `send_events` and how much each grew over 7 days
+(see Table sizes below).
+
+**Table sizes.** `mailgoose admin storage` (`GET /v1/admin/storage`) lists
+the database's tables: `campaign_recipients` and `send_events` first (every
+copy sent is one row in the first and one or two in the second, kept 12
+months, so they're the first storage cost), then the largest others. Each
+has its size with indexes and TOAST (`pg_total_relation_size`), the
+planner's row estimate (`pg_class.reltuples`; an estimate as fresh as the
+last ANALYZE, and none for a table never analysed) and its change over 7
+days. The change is against `table_size_snapshots`, where the digest job
+writes every table's size once a UTC day when it claims the day, quiet day
+or not, and keeps 8 weeks; with no row from exactly 7 days before, the
+command and the digest say so. `--limit` (1 to 50, default 10) and
+`--json` (MG-95).
 
 **Per-customer deliverability.** `mailgoose admin deliverability` (`GET
 /v1/admin/deliverability`) lists every account that sent campaign email in
@@ -1057,6 +1072,7 @@ an admin; API keys are refused, even an admin's. Every action takes a
 | `mailgoose admin tester grant <id> [--until] [--credits] [--reason]` | Makes an approved account a [tester account](#account-health-and-send-limits), or extends one, keeping its credits used. |
 | `mailgoose admin tester revoke <id> [--reason]` | Ends a tester account and puts it in test mode. |
 | `mailgoose admin deliverability [--limit]` | Each account's copies sent, hard bounce and complaint rates over 24 hours and 7 days, worst first, with whether it's paused, suspended, throttled or in test mode (see [Per-customer deliverability](#account-health-and-send-limits)). |
+| `mailgoose admin storage [--limit]` | The database's largest tables, `campaign_recipients` and `send_events` first, with row estimates, sizes and their change over 7 days (see [Table sizes](#account-health-and-send-limits)). |
 | `mailgoose admin stop-campaign <id> --reason --yes` | The kill switch: nobody else gets it, unused credits come back, it ends `cancelled`. |
 | `mailgoose admin approve-import <id> --reason` | Lets a held import's contacts be mailed. |
 | `mailgoose admin grant-credits <id> --amount --reason` | Adds up to 1,000,000 credits, lasting 24 months. |

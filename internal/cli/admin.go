@@ -135,8 +135,8 @@ func (a *App) adminCmd() *cobra.Command {
 		Long: `Tools for mailgoose staff: find an account, pause or unpause its
 sending, suspend or unsuspend it, review new sign-ups, switch it between
 test mode and full sending, make it a tester account, see each account's
-bounce and complaint rates, stop a campaign in flight, approve a held
-import and grant credits.
+bounce and complaint rates and the database's table sizes, stop a campaign
+in flight, approve a held import and grant credits.
 They need you signed in with ` + "`mailgoose login`" + ` as an admin; API keys
 are refused. Every action takes --reason and is logged with who did it
 (` + "`mailgoose admin log`" + `).`,
@@ -144,7 +144,7 @@ are refused. Every action takes --reason and is logged with who did it
 	cmd.AddCommand(a.adminFindCmd(), a.adminAccountCmd(), a.adminPauseCmd(true), a.adminPauseCmd(false),
 		a.adminSuspendCmd(true), a.adminSuspendCmd(false), a.adminSignupsCmd(), a.adminReviewCmd(true), a.adminReviewCmd(false),
 		a.adminTestModeCmd(), a.adminSendingModeCmd(true), a.adminSendingModeCmd(false), a.adminTesterCmd(), a.adminDeliverabilityCmd(),
-		a.adminStopCmd(), a.adminApproveImportCmd(), a.adminGrantCmd(), a.adminLogCmd())
+		a.adminStorageCmd(), a.adminStopCmd(), a.adminApproveImportCmd(), a.adminGrantCmd(), a.adminLogCmd())
 	return cmd
 }
 
@@ -720,6 +720,117 @@ configured SEND_RATE_PER_SECOND. SES mailbox simulator copies count there
 	})
 	c.Flags().IntVar(&limit, "limit", 0, "most accounts to show (1 to 100, default 50)")
 	return c
+}
+
+// tableSize is the API's AdminTableSize.
+type tableSize struct {
+	Table              string `json:"table"`
+	RowEstimate        *int64 `json:"row_estimate"`
+	TotalBytes         int64  `json:"total_bytes"`
+	TotalBytes7DaysAgo *int64 `json:"total_bytes_7_days_ago"`
+	Change7DaysBytes   *int64 `json:"change_7_days_bytes"`
+}
+
+// adminStorageCmd is `mailgoose admin storage` (MG-95).
+func (a *App) adminStorageCmd() *cobra.Command {
+	var limit int
+	c := calls("getStorageReport", &cobra.Command{
+		Use:   "storage",
+		Short: "List the database's largest tables and how much they grew",
+		Long: `Lists the database's table sizes: campaign_recipients and send_events
+first (every copy sent adds a row to the first and one or two to the
+second, kept 12 months), then the largest other tables. SIZE includes
+indexes and TOAST. ROWS (EST.) is the planner's estimate from the last
+ANALYZE, not an exact count ("not analysed" when there's none yet).
+7-DAY CHANGE is against the sizes the daily digest job recorded 7 days
+ago, "-" where it has none. The daily abuse digest gives the first two.`,
+		Example: `  mailgoose admin storage
+  mailgoose admin storage --limit 20 --json`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			path := "/v1/admin/storage"
+			if limit > 0 {
+				path += "?limit=" + strconv.Itoa(limit)
+			}
+			var rep struct {
+				Data            []tableSize `json:"data"`
+				NextCursor      *string     `json:"next_cursor"`
+				Total           int         `json:"total"`
+				TotalBytes      int64       `json:"total_bytes"`
+				ComparedWithDay string      `json:"compared_with_day"`
+			}
+			if err := a.call(cmd.Context(), http.MethodGet, path, nil, &rep, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(rep)
+				return nil
+			}
+			if len(rep.Data) == 0 {
+				fmt.Fprintln(a.Stdout, "No tables found.")
+				return nil
+			}
+			tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
+			fmt.Fprintln(tw, "TABLE\tROWS (EST.)\tSIZE\t7-DAY CHANGE")
+			for _, t := range rep.Data {
+				rows := "not analysed"
+				if t.RowEstimate != nil {
+					rows = thousands(int(*t.RowEstimate))
+				}
+				change := "-"
+				if c := t.Change7DaysBytes; c != nil {
+					switch {
+					case *c == 0:
+						change = "no change"
+					case *c > 0:
+						change = "+" + bytesText(*c)
+					default:
+						change = bytesText(*c)
+					}
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", t.Table, rows, bytesText(t.TotalBytes), change)
+			}
+			if err := tw.Flush(); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.Stdout, "\nRow counts are estimates. 7-day change is against %s (UTC).\n", rep.ComparedWithDay)
+			if rep.Total > len(rep.Data) {
+				fmt.Fprintf(a.Stdout, "Showing %d of %d tables, %s in all; --limit shows up to 50.\n", len(rep.Data), rep.Total, bytesText(rep.TotalBytes))
+			} else {
+				fmt.Fprintf(a.Stdout, "%d tables, %s in all.\n", rep.Total, bytesText(rep.TotalBytes))
+			}
+			return nil
+		},
+	})
+	c.Flags().IntVar(&limit, "limit", 0, "most tables to show (1 to 50, default 10)")
+	return c
+}
+
+// bytesText writes n bytes as Postgres's pg_size_pretty does, in powers of
+// 1,024, with a decimal under 10: "512 bytes", "16 KB", "1.2 GB".
+func bytesText(n int64) string {
+	if n < 0 {
+		return "-" + bytesText(-n)
+	}
+	if n < 1024 {
+		if n == 1 {
+			return "1 byte"
+		}
+		return fmt.Sprintf("%d bytes", n)
+	}
+	v := float64(n)
+	unit := ""
+	for _, u := range []string{"KB", "MB", "GB", "TB", "PB"} {
+		v /= 1024
+		unit = u
+		if v < 1024 {
+			break
+		}
+	}
+	if v < 10 {
+		return strings.TrimSuffix(fmt.Sprintf("%.1f", v), ".0") + " " + unit
+	}
+	return fmt.Sprintf("%.0f %s", v, unit)
 }
 
 // adminSendingModeCmd is `mailgoose admin allow-full-sending` and

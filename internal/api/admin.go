@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gremlin-technologies/mailgoose/internal/admin"
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
@@ -258,6 +259,42 @@ func (s *Server) GetDeliverabilityReport(w http.ResponseWriter, r *http.Request,
 			"min_copies":          sending.HealthMinRecipients,
 		},
 		"send_throughput": rep.Throughput,
+	})
+}
+
+// GetStorageReport is GET /v1/admin/storage (MG-95).
+func (s *Server) GetStorageReport(w http.ResponseWriter, r *http.Request, params apigen.GetStorageReportParams) {
+	if s.requireAdmin(w, r) == nil {
+		return
+	}
+	limit := sending.DefaultStorageTables
+	if params.Limit != nil {
+		if limit = *params.Limit; limit < 1 || limit > sending.MaxStorageTables {
+			WriteError(w, BadRequest("invalid_limit", "limit must be a whole number from 1 to "+strconv.Itoa(sending.MaxStorageTables)+"."))
+			return
+		}
+	}
+	rep, err := s.Admin.Storage(r.Context(), limit)
+	if err != nil {
+		s.adminError(w, r, err)
+		return
+	}
+	tables := make([]map[string]any, 0, len(rep.Tables))
+	for _, t := range rep.Tables {
+		tables = append(tables, map[string]any{
+			"table":                  t.Name,
+			"row_estimate":           t.RowEstimate,
+			"total_bytes":            t.TotalBytes,
+			"total_bytes_7_days_ago": t.BytesThen,
+			"change_7_days_bytes":    t.Change(),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"data":              tables,
+		"next_cursor":       nil,
+		"total":             rep.TotalTables,
+		"total_bytes":       rep.TotalBytes,
+		"compared_with_day": rep.CompareDay.Format(time.DateOnly),
 	})
 }
 
