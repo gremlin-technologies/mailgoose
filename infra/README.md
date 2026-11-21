@@ -301,16 +301,24 @@ export AWS_REGION=us-east-2
    terraform apply -var github_connection_ready=false
    terraform output github_connection_status            # "PENDING"
    ```
-2. **Finish it in the console** (needs an owner of the GitHub organization):
+2. **Finish it in the console**, signed in to GitHub as `gremlin-technologies`
+   (a personal GitHub account, not an organization, so its owner does this):
    AWS Console, Region US East (Ohio) > Developer Tools > Settings >
-   Connections > `mailgoose-github` > **Update pending connection** > **Install
-   a new app** > on GitHub, install "AWS Connector for GitHub" on
-   `gremlin-technologies` with **Only select repositories** = `mailgoose` >
-   back in AWS, **Connect**. Then:
+   Connections > `mailgoose-github` > **Update pending connection**. At the
+   **App installation** step choose **Install a new app**; never leave the box
+   blank, which makes a "GitHub user" connection with no app installed and
+   CodeBuild can't create its webhook. On GitHub, install "AWS Connector for
+   GitHub" on `gremlin-technologies` with **Only select repositories** =
+   `mailgoose` > **Install** > back in AWS, pick that installation >
+   **Connect**. Then:
    ```sh
    aws codeconnections get-connection --connection-arn "$(terraform output -raw github_connection_arn)" \
      --query Connection.ConnectionStatus --output text   # "AVAILABLE"
    ```
+   Check on GitHub too: the repo's **Settings > GitHub Apps** must list AWS
+   Connector for GitHub. If it doesn't, the connection can't be fixed in
+   place: recreate it (`terraform apply -replace='aws_codestarconnections_connection.github[0]' -var github_connection_ready=false`)
+   and do this step again.
 3. **Make it CodeBuild's GitHub credential:**
    ```sh
    terraform apply        # adds only aws_codebuild_source_credential.github
@@ -323,6 +331,10 @@ export AWS_REGION=us-east-2
    terraform apply
    cd ../../..
    ```
+   If the apply fails with `OAuthProviderException: User is not authorized to
+   access connection` right after it changed the role's `build` policy, wait a
+   minute and apply again: the new IAM permissions hadn't reached CodeBuild
+   yet (seen Nov 21; the retry worked with no changes).
 5. **Try it** before relying on merges:
    ```sh
    id=$(aws codebuild start-build --project-name mailgoose-staging-deploy --query build.id --output text)

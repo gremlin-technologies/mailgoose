@@ -4,6 +4,36 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Staging auto-deploy is live; how the GitHub connection is set up (confirmed on staging)
+
+The owner set up the CodeBuild deploy from the runbook on Nov 21. Every merge
+to `main` now deploys staging and posts to `#deployments` (first build
+SUCCEEDED in about 6 minutes; `/readyz` answered with the merged commit).
+
+- **What went wrong first:** CodeBuild couldn't create its GitHub webhook
+  (`OAuthProviderException`). The connection had been finished as a "GitHub
+  user" connection with the App installation box left blank, so the AWS
+  Connector for GitHub app was never installed and couldn't see the repo.
+  Fixed by recreating the connection and choosing **Install a new app** at
+  that step. The runbook (`infra/README.md`) now says so.
+- **The repo stays where it is:** `gremlin-technologies` is a personal GitHub
+  account, not an organization, and that works. The move to a
+  `gremlin-technologies-dev` organization, prepared for this, isn't needed and
+  was dropped; it can come back if the owner wants an organization for other
+  reasons.
+- **IAM timing:** an apply that changes the CodeBuild role's policy can fail
+  right after on the project update with "User is not authorized to access
+  connection". Applying again a minute later worked with no changes.
+- **Open, watch for it:** the role's policy names the connection only by its
+  old-style ARN (`arn:aws:codestar-connections:...`). Real builds work, but
+  IAM's policy simulator reported an explicit deny on the connection actions,
+  which contradicts them, so the simulator isn't a reliable check here. If a
+  later build fails with an authorization error naming the new-style ARN
+  (`arn:aws:codeconnections:...`), add that form to the role's
+  `GitHubConnection` statement in a small PR.
+- The connection `mailgoose-deployment`, made by hand while testing, is
+  unused. Deleting it is the owner's call.
+
 ## 2026-11-21: Light by default, dark mode a switch in Settings (owner decision; storage is a reversible default)
 
 The owner decided: "light-only by default with a 'dark mode' toggle in

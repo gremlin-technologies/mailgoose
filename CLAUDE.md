@@ -78,6 +78,11 @@ scope; they only show where an idea came from.
   `docs/brand/wordmark.png` (head and word; light-text version for dark mode)
   in the app's side menu and the site header, `docs/brand/goose.png` wherever
   the goose stands alone, the head as favicon. See `docs/brand.md`.
+- Deploys (Nov 21): every merge to main deploys staging from a CodeBuild
+  project in the AWS account (GitHub OIDC is blocked by AWS's plan policy) and
+  posts the result to Slack `#deployments`. The repo stays on the personal
+  GitHub account gremlin-technologies; its GitHub connection must be made with
+  "Install a new app". See `infra/README.md`.
 - Tester accounts (Nov 21, MG-86): admins make invited testers tester
   accounts (`mailgoose admin tester grant|revoke`): full sending within 500
   credits for life, 500 contacts, 100 copies a day and a stricter pause,
@@ -109,9 +114,10 @@ scope; they only show where an idea came from.
   to the author with review comments. PRs that touch `infra/` or
   `.github/workflows/` are reviewed the same way but left for the owner to merge
   (the owner's call, Nov 18).
-- **AWS keys stay local.** No agent in the cloud holds AWS credentials. Later,
-  deploys run from GitHub Actions through the OIDC deploy role, so no agent
-  holds AWS keys at all.
+- **AWS keys stay local.** No agent in the cloud holds AWS credentials.
+  Staging deploys run from CodeBuild inside the AWS account on every merge to
+  `main` (GitHub OIDC is blocked by AWS's plan policy), so no agent holds AWS
+  keys at all.
 - **No secrets in the repo.** No keys, tokens, or `.tfvars` with secrets.
 - **No personal names (since Nov 18).** Don't name the owner anywhere in the
   repo: docs, code, commit messages, PRs or issues. Write "Gremlin
