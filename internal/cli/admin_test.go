@@ -144,3 +144,15 @@ func TestAdminNeedsReason(t *testing.T) {
 		}
 	}
 }
+
+// TestAdminHelpPointsToAccountStates checks `mailgoose admin --help` names
+// the page on account states (MG-96).
+func TestAdminHelpPointsToAccountStates(t *testing.T) {
+	h := newHarness(t, "")
+	if code := h.run("admin", "--help"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if !strings.Contains(h.out.String(), "docs/account-states.md") {
+		t.Errorf("admin --help doesn't point to docs/account-states.md:\n%s", h.out)
+	}
+}

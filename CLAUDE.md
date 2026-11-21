@@ -24,6 +24,10 @@ already use.
   own public repository, gremlin-technologies/mailgoose-public (moved Nov 21).
 - `docs/releasing.md`: how the CLI is released (GoReleaser, to GitHub Releases
   on mailgoose-public, Homebrew, the AUR and .deb/.rpm).
+- `docs/account-states.md`: the states that hold back an account's sending
+  (sign-up review, test mode, tester accounts, slices, throttles, pauses,
+  suspensions), who sets and clears each, the admin commands, and the rules
+  when two apply at once. Read it before changing any of them.
 
 The PRD, pricing and MVP requirements files are snapshots of Claude Docs; the
 Claude Doc is the live version. In the PRD and pricing files, lines marked

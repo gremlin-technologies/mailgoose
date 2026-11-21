@@ -186,7 +186,10 @@ card and one complaints pause in a month suspended the account.
   `internal/sending/suspend.go`): complaints and bounces, an account-level
   health pause, and an unsafe link at launch. The count leaves out
   `auto_pause` rows whose details `code` is `subscription_past_due`, so any
-  new kind of sending pause counts without a change here.
+  new kind of sending pause counts without a change here. (Corrected
+  2026-11-21, MG-96: an unsafe-link pause counts as an earlier pause, but it
+  doesn't call `suspendOnRepeat` itself, so it never suspends on its own;
+  whether it should is the open phishing-link question.)
 - **Nothing is rewritten.** Existing rows stay as they are and are read the
   new way. The past-due pause is still logged as `auto_pause`, and the daily
   digest, `mailgoose admin log` and `mailgoose admin account` still show it.
@@ -344,7 +347,8 @@ to the same 10,000 a day as accounts with a verified domain.
   with no verified domain of its own stays at the new-account daily limit
   (`NEW_ACCOUNT_DAILY_SEND_LIMIT`, 1,000) and doesn't ramp. Its send limit
   says why, "Add your own domain to send more", with `needs_domain: true` in
-  `GET /v1/account` (and the admin account view), a link to Domains in the
+  `GET /v1/account` (and in `mailgoose admin account --json`; corrected
+  2026-11-21, MG-96: the plain admin view doesn't show it), a link to Domains in the
   web app's Settings, and `mailgoose domain add <your-domain>` in
   `mailgoose account get`. With the variable unset, nothing changes.
 - **Details picked (reversible defaults):**
@@ -600,7 +604,9 @@ while building it and are easy to change.
   start, so credits used stay used; a grant after a revoke starts afresh. At
   its end the account can't launch or test, and copies still queued wait, as
   for a paused account, rather than being skipped; an admin extends or
-  revokes it.
+  revokes it. (Corrected 2026-11-21, MG-96: the dispatcher holds them, but
+  batches already on the send queue still go out, and the admin views say
+  "Sending: on"; filed as MG-107, #225.)
 - **Credits.** 500 for its life by default (`--credits` 1 to 10,000),
   counted from its start: campaign copies queued, sending or sent, and test
   sends. A skipped or failed copy gives its credit back. They're counted
