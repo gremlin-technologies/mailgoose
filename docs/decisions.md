@@ -22,9 +22,9 @@ redesigned app. The copy is unchanged; this is a styling pass.
   head and word) replaces the text wordmark in the app's side menu and the
   site header, with a light-text version in dark mode. The whole goose
   replaces the old mascot on the site's hero, 404 page and social card. The
-  head, cropped square, is the favicon for both. Files in `docs/brand/`. This
-  covers the logo part of MG-84. The sign-in and policy pages in the app keep
-  the text wordmark for now.
+  head, cropped square, is the favicon for both. Files in `docs/brand/`. The
+  sign-in, CLI approval and policy pages in the app use it too (the owner's
+  yes). This covers the logo part of MG-84.
 - **Small markup changes:** a skip link, Lucide icons on the feature cards
   (the ones the app's menu uses), the CLI sample in a terminal card, and the
   goose on the 404 page (as `docs/brand.md` suggests).
