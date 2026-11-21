@@ -10,6 +10,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
+	"github.com/gremlin-technologies/mailgoose/internal/tester"
 )
 
 // GetAccount is GET /v1/account.
@@ -28,6 +29,7 @@ func (s *Server) GetAccount(w http.ResponseWriter, r *http.Request) {
 // writeAccount writes the account's settings with its send limit.
 func (s *Server) writeAccount(w http.ResponseWriter, r *http.Request, st *auth.Settings) {
 	var limit sending.SendLimit
+	var ts *tester.Status
 	if s.Sending != nil {
 		now := time.Now()
 		if s.Now != nil {
@@ -38,8 +40,12 @@ func (s *Server) writeAccount(w http.ResponseWriter, r *http.Request, st *auth.S
 			WriteError(w, err)
 			return
 		}
+		if ts, err = tester.Load(r.Context(), s.Sending.DB, st.ID, now, false); err != nil {
+			WriteError(w, err)
+			return
+		}
 	}
-	writeJSON(w, http.StatusOK, accountJSON(st, limit))
+	writeJSON(w, http.StatusOK, accountJSON(st, limit, ts))
 }
 
 // nullable is a JSON field that tells "absent" (Set false) from null (Set
@@ -119,7 +125,12 @@ func (s *Server) accountError(w http.ResponseWriter, r *http.Request, err error)
 	return s.authError(w, r, err)
 }
 
-func accountJSON(st *auth.Settings, limit sending.SendLimit) apigen.AccountSettings {
+func accountJSON(st *auth.Settings, limit sending.SendLimit, ts *tester.Status) apigen.AccountSettings {
+	var tj *apigen.TesterStatus
+	if ts != nil {
+		tj = &apigen.TesterStatus{StartedAt: ts.StartedAt, Until: ts.Until, Credits: ts.Credits, Used: ts.Used,
+			Left: ts.Left, Ended: ts.Ended}
+	}
 	return apigen.AccountSettings{
 		Id:             st.ID,
 		Name:           st.Name,
@@ -133,6 +144,7 @@ func accountJSON(st *auth.Settings, limit sending.SendLimit) apigen.AccountSetti
 			LoweredUntil: limit.LoweredUntil},
 		Terms:       termsJSON(st),
 		SendingMode: apigen.SendingMode(st.SendingMode),
+		Tester:      tj,
 		CreatedAt:   st.CreatedAt.UTC(),
 	}
 }

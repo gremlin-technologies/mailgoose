@@ -9,21 +9,21 @@ import (
 )
 
 // deliverabilityReport is a report as the API gives it: one account over
-// the early warning (paused, throttled and in test mode), one clean, and
-// one with complaints on copies sent before the 7 days.
+// the early warning (paused, throttled and in test mode), one clean tester
+// account (MG-86), and one with complaints on copies sent before the 7 days.
 const deliverabilityReport = `{"data":[
 {"account_id":"` + testAccountID + `","account_name":"Loud Lists","owner_email":"loud@example.com","sending_mode":"test",
- "sending_paused_at":"2026-11-20T10:00:00Z","suspended_at":null,"throttled_until":"2026-11-25T10:00:00Z",
+ "sending_paused_at":"2026-11-20T10:00:00Z","suspended_at":null,"throttled_until":"2026-11-25T10:00:00Z","tester_until":null,
  "last_24_hours":{"sent":1000,"hard_bounces":3,"complaints":2,"hard_bounce_percent":0.3,"complaint_percent":0.2},
  "last_7_days":{"sent":12500,"hard_bounces":30,"complaints":9,"hard_bounce_percent":0.24,"complaint_percent":0.072},
  "over_warning":true},
 {"account_id":"acc-2","account_name":"Clean Co","owner_email":null,"sending_mode":"full",
- "sending_paused_at":null,"suspended_at":null,"throttled_until":null,
+ "sending_paused_at":null,"suspended_at":null,"throttled_until":null,"tester_until":"2026-12-20T23:59:59Z",
  "last_24_hours":{"sent":0,"hard_bounces":0,"complaints":0,"hard_bounce_percent":null,"complaint_percent":null},
  "last_7_days":{"sent":600,"hard_bounces":0,"complaints":0,"hard_bounce_percent":0,"complaint_percent":0},
  "over_warning":false},
 {"account_id":"acc-3","account_name":"Old News","owner_email":null,"sending_mode":"full",
- "sending_paused_at":null,"suspended_at":"2026-11-19T08:00:00Z","throttled_until":null,
+ "sending_paused_at":null,"suspended_at":"2026-11-19T08:00:00Z","throttled_until":null,"tester_until":null,
  "last_24_hours":{"sent":0,"hard_bounces":0,"complaints":0,"hard_bounce_percent":null,"complaint_percent":null},
  "last_7_days":{"sent":0,"hard_bounces":0,"complaints":2,"hard_bounce_percent":null,"complaint_percent":null},
  "over_warning":false}],
@@ -66,7 +66,7 @@ func TestAdminDeliverability(t *testing.T) {
 	for i, want := range [][]string{
 		{testAccountID, "Loud Lists", "1,000", "0.3% (3)", "0.2% (2)", "12,500", "0.24% (30)", "0.072% (9)",
 			"OVER WARNING, paused, throttled until 2026-11-25", "test mode"},
-		{"acc-2", "Clean Co", "600", "0% (0)", "  ok"},
+		{"acc-2", "Clean Co", "600", "0% (0)", "tester until 2026-12-20"},
 		{"acc-3", "Old News", "- (2)", "suspended"},
 	} {
 		for _, w := range want {

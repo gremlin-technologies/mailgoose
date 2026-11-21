@@ -52,6 +52,26 @@ const (
 	HealthWindow = 30 * 24 * time.Hour
 )
 
+// A tester account (MG-86) sends at most a few hundred copies, under
+// HealthMinRecipients, so it has its own, stricter pause: a campaign of
+// TesterMinCopies or more copies with more than 2% hard bounces (and at
+// least TesterMinHardBounces of them), or with TesterComplaints complaints
+// at any size, pauses it. Two complaints on its largest possible campaign,
+// 500 copies, are 0.4%, four times the usual limit.
+const (
+	TesterMinCopies         = 20
+	TesterHardBouncesPer10k = 200
+	TesterMinHardBounces    = 3
+	TesterComplaints        = 2
+)
+
+// TesterUnhealthy says whether the rates are over a tester account's
+// pause thresholds.
+func (r Rates) TesterUnhealthy() bool {
+	return r.Complaints >= TesterComplaints ||
+		r.Sent >= TesterMinCopies && r.HardBounces >= TesterMinHardBounces && over(r.HardBounces, r.Sent, TesterHardBouncesPer10k)
+}
+
 // over says whether n of sent is over a threshold in hundredths of a
 // percent.
 func over(n, sent, per10k int) bool { return n*10000 > sent*per10k }
@@ -112,11 +132,12 @@ func accountClean(ctx context.Context, q querier, accountID string, now time.Tim
 	since := now.Add(-HealthWindow)
 	err := q.QueryRow(ctx, `
 		SELECT
-			(SELECT count(*) FROM campaign_recipients WHERE account_id = $1 AND sent_at > $2),
+			(SELECT count(*) FROM campaign_recipients WHERE account_id = $1 AND sent_at > $2 AND NOT simulated),
 			(SELECT count(DISTINCT recipient_id) FROM send_events
-				WHERE account_id = $1 AND occurred_at > $2 AND kind = 'campaign' AND type = 'bounce' AND subtype LIKE 'permanent/%'),
+				WHERE account_id = $1 AND occurred_at > $2 AND kind = 'campaign' AND NOT simulated
+					AND type = 'bounce' AND subtype LIKE 'permanent/%'),
 			(SELECT count(DISTINCT recipient_id) FROM send_events
-				WHERE account_id = $1 AND occurred_at > $2 AND kind = 'campaign' AND type = 'complaint'),
+				WHERE account_id = $1 AND occurred_at > $2 AND kind = 'campaign' AND NOT simulated AND type = 'complaint'),
 			EXISTS (SELECT 1 FROM campaigns WHERE account_id = $1 AND auto_paused_at > $2)`,
 		accountID, since).Scan(&r.Sent, &r.HardBounces, &r.Complaints, &paused)
 	if err != nil {
@@ -147,15 +168,15 @@ type AutoPause struct {
 }
 
 // CampaignRates counts a campaign's copies sent, hard bounces and
-// complaints.
+// complaints, leaving out SES mailbox simulator addresses (MG-86).
 func CampaignRates(ctx context.Context, q querier, campaignID string) (Rates, error) {
 	var r Rates
 	err := q.QueryRow(ctx, `
 		SELECT
-			(SELECT count(*) FROM campaign_recipients WHERE campaign_id = $1 AND status = 'sent'),
+			(SELECT count(*) FROM campaign_recipients WHERE campaign_id = $1 AND status = 'sent' AND NOT simulated),
 			(SELECT count(DISTINCT recipient_id) FROM send_events
-				WHERE campaign_id = $1 AND type = 'bounce' AND subtype LIKE 'permanent/%'),
-			(SELECT count(DISTINCT recipient_id) FROM send_events WHERE campaign_id = $1 AND type = 'complaint')`,
+				WHERE campaign_id = $1 AND NOT simulated AND type = 'bounce' AND subtype LIKE 'permanent/%'),
+			(SELECT count(DISTINCT recipient_id) FROM send_events WHERE campaign_id = $1 AND NOT simulated AND type = 'complaint')`,
 		campaignID).Scan(&r.Sent, &r.HardBounces, &r.Complaints)
 	return r, err
 }
@@ -179,9 +200,17 @@ func CheckCampaign(ctx context.Context, tx pgx.Tx, campaignID string, now time.T
 	if err != nil {
 		return Health{}, err
 	}
+	var isTester bool
+	if err := tx.QueryRow(ctx, `
+		SELECT a.tester_started_at IS NOT NULL FROM campaigns c JOIN accounts a ON a.id = c.account_id WHERE c.id = $1`,
+		campaignID).Scan(&isTester); err != nil {
+		return Health{}, err
+	}
 	switch {
+	case isTester && r.TesterUnhealthy():
+		return autoPause(ctx, tx, campaignID, r, now, testerPauseReason)
 	case r.Unhealthy():
-		return autoPause(ctx, tx, campaignID, r, now)
+		return autoPause(ctx, tx, campaignID, r, now, pauseReason)
 	case r.OverWarning(warn):
 		return throttle(ctx, tx, campaignID, r, now, warn)
 	}
@@ -190,7 +219,7 @@ func CheckCampaign(ctx context.Context, tx pgx.Tx, campaignID string, now time.T
 
 // autoPause marks the campaign as having paused its account, once, and
 // pauses the account with its rates r, inside tx.
-func autoPause(ctx context.Context, tx pgx.Tx, campaignID string, r Rates, now time.Time) (Health, error) {
+func autoPause(ctx context.Context, tx pgx.Tx, campaignID string, r Rates, now time.Time, why func(*AutoPause) string) (Health, error) {
 	ap := &AutoPause{CampaignID: campaignID, Rates: r, At: now}
 	err := tx.QueryRow(ctx, `
 		UPDATE campaigns SET auto_paused_at = $2 WHERE id = $1 AND auto_paused_at IS NULL
@@ -201,7 +230,7 @@ func autoPause(ctx context.Context, tx pgx.Tx, campaignID string, r Rates, now t
 	if err != nil {
 		return Health{}, err
 	}
-	ap.Reason = pauseReason(ap)
+	ap.Reason = why(ap)
 	return Health{Pause: ap}, pauseAccount(ctx, tx, ap)
 }
 
@@ -239,6 +268,17 @@ func pauseReason(ap *AutoPause) string {
 	}
 	return fmt.Sprintf("It was paused automatically: %s of the addresses %q went to don't exist (hard bounces), over the %s limit.",
 		percent(r.HardBounces, r.Sent), ap.CampaignName, per10k(HardBouncesPer10k))
+}
+
+// testerPauseReason is pauseReason for a tester account's stricter limits.
+func testerPauseReason(ap *AutoPause) string {
+	r := ap.Rates
+	if r.Complaints >= TesterComplaints {
+		return fmt.Sprintf("It was paused automatically: %d of the people sent %q marked it as spam. "+
+			"Tester accounts are paused at %d complaints on a campaign.", r.Complaints, ap.CampaignName, TesterComplaints)
+	}
+	return fmt.Sprintf("It was paused automatically: %s of the addresses %q went to don't exist (hard bounces), "+
+		"over the %s limit for tester accounts.", percent(r.HardBounces, r.Sent), ap.CampaignName, per10k(TesterHardBouncesPer10k))
 }
 
 // OpsAlert tells mailgoose's operators about automatic pauses (CMP-6): an

@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/gremlin-technologies/mailgoose/internal/tester"
 )
 
 // FreeContactLimit is the most counted contacts a free account may hold
@@ -12,11 +14,13 @@ import (
 // paid plan's units (MG-40).
 const FreeContactLimit = 500
 
-// LimitError means a change would take a free account over its contact
-// limit. Count is the counted contacts before the change.
+// LimitError means a change would take a free or tester account over its
+// contact limit. Count is the counted contacts before the change. Tester
+// says the limit is a tester account's (MG-86).
 type LimitError struct {
-	Limit int
-	Count int
+	Limit  int
+	Count  int
+	Tester bool
 }
 
 func (e *LimitError) Error() string {
@@ -41,7 +45,8 @@ func (s *Service) CountedContacts(ctx context.Context, accountID string) (int, e
 }
 
 // ensureRoom returns a *LimitError when adding more counted contacts to the
-// account would take a free account over FreeContactLimit. It locks the
+// account would take a free account over FreeContactLimit, or a tester
+// account over tester.Contacts (MG-86). It locks the
 // account row, so concurrent adds to one account wait for each other and
 // can't both slip under the limit. Import (MG-17) and form signups (MG-36)
 // call it, or lockedCount, in the transaction that adds the contacts.
@@ -49,31 +54,53 @@ func ensureRoom(ctx context.Context, tx pgx.Tx, accountID string, adding int) er
 	if adding <= 0 {
 		return nil
 	}
-	count, capped, err := lockedCount(ctx, tx, accountID)
+	l, err := lockedCount(ctx, tx, accountID)
 	if err != nil {
 		return err
 	}
-	if capped && count+adding > FreeContactLimit {
-		return &LimitError{Limit: FreeContactLimit, Count: count}
+	if l.capped() && l.count+adding > l.limit {
+		return l.err()
 	}
 	return nil
 }
 
-// lockedCount locks the account row and returns its counted contacts.
-// capped is false for paid accounts, which have no cap.
-func lockedCount(ctx context.Context, tx pgx.Tx, accountID string) (count int, capped bool, err error) {
+// contactLimit is an account's counted contacts and its cap.
+type contactLimit struct {
+	count int
+	// limit is the cap; 0 for a paid account, which has none.
+	limit  int
+	tester bool
+}
+
+func (l contactLimit) capped() bool { return l.limit > 0 }
+
+func (l contactLimit) err() *LimitError {
+	return &LimitError{Limit: l.limit, Count: l.count, Tester: l.tester}
+}
+
+// lockedCount locks the account row and returns its counted contacts and
+// cap: FreeContactLimit for a free account, tester.Contacts for a tester
+// account on any plan, none for a paid one.
+func lockedCount(ctx context.Context, tx pgx.Tx, accountID string) (contactLimit, error) {
 	var plan string
-	if err := tx.QueryRow(ctx, `SELECT plan FROM accounts WHERE id = $1 FOR UPDATE`, accountID).Scan(&plan); err != nil {
-		return 0, false, fmt.Errorf("read plan: %w", err)
+	var l contactLimit
+	if err := tx.QueryRow(ctx, `SELECT plan, tester_started_at IS NOT NULL FROM accounts WHERE id = $1 FOR UPDATE`,
+		accountID).Scan(&plan, &l.tester); err != nil {
+		return l, fmt.Errorf("read plan: %w", err)
 	}
-	if plan != "free" {
-		return 0, false, nil
+	switch {
+	case l.tester:
+		l.limit = tester.Contacts
+		if plan == "free" {
+			l.limit = min(l.limit, FreeContactLimit)
+		}
+	case plan == "free":
+		l.limit = FreeContactLimit
+	default:
+		return l, nil
 	}
-	var n int
-	if err := tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		SELECT count(*) FROM contacts WHERE account_id = $1 AND status IN ('unconfirmed', 'subscribed')`,
-		accountID).Scan(&n); err != nil {
-		return 0, false, err
-	}
-	return n, true, nil
+		accountID).Scan(&l.count)
+	return l, err
 }

@@ -20,6 +20,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
+	"github.com/gremlin-technologies/mailgoose/internal/tester"
 	"github.com/gremlin-technologies/mailgoose/internal/testmode"
 )
 
@@ -53,6 +54,9 @@ const (
 	// TestMode is an account in test mode whose campaign reaches anyone
 	// but its test addresses and its owner (MG-80).
 	TestMode = "test_mode"
+	// TesterLimit is a tester account (MG-86) that has ended, or whose
+	// campaign needs more tester credits than it has left.
+	TesterLimit = "tester_limit"
 )
 
 // Summary is what a person confirms before a campaign launches (CAM-3).
@@ -225,6 +229,11 @@ func (s *Service) summarize(ctx context.Context, accountID string, c *campaigns.
 			return err
 		}
 		problems = append(problems, tm...)
+		tp, err := testerProblems(ctx, s.DB, accountID, c, s.now())
+		if err != nil {
+			return err
+		}
+		problems = append(problems, tp...)
 		sum = &Summary{
 			CampaignID: c.ID, Name: c.Name, Subject: p.Email.Document.Settings.Subject,
 			From: p.From, ReplyTo: p.ReplyTo, RecipientCount: n, SendAt: c.SendAt,
@@ -360,6 +369,33 @@ func testModeProblems(ctx context.Context, q testmode.Querier, accountID string,
 		Details: map[string]any{"recipients": total, "not_test_addresses": outside}}}, nil
 }
 
+// testerProblems is the launch's problem when the account is a tester
+// (MG-86) that has ended, or whose campaign, as its audience stands now,
+// needs more tester credits than are left. Simulator addresses need none.
+func testerProblems(ctx context.Context, q contacts.RowQuerier, accountID string, c *campaigns.Campaign, now time.Time) ([]Problem, error) {
+	st, err := tester.Load(ctx, q, accountID, now, false)
+	if err != nil || st == nil {
+		return nil, err
+	}
+	total, simulated, err := contacts.CountSimulatorRecipients(ctx, q, accountID, c.Audience())
+	if err != nil {
+		return nil, err
+	}
+	return testerProblem(st, total-simulated), nil
+}
+
+// testerProblem is the launch's problem when st can't send needed more
+// tester credits; nil when it can.
+func testerProblem(st *tester.Status, needed int) []Problem {
+	var se *tester.ShortError
+	if !errors.As(st.Check(needed), &se) {
+		return nil
+	}
+	return []Problem{{Code: TesterLimit, Message: se.Message(), Hint: se.Hint(),
+		Details: map[string]any{"needed": needed, "credits": st.Credits, "used": st.Used, "left": st.Left,
+			"until": st.Until, "ended": st.Ended}}}
+}
+
 // audienceProblems are the launch's problems with who it goes to and what
 // it costs: n recipients against a balance of bal.
 func audienceProblems(c *campaigns.Campaign, n int, bal int64) []Problem {
@@ -461,6 +497,25 @@ func (s *Service) confirm(ctx context.Context, accountID, campaignID, code strin
 		}
 		if problems := audienceProblems(c, n, bal); len(problems) > 0 {
 			return &NotReadyError{Problems: problems}
+		}
+		// A tester account's credits (MG-86) are counted on the snapshot,
+		// with the account row locked so two launches can't both take the
+		// last of them.
+		st, err := tester.Load(ctx, tx, accountID, now, true)
+		if err != nil {
+			return err
+		}
+		if st != nil {
+			var billable int
+			if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE NOT simulated) FROM campaign_recipients WHERE campaign_id = $1`,
+				campaignID).Scan(&billable); err != nil {
+				return err
+			}
+			// The snapshot isn't counted in st.Used yet: its campaign
+			// isn't marked launched until below.
+			if problems := testerProblem(st, billable); len(problems) > 0 {
+				return &NotReadyError{Problems: problems}
+			}
 		}
 		if _, err := credits.Debit(ctx, tx, accountID, credits.TypeReserve, int64(n), creditsRef(campaignID), now); err != nil {
 			return err

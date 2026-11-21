@@ -941,10 +941,11 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	count, capped, err := lockedCount(ctx, tx, j.accountID)
+	limit, err := lockedCount(ctx, tx, j.accountID)
 	if err != nil {
 		return err
 	}
+	count := limit.count
 	emails := make([]string, len(cands))
 	hashes := make([]string, len(cands))
 	for i, c := range cands {
@@ -965,7 +966,7 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 			skip(c.line, c.raw, SkipExists)
 		case suppressed[hashes[i]]:
 			skip(c.line, c.raw, SkipSuppressed)
-		case capped && Counted(c.status) && count >= FreeContactLimit:
+		case limit.capped() && Counted(c.status) && count >= limit.limit:
 			skip(c.line, c.raw, SkipOverLimit)
 		default:
 			if Counted(c.status) {

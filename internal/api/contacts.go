@@ -32,6 +32,11 @@ func (s *Server) contactError(w http.ResponseWriter, r *http.Request, err error)
 	switch {
 	case err == nil:
 		return false
+	case errors.As(err, &le) && le.Tester:
+		WriteError(w, (&Error{Status: http.StatusPaymentRequired, Code: "contact_limit",
+			Message: fmt.Sprintf("A tester account holds at most %d contacts that are subscribed or unconfirmed, and this one has %d.", le.Limit, le.Count),
+			Hint:    "Delete or unsubscribe contacts you no longer mail. SES mailbox simulator addresses count as contacts too.",
+		}).WithDetails(map[string]any{"limit": le.Limit, "count": le.Count}))
 	case errors.As(err, &le):
 		WriteError(w, (&Error{Status: http.StatusPaymentRequired, Code: "contact_limit",
 			Message: fmt.Sprintf("A free account holds at most %d contacts that are subscribed or unconfirmed, and this one has %d.", le.Limit, le.Count),

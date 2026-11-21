@@ -15,6 +15,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
+	"github.com/gremlin-technologies/mailgoose/internal/tester"
 	"github.com/gremlin-technologies/mailgoose/internal/testmode"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
@@ -118,9 +119,18 @@ func (s *Service) Test(ctx context.Context, accountID, campaignID string, to []s
 	if err != nil {
 		return nil, err
 	}
-	recipients, err := s.testRecipients(ctx, accountID, owner, to)
+	st, err := tester.Load(ctx, s.DB, accountID, s.now(), false)
 	if err != nil {
 		return nil, err
+	}
+	recipients, err := s.testRecipients(ctx, accountID, owner, to, st != nil)
+	if err != nil {
+		return nil, err
+	}
+	// A tester account that has ended can't test (MG-86); its credits are
+	// checked again when the test is counted, below.
+	if st != nil && st.Ended {
+		return nil, st.Check(0)
 	}
 	// A campaign that's sending or sent can't be tested, whatever else is
 	// wrong with it.
@@ -147,7 +157,7 @@ func (s *Service) Test(ctx context.Context, accountID, campaignID string, to []s
 		}
 		return nil, &NotReadyError{Problems: problems}
 	}
-	sentToday, err := s.reserveTests(ctx, accountID, campaignID, len(recipients))
+	sentToday, err := s.reserveTests(ctx, accountID, campaignID, recipients)
 	if err != nil {
 		return nil, err
 	}
@@ -195,8 +205,10 @@ func (s *Service) ownerEmail(ctx context.Context, accountID string) (string, err
 // testRecipients checks the addresses a test may go to: the owner's, or
 // any on a verified domain of the account. In test mode (MG-80) they're the
 // owner's and the account's confirmed test addresses instead, whatever
-// their domain. Repeats count once.
-func (s *Service) testRecipients(ctx context.Context, accountID, owner string, to []string) ([]string, error) {
+// their domain. A tester account (MG-86) may also test to SES mailbox
+// simulator addresses, which reach no one, whatever they did before.
+// Repeats count once.
+func (s *Service) testRecipients(ctx context.Context, accountID, owner string, to []string, isTester bool) ([]string, error) {
 	if len(to) == 0 {
 		return []string{owner}, nil
 	}
@@ -221,7 +233,7 @@ func (s *Service) testRecipients(ctx context.Context, accountID, owner string, t
 		return nil, err
 	}
 	for _, addr := range out {
-		if addr == owner {
+		if addr == owner || isTester && mail.IsSimulator(addr) {
 			continue
 		}
 		if gate.Test() {
@@ -285,20 +297,27 @@ func (s *Service) testRecipient(ctx context.Context, accountID, addr string) ren
 	return r
 }
 
-// reserveTests counts n test messages against the account's day, or
-// returns a *LimitError when they'd go over. The account row is locked, so
-// two tests at once can't both take the last places. A reserved test that
-// then fails to send still counts.
-func (s *Service) reserveTests(ctx context.Context, accountID, campaignID string, n int) (int, error) {
+// reserveTests counts a test message to each of recipients against the
+// account's day, or returns a *LimitError when they'd go over. A tester
+// account's (MG-86) also count against its credits, but for simulator
+// addresses, or it gets a *tester.ShortError when too few are left. The
+// account row is locked, so two tests at once can't both take the last
+// places. A reserved test that then fails to send still counts.
+func (s *Service) reserveTests(ctx context.Context, accountID, campaignID string, recipients []string) (int, error) {
+	n := len(recipients)
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if _, err := tx.Exec(ctx, `SELECT 1 FROM accounts WHERE id = $1 FOR UPDATE`, accountID); err != nil {
+	now := s.now()
+	st, err := tester.Load(ctx, tx, accountID, now, true)
+	if err != nil {
 		return 0, err
 	}
-	now := s.now()
+	if err := st.Check(tester.Billable(recipients)); err != nil {
+		return 0, err
+	}
 	since := now.Add(-24 * time.Hour)
 	var sent int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM test_sends WHERE account_id = $1 AND sent_at > $2`,
@@ -320,9 +339,13 @@ func (s *Service) reserveTests(ctx context.Context, accountID, campaignID string
 		}
 		return 0, &LimitError{Sent: sent, RetryAfter: retry}
 	}
+	simulated := make([]bool, n)
+	for i, a := range recipients {
+		simulated[i] = mail.IsSimulator(a)
+	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO test_sends (account_id, campaign_id, sent_at)
-		SELECT $1, $2, $3 FROM generate_series(1, $4)`, accountID, campaignID, now, n); err != nil {
+		INSERT INTO test_sends (account_id, campaign_id, sent_at, simulated)
+		SELECT $1, $2, $3, s FROM unnest($4::boolean[]) AS s`, accountID, campaignID, now, simulated); err != nil {
 		return 0, err
 	}
 	return sent + n, tx.Commit(ctx)
