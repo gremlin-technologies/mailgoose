@@ -3,6 +3,7 @@ package render
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,9 +30,12 @@ func doc(t testing.TB, blocks string, settings string) *emails.Document {
 	return d
 }
 
+// assets is where the tests' API serves the social icons.
+const assets = "https://app.mailgoose.test"
+
 func render(t testing.TB, d *emails.Document, r Recipient) Message {
 	t.Helper()
-	tpl, err := Compile(d, Account{PostalAddress: postal})
+	tpl, err := Compile(d, Account{PostalAddress: postal, AssetsURL: assets})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +61,18 @@ var goldenCases = map[string]string{
 			{"blocks":[{"id":"i","type":"image","src":"https://cdn.example.com/c.png","alt":"Croissant"},{"id":"ct","type":"text","text":"**Croissants** every day"}]},
 			{"blocks":[{"id":"bh","type":"heading","text":"Opening hours","level":3},{"id":"bb","type":"button","text":"Visit","href":"https://example.com/visit"}]}]},
 		{"id":"half","type":"columns","columns":[{"blocks":[{"id":"x","type":"text","text":"Left only"}]},{"blocks":[]}]}`,
-	"social": `{"id":"so","type":"social","align":"center","links":[{"network":"instagram","url":"https://instagram.com/patsbakery"},{"network":"website","url":"https://example.com"}]}`,
+	"column_layouts": `{"id":"one","type":"columns","layout":"1","columns":[{"blocks":[{"id":"o","type":"text","text":"One column"}]}]},
+		{"id":"split","type":"columns","layout":"1:2","columns":[
+			{"blocks":[{"id":"si","type":"image","src":"https://cdn.example.com/s.png","alt":"Scone"}]},
+			{"blocks":[{"id":"st","type":"text","text":"Scones on Saturdays"}]}]},
+		{"id":"four","type":"columns","layout":"1:1:1:1","columns":[
+			{"blocks":[{"id":"f1","type":"text","text":"Rye"}]},{"blocks":[{"id":"f2","type":"text","text":"Spelt"}]},
+			{"blocks":[{"id":"f3","type":"text","text":"Oat"}]},{"blocks":[{"id":"f4","type":"text","text":"Corn"}]}]}`,
+	"social": `{"id":"so","type":"social","align":"center","links":[{"network":"instagram","url":"https://instagram.com/patsbakery"},{"network":"website","url":"https://example.com"}]},
+		{"id":"so2","type":"social","display":"icons_and_text","color":"dark","size":40,"spacing":12,"layout":"vertical","align":"left",
+			"links":[{"network":"facebook","url":"https://facebook.com/patsbakery","label":"Pat's on Facebook"},{"network":"bluesky","url":"https://bsky.app/profile/pats.example"}]},
+		{"id":"so3","type":"social","display":"text","color":"light","size":48,"spacing":0,"align":"right",
+			"links":[{"network":"x","url":"https://x.com/patsbakery"},{"network":"youtube","url":"https://youtube.com/@patsbakery"}]}`,
 	"footer": `{"id":"f","type":"footer","text":"You signed up at [our shop](https://example.com).\nThanks, {{first_name|friend}}!"}`,
 }
 
@@ -71,6 +86,31 @@ func TestGolden(t *testing.T) {
 				golden(t, name+"_"+width+".txt", m.Text)
 			})
 		}
+	}
+}
+
+// TestSocialIcons checks each icon points at the API's own copy, with the
+// link's name as its alt text, and that without an assets URL the links
+// fall back to text.
+func TestSocialIcons(t *testing.T) {
+	d := doc(t, `{"type":"social","color":"light","links":[{"network":"linkedin","url":"https://linkedin.com/company/pats"},{"network":"x","url":"https://x.com/pats","label":"Pat's on X"}]}`, "")
+	html := render(t, d, pat).HTML
+	for _, want := range []string{
+		`<img src="https://app.mailgoose.test/assets/social/v1/light/linkedin.png" alt="LinkedIn" width="32" height="32"`,
+		`<img src="https://app.mailgoose.test/assets/social/v1/light/x.png" alt="Pat&#39;s on X" width="32" height="32"`,
+		`<a href="https://linkedin.com/company/pats"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("html lacks %s", want)
+		}
+	}
+	tpl, err := Compile(d, Account{PostalAddress: postal})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html = tpl.Personalize(pat).HTML
+	if strings.Contains(html, "<img") || !strings.Contains(html, ">LinkedIn</span></a>") {
+		t.Errorf("without an assets URL, want text links:\n%s", html)
 	}
 }
 
@@ -101,7 +141,7 @@ func TestNarrowScreens(t *testing.T) {
 		for _, want := range []string{
 			"@media only screen and (max-width:" + map[string]string{"600": "620", "480": "500", "800": "820"}[width] + "px)",
 			`.mg-col{display:block !important;width:100% !important`,
-			`<td class="mg-col" width="50%"`,
+			`<td class="mg-col" width="` + map[string]string{"600": "276", "480": "216", "800": "376"}[width] + `"`,
 			`class="mg-fluid"`,
 			`class="mg-container" width="` + width + `"`,
 			`<meta name="viewport" content="width=device-width, initial-scale=1">`,
@@ -151,6 +191,7 @@ func TestLintReportsTags(t *testing.T) {
 	d := doc(t, `{"id":"h","type":"heading","text":"Hi {{name}}"},
 		{"id":"cols","type":"columns","columns":[{"blocks":[{"id":"t","type":"text","text":"{{email|a}} {{unsubscribe_url|x}} [x](ftp://nope)"}]},{"blocks":[]}]},
 		{"id":"b","type":"button","text":"Go {{first_name|{x}}}","href":"{{unsubscribe_url}}"},
+		{"id":"so","type":"social","links":[{"network":"x","url":"https://x.com/p"},{"network":"x","url":"https://x.com/q","label":"{{name}} on X"}]},
 		{"id":"f","type":"footer","text":"Bye {{first_name"}`, `{"subject":"{{FIRST_NAME}}"}`)
 	errs := Lint(d)
 	var got []string
@@ -163,7 +204,8 @@ func TestLintReportsTags(t *testing.T) {
 		"blocks[1].columns[0].blocks[0].text: {{unsubscribe_url}} takes no fallback; every recipient has one",
 		"blocks[1].columns[0].blocks[0].text: the link [x](ftp://nope) needs a full https:// address",
 		"blocks[2].text: the fallback in {{first_name|{x}} can't contain { or }",
-		`blocks[3].text: "{{first_name" opens a merge tag but never closes it with }}`,
+		"blocks[3].links[1].label: {{name}} isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}} or {{unsubscribe_url}}",
+		`blocks[4].text: "{{first_name" opens a merge tag but never closes it with }}`,
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -338,5 +380,26 @@ func TestLintRefusesTagLinks(t *testing.T) {
 	}
 	if _, err := Compile(d, Account{PostalAddress: postal}); err == nil {
 		t.Error("Compile rendered a link a merge tag decides")
+	}
+}
+
+// TestColumnWidths checks every layout splits the row by its ratios and
+// that the columns always add up to the whole row.
+func TestColumnWidths(t *testing.T) {
+	want := map[string][]int{
+		"1": {552}, "1:1": {276, 276}, "1:1:1": {184, 184, 184}, "1:1:1:1": {138, 138, 138, 138},
+		"1:2": {184, 368}, "2:1": {368, 184}, "1:3": {138, 414}, "3:1": {414, 138},
+	}
+	for _, layout := range emails.ColumnLayouts {
+		cols := make([]emails.Column, len(emails.LayoutWidths(layout)))
+		got := columnWidths(&emails.Columns{Layout: layout, Columns: cols}, 552)
+		if fmt.Sprint(got) != fmt.Sprint(want[layout]) {
+			t.Errorf("%s: %v, want %v", layout, got, want[layout])
+		}
+	}
+	// Rounding: what's left goes to the last column.
+	got := columnWidths(&emails.Columns{Layout: "1:1:1", Columns: make([]emails.Column, 3)}, 500)
+	if got[0]+got[1]+got[2] != 500 {
+		t.Errorf("1:1:1 of 500 = %v", got)
 	}
 }

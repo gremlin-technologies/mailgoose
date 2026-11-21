@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
+	"github.com/gremlin-technologies/mailgoose/internal/socialicons"
 )
 
 var (
@@ -27,9 +28,14 @@ var (
 	ErrNoPostalAddress = errors.New("the account has no postal address")
 )
 
-// Account is what the renderer needs from the account's settings.
+// Account is what the renderer needs from the account's settings, and
+// from where it runs.
 type Account struct {
 	PostalAddress string
+	// AssetsURL is where the API is reached (PUBLIC_BASE_URL), which serves
+	// the social block's icons (MG-109). Without it, social links render as
+	// text.
+	AssetsURL string
 }
 
 // Problems is every merge tag or link Lint found that can't be rendered.
@@ -134,6 +140,10 @@ func Lint(doc *emails.Document) []*TagError {
 			check(p+".text", b.Text)
 			check(p+".href", b.Href)
 			fixedHost(p+".href", b.Href)
+		case *emails.Social:
+			for i, l := range b.Links {
+				check(fmt.Sprintf("%s.links[%d].label", p, i), l.Label)
+			}
 		case *emails.Footer:
 			check(p+".text", b.Text)
 			for _, l := range badLinks(b.Text) {
@@ -363,14 +373,7 @@ func (r *renderer) block(b emails.Block, width int, top bool) {
 		return
 	case *emails.Social:
 		row(b.Align)
-		r.w(`<p style="margin:0;font-family:`, fontStack, `;font-size:14px;line-height:1.6;color:`, mutedColor, `;text-align:`, b.Align, `;">`)
-		for i, l := range b.Links {
-			if i > 0 {
-				r.w(`&nbsp;&middot;&nbsp;`)
-			}
-			r.w(`<a href="`, esc(l.URL), `" style="color:`, linkColor, `;text-decoration:underline;">`, networkNames[l.Network], `</a>`)
-		}
-		r.w(`</p>`)
+		r.social(b)
 	case *emails.Columns:
 		r.columns(b, width)
 		return
@@ -381,24 +384,116 @@ func (r *renderer) block(b emails.Block, width int, top bool) {
 	r.w("</td></tr>\n")
 }
 
+// social draws a social block (MG-109): each link an icon, its name, or
+// both. In a row, the links are inline blocks that wrap onto more lines on
+// a narrow screen, with a table for Outlook on Windows, which ignores
+// inline blocks; in a column, one link a line.
+func (r *renderer) social(b *emails.Social) {
+	icons := b.Display != "text" && r.acct.AssetsURL != ""
+	text := b.Display != "icons" || !icons
+	color := map[string]string{"brand": linkColor, "dark": titleColor, "light": "#ffffff"}[b.Color]
+	size := px(b.Size)
+	item := func(l emails.SocialLink) {
+		label := l.Label
+		if label == "" {
+			label = networkNames[l.Network]
+		}
+		if icons {
+			alt := label
+			if text {
+				alt = "" // the name beside it says it
+			}
+			r.w(`<img src="`, esc(socialicons.URL(r.acct.AssetsURL, b.Color, l.Network)), `" alt="`, esc(alt), `" width="`, strconv.Itoa(b.Size),
+				`" height="`, strconv.Itoa(b.Size), `" style="display:inline-block;width:`, size, `;height:`, size, `;border:0;vertical-align:middle;">`)
+		}
+		if text {
+			pad := ""
+			if icons {
+				pad = "padding-left:8px;"
+			}
+			r.w(`<span style="`, pad, `font-family:`, fontStack, `;font-size:14px;line-height:`, size, `;color:`, color, `;vertical-align:middle;">`, esc(label), `</span>`)
+		}
+	}
+	link := func(l emails.SocialLink, style string) {
+		r.w(`<a href="`, esc(l.URL), `" style="`, style, `text-decoration:none;color:`, color, `;">`)
+		item(l)
+		r.w(`</a>`)
+	}
+	if b.Layout == "vertical" {
+		r.w(`<table role="presentation" align="`, b.Align, `" cellpadding="0" cellspacing="0" border="0">`)
+		for i, l := range b.Links {
+			top := "0"
+			if i > 0 {
+				top = px(b.Spacing)
+			}
+			r.w(`<tr><td align="`, b.Align, `" style="padding-top:`, top, `;">`)
+			link(l, "display:inline-block;")
+			r.w(`</td></tr>`)
+		}
+		r.w(`</table>`)
+		return
+	}
+	r.w(`<div style="font-size:0;line-height:0;text-align:`, b.Align, `;">`,
+		`<!--[if mso]><table role="presentation" align="`, b.Align, `" cellpadding="0" cellspacing="0" border="0"><tr><![endif]-->`)
+	for i, l := range b.Links {
+		gap := px(b.Spacing)
+		if i == len(b.Links)-1 {
+			gap = "0"
+		}
+		r.w(`<!--[if mso]><td style="padding-right:`, gap, `;"><![endif]-->`)
+		link(l, "display:inline-block;margin:4px "+gap+" 4px 0;")
+		r.w(`<!--[if mso]></td><![endif]-->`)
+	}
+	r.w(`<!--[if mso]></tr></table><![endif]--></div>`)
+}
+
 func (r *renderer) columns(b *emails.Columns, width int) {
 	pad := "8px " + px(padX-colGap)
 	r.w(`<tr><td class="mg-pad" style="padding:`, pad, `;">`+"\n"+`<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>`+"\n")
-	colWidth := (width+2*colGap)/len(b.Columns) - 2*colGap
-	share := strconv.Itoa(100/len(b.Columns)) + "%"
-	for _, col := range b.Columns {
-		r.w(`<td class="mg-col" width="`, share, `" valign="top" style="width:`, share, `;padding:0 `, px(colGap), `;">`)
+	for i, outer := range columnWidths(b, width+2*colGap) {
+		col := b.Columns[i]
+		w := strconv.Itoa(outer)
+		r.w(`<td class="mg-col" width="`, w, `" valign="top" style="width:`, w, `px;padding:0 `, px(colGap), `;">`)
 		if len(col.Blocks) == 0 {
 			r.w("&nbsp;</td>\n")
 			continue
 		}
 		r.w("\n" + `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">` + "\n")
 		for _, inner := range col.Blocks {
-			r.block(inner, colWidth, false)
+			r.block(inner, outer-2*colGap, false)
 		}
 		r.w("</table></td>\n")
 	}
 	r.w("</tr></table>\n</td></tr>\n")
+}
+
+// columnWidths splits total pixels between a columns block's columns by its
+// layout (MG-110). Each width includes the column's side padding; the last
+// column takes what rounding leaves, so they always add up to total.
+func columnWidths(b *emails.Columns, total int) []int {
+	ratios := emails.LayoutWidths(b.Layout)
+	if len(ratios) != len(b.Columns) {
+		// A document read without a layout check; split evenly.
+		ratios = make([]int, len(b.Columns))
+		for i := range ratios {
+			ratios[i] = 1
+		}
+	}
+	sum := 0
+	for _, r := range ratios {
+		sum += r
+	}
+	out := make([]int, len(ratios))
+	left := total
+	for i, r := range ratios {
+		if i == len(ratios)-1 {
+			out[i] = left
+			break
+		}
+		out[i] = total * r / sum
+		left -= out[i]
+	}
+	return out
 }
 
 func (r *renderer) footer(b *emails.Footer) {

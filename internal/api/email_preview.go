@@ -50,7 +50,7 @@ func (s *Server) PreviewEmail(w http.ResponseWriter, r *http.Request, id string,
 	if s.emailError(w, r, err) {
 		return
 	}
-	acct := render.Account{PostalAddress: previewPostalAddress}
+	acct := render.Account{PostalAddress: previewPostalAddress, AssetsURL: s.webURL(r)}
 	if s.Auth != nil {
 		st, err := s.Auth.AccountSettings(r.Context(), c.AccountID)
 		if err != nil {

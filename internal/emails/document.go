@@ -17,6 +17,7 @@ import (
 	"net/mail"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -140,29 +141,92 @@ type Spacer struct {
 	Height int `json:"height"`
 }
 
-// Column is one side of a Columns block.
+// Column is one column of a Columns block.
 type Column struct {
 	Blocks []Block `json:"blocks"`
 }
 
-// Columns is a two-column row with blocks inside each column.
+// Columns is a row of one to four columns with blocks inside each. Layout
+// says how many columns there are and how wide each is.
 type Columns struct {
 	base
+	Layout  string   `json:"layout"`
 	Columns []Column `json:"columns"`
 }
 
-// SocialLink is one network's link in a Social block.
+// DefaultColumnLayout is the layout of a columns block that names none
+// (MG-110): two equal columns. A layout gives the columns' relative widths.
+const DefaultColumnLayout = "1:1"
+
+// ColumnLayouts are the layouts a columns block may have, in the order the
+// designer offers them.
+var ColumnLayouts = []string{"1", "1:1", "1:1:1", "1:1:1:1", "1:2", "2:1", "1:3", "3:1"}
+
+// LayoutWidths returns a layout's relative column widths, or nil when it
+// isn't one of ColumnLayouts.
+func LayoutWidths(layout string) []int {
+	known := false
+	for _, l := range ColumnLayouts {
+		known = known || l == layout
+	}
+	if !known {
+		return nil
+	}
+	parts := strings.Split(layout, ":")
+	out := make([]int, len(parts))
+	for i, p := range parts {
+		out[i] = int(p[0] - '0')
+	}
+	return out
+}
+
+// SocialLink is one network's link in a Social block. Label is the text
+// shown beside or instead of the icon, and the icon's alt text; empty means
+// the network's name.
 type SocialLink struct {
 	Network string `json:"network"`
 	URL     string `json:"url"`
+	Label   string `json:"label,omitempty"`
 }
 
-// Social is a row of social network icons.
+// Social is a row (or column) of social network icons, each a link
+// (MG-109). Display says whether to show icons, text or both; Color is one
+// of SocialColors; Size the icons' height in pixels; Spacing the gap
+// between links.
 type Social struct {
 	base
-	Links []SocialLink `json:"links"`
-	Align string       `json:"align"`
+	Links   []SocialLink `json:"links"`
+	Display string       `json:"display"`
+	Color   string       `json:"color"`
+	Size    int          `json:"size"`
+	Spacing int          `json:"spacing"`
+	Layout  string       `json:"layout"`
+	Align   string       `json:"align"`
 }
+
+// The social block's choices and defaults (MG-109). A block saved before
+// these fields existed reads with the defaults.
+var (
+	// SocialDisplays are what a social block shows for each link.
+	SocialDisplays = []string{"icons", "icons_and_text", "text"}
+	// SocialColors are the icon styles: each network's own color, black or white.
+	SocialColors = []string{"brand", "dark", "light"}
+	// SocialSizes are the icon sizes in pixels.
+	SocialSizes = []int{32, 40, 48}
+	// SocialLayouts are how a social block lines its links up.
+	SocialLayouts = []string{"horizontal", "vertical"}
+)
+
+const (
+	// DefaultSocialSize is the icon size, in pixels, when none is given.
+	DefaultSocialSize = 32
+	// DefaultSocialSpacing is the gap between links, in pixels, when none is given.
+	DefaultSocialSpacing = 12
+	// MaxSocialSpacing is the widest gap between links, in pixels.
+	MaxSocialSpacing = 48
+	// MaxSocialLabel is the longest name a link may show, in characters.
+	MaxSocialLabel = 50
+)
 
 // Footer is the locked last block. The renderer adds the account's postal
 // address and the unsubscribe link to it; Text is an optional line above
@@ -451,7 +515,8 @@ func (p *parser) block(raw json.RawMessage, path string, nested bool) (Block, er
 		if err := checkLinks(raw, path); err != nil {
 			return nil, err
 		}
-		b = &Social{base: bs, Align: "center"}
+		b = &Social{base: bs, Display: "icons", Color: "brand", Size: DefaultSocialSize,
+			Spacing: DefaultSocialSpacing, Layout: "horizontal", Align: "center"}
 	case TypeFooter:
 		if nested {
 			return nil, docErr(path+".type", "the footer can't go inside a column")
@@ -475,15 +540,30 @@ func (p *parser) block(raw json.RawMessage, path string, nested bool) (Block, er
 func (p *parser) columns(raw json.RawMessage, path string) (Block, error) {
 	var in struct {
 		base
+		Layout  *string           `json:"layout"`
 		Columns []json.RawMessage `json:"columns"`
 	}
 	if err := strictDecode(raw, &in); err != nil {
 		return nil, decodeErr(path, "columns blocks", err)
 	}
-	if len(in.Columns) != 2 {
-		return nil, docErr(path+".columns", "must hold exactly 2 columns")
+	layout := DefaultColumnLayout
+	if in.Layout != nil {
+		layout = *in.Layout
 	}
-	b := &Columns{base: in.base, Columns: make([]Column, 2)}
+	widths := LayoutWidths(layout)
+	if widths == nil {
+		return nil, docErr(path+".layout", "must be one of %s", strings.Join(ColumnLayouts, ", "))
+	}
+	if in.Columns == nil {
+		// A new columns block with no columns starts with empty ones.
+		for range widths {
+			in.Columns = append(in.Columns, json.RawMessage(`{"blocks":[]}`))
+		}
+	}
+	if len(in.Columns) != len(widths) {
+		return nil, docErr(path+".columns", "must hold %s for the %s layout, not %d", plural(len(widths), "column"), layout, len(in.Columns))
+	}
+	b := &Columns{base: in.base, Layout: layout, Columns: make([]Column, len(widths))}
 	for i, rawCol := range in.Columns {
 		var col struct {
 			Blocks []json.RawMessage `json:"blocks"`
@@ -643,6 +723,27 @@ func checkBlock(b Block, path string) error {
 			if err := linkURL(lp+".url", l.URL, false); err != nil {
 				return err
 			}
+			if strings.ContainsAny(l.Label, "\r\n") {
+				return docErr(lp+".label", "can't contain line breaks")
+			}
+			if utf8.RuneCountInString(l.Label) > MaxSocialLabel {
+				return docErr(lp+".label", "is over %d characters", MaxSocialLabel)
+			}
+		}
+		if !slices.Contains(SocialDisplays, b.Display) {
+			return docErr(path+".display", "must be one of %s", strings.Join(SocialDisplays, ", "))
+		}
+		if !slices.Contains(SocialColors, b.Color) {
+			return docErr(path+".color", "must be one of %s", strings.Join(SocialColors, ", "))
+		}
+		if !slices.Contains(SocialSizes, b.Size) {
+			return docErr(path+".size", "must be 32, 40 or 48 pixels")
+		}
+		if b.Spacing < 0 || b.Spacing > MaxSocialSpacing {
+			return docErr(path+".spacing", "must be 0 to %d pixels", MaxSocialSpacing)
+		}
+		if !slices.Contains(SocialLayouts, b.Layout) {
+			return docErr(path+".layout", "must be horizontal or vertical")
 		}
 		return align(b.Align)
 	case *Footer:
@@ -789,4 +890,12 @@ func jsonKind(goKind string) string {
 	default:
 		return "a " + goKind
 	}
+}
+
+// plural is "1 column" or "3 columns".
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }

@@ -44,7 +44,11 @@ func textOf(b emails.Block, acct Account) []string {
 	case *emails.Social:
 		lines := make([]string, len(b.Links))
 		for i, l := range b.Links {
-			lines[i] = networkNames[l.Network] + ": " + l.URL
+			label := l.Label
+			if label == "" {
+				label = networkNames[l.Network]
+			}
+			lines[i] = label + ": " + l.URL
 		}
 		return []string{strings.Join(lines, "\n")}
 	case *emails.Columns:

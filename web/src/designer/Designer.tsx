@@ -29,8 +29,12 @@ import { FailureNotice, LoadFailed, Loading, useLoad } from "../components";
 import {
   blockLabels,
   canDrop,
+  columnLabel,
+  columnLayouts,
   copyOf,
   findBlock,
+  layoutGrid,
+  layoutLabel,
   locate,
   needsDetails,
   paletteTypes,
@@ -41,6 +45,7 @@ import {
   type Block,
   type BlockDocument,
   type BlockType,
+  type ColumnLayout,
   type Drag,
   type NewBlock,
   type PaletteType,
@@ -51,7 +56,9 @@ import { EMAIL, saveSettings, saveText, useAutosave } from "./autosave";
 import { backLabel, SaveAndExit, useReturnTo } from "./exit";
 import { HtmlEditor } from "./HtmlEditor";
 import { InlineText, RichText } from "./inline";
+import { LayoutGlyph } from "./layout";
 import { base64, BlockProperties, EmailProperties, type Settings } from "./properties";
+import { networkNames, networks, SocialCanvas, type Network } from "./social";
 
 type Email = components["schemas"]["Email"];
 
@@ -218,12 +225,12 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
   const current = selected ? findBlock(doc, selected) : undefined;
 
   /** A new block from the palette, at zone or (with none) last before the footer. */
-  function addNew(type: PaletteType, zone?: Zone) {
+  function addNew(type: PaletteType, zone?: Zone, layout?: ColumnLayout) {
     if (needsDetails(type)) {
       setPending({ type, zone });
       return;
     }
-    void add(starterBlock(type), zone);
+    void add(starterBlock(type, layout), zone);
   }
 
   function endDrag() {
@@ -235,7 +242,7 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
     const d = drag;
     endDrag();
     if (!d || busy || !canDrop(d, zone, doc)) return;
-    if (d.kind === "new") addNew(d.type, zone);
+    if (d.kind === "new") addNew(d.type, zone, d.layout);
     else void move(d.id, zone);
   }
 
@@ -314,26 +321,50 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
             <h2>Blocks</h2>
             <p className="muted small">Drag one onto the email, or click to add it at the end.</p>
             <ul>
-              {paletteTypes.map((type) => {
-                const Icon = blockIcons[type];
-                return (
-                  <li key={type}>
-                    <button
-                      type="button"
-                      className="palette-item"
-                      draggable={!busy}
-                      disabled={busy}
-                      aria-label={`Add ${blockLabels[type].toLowerCase()}`}
-                      onDragStart={(e) => startDrag(e, { kind: "new", type }, setDrag)}
-                      onDragEnd={endDrag}
-                      onClick={() => addNew(type)}
-                    >
-                      <Icon size={20} strokeWidth={1.75} aria-hidden="true" />
-                      <span>{blockLabels[type]}</span>
-                    </button>
-                  </li>
-                );
-              })}
+              {paletteTypes
+                .filter((type) => type !== "columns")
+                .map((type) => {
+                  const Icon = blockIcons[type];
+                  return (
+                    <li key={type}>
+                      <button
+                        type="button"
+                        className="palette-item"
+                        draggable={!busy}
+                        disabled={busy}
+                        aria-label={`Add ${blockLabels[type].toLowerCase()}`}
+                        onDragStart={(e) => startDrag(e, { kind: "new", type }, setDrag)}
+                        onDragEnd={endDrag}
+                        onClick={() => addNew(type)}
+                      >
+                        <Icon size={20} strokeWidth={1.75} aria-hidden="true" />
+                        <span>{blockLabels[type]}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+            </ul>
+            <h2 className="palette-section">Columns</h2>
+            <p className="muted small">Lay blocks out side by side. Columns stack on phones.</p>
+            <ul className="palette-layouts">
+              {columnLayouts.map((layout) => (
+                <li key={layout}>
+                  <button
+                    type="button"
+                    className="palette-item palette-layout"
+                    draggable={!busy}
+                    disabled={busy}
+                    onDragStart={(e) => startDrag(e, { kind: "new", type: "columns", layout }, setDrag)}
+                    onDragEnd={endDrag}
+                    onClick={() => addNew("columns", undefined, layout)}
+                  >
+                    <LayoutGlyph layout={layout} />
+                    {/* Named in words, shown as a ratio. With no aria-label the two needn't match (axe). */}
+                    <span className="visually-hidden">{`Add ${layoutLabel(layout)} layout`}</span>
+                    <span aria-hidden="true">{layout}</span>
+                  </button>
+                </li>
+              ))}
             </ul>
           </aside>
           <div
@@ -387,14 +418,14 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
                 <div key={b.id} role="listitem">
                   <BlockFrame {...frame(b)}>
                     {b.type === "columns" ? (
-                      <div className="canvas-columns">
+                      <div className="canvas-columns" style={{ gridTemplateColumns: layoutGrid(view(b).layout, b.columns.length) }}>
                         {b.columns.map((col, c) => (
                           <div
                             key={c}
                             className="canvas-column"
                             // A list needs items; an empty column is a group until it has some.
                             role={col.blocks.length === 0 ? "group" : "list"}
-                            aria-label={c === 0 ? "Left column" : "Right column"}
+                            aria-label={columnLabel(c, b.columns.length)}
                           >
                             <DropZone zone={{ parent: b.id, column: c, after: null }} fill={col.blocks.length === 0} {...zoneProps} />
                             {(col.blocks as Block[]).map((inner) => (
@@ -679,15 +710,7 @@ function BlockView({
     case "spacer":
       return <div className="canvas-spacer" style={{ height: block.height }} />;
     case "social":
-      return (
-        <p className="canvas-social" style={align(block.align)}>
-          {block.links.map((l) => (
-            <span key={l.network + l.url} title={l.url}>
-              {l.network}
-            </span>
-          ))}
-        </p>
-      );
+      return <SocialCanvas block={block} />;
     case "footer":
       return (
         <div className="canvas-footer">
@@ -699,8 +722,6 @@ function BlockView({
       return null;
   }
 }
-
-const networks = ["website", "facebook", "instagram", "x", "linkedin", "youtube", "tiktok", "threads", "bluesky"] as const;
 
 /** What an image, button or social block needs before it can be added. */
 function Details({
@@ -721,7 +742,7 @@ function Details({
   const [url, setUrl] = useState("");
   const [alt, setAlt] = useState("");
   const [text, setText] = useState("");
-  const [network, setNetwork] = useState<(typeof networks)[number]>("website");
+  const [network, setNetwork] = useState<Network>("website");
   const [uploading, setUploading] = useState(false);
 
   async function submit(e: FormEvent) {
@@ -786,10 +807,10 @@ function Details({
         <>
           <label className="field">
             <span>Network</span>
-            <select value={network} onChange={(e) => setNetwork(e.target.value as (typeof networks)[number])}>
+            <select value={network} onChange={(e) => setNetwork(e.target.value as Network)}>
               {networks.map((n) => (
                 <option key={n} value={n}>
-                  {n}
+                  {networkNames[n]}
                 </option>
               ))}
             </select>

@@ -1748,7 +1748,7 @@ export interface paths {
          * Add a block
          * @description Adds one block to a blocks email. Where it goes: `after` a block's id
          *     (in that block's list), or `index` in the top level, or in column
-         *     `column` (0 left, 1 right) of the columns block `parent_id`. With no
+         *     `column` (0 is the first, leftmost) of the columns block `parent_id`. With no
          *     position the block goes last, which at the top level is just before
          *     the footer. The block is checked as in a whole document; leave out
          *     its `id` to get a new one. `version` works as in updateEmail.
@@ -3566,6 +3566,14 @@ export interface components {
             /** @default 24 */
             height: number;
         };
+        /**
+         * @description A row (or column) of links to social profiles, each shown as the
+         *     network's icon, its name, or both. The icons are PNGs the API serves
+         *     at `/assets/social/`, in the network's own colors (`brand`), near
+         *     black (`dark`; Facebook stays blue) or white (`light`, for dark
+         *     backgrounds). A block saved without the style fields reads with
+         *     their defaults.
+         */
         SocialBlock: {
             id: components["schemas"]["BlockId"];
             /**
@@ -3578,7 +3586,37 @@ export interface components {
                 network: "facebook" | "instagram" | "x" | "linkedin" | "youtube" | "tiktok" | "threads" | "bluesky" | "website";
                 /** Format: uri */
                 url: string;
+                /** @description Text shown beside or instead of the icon, and the icon's alt text. Left out, it's the network's name. */
+                label?: string;
             }[];
+            /**
+             * @description Icons only, icons with the link's name, or names only.
+             * @default icons
+             * @enum {string}
+             */
+            display: "icons" | "icons_and_text" | "text";
+            /**
+             * @default brand
+             * @enum {string}
+             */
+            color: "brand" | "dark" | "light";
+            /**
+             * @description The icons' height in pixels.
+             * @default 32
+             * @enum {integer}
+             */
+            size: 32 | 40 | 48;
+            /**
+             * @description Pixels between links.
+             * @default 12
+             */
+            spacing: number;
+            /**
+             * @description In a row (wrapping on narrow screens) or one link a line.
+             * @default horizontal
+             * @enum {string}
+             */
+            layout: "horizontal" | "vertical";
             /** @default center */
             align: components["schemas"]["Align"];
         };
@@ -3597,7 +3635,16 @@ export interface components {
             /** @default  */
             text: string;
         };
-        /** @description A row of two columns, each holding blocks other than columns and the footer. */
+        /**
+         * @description A row of one to four columns, each holding blocks other than columns
+         *     and the footer. `layout` gives the columns' relative widths: `1`,
+         *     `1:1`, `1:1:1` and `1:1:1:1` are equal columns, and `1:2`, `2:1`,
+         *     `1:3` and `3:1` are uneven splits. `columns` must hold one entry per
+         *     column in the layout; leave it out when adding a block and it starts
+         *     with that many empty columns. Changing `layout` with an update adds
+         *     empty columns, or drops the last ones if they're empty (a 422 if one
+         *     still holds blocks). Columns stack full-width on narrow screens.
+         */
         ColumnsBlock: {
             id: components["schemas"]["BlockId"];
             /**
@@ -3605,6 +3652,11 @@ export interface components {
              * @enum {string}
              */
             type: "columns";
+            /**
+             * @default 1:1
+             * @enum {string}
+             */
+            layout: "1" | "1:1" | "1:1:1" | "1:1:1:1" | "1:2" | "2:1" | "1:3" | "3:1";
             columns: {
                 blocks: components["schemas"]["ColumnContentBlock"][];
             }[];
@@ -4079,7 +4131,7 @@ export interface components {
             /** @description The line it's on, counting from 1. */
             line: number;
             /** @enum {string} */
-            code: "malformed_markup" | "script" | "form" | "iframe" | "embedded_object" | "external_stylesheet" | "event_handler" | "javascript_url" | "data_url" | "redirect" | "missing_unsubscribe" | "merge_tag_link" | "too_large" | "unsupported_css";
+            code: "malformed_markup" | "script" | "form" | "iframe" | "embedded_object" | "external_stylesheet" | "event_handler" | "javascript_url" | "data_url" | "redirect" | "missing_unsubscribe" | "merge_tag_link" | "too_large" | "mailchimp_merge_tag" | "unsupported_css";
             message: string;
         };
         EmailCheck: {
@@ -4116,6 +4168,7 @@ export interface components {
             after?: components["schemas"]["BlockId"];
             index?: number;
             parent_id?: components["schemas"]["BlockId"];
+            /** @description Which column of `parent_id`, 0 first (left). */
             column?: number;
         };
         UpdateEmailBlockRequest: {
@@ -4131,6 +4184,7 @@ export interface components {
             after?: components["schemas"]["BlockId"];
             index?: number;
             parent_id?: components["schemas"]["BlockId"];
+            /** @description Which column of `parent_id`, 0 first (left). */
             column?: number;
         };
         EmailBlockEntry: {
