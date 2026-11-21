@@ -457,7 +457,8 @@ func (s *Service) GetAccount(ctx context.Context, id string) (*Account, error) {
 // batched, and a batch on its way stops before its next copy. Its
 // campaigns stay as they are and carry on when it's unpaused. reason is
 // logged, and shown to the account as why. Pausing a paused account
-// replaces the reason.
+// replaces the reason, and takes over a past-due pause (its code goes), so
+// the plan's payment going through doesn't lift a person's pause (MG-105).
 func (s *Service) Pause(ctx context.Context, actor Actor, accountID, reason string) (*Account, error) {
 	reason, err := cleanReason(reason)
 	if err != nil {

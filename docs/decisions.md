@@ -4,6 +4,45 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: A sending pause takes over the past-due pause, so the payment doesn't lift it (MG-105, bug fix; reversible defaults)
+
+When an account was already paused for its plan's payment (code
+`subscription_past_due`) and a sending pause landed on it, the account kept
+the billing reason and code. The new pause was still logged and counted
+toward suspension, but when the payment went through billing saw a
+past-due pause and lifted the whole pause, so a complaints or bounce pause
+was lifted with nobody looking. Until then, launches showed only the
+past-due message.
+
+- **A pause landing on a past-due pause takes it over.** Its reason
+  replaces the billing one and the code goes, so the payment going through
+  no longer lifts it; someone has to (`mailgoose admin unpause`). This
+  holds for every automatic sending pause, all through `pauseAccount`
+  (`internal/sending/health.go`): a campaign's complaints or hard bounces
+  (and a slice's, and a tester's stricter limits), the account-level pause
+  on the last 30 days (MG-88, whose check now treats a past-due pause as
+  not paused), and the third throttle (MG-61); and for the unsafe-link
+  pause at launch (MG-64, `linkrisk.go`), which before did nothing on a
+  paused account and now takes over a past-due pause, logs it and sends
+  its alert. Any other existing pause (a person's, or an earlier sending
+  pause) keeps its reason as before.
+- **A person's pause too.** `mailgoose admin pause` already replaced the
+  reason and cleared the code, so a payment never lifted it; that's now
+  tested.
+- **A payment lifts only a pause still coded as past due**, as before. The
+  reverse order was already right: a payment going past due during another
+  pause doesn't replace it (billing pauses only an unpaused account), and
+  the payment then leaves it alone.
+- **The payment is still shown as owed.** The past-due state stays on the
+  subscription, so the web app's "paused for an unpaid fee" banner and
+  `mailgoose plan get` still say so. A launch refused for another pause now
+  also lists `subscription_past_due` after `account_paused` while the
+  subscription is `past_due` or `unpaid`, saying that sending stays paused
+  for that other reason after the payment goes through. An admin unpause
+  while the payment is still owed puts the past-due pause back, as before.
+- **Nothing is rewritten.** Accounts paused before this keep their reason
+  and code; an account whose sending pause was hidden under a past-due one
+  and already lifted by a payment isn't paused again.
 ## 2026-11-21: Table sizes in the CLI and the daily digest (MG-95; details are reversible defaults)
 
 Every copy sent is one `campaign_recipients` row and one or two
