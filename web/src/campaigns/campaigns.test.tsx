@@ -198,6 +198,28 @@ describe("draft campaign", () => {
     expect(screen.getByRole("link", { name: "Fix it in the editor" }).getAttribute("href")).toBe(`/emails/${emailId}`);
   });
 
+  it("opens the email's editor, whose Save and exit comes back to the campaign (MG-83)", async () => {
+    const email = {
+      id: emailId,
+      name: "May letter",
+      kind: "blocks",
+      version: 1,
+      document: {
+        schema_version: 1,
+        settings: { subject: "May", preview_text: "", from_name: "", from_email: null, reply_to: null, background_color: "#f4f4f5", content_width: 600 },
+        blocks: [{ id: "b_footer001", type: "footer", text: "" }],
+      },
+      created_at: "2026-11-18T10:00:00Z",
+      updated_at: "2026-11-18T10:00:00Z",
+    };
+    const api = server(campaign(), { [`GET /v1/emails/${emailId}`]: () => ({ status: 200, body: email }) });
+    const user = userEvent.setup();
+    renderApp(`/campaigns/${campaignId}`, api.fetch);
+    await user.click(await screen.findByRole("link", { name: "May letter" }));
+    await user.click(await screen.findByRole("button", { name: "Save and exit" }));
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe(`/campaigns/${campaignId}`));
+  });
+
   it("sends a test to the addresses given, and shows what stops it", async () => {
     let refuse = false;
     const api = server(campaign(), {

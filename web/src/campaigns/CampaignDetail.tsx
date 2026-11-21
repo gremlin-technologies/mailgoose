@@ -2,11 +2,12 @@
 // scheduled one can be moved or cancelled; a sending one shows its status
 // as it changes.
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 
 import { useApi } from "../api/context";
 import { attempt, type Failure } from "../api/result";
 import { Badge, FailureNotice, formatDate, LoadFailed, Loading, PageHeader, useLoad } from "../components";
+import type { EditorFrom } from "../designer/exit";
 import { fromLocalInput, plural, recipientsText, statusBadge, toLocalInput, type Campaign } from "./campaign";
 import { CampaignForm } from "./CampaignForm";
 import { CheckStep, LaunchStep, TestStep } from "./steps";
@@ -213,9 +214,20 @@ function EmailName({ emailId }: { emailId: string | null }) {
     [api, emailId],
   );
   const { state } = useLoad(load);
+  // The editor's "Save and exit" comes back here.
+  const from: EditorFrom = { from: useLocation().pathname };
   if (!emailId) return <>Deleted. Pick another email.</>;
-  if (state.status !== "ok") return <Link to={`/emails/${emailId}`}>Open the email</Link>;
-  return <Link to={`/emails/${emailId}`}>{state.data.name}</Link>;
+  if (state.status !== "ok")
+    return (
+      <Link to={`/emails/${emailId}`} state={from}>
+        Open the email
+      </Link>
+    );
+  return (
+    <Link to={`/emails/${emailId}`} state={from}>
+      {state.data.name}
+    </Link>
+  );
 }
 
 function Facts({ campaign: c }: { campaign: Campaign }) {

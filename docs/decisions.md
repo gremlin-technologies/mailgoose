@@ -24,6 +24,32 @@ below.
   API, database or CLI change; other open tabs follow it. Keeping it on the
   account instead would mean a field on `/v1/account` and a CLI flag.
 
+## 2026-11-21: "Save and exit" in the email editors (MG-83, owner ask; details are reversible defaults)
+
+The owner found it unclear what to do when done editing an email, with going
+"back" feeling unnatural, and asked for a "Save and exit" button even though
+the editors save as you go. Both editors now have it as their primary button.
+It sends any edit not yet saved at once, without the autosave pause, and once
+everything is saved goes back to where the editor was opened from. Autosave
+is unchanged.
+
+Details picked while building:
+
+- **Where it goes back to.** A link from a campaign's page (the email's name,
+  and "Fix it in the editor") tells the editor which campaign it came from,
+  and Save and exit goes back there; from anywhere else, it goes to the email
+  list. Only a campaign page's own path is taken, so a crafted link can't send
+  it elsewhere. It's carried in the browser's navigation state, not the URL,
+  so reloading the editor forgets it and falls back to the email list.
+- **A failed save stays.** On a version conflict or an error, it stays in the
+  editor and shows why, and the edit is kept. Pressing it again sends edits
+  whose save failed once more.
+- **No pause to show "saved".** The save state turns to "All changes saved"
+  and it leaves straight away, rather than lingering to show it.
+- **The HTML editor's "All emails" link** is replaced by Save and exit. The
+  block designer keeps its small back arrow, which now goes back to the same
+  place.
+
 ## 2026-11-21: Tester accounts (MG-86, owner decision; limits and details are reversible defaults)
 
 The owner asked for a tester mode: accounts for people invited to try

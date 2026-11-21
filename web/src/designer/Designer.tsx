@@ -48,6 +48,7 @@ import {
 } from "./blocks";
 import { Preview, type Width } from "./Preview";
 import { EMAIL, saveSettings, saveText, useAutosave } from "./autosave";
+import { backLabel, SaveAndExit, useReturnTo } from "./exit";
 import { HtmlEditor } from "./HtmlEditor";
 import { InlineText, RichText } from "./inline";
 import { base64, BlockProperties, EmailProperties, type Settings } from "./properties";
@@ -134,7 +135,8 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
     return res.ok ? { ok: true, data: res.data?.email } : res;
   };
 
-  const { failure, setFailure, busy, drafts, save, edit, flush, run } = useAutosave({
+  const back = useReturnTo();
+  const { failure, setFailure, busy, drafts, save, edit, flush, run, saveNow } = useAutosave({
     email,
     replace,
     reload,
@@ -271,7 +273,7 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
   return (
     <section className="editor">
       <header className="editor-bar">
-        <Link to="/emails" className="editor-back" aria-label="All emails" title="All emails">
+        <Link to={back} className="editor-back" aria-label={backLabel(back)} title={backLabel(back)}>
           <ArrowLeft size={18} aria-hidden="true" />
         </Link>
         <h1>{name || email.name}</h1>
@@ -295,6 +297,7 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
             </button>
           ))}
         </div>
+        <SaveAndExit saveNow={saveNow} />
       </header>
       {failure && (
         <div className="editor-notice">
