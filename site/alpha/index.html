@@ -254,7 +254,7 @@
             <li><strong>Wait for review.</strong> Every new account is reviewed by hand, so you'll see a yellow banner saying so. Meanwhile you can build emails, import contacts and send yourself tests. Launching campaigns and taking form signups open once the review is done.</li>
             <li><strong>Get your tester account.</strong> Once we've approved you, we turn your account into a tester account. A banner across the app then shows how many tester credits you have left and when your tester account ends.</li>
           </ol>
-          <p>If a day goes by and your account is still in review, reply to your invite email and we'll sort it out.</p>
+          <p>If a day goes by and your account is still in review, say so in <strong>#user-feedback</strong> in the team Slack and we'll sort it out.</p>
 
           <h3>What a tester account can do</h3>
           <p>A tester account sends real campaigns to real people (people who agreed to get them), within some limits that keep staging safe for everyone:</p>
@@ -789,19 +789,20 @@
 
         <section id="bugs" aria-labelledby="bugs-h">
           <h2 id="bugs-h">Reporting a bug</h2>
-          <p><strong>Reply to your invite email</strong> with what you found. One email per bug is easiest for us to track, but a list is fine too. A good report has:</p>
+          <p><strong>Post it in the <code>#user-feedback</code> channel of the mailgoose team Slack.</strong> Your invite includes access to the Slack. One message per bug is easiest for us to follow, and we'll reply in its thread.</p>
+          <p>A good report has:</p>
           <ol>
-            <li><strong>What you were doing</strong>, and which area of this guide it was.</li>
+            <li><strong>Steps to make it happen</strong>, starting from which page or command, and which area of this guide it was.</li>
             <li><strong>What you expected</strong>, and <strong>what happened instead</strong>.</li>
-            <li><strong>Steps to make it happen again</strong>, if you can.</li>
-            <li><strong>Where:</strong> web app or CLI; your browser and device, or the command you ran.</li>
+            <li><strong>Your account's email address</strong>, so we can find your account.</li>
+            <li><strong>Where:</strong> your browser and device for the web app, or for the CLI the command you ran and what <code>mailgoose version</code> prints.</li>
             <li><strong>A screenshot</strong>, or the CLI's output with <code>--json</code>. The error's <code>code</code> helps us most.</li>
             <li><strong>When</strong> it happened, roughly, with your time zone.</li>
           </ol>
           <div class="callout warn">
             <p>Before you send a screenshot or output, cover up any API key, sign-in code or confirmation link. We'll never ask you for them.</p>
           </div>
-          <p>Ideas, confusing wording and "I expected this to be here" are just as welcome as bugs. If something looks like it could expose another account's data or let mail go out without a confirmation, tell us straight away and don't try it further.</p>
+          <p>Ideas, confusing wording and "I expected this to be here" are just as welcome in <code>#user-feedback</code> as bugs. If something looks like it could expose another account's data or let mail go out without a confirmation, don't post the details in the channel: send them as a direct message to the person who invited you, straight away, and don't try it further.</p>
         </section>
 
         <section id="please-dont" aria-labelledby="please-dont-h">

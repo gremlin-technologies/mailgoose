@@ -13,9 +13,10 @@ style and light only like the rest of the site.
 - **Unlisted (default).** Nothing on the site links to it, and it carries
   `noindex, nofollow`; tester invites link to it. Adding it to the site's nav
   is one line in `site/index.html`.
-- **Bug reports go by replying to the tester's invite email (default).**
-  There's no mailgoose.app mailbox yet; swap in a dedicated address once one
-  exists.
+- **Bug reports go to `#user-feedback` in the team Slack (owner decision).**
+  Tester invites include the Slack access, so the page names the channel but
+  carries no invite link or workspace address. Security problems go by direct
+  message to whoever invited the tester, not to the channel.
 - **It documents only what's on `main`.** The Mailchimp import, the shared
   sending domain on staging (MG-85's infra, PR 193) and a CLI installer are
   under "Coming soon"; the CLI is installed with `go install` meanwhile.
