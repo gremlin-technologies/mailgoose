@@ -24,6 +24,9 @@ export type Summary = {
   credits: number;
   balance: number;
   warnings: CheckIssue[];
+  /** True when it goes from mailgoose's shared domain (MG-85); sender is then the person's own address. */
+  shared_domain: boolean;
+  sender: string | null;
 };
 
 export type Confirmation = { summary: Summary; code: string; expires_at: string };
@@ -61,12 +64,28 @@ export function confirmationOf(failure: Failure): Confirmation | undefined {
       credits: s.credits,
       balance: s.balance,
       warnings: Array.isArray(s.warnings) ? s.warnings.filter(isIssue) : [],
+      shared_domain: s.shared_domain === true,
+      sender: typeof s.sender === "string" ? s.sender : null,
     },
   };
 }
 
 function address(a: Address): string {
   return a.name ? `${a.name} <${a.email}>` : a.email;
+}
+
+/**
+ * Says a test or launch goes from mailgoose's shared domain because the
+ * account has no domain of its own, and points to adding one (MG-85).
+ */
+export function SharedDomainNudge({ from, replyTo }: { from: Address; replyTo: Address[] }) {
+  const replies = replyTo.length ? replyTo.map((a) => a.email).join(", ") : "you";
+  return (
+    <p className="notice" role="note">
+      Sending from {from.email}, mailgoose's shared domain, with replies to {replies}.{" "}
+      <Link to="/domains">Add your own domain</Link> for better deliverability and trust.
+    </p>
+  );
 }
 
 /** What stops a test or a launch, each with what to do about it. */
@@ -168,6 +187,7 @@ export function TestStep({ campaign, onSent }: { campaign: Campaign; onSent: (c:
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure>();
   const [sent, setSent] = useState<string>();
+  const [shared, setShared] = useState<{ from: Address; replyTo: Address[] }>();
   const t = campaign.last_test;
 
   async function send(e: FormEvent) {
@@ -175,6 +195,7 @@ export function TestStep({ campaign, onSent }: { campaign: Campaign; onSent: (c:
     setBusy(true);
     setFailure(undefined);
     setSent(undefined);
+    setShared(undefined);
     const list = to.split(/[\s,;]+/).filter(Boolean);
     const res = await attempt(() =>
       api.POST("/v1/campaigns/{campaign_id}/test", {
@@ -186,6 +207,7 @@ export function TestStep({ campaign, onSent }: { campaign: Campaign; onSent: (c:
     if (!res.ok) return setFailure(res.failure);
     if (!res.data) return;
     setSent(`Sent to ${res.data.to.join(", ")}. ${res.data.sent_today} of ${res.data.daily_limit} test emails used today.`);
+    if (res.data.shared_domain) setShared({ from: res.data.from, replyTo: res.data.reply_to });
     onSent(res.data.campaign);
   }
 
@@ -217,6 +239,7 @@ export function TestStep({ campaign, onSent }: { campaign: Campaign; onSent: (c:
       ) : (
         <p className="muted small">No test sent yet.</p>
       )}
+      {sent && shared && <SharedDomainNudge from={shared.from} replyTo={shared.replyTo} />}
       {failure && <Problems failure={failure} />}
     </li>
   );
@@ -316,6 +339,7 @@ function LaunchSummary({
           {plural(s.credits, "credit")}, of the {s.balance.toLocaleString()} you have
         </dd>
       </dl>
+      {s.shared_domain && <SharedDomainNudge from={s.from} replyTo={s.reply_to} />}
       {s.warnings.length > 0 && (
         <>
           <p>The email check has warnings. They don't stop the launch:</p>

@@ -20,9 +20,12 @@ import (
 
 // Error codes: any of these stops a launch.
 const (
-	MissingSubject       = "missing_subject"
-	MissingFrom          = "missing_from"
-	UnverifiedFrom       = "unverified_from"
+	MissingSubject = "missing_subject"
+	MissingFrom    = "missing_from"
+	UnverifiedFrom = "unverified_from"
+	// UnverifiedReplyTo is a Reply-To that the shared sending domain can't
+	// carry: not a verified sender or on a verified domain (MG-85).
+	UnverifiedReplyTo    = "unverified_reply_to"
 	MissingPostalAddress = "missing_postal_address"
 	EmptyEmail           = "empty_email"
 	MergeTag             = "merge_tag"
@@ -46,7 +49,11 @@ const (
 	LinkSafetyNotChecked = "link_safety_not_checked"
 	MissingAlt           = "missing_alt"
 	NearSizeLimit        = "near_size_limit"
-	UnsupportedCSS       = emails.HTMLUnsupportedCSS
+	// SharedDomain means the email goes from mailgoose's shared sending
+	// domain (MG-85), because its From isn't on a verified domain of the
+	// account. It sends; its own domain would do better.
+	SharedDomain   = "shared_domain"
+	UnsupportedCSS = emails.HTMLUnsupportedCSS
 )
 
 // NearSizeBytes is where the size warning starts: tracking adds to every
@@ -83,8 +90,19 @@ type Input struct {
 	// FromEmail is the address the email goes from: its own from_email, or
 	// the account's default. Empty when neither is set.
 	FromEmail string
-	// FromVerified is whether FromEmail is on a verified sending domain.
+	// FromVerified is whether FromEmail can send: it's on a verified
+	// sending domain, or a verified sender on the shared domain.
 	FromVerified bool
+	// UnverifiedFrom is the unverified_from error's message, when the
+	// caller words it; empty uses the domain-only wording.
+	UnverifiedFrom string
+	// SharedFrom is the address the email goes from on the shared sending
+	// domain, and SharedReplyTo where replies go, when it goes from there
+	// (MG-85); empty otherwise.
+	SharedFrom, SharedReplyTo string
+	// ReplyToProblem is the unverified_reply_to error's message; empty when
+	// the Reply-To is fine.
+	ReplyToProblem string
 	// Safety looks links up on the phishing and malware lists (MG-64); nil
 	// skips that.
 	Safety *linkrisk.Checker
@@ -116,8 +134,18 @@ func Check(ctx context.Context, in Input, links LinkChecker) Result {
 		c.fail(Issue{Code: MissingFrom, Path: "settings.from_email",
 			Message: "The email has no From address, and the account has no default one."})
 	case !in.FromVerified:
-		c.fail(Issue{Code: UnverifiedFrom, Path: "settings.from_email",
-			Message: fmt.Sprintf("%s isn't on a verified sending domain, so it can't send yet.", in.FromEmail)})
+		msg := in.UnverifiedFrom
+		if msg == "" {
+			msg = fmt.Sprintf("%s isn't on a verified sending domain, so it can't send yet.", in.FromEmail)
+		}
+		c.fail(Issue{Code: UnverifiedFrom, Path: "settings.from_email", Message: msg})
+	case in.SharedFrom != "":
+		c.warn(Issue{Code: SharedDomain, Path: "settings.from_email",
+			Message: fmt.Sprintf("This email goes from %s, mailgoose's shared domain, with replies to %s. Add your own domain for better deliverability and trust.",
+				in.SharedFrom, in.SharedReplyTo)})
+	}
+	if in.ReplyToProblem != "" {
+		c.fail(Issue{Code: UnverifiedReplyTo, Path: "settings.reply_to", Message: in.ReplyToProblem})
 	}
 	addr := in.PostalAddress
 	if strings.TrimSpace(addr) == "" {

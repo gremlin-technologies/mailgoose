@@ -31,6 +31,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/images"
 	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
+	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
 	"github.com/gremlin-technologies/mailgoose/internal/testmode"
@@ -105,6 +106,14 @@ type Server struct {
 	// database or a system sending domain, which makes their endpoints
 	// answer 503.
 	TestAddresses *testmode.Service
+	// SenderAddresses keeps accounts' sender addresses (MG-85); nil
+	// without a database or a system sending domain, which makes their
+	// endpoints answer 503.
+	SenderAddresses *senders.Service
+	// Senders works out who an email goes from (MG-85), for the email check
+	// and the account's shared address. Nil means a Resolver on Domains
+	// with shared sending off.
+	Senders *senders.Resolver
 	// TrustedOrigins are other origins (such as the web app's, when it isn't
 	// served from the API's own origin) allowed to send cookie-authenticated
 	// requests that change something. The API's own origin always is.

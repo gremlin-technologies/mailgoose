@@ -43,6 +43,8 @@ func TestDeleteAccount(t *testing.T) {
 			`INSERT INTO signup_ips (account_id, ip, created_at) VALUES ($1, '192.0.2.1', now())`,
 			`INSERT INTO test_addresses (account_id, email, created_at) VALUES ($1, 'tester@example.com', now())`,
 			`INSERT INTO test_address_emails (account_id, sent_at) VALUES ($1, now())`,
+			`INSERT INTO sender_addresses (account_id, email, created_at) VALUES ($1, 'sender@example.com', now())`,
+			`INSERT INTO sender_address_emails (account_id, sent_at) VALUES ($1, now())`,
 			`INSERT INTO idempotency_keys (scope, key, request_hash) VALUES ('account:' || $1 || ':user:x', 'k', 'h')`,
 		} {
 			if _, err := h.db.Exec(ctx, q, id); err != nil {

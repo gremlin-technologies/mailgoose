@@ -49,9 +49,24 @@ mailgoose credits --json          # the balance; each email sent uses one credit
 ```
 
 A campaign can't launch until the account has a postal address (it goes in
-every email's footer, as anti-spam law requires) and a verified sending
-domain. Adding a domain prints DNS records the person must add at their DNS
-host; `mailgoose domain verify <domain>` checks again once they have.
+every email's footer, as anti-spam law requires) and a From address it may
+send from. Best is a verified sending domain of its own: adding a domain
+prints DNS records the person must add at their DNS host, and
+`mailgoose domain verify <domain>` checks again once they have.
+
+A domain is optional where `mailgoose account get` shows a `Shared From`.
+Then a From address the person has proved they own can send without one:
+their sign-in address, or one they confirm by the link emailed to it.
+
+```sh
+mailgoose sender-addresses add hello@example.com   # emails it a confirm link
+mailgoose sender-addresses list --json
+```
+
+Such mail goes from the account's address on mailgoose's shared domain,
+with replies to their own address. Tests and launch summaries say so; tell
+the person, and suggest adding their own domain, which delivers better and
+looks more trustworthy.
 
 ## 3. Build an email from blocks
 
@@ -192,6 +207,11 @@ the person turns that off.
 - `version_conflict`: someone changed the thing since you read it. Read it
   again and redo your change.
 - `rate_limited`: wait for the seconds in the hint, then retry.
+- `unverified_from`: the From is on no verified domain and, where shared
+  sending is on, isn't a verified sender address. The hint names the fixes;
+  confirming an address or adding DNS records is the person's to do.
+- `unverified_reply_to`: on the shared domain, the email's Reply-To must be
+  a verified sender address or on a verified domain too.
 - `not_ready` on launch: `details` lists every reason the campaign can't go
   yet, such as no test of this version, no postal address, or too few
   credits. Fix what you can and tell the person the rest; credits are theirs

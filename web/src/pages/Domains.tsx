@@ -46,6 +46,7 @@ export function Domains() {
         title="Domains"
         about="Verify the domain your emails come from. Mail from a verified domain reaches inboxes, not spam."
       />
+      <OptionalDomain />
       <form onSubmit={add} className="panel row-form">
         <label className="field grow">
           <span>Add a domain</span>
@@ -96,6 +97,37 @@ export function Domains() {
           </table>
         ))}
     </section>
+  );
+}
+
+/**
+ * With shared sending on (MG-85), a domain of your own is optional: says so,
+ * why it's still worth it, and what sending without one looks like.
+ */
+function OptionalDomain() {
+  const api = useApi();
+  const load = useCallback(() => attempt(() => api.GET("/v1/account")), [api]);
+  const { state } = useLoad(load);
+  if (state.status !== "ok" || !state.data.shared_address) return null;
+  const a = state.data;
+  const name = a.from_name?.trim() || a.name;
+  return (
+    <div className="panel stack" role="region" aria-label="Sending without a domain">
+      <h2>Optional, but worth it</h2>
+      <p>
+        You can send without a domain of your own, from your own address or a{" "}
+        <Link to="/sender-addresses">confirmed sender address</Link>. We strongly recommend adding one: more of your
+        emails reach inboxes, and readers see your name in the address, so they know it's really you.
+      </p>
+      <dl className="facts">
+        <dt>Without a domain</dt>
+        <dd>
+          From {name} &lt;{a.shared_address}&gt;, with replies to you
+        </dd>
+        <dt>With your domain</dt>
+        <dd>From {name} &lt;hello@yourbusiness.com&gt;</dd>
+      </dl>
+    </div>
   );
 }
 

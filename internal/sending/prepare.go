@@ -22,16 +22,21 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
+	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
 
 // Service prepares and sends a campaign's email.
 type Service struct {
-	DB          *pgxpool.Pool
-	Campaigns   *campaigns.Service
-	Emails      *emails.Service
-	Settings    *auth.Service
-	Domains     VerifiedFrom
+	DB        *pgxpool.Pool
+	Campaigns *campaigns.Service
+	Emails    *emails.Service
+	Settings  *auth.Service
+	Domains   VerifiedFrom
+	// Senders works out who an email goes from (MG-85): its own From on a
+	// verified domain, or the shared sending domain for a verified sender.
+	// Nil means a Resolver on Domains with shared sending off.
+	Senders     *senders.Resolver
 	Unsubscribe *unsubscribe.Service
 	Mail        mail.Sender
 	// Limits are the send limits, for showing an account its own.
@@ -55,6 +60,14 @@ type VerifiedFrom interface {
 	RequireVerifiedFrom(ctx context.Context, accountID, email string) error
 }
 
+// senders is s.Senders, or a Resolver with shared sending off.
+func (s *Service) senders() *senders.Resolver {
+	if s.Senders != nil {
+		return s.Senders
+	}
+	return &senders.Resolver{DB: s.DB, Domains: s.Domains}
+}
+
 func (s *Service) now() time.Time {
 	if s.Now != nil {
 		return s.Now()
@@ -64,14 +77,17 @@ func (s *Service) now() time.Time {
 
 // Codes of the problems that stop a campaign's email being sent.
 const (
-	NoEmail          = "no_email"
-	MissingFrom      = "missing_from"
-	UnverifiedFrom   = "unverified_from"
-	MissingPostal    = "missing_postal_address"
-	MissingSubject   = "missing_subject"
-	EmptyEmail       = "empty_email"
-	MergeTagProblems = "merge_tag"
-	InvalidHTML      = "invalid_html"
+	NoEmail        = "no_email"
+	MissingFrom    = "missing_from"
+	UnverifiedFrom = "unverified_from"
+	// UnverifiedReplyTo is an email's Reply-To that the shared sending
+	// domain can't carry (MG-85).
+	UnverifiedReplyTo = "unverified_reply_to"
+	MissingPostal     = "missing_postal_address"
+	MissingSubject    = "missing_subject"
+	EmptyEmail        = "empty_email"
+	MergeTagProblems  = "merge_tag"
+	InvalidHTML       = "invalid_html"
 )
 
 // Problem is one thing to fix before the email can be sent, with how.
@@ -104,6 +120,11 @@ type Prepared struct {
 	Email    *emails.Email
 	From     mail.Address
 	ReplyTo  []mail.Address
+	// Shared is true when the email goes from the shared sending domain
+	// (MG-85), and Sender is then the verified address the email asked to
+	// go from, which replies go to unless it names its own Reply-To.
+	Shared bool
+	Sender string
 	// PostalAddress is the account's, which the footer shows.
 	PostalAddress string
 	Template      *render.Template
@@ -147,21 +168,29 @@ func (s *Service) Prepare(ctx context.Context, accountID, campaignID string) (*P
 	if n := strings.TrimSpace(doc.Settings.FromName); n != "" {
 		p.From.Name = n
 	}
-	if r := trimmed(doc.Settings.ReplyTo); r != "" {
-		p.ReplyTo = []mail.Address{{Email: r}}
-	}
+	replyTo := trimmed(doc.Settings.ReplyTo)
 	if p.From.Email == "" {
 		problems = append(problems, Problem{Code: MissingFrom, Message: "There's no From address.",
 			Hint: "Set one for the account with `mailgoose account update --from-email you@yourdomain.com`, or on the email."})
 	} else {
-		err := s.Domains.RequireVerifiedFrom(ctx, accountID, p.From.Email)
+		r := s.senders()
+		sender, err := r.Resolve(ctx, accountID, p.From, replyTo)
+		var badReplyTo *senders.ReplyToError
 		switch {
 		case errors.Is(err, domains.ErrFromNotVerified):
 			problems = append(problems, Problem{Code: UnverifiedFrom,
-				Message: "The From address " + p.From.Email + " isn't on a verified sending domain of this account.",
-				Hint:    "Verify its domain with `mailgoose domain add " + domainOf(p.From.Email) + "` and the DNS records it gives, or use a From on a verified domain (`mailgoose domain list`)."})
+				Message: r.UnverifiedMessage(p.From.Email), Hint: r.UnverifiedHint(p.From.Email)})
+		case errors.As(err, &badReplyTo):
+			problems = append(problems, Problem{Code: UnverifiedReplyTo,
+				Message: "The Reply-To " + badReplyTo.Address + " isn't one of this account's verified sender addresses or on a verified domain, so emails from mailgoose's shared domain can't send replies there.",
+				Hint:    senders.ReplyToHint(badReplyTo.Address)})
 		case err != nil:
 			return nil, err
+		default:
+			p.From, p.ReplyTo, p.Shared = sender.From, sender.ReplyTo, sender.Shared
+			if sender.Shared {
+				p.Sender = sender.Address
+			}
 		}
 	}
 	postal := trimmed(st.PostalAddress)
@@ -209,11 +238,4 @@ func trimmed(s *string) string {
 		return ""
 	}
 	return strings.TrimSpace(*s)
-}
-
-func domainOf(email string) string {
-	if at := strings.LastIndexByte(email, '@'); at >= 0 {
-		return email[at+1:]
-	}
-	return email
 }

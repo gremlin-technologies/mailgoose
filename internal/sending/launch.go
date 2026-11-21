@@ -61,11 +61,16 @@ const (
 
 // Summary is what a person confirms before a campaign launches (CAM-3).
 type Summary struct {
-	CampaignID      string
-	Name            string
-	Subject         string
-	From            mail.Address
-	ReplyTo         []mail.Address
+	CampaignID string
+	Name       string
+	Subject    string
+	From       mail.Address
+	ReplyTo    []mail.Address
+	// SharedDomain is true when the campaign goes from the shared sending
+	// domain (MG-85); Sender is then the verified address it was set to go
+	// from.
+	SharedDomain    bool
+	Sender          string
 	RecipientCount  int
 	SendAt          *time.Time
 	Credits         int
@@ -236,7 +241,7 @@ func (s *Service) summarize(ctx context.Context, accountID string, c *campaigns.
 		problems = append(problems, tp...)
 		sum = &Summary{
 			CampaignID: c.ID, Name: c.Name, Subject: p.Email.Document.Settings.Subject,
-			From: p.From, ReplyTo: p.ReplyTo, RecipientCount: n, SendAt: c.SendAt,
+			From: p.From, ReplyTo: p.ReplyTo, SharedDomain: p.Shared, Sender: p.Sender, RecipientCount: n, SendAt: c.SendAt,
 			Credits: n, Balance: bal, CampaignVersion: c.Version, EmailVersion: p.Email.Version,
 			Warnings: p.warnings,
 		}

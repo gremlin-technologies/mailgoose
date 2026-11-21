@@ -43,6 +43,9 @@ type Settings struct {
 	TermsAcceptedAt *time.Time
 	// SendingMode is SendingTest or SendingFull (MG-80).
 	SendingMode string
+	// SendingSlug is the account's local part on the shared sending domain
+	// (MG-85): set when the account is made, and kept when it's renamed.
+	SendingSlug string
 }
 
 // TermsNeeded reports whether the account has yet to accept the current
@@ -127,13 +130,13 @@ func (s *Service) UpdateAccountSettings(ctx context.Context, accountID string, u
 
 func readSettings(ctx context.Context, tx pgx.Tx, accountID string, lock bool) (*Settings, error) {
 	q := `SELECT id, name, plan, from_name, from_email, postal_address, time_zone, created_at, terms_version, terms_accepted_at,
-		sending_mode FROM accounts WHERE id = $1`
+		sending_mode, sending_slug FROM accounts WHERE id = $1`
 	if lock {
 		q += ` FOR UPDATE`
 	}
 	var st Settings
 	err := tx.QueryRow(ctx, q, accountID).Scan(&st.ID, &st.Name, &st.Plan, &st.FromName, &st.FromEmail, &st.PostalAddress, &st.TimeZone, &st.CreatedAt,
-		&st.TermsVersion, &st.TermsAcceptedAt, &st.SendingMode)
+		&st.TermsVersion, &st.TermsAcceptedAt, &st.SendingMode, &st.SendingSlug)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoAccount
 	}

@@ -24,6 +24,7 @@ import { Settings } from "./pages/Settings";
 import { SignIn } from "./pages/SignIn";
 import { SignUp } from "./pages/SignUp";
 import { Tags } from "./pages/Tags";
+import { ConfirmSenderAddress, SenderAddresses } from "./pages/SenderAddresses";
 import { ConfirmTestAddress, TestAddresses } from "./pages/TestAddresses";
 import { policyChangesPath } from "./policyVersions.gen";
 
@@ -66,6 +67,7 @@ export function AppRoutes() {
         }
       />
       <Route path="/test-addresses/confirm" element={<ConfirmTestAddress />} />
+      <Route path="/sender-addresses/confirm" element={<ConfirmSenderAddress />} />
       <Route
         path="/device"
         element={
@@ -99,6 +101,7 @@ export function AppRoutes() {
         <Route path="/forms/:id" element={<FormEditor />} />
         <Route path="/billing" element={<Billing />} />
         <Route path="/test-addresses" element={<TestAddresses />} />
+        <Route path="/sender-addresses" element={<SenderAddresses />} />
         <Route path="*" element={<NotFound />} />
       </Route>
     </Routes>

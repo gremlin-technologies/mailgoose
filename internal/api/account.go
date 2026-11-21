@@ -45,7 +45,11 @@ func (s *Server) writeAccount(w http.ResponseWriter, r *http.Request, st *auth.S
 			return
 		}
 	}
-	writeJSON(w, http.StatusOK, accountJSON(st, limit, ts))
+	out := accountJSON(st, limit, ts)
+	if a := s.senders().SharedAddress(st.SendingSlug); a != "" {
+		out.SharedAddress = &a
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // nullable is a JSON field that tells "absent" (Set false) from null (Set
@@ -145,6 +149,7 @@ func accountJSON(st *auth.Settings, limit sending.SendLimit, ts *tester.Status) 
 		Terms:       termsJSON(st),
 		SendingMode: apigen.SendingMode(st.SendingMode),
 		Tester:      tj,
+		SendingSlug: st.SendingSlug,
 		CreatedAt:   st.CreatedAt.UTC(),
 	}
 }

@@ -43,6 +43,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
+	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/sesevents"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
@@ -163,12 +164,18 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		alerts := &sending.OpsAlert{Mail: sender, From: mail.Address{Name: "mailgoose", Email: "alerts@" + cfg.SystemSendingDomain},
 			To: cfg.OpsAlertEmail, Log: log.With("component", "alerts")}
 		srv.LinkSafety = newLinkSafety(cfg, log)
+		// Who customers' email goes from (MG-85): their verified domain, or
+		// the shared sending domain for a verified sender.
+		srv.Senders = &senders.Resolver{DB: pool, Domains: srv.Domains, Shared: cfg.SharedSendingDomain}
+		if cfg.SharedSendingDomain != "" {
+			log.Info("shared sending is on", "domain", cfg.SharedSendingDomain)
+		}
 		srv.Sending = &sending.Service{DB: pool, Campaigns: srv.Campaigns, Emails: srv.Emails,
-			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Unsubscribe: srv.Unsubscribe, Mail: sender,
+			Settings: &auth.Service{DB: pool}, Domains: srv.Domains, Senders: srv.Senders, Unsubscribe: srv.Unsubscribe, Mail: sender,
 			Limits: sendLimits(cfg), Slicing: slicing(cfg),
 			LinkSafety: srv.LinkSafety, Alert: alerts.Notify, Log: log.With("component", "sending")}
 		srv.Signups = &signups.Service{DB: pool, Forms: srv.Forms, Settings: &auth.Service{DB: pool},
-			Domains: srv.Domains, Mail: sender}
+			Domains: srv.Domains, Senders: srv.Senders, Mail: sender}
 		// A suspension emails the owner, with ABUSE_EMAIL for appeals, and
 		// OPS_ALERT_EMAIL.
 		srv.Admin = &admin.Service{DB: pool, Sending: srv.Sending, Limits: sendLimits(cfg), Warning: warning(cfg),
@@ -209,6 +216,9 @@ func serve(ctx context.Context, log *slog.Logger) error {
 			// Test addresses' confirm links come from the same sender as
 			// sign-in codes (MG-80).
 			srv.TestAddresses = &testmode.Service{DB: pool, Mail: sender,
+				From: mail.Address{Name: "mailgoose", Email: "signin@" + cfg.SystemSendingDomain}}
+			// So do sender addresses' (MG-85).
+			srv.SenderAddresses = &senders.Service{DB: pool, Mail: sender,
 				From: mail.Address{Name: "mailgoose", Email: "signin@" + cfg.SystemSendingDomain}}
 		}
 
@@ -307,6 +317,10 @@ func newDomains(ctx context.Context, cfg config.Config, pool *pgxpool.Pool, log 
 	}
 	if cfg.SystemSendingDomain != "" {
 		svc.Reserved = append(svc.Reserved, cfg.SystemSendingDomain)
+	}
+	// No account may verify the shared sending domain as its own (MG-85).
+	if cfg.SharedSendingDomain != "" {
+		svc.Reserved = append(svc.Reserved, cfg.SharedSendingDomain)
 	}
 	if cfg.MailSender == "fake" {
 		svc.SES = &domains.FakeSES{}
@@ -430,12 +444,17 @@ const dispatchEvery = 2 * time.Second
 
 // guardSender checks every message before it goes out: it must be from the
 // system sending domain, or from a domain its account verified in this
-// environment. Staging and prod share one AWS account and SES ignores tag
-// conditions on sends, so this check, not IAM, keeps each environment to
-// its own identities (decisions, 2026-11-20).
+// environment, or from the shared sending domain as its own account's slug
+// with Reply-To addresses that account verified (MG-85). Staging and prod
+// share one AWS account and SES ignores tag conditions on sends, so this
+// check, not IAM, keeps each environment to its own identities (decisions,
+// 2026-11-20).
 func guardSender(cfg config.Config, pool *pgxpool.Pool, sender mail.Sender) mail.Sender {
+	verified := &domains.Service{DB: pool}
+	shared := &senders.Resolver{DB: pool, Domains: verified, Shared: cfg.SharedSendingDomain}
 	return &mail.Guard{Sender: sender, System: cfg.SystemSendingDomain,
-		Verified: (&domains.Service{DB: pool}).RequireVerifiedFrom}
+		Verified: verified.RequireVerifiedFrom,
+		Shared:   cfg.SharedSendingDomain, SharedSender: shared.CheckShared}
 }
 
 func newPipeline(cfg config.Config, pool *pgxpool.Pool, sender mail.Sender, log *slog.Logger) *sending.Pipeline {

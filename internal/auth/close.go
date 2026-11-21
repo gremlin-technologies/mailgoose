@@ -46,6 +46,8 @@ var AccountTables = []string{
 	"signup_ips",
 	"test_address_emails",
 	"test_addresses",
+	"sender_address_emails",
+	"sender_addresses",
 	"users",
 }
 

@@ -23,6 +23,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
+	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/testmode"
 )
 
@@ -95,9 +96,21 @@ type Service struct {
 	Forms    *forms.Service
 	Settings *auth.Service
 	Domains  VerifiedFrom
-	Mail     mail.Sender
+	// Senders works out who confirmation emails go from (MG-85): the
+	// account's From on a verified domain, or the shared sending domain for
+	// a verified sender. Nil means a Resolver on Domains with shared sending
+	// off.
+	Senders *senders.Resolver
+	Mail    mail.Sender
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+}
+
+func (s *Service) senders() *senders.Resolver {
+	if s.Senders != nil {
+		return s.Senders
+	}
+	return &senders.Resolver{DB: s.DB, Domains: s.Domains}
 }
 
 func (s *Service) now() time.Time {
@@ -234,7 +247,7 @@ func (s *Service) Submit(ctx context.Context, formID string, sub Submission, bas
 		return res, nil
 	}
 
-	msg := confirmMessage(f, *from, in.Email, strings.TrimRight(baseURL, "/")+ConfirmPrefix+token)
+	msg := confirmMessage(f, from, in.Email, strings.TrimRight(baseURL, "/")+ConfirmPrefix+token)
 	if _, err := s.Mail.Send(ctx, msg); err != nil {
 		// Not sent, so a retry may send at once. The link stays valid, but
 		// nobody has it.
@@ -310,9 +323,10 @@ func wordingOf(f *forms.Form) wording {
 	return w
 }
 
-// from is the account's From for confirmation emails, or nil when it has
-// none on a verified sending domain.
-func (s *Service) from(ctx context.Context, accountID string) (*mail.Address, error) {
+// from is who the account's confirmation emails go from: its From on a
+// verified sending domain, or, with shared sending on, the shared domain
+// for a From that's a verified sender (MG-85). Nil when it has neither.
+func (s *Service) from(ctx context.Context, accountID string) (*senders.Sender, error) {
 	st, err := s.Settings.AccountSettings(ctx, accountID)
 	if err != nil {
 		return nil, err
@@ -324,14 +338,14 @@ func (s *Service) from(ctx context.Context, accountID string) (*mail.Address, er
 	if st.FromName != nil && strings.TrimSpace(*st.FromName) != "" {
 		addr.Name = strings.TrimSpace(*st.FromName)
 	}
-	err = s.Domains.RequireVerifiedFrom(ctx, accountID, addr.Email)
+	sender, err := s.senders().Resolve(ctx, accountID, addr, "")
 	if errors.Is(err, domains.ErrFromNotVerified) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	return &addr, nil
+	return sender, nil
 }
 
 // Problem is something that stops a form taking signups.
@@ -350,6 +364,11 @@ func (s *Service) Problems(ctx context.Context, f *forms.Form) ([]Problem, error
 	if err != nil || from != nil {
 		return nil, err
 	}
+	if s.senders().SharedOn() {
+		return []Problem{{Code: "no_verified_from",
+			Message: "Signups are refused: the form uses double opt-in, and the account's From address is neither on a verified domain nor a verified sender address, so the confirmation email can't be sent.",
+			Hint:    "Set the From to your own address with `mailgoose account update --from-email you@example.com` and verify it with `mailgoose sender-addresses add` (your sign-in address needs no link); or, better for deliverability, verify its domain with `mailgoose domain add <domain>`."}}, nil
+	}
 	return []Problem{{Code: "no_verified_from",
 		Message: "Signups are refused: the form uses double opt-in, and the account has no From address on a verified sending domain to send the confirmation email from.",
 		Hint:    "Verify a domain with `mailgoose domain add <domain>` and set the From with `mailgoose account update --from-email you@<domain>`."}}, nil
@@ -367,7 +386,7 @@ var confirmHTML = template.Must(template.New("confirm").Parse(`<!doctype html>
 `))
 
 // confirmMessage is the double opt-in email for a signup to f.
-func confirmMessage(f *forms.Form, from mail.Address, to, url string) mail.Message {
+func confirmMessage(f *forms.Form, from *senders.Sender, to, url string) mail.Message {
 	var paras []string
 	for _, p := range strings.Split(strings.ReplaceAll(f.ConfirmText, "\r\n", "\n"), "\n") {
 		if p = strings.TrimSpace(p); p != "" {
@@ -378,7 +397,8 @@ func confirmMessage(f *forms.Form, from mail.Address, to, url string) mail.Messa
 	_ = confirmHTML.Execute(&b, map[string]any{"Subject": f.ConfirmSubject, "Paragraphs": paras, "URL": url})
 	text := strings.Join(paras, "\n\n") + "\n\nConfirm your subscription:\n" + url + "\n"
 	return mail.Message{
-		From:      from,
+		From:      from.From,
+		ReplyTo:   from.ReplyTo,
 		To:        mail.Address{Email: to},
 		Subject:   f.ConfirmSubject,
 		HTML:      b.String(),

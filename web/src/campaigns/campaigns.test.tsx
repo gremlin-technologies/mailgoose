@@ -282,6 +282,55 @@ describe("draft campaign", () => {
     expect(screen.queryByRole("button", { name: "Review and launch" })).toBeNull();
   });
 
+  it("says when a test or launch goes from the shared domain, with a link to add a domain (MG-85)", async () => {
+    const shared = { name: "Pat's Bakery", email: "pats-bakery@shared.mailgoose.test" };
+    const replyTo = [{ name: "", email: "pat@example.com" }];
+    const api = server(campaign({ last_test: { at: "2026-11-19T10:00:00Z", version: 1, email_version: 4 } }), {
+      [`POST ${base}/test`]: () => ({
+        status: 200,
+        body: {
+          campaign: campaign({ last_test: { at: "2026-11-19T10:00:00Z", version: 1, email_version: 4 } }),
+          to: ["pat@example.com"],
+          sent_today: 1,
+          daily_limit: 50,
+          from: shared,
+          reply_to: replyTo,
+          shared_domain: true,
+          sender: "pat@example.com",
+        },
+      }),
+      [`POST ${base}/launch`]: () =>
+        fail(409, "confirmation_required", "Confirm to launch.", {
+          summary: { ...summary, from: shared, reply_to: replyTo, shared_domain: true, sender: "pat@example.com" },
+          code: "ABCD-1234",
+          expires_at: "2026-11-19T10:15:00Z",
+        }),
+    });
+    const user = userEvent.setup();
+    renderApp(`/campaigns/${campaignId}`, api.fetch);
+    await user.click(await screen.findByRole("button", { name: "Send test" }));
+    const nudge = "Sending from pats-bakery@shared.mailgoose.test, mailgoose's shared domain, with replies to pat@example.com.";
+    const testNote = (await screen.findByText(new RegExp(nudge.replace(/\./g, "\\.")))).closest("[role=note]") as HTMLElement;
+    expect(within(testNote).getByRole("link", { name: "Add your own domain" }).getAttribute("href")).toBe("/domains");
+
+    await user.click(screen.getByRole("button", { name: "Review and launch" }));
+    const panel = await screen.findByRole("region", { name: "Launch summary" });
+    expect(within(panel).getByRole("note").textContent).toBe(`${nudge} Add your own domain for better deliverability and trust.`);
+    expect(within(panel).getByText("pat@example.com")).toBeTruthy();
+  });
+
+  it("shows no shared-domain note for a From on a verified domain", async () => {
+    const api = server(campaign({ last_test: { at: "2026-11-19T10:00:00Z", version: 1, email_version: 4 } }), {
+      [`POST ${base}/launch`]: () =>
+        fail(409, "confirmation_required", "Confirm to launch.", { summary, code: "ABCD-1234", expires_at: "2026-11-19T10:15:00Z" }),
+    });
+    const user = userEvent.setup();
+    renderApp(`/campaigns/${campaignId}`, api.fetch);
+    await user.click(await screen.findByRole("button", { name: "Review and launch" }));
+    const panel = await screen.findByRole("region", { name: "Launch summary" });
+    expect(within(panel).queryByRole("note")).toBeNull();
+  });
+
   it("lists what stops a launch, and drops a summary whose code no longer works", async () => {
     let answer: "not_ready" | "summary" | "stale" = "not_ready";
     const api = server(campaign(), {

@@ -23,6 +23,10 @@ export SIGNUP_REVIEW="${SIGNUP_REVIEW:-off}"
 # tests sign up and launch to any address. NEW_ACCOUNTS_TEST_MODE=on tries
 # test mode.
 export NEW_ACCOUNTS_TEST_MODE="${NEW_ACCOUNTS_TEST_MODE:-off}"
+# Accounts with no verified domain send from their slug at this shared
+# domain, with replies to an address they verified (MG-85). Set it empty to
+# turn shared sending off.
+export SHARED_SENDING_DOMAIN="${SHARED_SENDING_DOMAIN-shared.localhost}"
 if [ -f web/dist/index.html ]; then
   export WEB_DIR="$PWD/web/dist"
 fi

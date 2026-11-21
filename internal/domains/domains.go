@@ -7,9 +7,10 @@
 // found and SES agrees. The API re-checks pending domains every 5 minutes
 // for 72 hours, then marks them failed.
 //
-// Every campaign and test send must come from a verified domain of its
-// account (RequireVerifiedFrom); mailgoose never sends customer mail from a
-// shared domain, free plan or not.
+// A campaign or test send whose From is on a verified domain of its account
+// (RequireVerifiedFrom) goes from it as asked. Without one it may go from
+// mailgoose's shared sending domain instead, when that's on and the From is
+// a verified sender of the account (internal/senders, MG-85).
 package domains
 
 import (

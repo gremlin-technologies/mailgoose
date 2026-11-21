@@ -127,6 +127,23 @@ func TestSystemSendingDomainDefault(t *testing.T) {
 	}
 }
 
+func TestSharedSendingDomain(t *testing.T) {
+	// Off unless set, locally too (MG-85).
+	cfg, err := load(env(nil))
+	if err != nil || cfg.SharedSendingDomain != "" {
+		t.Fatalf("default = %q, %v; want off", cfg.SharedSendingDomain, err)
+	}
+	cfg, err = load(env(map[string]string{"SHARED_SENDING_DOMAIN": " Shared.Localhost. "}))
+	if err != nil || cfg.SharedSendingDomain != "shared.localhost" {
+		t.Fatalf("set = %q, %v", cfg.SharedSendingDomain, err)
+	}
+	for _, bad := range []string{"mail.localhost", "MAIL.localhost", "localhost", "pat@shared.localhost"} {
+		if _, err := load(env(map[string]string{"SHARED_SENDING_DOMAIN": bad})); err == nil {
+			t.Errorf("SHARED_SENDING_DOMAIN=%q: no error", bad)
+		}
+	}
+}
+
 func TestAbuseEmail(t *testing.T) {
 	cfg, err := load(env(nil))
 	if err != nil || cfg.AbuseEmail != "abuse@mail.localhost" {
