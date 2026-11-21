@@ -140,9 +140,15 @@ type fileScan struct {
 
 // add counts one row of the file.
 func (f *fileScan) add(r csvRow, seen map[string]struct{}) {
+	f.addAddress(r.email, r.unreadable, seen)
+}
+
+// addAddress counts one row with this email cell; unreadable is a row that
+// couldn't be read at all.
+func (f *fileScan) addAddress(email string, unreadable bool, seen map[string]struct{}) {
 	f.total++
-	e, err := NormalizeEmail(r.email)
-	if r.unreadable || err != nil {
+	e, err := NormalizeEmail(email)
+	if unreadable || err != nil {
 		f.counts.InvalidRows++
 		return
 	}
@@ -171,7 +177,7 @@ func importHash(email string) []byte {
 // sharedWith counts the hashes other accounts imported, in any of their
 // imports, and finds the account with most of them. It reads only counts
 // and an account id, never another account's contacts.
-func sharedWith(ctx context.Context, tx pgx.Tx, accountID string, hashes [][]byte) (int, *string, error) {
+func sharedWith(ctx context.Context, tx querier, accountID string, hashes [][]byte) (int, *string, error) {
 	if len(hashes) == 0 {
 		return 0, nil, nil
 	}

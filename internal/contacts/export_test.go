@@ -219,7 +219,7 @@ func TestEraseLeavesOnlyTheSuppressionHash(t *testing.T) {
 	if _, err := h.svc.Get(ctx, h.acc, pat.ID); !errors.Is(err, ErrNotFound) {
 		t.Errorf("contact still there: %v", err)
 	}
-	if got := fmt.Sprint(h.skipped(t, im.ID)); got != "[{3  duplicate}]" {
+	if got := fmt.Sprint(h.skipped(t, im.ID)); got != "[{3  duplicate }]" {
 		t.Errorf("skip report = %s", got)
 	}
 	if ok, err := h.svc.IsSuppressed(ctx, h.acc, "pat@example.com"); !ok || err != nil {
