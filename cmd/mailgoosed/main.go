@@ -504,6 +504,8 @@ func sendLimits(cfg config.Config) sending.Limits {
 		PerSecond: cfg.SendRatePerSecond,
 		Daily:     cfg.AccountDailySendLimit,
 		NewDaily:  cfg.NewAccountDailySendLimit,
+		// The platform cap (MG-87); only the dispatcher reads it.
+		PlatformDaily: cfg.PlatformDailySendLimit,
 	}
 }
 

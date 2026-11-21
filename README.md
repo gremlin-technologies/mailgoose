@@ -153,6 +153,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `SEND_QUEUE_URL`, `SES_EVENTS_QUEUE_URL` | Queues the worker drains. Without `SEND_QUEUE_URL` the worker batches and sends campaigns itself, through a queue in memory (local). |
 | `SEND_RATE_PER_SECOND` | Campaign emails sent a second, across every worker. Default 10. |
 | `ACCOUNT_DAILY_SEND_LIMIT`, `NEW_ACCOUNT_DAILY_SEND_LIMIT` | The most campaign emails an account may send in any 24 hours (10,000 by default), and its limit in its first 7 days (1,000). In between the limit grows on a schedule (see [Account health](#account-health-and-send-limits)). An account's own `daily_send_limit` overrides both. |
+| `PLATFORM_DAILY_SEND_LIMIT` | The most campaign emails sent in any 24 hours across every account together, kept under the SES account's daily quota (50,000). Default 45,000; `0` means no cap. Copies past it wait, as they do for an account's limit. |
 | `IMPORT_HOLD_RISKY_PERCENT`, `IMPORT_HOLD_INVALID_PERCENT`, `IMPORT_HOLD_SHARED_PERCENT`, `IMPORT_HOLD_SHARED_MIN` | When an import is held for review: role plus disposable addresses over 10% of its valid rows, invalid rows over 5% of all rows, or at least 50% of its addresses, and at least 200, in other accounts' imports. Percentages are 1 to 100. |
 | `OPS_ALERT_EMAIL` | Where to email an alert when an account is paused, throttled or suspended automatically, a sign-up waits for review, or a payment needs refunding or cancelling by hand in Stripe, and the daily abuse digest. Unset, these are only logged (as errors) and no digest is sent. Terraform sets it from `alert_email` (see `infra/README.md`). |
 | `ABUSE_DIGEST_HOUR` | The hour, UTC (0 to 23), the worker emails the daily abuse digest to `OPS_ALERT_EMAIL`. Default 13 (8 AM US Eastern in winter). |
@@ -772,8 +773,9 @@ The send pipeline (`internal/sending/pipeline.go`) takes it from there:
 - **Dispatcher.** Every 2 seconds it takes the due `send_queue` rows (each
   locked by one dispatcher at a time). It starts a `scheduled` campaign at
   its time, then marks the next recipients enqueued, as many as the
-  account's daily limit leaves, and puts them on the send queue in batches
-  of about 10 seconds' sending (10 to 100). It runs in the API when
+  account's daily limit and the platform's daily cap
+  (`PLATFORM_DAILY_SEND_LIMIT`) leave, and puts them on the send queue in
+  batches of about 10 seconds' sending (10 to 100). It runs in the API when
   `SEND_QUEUE_URL` is set (only the API's role may send to the queue), and
   in the worker otherwise.
 - **Workers.** Each takes one batch at a time and, per recipient, waits for
@@ -789,6 +791,11 @@ The send pipeline (`internal/sending/pipeline.go`) takes it from there:
 - **Failures.** A refused send puts the row back to `queued` and the batch
   is retried. On the fifth try the rows that still fail end `failed` with
   their credits back, and the message goes to the dead-letter queue.
+- **Throttling and quota.** When SES says "not now" (throttling, the
+  sending rate or daily quota exceeded, or sending paused on the AWS
+  account), the copy isn't failed: its row goes back to `queued` with no
+  error, the batch's unsent rows wait a minute before the dispatcher
+  batches them again, and no try is used up.
 - **Finishing.** When no row is `queued` or `sending`, the campaign moves
   to `sent` (or `failed` if nothing went out). A paused account or
   campaign holds its rows until it's resumed.

@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"mime"
 	"regexp"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2"
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
+	"github.com/aws/smithy-go"
 )
 
 // SESAPI is the part of the SES v2 client the adapter uses.
@@ -84,7 +86,50 @@ func (s SES) Send(ctx context.Context, m Message) (string, error) {
 		}},
 	})
 	if err != nil {
-		return "", fmt.Errorf("ses: send: %w", err)
+		return "", classifySESError(fmt.Errorf("ses: send: %w", err))
 	}
 	return aws.ToString(out.MessageId), nil
+}
+
+// classifySESError marks the SES errors that say "not now" rather than "not
+// this message" as ErrRetryLater (MG-87): throttling, the sending rate or
+// daily quota exceeded, and sending paused or suspended on the AWS account.
+// The message would go once SES accepts mail again, so callers that can wait
+// (the send pipeline) shouldn't fail it. Every other error is returned as
+// it is.
+func classifySESError(err error) error {
+	if err == nil || !sesRetryLater(err) {
+		return err
+	}
+	return &retryLater{err: err}
+}
+
+func sesRetryLater(err error) bool {
+	var (
+		tooMany   *types.TooManyRequestsException
+		limit     *types.LimitExceededException
+		paused    *types.SendingPausedException
+		suspended *types.AccountSuspendedException
+	)
+	if errors.As(err, &tooMany) || errors.As(err, &limit) || errors.As(err, &paused) || errors.As(err, &suspended) {
+		return true
+	}
+	var api smithy.APIError
+	if !errors.As(err, &api) {
+		return false
+	}
+	switch api.ErrorCode() {
+	case "TooManyRequestsException", "LimitExceededException", "SendingPausedException", "AccountSuspendedException",
+		// The generic throttling codes AWS answers with when its front
+		// end, not SES itself, throttles a call.
+		"Throttling", "ThrottlingException":
+		return true
+	case "MessageRejected":
+		// SES rejects a message with "Daily message quota exceeded" or
+		// "Maximum sending rate exceeded" when the account is over its
+		// quota; any other rejection is about the message itself.
+		msg := strings.ToLower(api.ErrorMessage())
+		return strings.Contains(msg, "quota exceeded") || strings.Contains(msg, "sending rate exceeded")
+	}
+	return false
 }

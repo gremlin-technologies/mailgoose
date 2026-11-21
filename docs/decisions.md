@@ -4,6 +4,52 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: SES throttling and quota errors wait; a platform daily send cap (MG-87, from the architecture review; details are reversible defaults)
+
+The architecture review (#195, F3) found that any SES error failed a
+campaign's whole tail in about ten minutes: the batch was retried, and on
+the fifth try every unsent copy was marked `failed` and refunded. When SES
+is only saying "not now", that loses copies that would have gone an hour
+later. The SES quota (50,000 a day) belongs to the AWS account, so this
+still matters after prod gets its own account.
+
+- **Which errors wait** (`internal/mail/ses.go`): `TooManyRequestsException`,
+  `LimitExceededException`, `SendingPausedException`,
+  `AccountSuspendedException`, AWS's generic `Throttling` and
+  `ThrottlingException`, and `MessageRejected` whose message says the quota
+  or sending rate is exceeded ("Daily message quota exceeded", "Maximum
+  sending rate exceeded"; matched on "quota exceeded" or "sending rate
+  exceeded", any case). They're marked `mail.ErrRetryLater`, with the SES
+  error still wrapped and the same text. Every other error is unchanged, so
+  it still fails the copy on the fifth try.
+- **What waiting does** (`internal/sending/pipeline.go`): the copy's claim is
+  taken back with no error written, the batch's rows still `queued` are held
+  back, and the batch returns success, so no SQS attempt is used and nothing
+  is failed or refunded. Copies already sent in the batch stay sent. A send
+  cut off by shutdown still keeps its claim, so a copy is never sent twice.
+  One WARN log line per batch, with the campaign id and the error.
+- **Backoff: one minute** (`RetryLaterAfter`). Handing the rows back as a
+  pause does (clearing `enqueued_at`) would have the dispatcher batch them
+  again on its next 2-second tick, asking a throttled SES again and again.
+  Instead the rows are marked as enqueued `RequeueAfter` less a minute ago,
+  so the dispatcher takes them again a minute later, and meanwhile they
+  count against the daily limits as copies on their way. While SES stays
+  over quota, each waiting campaign tries one copy a minute.
+- **Platform daily cap:** `PLATFORM_DAILY_SEND_LIMIT`, default 45,000 (under
+  the 50,000 SES quota, leaving room for sign-in, confirmation and test
+  mail, which it doesn't count); `0` means no cap. The dispatcher counts
+  campaign copies sent in the last 24 hours across every account, plus
+  those enqueued and still on their way, the same way it counts an
+  account's, and enqueues no more than the smaller room. Copies past the cap
+  wait, as for the account's limit. Mailbox simulator copies are counted
+  too, which errs on the safe side. Migration 00042 adds an index on
+  `sent_at` so the count stays cheap. Two dispatchers running at the same
+  moment could each fill the last of the room, so the cap can be passed by
+  up to one tick's worth; the 5,000 of headroom covers that.
+- **Infra follow-ups (MG-93, #202):** the CloudWatch alarm on SES sends
+  nearing the quota, and reading the real quota from SES `GetAccount`
+  instead of a configured number.
+
 ## 2026-11-21: Public site moved to its own repository; CLI releases through package managers (owner decisions; the details are reversible defaults)
 
 The owner wants this repository private. GitHub Pages on a free personal
