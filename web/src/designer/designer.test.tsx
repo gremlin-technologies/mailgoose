@@ -208,7 +208,9 @@ describe("designer", () => {
     const user = userEvent.setup();
     renderApp(`/emails/${emailId}`, api.fetch);
     const palette = await screen.findByRole("complementary", { name: "Blocks" });
-    expect(within(palette).getAllByRole("button", { name: /layout$/ }).map((b) => b.getAttribute("aria-label"))).toEqual(columnLayouts.map((l) => `Add ${layoutLabel(l)} layout`));
+    // Each tile is named in words for screen readers and shows its ratio.
+    expect(within(palette).getAllByRole("button", { name: /layout$/ })).toHaveLength(columnLayouts.length);
+    for (const l of columnLayouts) expect(within(palette).getByRole("button", { name: `Add ${layoutLabel(l)} layout` }).textContent).toContain(l);
     await user.click(within(palette).getByRole("button", { name: "Add 1:3 layout" }));
     await waitFor(() => expect(posted).toEqual({ version: 3, block: { type: "columns", layout: "1:3" } }));
     const row = screen.getByRole("list", { name: "Left column" }).parentElement as HTMLElement;

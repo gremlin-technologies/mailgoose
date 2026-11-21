@@ -353,13 +353,14 @@ function BlockDesigner({ email, replace, reload }: { email: Email; replace: (e: 
                     className="palette-item palette-layout"
                     draggable={!busy}
                     disabled={busy}
-                    aria-label={`Add ${layoutLabel(layout)} layout`}
                     onDragStart={(e) => startDrag(e, { kind: "new", type: "columns", layout }, setDrag)}
                     onDragEnd={endDrag}
                     onClick={() => addNew("columns", undefined, layout)}
                   >
                     <LayoutGlyph layout={layout} />
-                    <span>{layout}</span>
+                    {/* Named in words, shown as a ratio. With no aria-label the two needn't match (axe). */}
+                    <span className="visually-hidden">{`Add ${layoutLabel(layout)} layout`}</span>
+                    <span aria-hidden="true">{layout}</span>
                   </button>
                 </li>
               ))}

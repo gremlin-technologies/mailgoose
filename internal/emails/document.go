@@ -153,7 +153,8 @@ type Columns struct {
 	Columns []Column `json:"columns"`
 }
 
-// Column layouts (MG-110). Each is the columns' relative widths.
+// DefaultColumnLayout is the layout of a columns block that names none
+// (MG-110): two equal columns. A layout gives the columns' relative widths.
 const DefaultColumnLayout = "1:1"
 
 // ColumnLayouts are the layouts a columns block may have, in the order the
