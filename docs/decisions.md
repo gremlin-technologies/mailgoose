@@ -4,6 +4,56 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Turning Mailchimp templates and campaigns into HTML emails (MG-71; reversible defaults)
+
+`mailchimp.PlanEmails` lists the emails an export would make, with each
+one's errors and warnings, and fetches and writes nothing.
+`mailchimp.EmailImporter.Import` makes them, copying Mailchimp-hosted images
+into the account's image storage. The API and CLI come in MG-72. Each email
+is made even when its checks fail; only a failure to store one stops the
+import. These defaults are each easy to change:
+
+- **Which emails.** The first 100 templates in file order, and the newest 10
+  campaigns (the customer can choose up to 100), newest first by send date,
+  then those with no date in reverse file order. `TemplatesLeftOut` lists
+  the templates past 100, so the preview can name them; the cap keeps one
+  export from making an unbounded number of emails. A campaign is named by its title, else
+  its subject, else its file name; a template by its file name.
+- **Merge tags.** `*|FNAME|*`, `*|LNAME|*`, `*|EMAIL|*` and `*|UNSUB|*`
+  become `{{first_name}}`, `{{last_name}}`, `{{email}}` and
+  `{{unsubscribe_url}}`. `*|MC:SUBJECT|*` and `*|MC_PREVIEW_TEXT|*` become
+  the subject and preview text. The postal address tags are taken out
+  quietly, since mailgoose adds the account's address. Any other tag is
+  taken out with a warning (`mailchimp_tag_removed`), once per tag.
+- **Conditional blocks** (`*|IF:...|*`, `*|INTERESTED:...|*`) are left as
+  written with one error (`mailchimp_conditional`) at the first, since
+  mailgoose has none and only the customer knows which part to keep.
+- **The email checks now refuse Mailchimp merge tags.** Any `*|...|*` left in
+  an HTML email is a new error, `mailchimp_merge_tag`, so a converted email
+  can't go out with tags readers would see as written. This applies to all
+  HTML emails, saved by any route.
+- **Mailchimp editor attributes** (`mc:edit`, `mc:repeatable`,
+  `mc:hideable`) are removed.
+- **Images.** Images on `mcusercontent.com` (and its subdomains) and
+  `gallery.mailchimp.com`, in `src`, `background` and CSS `url()`, are
+  fetched over https only, from public addresses, at most 5 MB, and relinked.
+  Each is fetched once per import, and one import fetches at most 1,000
+  (the account limit). None is fetched for an email too large to keep,
+  once the account reaches its 1,000-image limit, or where image storage
+  isn't set up. One that isn't copied keeps its Mailchimp link with a
+  warning (`image_not_copied`) that says why; an email gets at most 10 of
+  these for single images, then one for each reason that counts the rest.
+  Images on other hosts are left alone.
+- **Empty links.** A removed merge tag that was a link's whole address
+  (`*|ARCHIVE|*`, `*|UPDATE_PROFILE|*`, `*|FORWARD|*`) leaves `href=""`; its
+  warning says the link was left empty.
+- **Tracking links** through `list-manage.com` are kept, with one warning
+  that counts them (`mailchimp_tracking_link`), since their target can't be
+  read without following them.
+- **Too large.** HTML over the 500 KB an email holds makes an empty email
+  with a `too_large` error. Invalid UTF-8 is replaced, and subjects and
+  preview text are cut to 200 characters on one line.
+
 ## 2026-11-21: Staging sends at 94% of the configured rate, so the send pool isn't built (MG-91 part 2; decided by the ticket's threshold)
 
 The owner measured send throughput on staging with part 1's runbook (see
@@ -3389,6 +3439,10 @@ Decided by the owner in the PRD scoping call and follow-ups.
   covers them. MG-70.)
 - Mailchimp import: which CSV columns are groups. (Default: only the columns
   the customer names; any other column is dropped and listed. MG-69, MG-72.)
+- Mailchimp import: how many past campaigns come over as emails, and what
+  happens to `*|IF:...|*` blocks. (Default: the newest 10, up to 100 if the
+  customer asks; conditionals are left in with an error to fix by hand.
+  MG-71.)
 - How does prod get DNS? Default is to delegate only `api`, `app` and `mail`
   (see 2026-11-18); awaiting the owner's confirmation and the GoDaddy step.
   (Blocks MG-60.)

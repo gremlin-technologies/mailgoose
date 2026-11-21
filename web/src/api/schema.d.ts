@@ -4079,7 +4079,7 @@ export interface components {
             /** @description The line it's on, counting from 1. */
             line: number;
             /** @enum {string} */
-            code: "malformed_markup" | "script" | "form" | "iframe" | "embedded_object" | "external_stylesheet" | "event_handler" | "javascript_url" | "data_url" | "redirect" | "missing_unsubscribe" | "merge_tag_link" | "too_large" | "unsupported_css";
+            code: "malformed_markup" | "script" | "form" | "iframe" | "embedded_object" | "external_stylesheet" | "event_handler" | "javascript_url" | "data_url" | "redirect" | "missing_unsubscribe" | "merge_tag_link" | "too_large" | "mailchimp_merge_tag" | "unsupported_css";
             message: string;
         };
         EmailCheck: {
