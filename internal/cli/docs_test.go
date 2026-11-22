@@ -59,6 +59,16 @@ func TestDocsPrintsTheAgentGuide(t *testing.T) {
 		"mailgoose campaign test",                                  // test send
 		"mailgoose campaign launch <campaign-id> --confirm <code>", // the launch confirmation
 		"only after they say yes",
+		"## Moving from Mailchimp",               // MG-78
+		"mailgoose import mailchimp upload",      // the export
+		"mailgoose import mailchimp connect",     // or a connected account
+		"mailgoose import mailchimp preview",     // the preview
+		"Confirm only after the person says yes", // --permission-confirmed is theirs
+		"Segment rules",                          // what doesn't come over
+		"automations",
+		"reports",
+		"signup form designs",
+		"merge fields beyond",
 	} {
 		if !strings.Contains(guide, want) {
 			t.Errorf("the guide lacks %q", want)

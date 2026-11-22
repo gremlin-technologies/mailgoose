@@ -4,7 +4,8 @@ mailgoose designs emails, sends them to a list of contacts, and collects
 subscribers with signup forms. Everything the web app does, the `mailgoose`
 CLI does too, so you can work for the person you help from their terminal.
 
-This guide covers one campaign from start to finish. Every command has more
+This guide covers one campaign from start to finish, and moving a
+person's lists and emails over from Mailchimp. Every command has more
 in its `--help`, with examples. `mailgoose commands --json` lists them all.
 
 ## Ground rules
@@ -213,6 +214,107 @@ start unconfirmed and get a confirmation email first. An import with many bad,
 role or throwaway addresses, or one that looks like a shared list, is held for
 review; `hold_message` says why. Signup forms ask people to confirm by email unless
 the person turns that off.
+
+## Moving from Mailchimp
+
+mailgoose reads Mailchimp's own export, or a connected Mailchimp account, and
+brings over each audience's contacts with their status, tags and groups, its
+templates and newest campaigns as draft HTML emails, and a draft signup form
+for each audience. mailgoose isn't part of Mailchimp; it only reads what
+Mailchimp gives out.
+
+**Get the export.** The person does this in Mailchimp: account settings,
+Manage my data, Export data. Mailchimp emails them when the .zip is ready.
+An export over 25 MB can be made one audience at a time instead, as a .zip or
+CSV. Ask them for the file's path; don't sign in to Mailchimp for them.
+
+```sh
+mailgoose import mailchimp upload mailchimp-export.zip --json
+```
+
+**Or connect the account**, where it's set up (`can_connect` in
+`mailgoose import mailchimp connection --json`). `connect` prints a link that
+the person opens in their own browser and allows on Mailchimp's page; you
+can't do that step. Then list the audiences and fetch the ones they want:
+
+```sh
+mailgoose import mailchimp connect --json
+mailgoose import mailchimp connection --json
+mailgoose import mailchimp audiences --json
+mailgoose import mailchimp fetch --audience <audience-id> --json
+```
+
+A fetch reads every member, not only the subscribed ones, and turns each
+`--segment` into a tag on the members it has now. It doesn't bring templates;
+upload the export for those. mailgoose forgets the connection once the import
+is confirmed, after 24 hours, or on `mailgoose import mailchimp disconnect`.
+
+**Show the person the preview.** Both give an upload's `id` and a `preview`:
+each audience's members by Mailchimp status, the new contacts by the status
+they'll get here, existing contacts that change, tags to create, fields
+mailgoose doesn't keep, the emails it would make, any `holds`, and whether the
+contacts need the paid plan (`plan.upgrade`, with its price). Nothing is
+imported yet. Read it again any time:
+
+```sh
+mailgoose import mailchimp preview <id> --json
+```
+
+Tell the person, in plain words, how many contacts would come in subscribed,
+unconfirmed, unsubscribed and bounced, what it would cost them, and anything
+held for review.
+
+**Confirm only after the person says yes.** `--permission-confirmed` states
+that the person has permission to email these contacts: Mailchimp's
+subscribed contacts come in subscribed, with no confirmation email. Run it
+only once they have seen the preview and agreed in your chat, never on your
+own. Ask them which groups (as the preview lists them) the new signup forms
+should tag signups with; none is fine.
+
+```sh
+mailgoose import mailchimp confirm <id> --permission-confirmed --wait --json
+mailgoose import mailchimp confirm <id> --permission-confirmed --form-tag "Interests: Baking" --json
+mailgoose import status <import-id> --json
+```
+
+Pending contacts come in unconfirmed, unsubscribed ones unsubscribed and
+cleaned ones bounced. `--campaigns` brings the newest 10 campaigns unless you
+say otherwise (up to 100). Confirming again shows the same import, and
+importing again makes no second form. An upload is kept 7 days; delete one
+nobody will confirm with `mailgoose import mailchimp delete <id> --yes`.
+
+**Then, with the person:**
+
+1. Verify their sending domain (`mailgoose domain add`), so campaigns come
+   from their own address. Adding the DNS records is theirs to do.
+2. Check each new signup form with the person
+   (`mailgoose form get <form-id>`). It's a draft and takes no signups until
+   it's saved (`mailgoose form update <form-id> --live`). Then give them its
+   embed code (`mailgoose form embed <form-id>`) to put on their site in
+   place of Mailchimp's form.
+3. Fix any imported email with `errors` or `warnings` in the confirm's
+   `emails`, such as a Mailchimp merge tag or conditional block mailgoose
+   can't fill, and run `mailgoose email check` on each one you'll send.
+4. Send a test of a campaign before it goes to everyone (step 5 above).
+
+**What doesn't come over.** Segment rules (a fetched segment is a tag of
+who's in it today), automations and journeys, reports and their history,
+signup form designs and wording, and merge fields beyond first and last
+name. Tell the person, so they aren't surprised.
+
+**When it fails:**
+
+- `too_many_uploads`: the account has 3 uploads waiting; confirm or delete
+  one.
+- `too_many_members`: over the import's ceiling; export one audience at a
+  time, or ask the person to contact support to have it raised.
+- `mailchimp_not_configured`: connecting isn't set up here; upload the
+  export instead.
+- `mailchimp_not_connected` or `mailchimp_access_revoked`: the connection is
+  gone; ask the person to connect again.
+- `mailchimp_unavailable`: Mailchimp's API didn't answer; try again in a few
+  minutes.
+- `unknown_form_tag`: a `--form-tag` isn't one of the preview's groups.
 
 ## When something fails
 

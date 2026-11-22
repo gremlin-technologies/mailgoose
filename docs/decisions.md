@@ -4,6 +4,23 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-22: Moving from Mailchimp in the agent guide (MG-78; reversible defaults)
+
+The agent guide (`mailgoose docs`, `docs/api/agent-guide.md`) gains a
+"Moving from Mailchimp" section, and `llms.txt` lists it under Guides. These
+defaults are each easy to change:
+
+- **One section of the existing guide**, not a guide of its own, so
+  `mailgoose docs` stays the one thing an agent reads.
+- **The person gets the export and connects the account.** The guide tells
+  agents to ask for the export's path and to hand the connect link to the
+  person, never to sign in to Mailchimp themselves.
+- **The checklist after confirming** is the web app's What's next list:
+  verify a domain, check and save the draft forms and swap the embed code,
+  fix emails with errors or warnings, send a test.
+- **`import mailchimp` itself has examples too**, though command groups
+  otherwise need none, so every `import mailchimp` command's `--help` has one.
+
 ## 2026-11-22: Judging Mailchimp imports in the admin tools and the digest (MG-77; reversible defaults)
 
 Builder's picks for MG-77, open for the owner to change:
