@@ -19,6 +19,7 @@ export const statusBadge: Record<CampaignStatus, { label: string; tone: Tone }> 
 /** Who a campaign goes to, in words. */
 export function recipientsText(r: Campaign["recipients"]): string {
   if (r.all) return "All subscribed contacts";
+  if (r.segment) return `Contacts in segment ${r.segment.name}`;
   if (r.tags.length === 0) return "Nobody yet";
   return `Contacts tagged ${listOf(r.tags.map((t) => t.name))}`;
 }

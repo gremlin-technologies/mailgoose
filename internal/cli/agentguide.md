@@ -143,11 +143,15 @@ data.
 mailgoose campaign create --name "Spring menu" --email <email-id> --all --json
 mailgoose campaign create --name "VIP preview" --email <email-id> --tag VIP --send-at "2026-12-01 09:00" --json
 mailgoose campaign count --tag VIP --json     # how many contacts it reaches now
+mailgoose campaign create --name "Win back" --email <email-id> --segment engaged --json
 mailgoose campaign test <campaign-id> --json
 ```
 
-A campaign goes to every subscribed contact (`--all`), or to subscribed
-contacts with any of the tags given. Without `--send-at` it goes out as soon
+A campaign goes to every subscribed contact (`--all`), to subscribed
+contacts with any of the tags given, or to a saved segment's subscribed
+contacts (`--segment`, by name or id; see section 7). A segment is worked out
+when the campaign launches, and its contacts are fixed then. A segment with a
+condition it can't use stops the launch with `segment_invalid`. Without `--send-at` it goes out as soon
 as it is launched; a send time is read in the account's time zone.
 
 The test goes to the account owner, or with `--to` to up to five addresses
@@ -235,7 +239,9 @@ A segment takes `--tag` (repeat for more; every tag must match), `--status`
 (repeat for any of several) and the engagement flags above. It's worked out
 each time it's used. `"valid": false` means a condition names a tag or
 campaign that's gone or can't be used now; `problems` says which, and
-`mailgoose segment update <name>` with new condition flags fixes it.
+`mailgoose segment update <name>` with new condition flags fixes it. A segment
+that a draft or scheduled campaign goes to can't be deleted (`segment_in_use`
+names the campaign); give the campaign other recipients first.
 
 ## Contacts and signup forms
 

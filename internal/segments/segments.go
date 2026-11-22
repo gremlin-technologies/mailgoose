@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 )
 
@@ -204,6 +205,20 @@ type Problem struct {
 	Code string
 }
 
+// Text says what's wrong, as a phrase: "tag … in tag_ids was deleted".
+func (p Problem) Text() string {
+	switch p.Code {
+	case ProblemTagDeleted:
+		return "tag " + p.ID + " in " + p.Condition + " was deleted"
+	case ProblemCampaignDeleted:
+		return "campaign " + p.ID + " in " + p.Condition + " was deleted"
+	case ProblemTrackingOff:
+		return "campaign " + p.ID + " in " + p.Condition + " is set to send without tracking"
+	default:
+		return "campaign " + p.ID + " in " + p.Condition + " has its raw events archived"
+	}
+}
+
 // The problems a condition can have.
 const (
 	ProblemTagDeleted      = "tag_deleted"
@@ -243,6 +258,16 @@ type InvalidError struct{ Segment *Segment }
 
 func (e *InvalidError) Error() string {
 	return fmt.Sprintf("segments: %s has %d problems", e.Segment.ID, len(e.Segment.Problems))
+}
+
+// InUseError is a segment that a draft or scheduled campaign goes to, so
+// it can't be deleted (MG-115). Campaign is the first such campaign.
+type InUseError struct {
+	CampaignID, CampaignName, Status string
+}
+
+func (e *InUseError) Error() string {
+	return fmt.Sprintf("segments: campaign %s (%s) goes to it", e.CampaignID, e.Status)
 }
 
 // Service keeps segments.
@@ -285,6 +310,12 @@ func scan(row pgx.Row) (*Segment, error) {
 // querier is a pool or a transaction.
 type querier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// Querier is a pool or a transaction, for Lookup and CampaignAudience.
+type Querier interface {
+	querier
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
 // problems works out each segment's problems, looking every tag and
@@ -477,16 +508,45 @@ func nullable(set bool, v string) *string {
 	return &v
 }
 
-// Delete removes a segment. Contacts aren't touched.
+// Delete removes a segment. Contacts aren't touched. A segment that a
+// draft or scheduled campaign goes to is refused with an *InUseError; a
+// launched campaign's recipients are fixed already, so it just loses the
+// link.
 func (s *Service) Delete(ctx context.Context, accountID, id string) error {
 	if !uuidPattern.MatchString(id) {
 		return ErrNotFound
 	}
-	res, err := s.DB.Exec(ctx, `DELETE FROM segments WHERE account_id = $1 AND id = $2`, accountID, id)
-	if err == nil && res.RowsAffected() == 0 {
-		err = ErrNotFound
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return err
 	}
-	return err
+	defer func() { _ = tx.Rollback(ctx) }()
+	// The lock waits for, and then holds off, any campaign being given the
+	// segment (campaigns takes it FOR KEY SHARE).
+	var found bool
+	err = tx.QueryRow(ctx, `SELECT true FROM segments WHERE account_id = $1 AND id = $2 FOR UPDATE`, accountID, id).Scan(&found)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	var use InUseError
+	err = tx.QueryRow(ctx, `
+		SELECT id, name, status FROM campaigns
+		WHERE account_id = $1 AND segment_id = $2 AND status = ANY($3::text[])
+		ORDER BY created_at, id LIMIT 1`,
+		accountID, id, []string{campaigns.StatusDraft, campaigns.StatusScheduled}).Scan(&use.CampaignID, &use.CampaignName, &use.Status)
+	switch {
+	case err == nil:
+		return &use
+	case !errors.Is(err, pgx.ErrNoRows):
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM segments WHERE account_id = $1 AND id = $2`, accountID, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // Get returns one of the account's segments, with its problems.
@@ -546,14 +606,47 @@ func (s *Service) List(ctx context.Context, accountID, name string, after *Curso
 // Resolve returns a segment and the contact filter it makes now, or an
 // *InvalidError when a condition can't be used.
 func (s *Service) Resolve(ctx context.Context, accountID, id string) (*Segment, contacts.Filter, error) {
-	sg, err := s.Get(ctx, accountID, id)
+	return Lookup(ctx, s.DB, accountID, id, false)
+}
+
+// Lookup is Resolve on q, a pool or a transaction. With lock, q must be a
+// transaction: the segment's row is locked until it ends, so its
+// conditions can't change while they're being used (a launch's snapshot).
+func Lookup(ctx context.Context, q Querier, accountID, id string, lock bool) (*Segment, contacts.Filter, error) {
+	if !uuidPattern.MatchString(id) {
+		return nil, contacts.Filter{}, ErrNotFound
+	}
+	sql := `SELECT ` + columns + ` FROM segments WHERE account_id = $1 AND id = $2`
+	if lock {
+		sql += ` FOR SHARE`
+	}
+	sg, err := scan(q.QueryRow(ctx, sql, accountID, id))
 	if err != nil {
+		return nil, contacts.Filter{}, err
+	}
+	if err := problems(ctx, q, accountID, sg); err != nil {
 		return nil, contacts.Filter{}, err
 	}
 	if !sg.Valid() {
 		return sg, contacts.Filter{}, &InvalidError{Segment: sg}
 	}
 	return sg, sg.Conditions.Filter(), nil
+}
+
+// CampaignAudience is who campaign c goes to now: c.Audience() for all
+// contacts or tags, or its segment's filter, worked out now (MG-115). A
+// segment that can't be used now is an *InvalidError. Everything that
+// counts or picks a campaign's recipients goes through here. lock is as
+// for Lookup.
+func CampaignAudience(ctx context.Context, q Querier, accountID string, c *campaigns.Campaign, lock bool) (contacts.Audience, error) {
+	if c.Segment == nil {
+		return c.Audience(), nil
+	}
+	_, f, err := Lookup(ctx, q, accountID, c.Segment.ID, lock)
+	if err != nil {
+		return contacts.Audience{}, err
+	}
+	return contacts.Audience{Segment: &f}, nil
 }
 
 // MemberPage is a page of a segment's contacts and how many it has in all.

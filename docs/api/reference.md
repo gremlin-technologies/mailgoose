@@ -2476,7 +2476,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
-- `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email` and `unknown_tag`: an id isn't one of the account's. [Error](#schema-error)
+- `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email`, `unknown_tag` and `unknown_segment`: an id isn't one of the account's. `segment_invalid` (counting recipients only): the segment has a condition it can't use now; `details.problems` lists them. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -2500,7 +2500,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
-- `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email` and `unknown_tag`: an id isn't one of the account's. [Error](#schema-error)
+- `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email`, `unknown_tag` and `unknown_segment`: an id isn't one of the account's. `segment_invalid` (counting recipients only): the segment has a condition it can't use now; `details.problems` lists them. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -2556,7 +2556,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
-- `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email` and `unknown_tag`: an id isn't one of the account's. [Error](#schema-error)
+- `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email`, `unknown_tag` and `unknown_segment`: an id isn't one of the account's. `segment_invalid` (counting recipients only): the segment has a condition it can't use now; `details.problems` lists them. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -2666,7 +2666,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `confirmation_required`: nothing was launched. `details.summary` (`campaign_id`, `name`, `subject`, `from`, `reply_to`, `shared_domain`, `sender`, `default_from`, `recipient_count`, `send_at`, `credits`, `balance`, `warnings`) is what the person confirms. `shared_domain` is true when the campaign goes from mailgoose's shared sending domain (MG-85) because its From isn't on a verified domain: `from` is then the account's shared address, and `sender` the verified address it was set to go from (null otherwise). `default_from` is true when neither the email nor the account sets a From, so it goes as the owner's sign-in address (`sender`) by default (MG-108), with replies to it. Show it, with a nudge to add the sender's domain; `details.code` the code that launches it once they say yes, and `details.expires_at` when the code stops working. `campaign_locked`: the campaign isn't a draft and wasn't launched; `details.status` is its status. [Error](#schema-error)
-- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from` (with `from_email` and `shared_sending`, as for a test), `unverified_reply_to` (on the shared sending domain, the Reply-To must be a verified sender or on a verified domain), `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up review; not for an account in test mode), `signup_rejected` (the account's sign-up review was rejected and its suspension lifted without approving it; not for an account in test mode), `test_mode` (the account is in test mode and the campaign reaches anyone but its confirmed test addresses and its owner; `details.recipients` and `details.not_test_addresses`), `new_terms_not_accepted` (the terms changed and the account hasn't accepted the new version; `details.current_version` and `details.accepted_version`, then `acceptTerms`), `subscription_past_due` (sending is paused until the paid plan's payment goes through; listed after `account_paused` when another pause took over the past-due one, which then stays after the payment until it's lifted), `no_recipients`, `credits_short` with `details.needed`, `details.balance` and `details.short`, and `tester_limit` (a tester account, MG-86, that has ended, or whose campaign needs more tester credits than are left; `details.needed`, `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`). `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
+- `422`: `not_ready`: the campaign can't launch; `details.problems` lists each reason with its `code`, `message` and `hint`: Prepare's (`no_email`, `missing_from`, `unverified_from` (with `from_email` and `shared_sending`, as for a test), `unverified_reply_to` (on the shared sending domain, the Reply-To must be a verified sender or on a verified domain), `missing_postal_address`, `missing_subject`, `empty_email`, `merge_tag`), `check_failed` (an email check error), `unsafe_link` (a link on Google Web Risk's malware, phishing or unwanted software lists, named in `url`; it also pauses the account's sending), `untested` (no test since the last change), `send_at_passed`, `account_paused`, `account_suspended`, `account_in_review` (a new account waiting for its sign-up review; not for an account in test mode), `signup_rejected` (the account's sign-up review was rejected and its suspension lifted without approving it; not for an account in test mode), `test_mode` (the account is in test mode and the campaign reaches anyone but its confirmed test addresses and its owner; `details.recipients` and `details.not_test_addresses`), `new_terms_not_accepted` (the terms changed and the account hasn't accepted the new version; `details.current_version` and `details.accepted_version`, then `acceptTerms`), `subscription_past_due` (sending is paused until the paid plan's payment goes through; listed after `account_paused` when another pause took over the past-due one, which then stays after the payment until it's lifted), `no_recipients`, `credits_short` with `details.needed`, `details.balance` and `details.short`, and `tester_limit` (a tester account, MG-86, that has ended, or whose campaign needs more tester credits than are left; `details.needed`, `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`), and `segment_invalid` (the campaign's segment has a condition it can't use now, such as a deleted tag; `details.segment_id` and `details.problems`, each with `condition`, `id` and `code`). `invalid_confirmation`: the code can't be used; `details.reason` is `no_code`, `expired`, `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the campaign now reaches more than a tenth more contacts than the summary counted, with `details.summarized_count` and `details.recipient_count`). Ask for a new summary. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-cancelcampaign"></a>
@@ -2836,7 +2836,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
-- `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email` and `unknown_tag`: an id isn't one of the account's. [Error](#schema-error)
+- `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email`, `unknown_tag` and `unknown_segment`: an id isn't one of the account's. `segment_invalid` (counting recipients only): the segment has a condition it can't use now; `details.problems` lists them. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -4094,7 +4094,10 @@ Responses:
 - Operation: `deleteSegment`
 - CLI: `mailgoose segment delete`
 
-Deletes the saved conditions; no contact changes.
+Deletes the saved conditions; no contact changes. A segment that a
+draft or scheduled campaign goes to can't be deleted: `409
+segment_in_use` names the campaign. A campaign already sending or
+sent keeps its recipients and loses the link.
 
 | Parameter | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
@@ -4106,6 +4109,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `segment_in_use`: a draft or scheduled campaign goes to the segment; `details.campaign_id`, `details.campaign_name` and `details.status` name the first one. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -5794,19 +5798,33 @@ Type: string: one of `draft`, `scheduled`, `sending`, `sent`, `cancelled`, `paus
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `all` | boolean | yes | True sends to every subscribed contact; tags is then empty. |
+| `all` | boolean | yes | True sends to every subscribed contact; tags is then empty and segment null. |
 | `tags` | array of [TagRef](#schema-tagref) | yes | Otherwise the subscribed contacts with any of these tags. |
+| `segment` | [SegmentRef](#schema-segmentref) or null | yes | Or a saved segment's subscribed contacts, worked out at launch. Null otherwise, and for a launched campaign whose segment was deleted since. |
+
+<a id="schema-segmentref"></a>
+
+### SegmentRef
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | yes |  |
+| `name` | string | yes |  |
 
 <a id="schema-recipientsinput"></a>
 
 ### RecipientsInput
 
-`{"all": true}` for every subscribed contact, or `{"tag_ids": [...]}` for those with any of the tags.
+Exactly one of: `{"all": true}` for every subscribed contact,
+`{"tag_ids": [...]}` for those with any of the tags, or
+`{"segment_id": "..."}` for a saved segment's subscribed contacts,
+worked out at launch.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `all` | boolean |  |  |
 | `tag_ids` | array of string (uuid) |  |  |
+| `segment_id` | string (uuid) |  |  |
 
 <a id="schema-campaign"></a>
 

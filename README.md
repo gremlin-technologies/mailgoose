@@ -483,11 +483,20 @@ without tracking, or an archived one makes the segment invalid: it lists its
 `problems`, and listing its contacts answers 422 `segment_invalid` rather
 than quietly matching more people. An account keeps up to 100.
 
+A campaign can go to a segment (MG-115): `recipients.segment_id`, or
+`--segment` on `mailgoose campaign create|update|count`. The segment is worked
+out at launch, its row locked while its subscribed contacts are fixed in
+`campaign_recipients`, so a scheduled campaign's recipients are fixed when it's
+confirmed, as with tags. An invalid segment stops the launch with
+`segment_invalid` naming the condition, and a segment that a draft or
+scheduled campaign goes to can't be deleted (409 `segment_in_use`).
+
 ```sh
 mailgoose segment create engaged --status subscribed --opened-within-days 90
 mailgoose segment contacts engaged
 mailgoose segment update engaged --tag vip --status subscribed
 mailgoose segment list
+mailgoose campaign create --name "Win back" --email <email-id> --segment engaged
 ```
 
 Import a CSV with `mailgoose import`. Columns are detected from common headers

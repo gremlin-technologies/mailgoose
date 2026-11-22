@@ -73,3 +73,47 @@ func TestSegmentCommands(t *testing.T) {
 		t.Errorf("get after delete: exit %d", code)
 	}
 }
+
+// MG-115: a campaign goes to a segment, named on the command line.
+func TestCampaignToSegmentCommands(t *testing.T) {
+	h := liveAPI(t)
+	h.app.Stdin = strings.NewReader(springDoc)
+	if code := h.run("email", "create", "--name", "Spring", "--file", "-", "--json"); code != ExitOK {
+		t.Fatalf("email: exit %d %s", code, h.errOut)
+	}
+	emailID := h.jsonOut(t)["id"].(string)
+	must := func(args ...string) string {
+		t.Helper()
+		if code := h.run(args...); code != ExitOK {
+			t.Fatalf("%v: exit %d %s", args, code, h.errOut)
+		}
+		return h.out.String()
+	}
+	must("tags", "create", "vip")
+	must("contacts", "add", "ann@example.com", "--status", "subscribed")
+	must("contacts", "add", "bo@example.com", "--status", "subscribed")
+	must("tags", "add", "vip", "ann@example.com")
+	must("segment", "create", "VIPs", "--tag", "vip")
+
+	if out := must("campaign", "count", "--segment", "VIPs"); out != "1 subscribed contacts.\n" {
+		t.Errorf("count: %q", out)
+	}
+	must("campaign", "create", "--name", "Win back", "--email", emailID, "--segment", "vips", "--json")
+	c := h.jsonOut(t)
+	id := c["id"].(string)
+	seg, _ := c["recipients"].(map[string]any)["segment"].(map[string]any)
+	if seg["name"] != "VIPs" || c["recipient_count"] != 1.0 {
+		t.Errorf("created %v", c)
+	}
+	if out := must("campaign", "get", id); !strings.Contains(out, `subscribed contacts in segment "VIPs"`) {
+		t.Errorf("get: %q", out)
+	}
+	if code := h.run("campaign", "update", id, "--all", "--segment", "VIPs"); code != ExitUsage {
+		t.Errorf("two kinds of recipients: exit %d", code)
+	}
+	if code := h.run("segment", "delete", "VIPs", "--yes"); code == ExitOK || !strings.Contains(h.errOut.String(), "Win back") {
+		t.Errorf("delete a segment a draft uses: exit %d %s", code, h.errOut)
+	}
+	must("campaign", "update", id, "--all")
+	must("segment", "delete", "VIPs", "--yes")
+}
