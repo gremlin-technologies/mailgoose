@@ -659,7 +659,9 @@ export function ConfirmBundle({ bundle, onConfirmed }: { bundle: Bundle; onConfi
   const api = useApi();
   const available = bundle.preview?.campaigns_available ?? 0;
   const [permission, setPermission] = useState(false);
-  const [campaigns, setCampaigns] = useState(Math.min(bundle.campaigns, available));
+  // As typed; read as a count from 1 (the API's least) to what the export has.
+  const [campaignsText, setCampaignsText] = useState(String(Math.max(1, Math.min(bundle.campaigns, available))));
+  const campaigns = Math.max(1, Math.min(maxCampaigns, available, Math.floor(Number(campaignsText)) || 1));
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure>();
 
@@ -687,12 +689,10 @@ export function ConfirmBundle({ bundle, onConfirmed }: { bundle: Bundle; onConfi
           <span>Newest campaigns to bring as emails (of {available.toLocaleString()})</span>
           <input
             type="number"
-            min={0}
+            min={1}
             max={Math.min(maxCampaigns, available)}
-            value={campaigns}
-            onChange={(e) =>
-              setCampaigns(Math.max(0, Math.min(maxCampaigns, available, Number(e.target.value) || 0)))
-            }
+            value={campaignsText}
+            onChange={(e) => setCampaignsText(e.target.value)}
           />
         </label>
       )}

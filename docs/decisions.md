@@ -23,7 +23,8 @@ to change:
   segment ids, as in the CLI; mailgoose has no endpoint that lists an
   audience's segments yet.
 - **Campaigns.** Confirming defaults to the number of campaigns the upload
-  was read with (10), at most the export's campaigns, and can be 0 to 100.
+  was read with (10), at most the export's campaigns, and can be 1 to 100
+  (the API takes no fewer than 1).
 - **Permission.** The box reads as the CSV import's first sentence ("Everyone
   in this file has given me permission to email them."); a Mailchimp import
   can't go ahead without it, so there's no unconfirmed fallback to explain.
