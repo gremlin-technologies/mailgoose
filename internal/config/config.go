@@ -139,6 +139,13 @@ type Config struct {
 	// environment, locally). Empty: links aren't looked up, and the check
 	// says so with a warning.
 	WebRiskAPIKey string
+
+	// MailchimpClientID and MailchimpClientSecret are the registered
+	// Mailchimp app's (MG-73), from the <env>/app secret (or the
+	// environment, locally). Without both, connecting a Mailchimp account
+	// answers 503 and only the upload path works.
+	MailchimpClientID     string
+	MailchimpClientSecret string
 }
 
 // ImportHold are the import checks' thresholds, as whole percentages and a
@@ -386,6 +393,8 @@ func load(getenv func(string) string) (Config, error) {
 	}
 
 	cfg.WebRiskAPIKey = secret("WEB_RISK_API_KEY")
+	cfg.MailchimpClientID = secret("MAILCHIMP_CLIENT_ID")
+	cfg.MailchimpClientSecret = secret("MAILCHIMP_CLIENT_SECRET")
 
 	cfg.Images = Images{Bucket: strings.TrimSpace(getenv("IMAGES_BUCKET")), Dir: strings.TrimSpace(getenv("IMAGES_DIR")),
 		BaseURL: strings.TrimRight(strings.TrimSpace(getenv("IMAGES_BASE_URL")), "/")}

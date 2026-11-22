@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -162,6 +163,14 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		srv.Contacts.Prices = srv.Billing.Prices
 		srv.Mailchimp = &mailchimp.Store{DB: pool}
 		srv.MailchimpMaxMembers = cfg.MailchimpImportMaxContacts
+		// Connecting a Mailchimp account (MG-73) needs the registered
+		// Mailchimp app's id and secret; without them it answers 503.
+		srv.MailchimpConnections = &mailchimp.Connections{DB: pool, OAuth: &mailchimp.OAuth{
+			ClientID: cfg.MailchimpClientID, ClientSecret: cfg.MailchimpClientSecret,
+			RedirectURL: strings.TrimRight(cfg.PublicBaseURL, "/") + api.MailchimpCallbackPath}}
+		if !srv.MailchimpConnections.Configured() {
+			log.Info("connecting Mailchimp accounts is off: MAILCHIMP_CLIENT_ID and MAILCHIMP_CLIENT_SECRET aren't both set")
+		}
 		mailchimpEmails := &mailchimp.EmailJob{Store: srv.Mailchimp, MaxMembers: cfg.MailchimpImportMaxContacts,
 			Importer: &mailchimp.EmailImporter{Emails: srv.Emails, Images: srv.Images}}
 

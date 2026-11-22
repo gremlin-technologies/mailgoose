@@ -4,6 +4,37 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Connecting a Mailchimp account with OAuth (MG-73; reversible defaults)
+
+Customers can connect their Mailchimp account instead of uploading the
+export. `POST /v1/imports/mailchimp/connect` answers with a link to
+Mailchimp's sign-in page; after they allow access, Mailchimp sends the browser
+back to `/oauth/mailchimp/callback`, which stores the connection.
+`GET /v1/imports/mailchimp/connection` and `POST .../disconnect` show and
+forget it. The CLI has `mailgoose import mailchimp connect|connection|disconnect`.
+MG-74 reads the account with it. These defaults are each easy to change:
+
+- **Set up by app secrets.** Connecting needs Gremlin Technologies' Mailchimp
+  app: `MAILCHIMP_CLIENT_ID` and `MAILCHIMP_CLIENT_SECRET` in the
+  environment's app secret, with the callback above registered with
+  Mailchimp. Without them the app runs as before, and `connect` answers 503
+  `mailchimp_not_configured`, pointing to the upload.
+- **The link.** A connect link works once, for 10 minutes. A new link
+  replaces the account's earlier one.
+- **Who can finish it.** The callback needs the browser's web session for
+  the account that made the link, so a link sent to someone else can't tie
+  their Mailchimp to the sender's account. A CLI user signs in to the web app
+  in the browser that opens the link.
+- **The token.** Mailchimp's tokens don't expire and have no scopes, so
+  mailgoose keeps one for at most 24 hours, deletes it on disconnect and once
+  the import that read it is done (MG-74), and never shows it in the API,
+  logs or errors. It's sealed in Postgres with AES-256-GCM under a key derived
+  from the client secret; changing the secret only means connecting again.
+- **Read only.** The Mailchimp client makes GET requests only; anything else
+  is refused before it leaves the process.
+- **Web app.** The web app's Mailchimp page, with a Connect button, comes in
+  MG-75. Until then the callback's own page says what happened.
+
 ## 2026-11-21: Uploading and confirming a Mailchimp export (MG-72; reversible defaults)
 
 `POST /v1/imports/mailchimp/bundles` takes Mailchimp's export as a

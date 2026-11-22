@@ -1608,6 +1608,77 @@ Responses:
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
+<a id="op-connectmailchimp"></a>
+
+### Start connecting a Mailchimp account
+
+`POST /v1/imports/mailchimp/connect`
+
+- Operation: `connectMailchimp`
+- CLI: `mailgoose import mailchimp connect`
+
+Returns a link to Mailchimp's page where the person lets mailgoose
+read their Mailchimp account. Open it in a browser signed in to this
+mailgoose account: Mailchimp sends the browser back to mailgoose,
+which connects the account only when that browser's session is this
+account's. The link works once, for 10 minutes; a new one replaces it.
+
+Mailchimp's access doesn't expire and isn't limited, so mailgoose
+keeps it for at most 24 hours, only reads with it, and forgets it
+once the import is done or on `disconnectMailchimp`.
+
+Answers 503 `mailchimp_not_configured` where connecting isn't set up;
+uploading Mailchimp's export (`createMailchimpBundle`) still works.
+
+Responses:
+
+- `200`: The link to open. [MailchimpConnect](#schema-mailchimpconnect)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-getmailchimpconnection"></a>
+
+### Get the connected Mailchimp account
+
+`GET /v1/imports/mailchimp/connection`
+
+- Operation: `getMailchimpConnection`
+- CLI: `mailgoose import mailchimp connection`
+
+Whether a Mailchimp account is connected, which one, and when
+mailgoose forgets it. The access itself is never returned.
+
+Responses:
+
+- `200`: The connection, or `connected: false`. [MailchimpConnection](#schema-mailchimpconnection)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-disconnectmailchimp"></a>
+
+### Forget the connected Mailchimp account
+
+`POST /v1/imports/mailchimp/disconnect`
+
+- Operation: `disconnectMailchimp`
+- CLI: `mailgoose import mailchimp disconnect`
+
+Deletes mailgoose's access to the connected Mailchimp account now,
+and any unused connect link. Answers `connected: false` even when
+nothing was connected. To remove mailgoose from the Mailchimp account
+as well, do that in Mailchimp's own settings.
+
+Responses:
+
+- `200`: Nothing is connected now. [MailchimpConnection](#schema-mailchimpconnection)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
 <a id="tag-images"></a>
 
 ## Images
@@ -3931,6 +4002,27 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 | `permission_confirmed` | boolean | yes | True says these people agreed to get your email. Required. |
 | `campaigns` | integer |  | How many of the newest campaigns become HTML emails. |
 | `idempotency_key` | string |  | Confirming the same export again with this key returns the import already made. |
+
+<a id="schema-mailchimpconnect"></a>
+
+### MailchimpConnect
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `authorize_url` | string (uri) | yes | Mailchimp's page to open, in a browser signed in to this mailgoose account. |
+| `expires_at` | string (date-time) | yes | When the link stops working. |
+
+<a id="schema-mailchimpconnection"></a>
+
+### MailchimpConnection
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `connected` | boolean | yes |  |
+| `account_name` | string or null | yes | The Mailchimp account's name, as Mailchimp gives it. |
+| `data_center` | string or null | yes | The Mailchimp data center the account is on, such as us21. |
+| `connected_at` | string (date-time) or null | yes |  |
+| `expires_at` | string (date-time) or null | yes | When mailgoose forgets the access, if the import hasn't already. |
 
 <a id="schema-mailchimpbundle"></a>
 

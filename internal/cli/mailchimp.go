@@ -477,6 +477,133 @@ Confirming again shows the same import.`,
 	})
 	del.Flags().BoolVar(&yes, "yes", false, "confirm the delete")
 
-	cmd.AddCommand(upload, preview, confirm, del)
+	cmd.AddCommand(upload, preview, confirm, del, a.mailchimpConnectCmd(), a.mailchimpConnectionCmd(), a.mailchimpDisconnectCmd())
 	return cmd
+}
+
+// mailchimpConnection is the API's MailchimpConnection.
+type mailchimpConnection struct {
+	Connected   bool       `json:"connected"`
+	AccountName *string    `json:"account_name"`
+	DataCenter  *string    `json:"data_center"`
+	ConnectedAt *time.Time `json:"connected_at"`
+	ExpiresAt   *time.Time `json:"expires_at"`
+}
+
+func (a *App) mailchimpConnectCmd() *cobra.Command {
+	return calls("connectMailchimp", &cobra.Command{
+		Use:   "connect",
+		Short: "Get a link to connect a Mailchimp account, so mailgoose can read it",
+		Long: `Prints a link to Mailchimp's page where you let mailgoose read your Mailchimp
+account. Open it in a browser signed in to this mailgoose account: Mailchimp
+sends you back to mailgoose, which connects it only for the account signed in
+there. The link works once, for 10 minutes. Nothing is opened for you and
+nothing is asked.
+
+mailgoose only reads with the access, and forgets it once the import is
+done, after 24 hours at the latest, or on ` + "`mailgoose import mailchimp disconnect`" + `.
+Check it with ` + "`mailgoose import mailchimp connection`" + `.
+
+Where connecting isn't set up, this fails with mailchimp_not_configured;
+uploading Mailchimp's export (` + "`mailgoose import mailchimp upload`" + `) still works.`,
+		Example: `  mailgoose import mailchimp connect
+  mailgoose import mailchimp connect --json`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			var raw json.RawMessage
+			if err := a.call(cmd.Context(), http.MethodPost, "/v1/imports/mailchimp/connect", nil, &raw, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(raw)
+				return nil
+			}
+			var out struct {
+				AuthorizeURL string    `json:"authorize_url"`
+				ExpiresAt    time.Time `json:"expires_at"`
+			}
+			if err := json.Unmarshal(raw, &out); err != nil {
+				return fmt.Errorf("the API sent a response the CLI can't read: %w", err)
+			}
+			fmt.Fprintln(a.Stdout, "Open this link in a browser signed in to mailgoose, and allow access on Mailchimp's page:")
+			fmt.Fprintln(a.Stdout)
+			fmt.Fprintln(a.Stdout, "  "+out.AuthorizeURL)
+			fmt.Fprintln(a.Stdout)
+			fmt.Fprintf(a.Stdout, "It works once, until %s. Then check it with: mailgoose import mailchimp connection\n",
+				out.ExpiresAt.Local().Format("15:04"))
+			return nil
+		},
+	})
+}
+
+func (a *App) mailchimpConnectionCmd() *cobra.Command {
+	return calls("getMailchimpConnection", &cobra.Command{
+		Use:     "connection",
+		Short:   "Show the connected Mailchimp account",
+		Example: `  mailgoose import mailchimp connection --json`,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return a.mailchimpConnection(cmd.Context(), http.MethodGet, "/v1/imports/mailchimp/connection")
+		},
+	})
+}
+
+func (a *App) mailchimpDisconnectCmd() *cobra.Command {
+	return calls("disconnectMailchimp", &cobra.Command{
+		Use:   "disconnect",
+		Short: "Make mailgoose forget the connected Mailchimp account now",
+		Long: `Deletes mailgoose's access to the connected Mailchimp account, and any unused
+connect link. To remove mailgoose from the Mailchimp account too, do that in
+Mailchimp's own settings.`,
+		Example: `  mailgoose import mailchimp disconnect`,
+		Args:    cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return a.mailchimpConnection(cmd.Context(), http.MethodPost, "/v1/imports/mailchimp/disconnect")
+		},
+	})
+}
+
+// mailchimpConnection calls a connection endpoint and shows the answer.
+func (a *App) mailchimpConnection(ctx context.Context, method, path string) error {
+	var raw json.RawMessage
+	if err := a.call(ctx, method, path, nil, &raw, true); err != nil {
+		return err
+	}
+	if a.jsonOut {
+		a.printJSON(raw)
+		return nil
+	}
+	var c mailchimpConnection
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return fmt.Errorf("the API sent a response the CLI can't read: %w", err)
+	}
+	if !c.Connected {
+		fmt.Fprintln(a.Stdout, "No Mailchimp account is connected. Connect one with: mailgoose import mailchimp connect")
+		return nil
+	}
+	name := "A Mailchimp account"
+	if c.AccountName != nil {
+		name = "Mailchimp account " + quoteName(*c.AccountName)
+	}
+	dc := ""
+	if c.DataCenter != nil {
+		dc = " (" + *c.DataCenter + ")"
+	}
+	fmt.Fprintf(a.Stdout, "%s%s is connected.\n", name, dc)
+	if c.ExpiresAt != nil {
+		fmt.Fprintf(a.Stdout, "mailgoose forgets it at %s, or once the import is done.\n", c.ExpiresAt.Local().Format("2006-01-02 15:04"))
+	}
+	return nil
+}
+
+// quoteName quotes a name Mailchimp gave, without control characters, which
+// could move a terminal's cursor or change its colors.
+func quoteName(s string) string {
+	clean := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0) {
+			return -1
+		}
+		return r
+	}, s)
+	return `"` + clean + `"`
 }

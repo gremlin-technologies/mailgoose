@@ -176,6 +176,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `CREDIT_PACKS` | The credit packs as `name=credits:cents,...`. Empty means the decided packs: `10k=10000:2000,50k=50000:7500,200k=200000:24000,1m=1000000:90000`. |
 | `PLAN_PRICES` | One paid-plan unit's price in cents, as `month:cents,year:cents`. Empty means the decided prices: `month:500,year:5000`. |
 | `WEB_RISK_API_KEY` | The Google Web Risk API key the email check looks links up with, from the `<env>/app` secret (or the environment, locally). Unset, links aren't looked up and the check warns (`link_safety_not_checked`); locally a fake lists only Google's test pages. |
+| `MAILCHIMP_CLIENT_ID`, `MAILCHIMP_CLIENT_SECRET` | Gremlin Technologies' Mailchimp app, from the `<env>/app` secret (or the environment, locally). Unset, connecting a Mailchimp account answers `mailchimp_not_configured` and points to uploading the export; the secret also seals stored tokens, so changing it only means connecting again. |
 | `IMAGES_BUCKET`, `IMAGES_BASE_URL` | The S3 bucket uploaded images go in, and the CDN address they're served from. Without `IMAGES_BASE_URL` the API serves them at `PUBLIC_BASE_URL/images/`, redirecting to short-lived presigned URLs (staging until it has a CDN). With no bucket outside local, image uploads answer 503. |
 | `IMAGES_DIR` | Local only: a directory images go in instead of S3, served by the API at `/images/`. Defaults to `.local/images` when `APP_ENV=local` and there's no bucket; its URLs then start `PUBLIC_BASE_URL/images`. Prod refuses it. |
 
@@ -414,6 +415,15 @@ webhook secret in the environment and forward events:
 stripe listen --forward-to localhost:8080/hooks/stripe   # prints whsec_...
 STRIPE_SECRET_KEY=sk_test_... STRIPE_WEBHOOK_SECRET=whsec_... go run ./cmd/mailgoosed serve
 ```
+
+### Setting up Mailchimp connect
+
+Register an app at Mailchimp (Account, Extras, Registered apps) with the
+redirect URI `<PUBLIC_BASE_URL>/oauth/mailchimp/callback`, and put its client
+id and secret in the `<env>/app` secret as `MAILCHIMP_CLIENT_ID` and
+`MAILCHIMP_CLIENT_SECRET`. Locally, register `http://127.0.0.1:8080/oauth/mailchimp/callback`
+with `PUBLIC_BASE_URL=http://127.0.0.1:8080`. The connection only reads the account and is
+forgotten after 24 hours at the latest.
 
 ## Contacts
 

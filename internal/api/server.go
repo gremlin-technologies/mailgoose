@@ -73,6 +73,10 @@ type Server struct {
 	// Mailchimp keeps uploaded Mailchimp exports (MG-72); nil without a
 	// database.
 	Mailchimp *mailchimp.Store
+	// MailchimpConnections keeps connected Mailchimp accounts (MG-73); nil
+	// without a database. Without the app's Mailchimp client id and secret,
+	// connecting answers 503 mailchimp_not_configured.
+	MailchimpConnections *mailchimp.Connections
 	// MailchimpMaxMembers caps the members one Mailchimp export may hold.
 	MailchimpMaxMembers int
 	// Emails stores the account's emails; nil without a database.
@@ -186,6 +190,11 @@ func (s *Server) Handler() http.Handler {
 	// Stripe's webhook is signed by Stripe, so it skips the API's sign-in,
 	// cross-origin check and rate limit.
 	stripeHook := requestIDs(s.recoverer(s.logRequests(http.HandlerFunc(s.stripeWebhook))))
+	// Mailchimp's OAuth callback (MG-73) is a page for people that needs the
+	// browser's session, so it has the sign-in layer and its own limit.
+	mailchimpCallback := requestIDs(s.recoverer(s.logRequests(
+		(&RateLimiter{PerMinute: mailchimpCallbacksPerMinute, Now: now, Key: ClientIPKey, Limited: mailchimpCallbackLimited}).
+			Middleware(s.authenticate(http.HandlerFunc(s.mailchimpCallback), now)))))
 	// The web app skips the API's middleware: its files need no rate limit,
 	// session lookup or idempotency.
 	var imageFiles http.Handler
@@ -202,6 +211,8 @@ func (s *Server) Handler() http.Handler {
 		switch {
 		case r.URL.Path == StripeWebhookPath:
 			stripeHook.ServeHTTP(w, r)
+		case r.URL.Path == MailchimpCallbackPath:
+			mailchimpCallback.ServeHTTP(w, r)
 		case imageFiles != nil && strings.HasPrefix(r.URL.Path, "/images/") && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 			imageFiles.ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, socialicons.Prefix) && (r.Method == http.MethodGet || r.Method == http.MethodHead):

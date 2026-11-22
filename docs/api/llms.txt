@@ -96,6 +96,9 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 - [Get an uploaded Mailchimp export](reference.md#op-getmailchimpbundle): `GET /v1/imports/mailchimp/bundles/{bundle_id}`, CLI `mailgoose import mailchimp confirm`, `mailgoose import mailchimp preview`. The upload with its preview as it was worked out on upload.
 - [Delete an unconfirmed Mailchimp export](reference.md#op-deletemailchimpbundle): `DELETE /v1/imports/mailchimp/bundles/{bundle_id}`, CLI `mailgoose import mailchimp delete`. Deletes an upload that hasn't been confirmed, with its file, freeing one of the account's 3 unconfirmed uploads.
 - [Import an uploaded Mailchimp export](reference.md#op-confirmmailchimpbundle): `POST /v1/imports/mailchimp/bundles/{bundle_id}/confirm`, CLI `mailgoose import mailchimp confirm`. Starts the import: the contacts as a Mailchimp import (follow it with `getImport` and `import_id`), and the HTML emails, which this upload reports in `emails`.
+- [Start connecting a Mailchimp account](reference.md#op-connectmailchimp): `POST /v1/imports/mailchimp/connect`, CLI `mailgoose import mailchimp connect`. Returns a link to Mailchimp's page where the person lets mailgoose read their Mailchimp account.
+- [Get the connected Mailchimp account](reference.md#op-getmailchimpconnection): `GET /v1/imports/mailchimp/connection`, CLI `mailgoose import mailchimp connection`. Whether a Mailchimp account is connected, which one, and when mailgoose forgets it.
+- [Forget the connected Mailchimp account](reference.md#op-disconnectmailchimp): `POST /v1/imports/mailchimp/disconnect`, CLI `mailgoose import mailchimp disconnect`. Deletes mailgoose's access to the connected Mailchimp account now, and any unused connect link.
 
 ## Images
 
