@@ -25,6 +25,35 @@ label: "Make both changes".
   `owner-merge` and left for the owner, as before.
 - The merge rules in this repository are unchanged.
 
+## 2026-11-22: The free tier is 1,000 contacts and 2,500 credits a month, with a required footer (owner decision, confirmed)
+
+From the free tier research (the "mailgoose free tier" Claude Doc). The owner,
+Nov 22, to the four picks it put to him: "Go with all four picks".
+
+- **Free tier:** 1,000 contacts (was 500) and 2,500 credits a month (was
+  1,000), at most 1,000 sends a day, and every feature included. Free emails
+  carry the required "Sent by mailgoose" footer (MG-119, #275); removing it
+  is a paid benefit. No domain is needed, as decided earlier today. This
+  replaces the free tier in the Nov 18 pricing decision and in the entry
+  below. The limits are ticketed as MG-120 (#277), and the pricing page
+  (MG-117, #272) uses them.
+- **Paid keeps the free allowance:** paid accounts get the same 2,500 credits a
+  month, so upgrading never cuts sends (MG-118, #273, grants whatever the
+  free grant is).
+- **Forms past the cap:** a free account's forms keep taking signups up to
+  1,100 contacts instead of refusing them (409) at the cap, and the account's
+  sends are held until it upgrades or is back at 1,000. This replaces "Over
+  the free contact limit a signup or a confirmation is refused" (MG-36) for
+  forms (MG-120).
+- **Footer link:** the footer links to the signup page with `?ref=footer`, so
+  signups it brings in can be counted (MG-119).
+- **Why these numbers:** Mailchimp and MailerLite both cut free to 250
+  contacts this year; 1,000 holds a Mailchimp free user's whole list and stays
+  under the $5 plan's 2,500. Modelled at about $0.35 a month per free account,
+  and 56% to 48% margin at 1,000 paying customers (5,000 a month would have
+  been 36%). The estimates (30% of the allowance used, 4% converting) should
+  be checked against beta numbers; raising the allowance later is easy.
+
 ## 2026-11-22: The web app speaks in its own words, never CLI commands (owner decision, confirmed)
 
 Asked about the untested-campaign error in the web app, which tells people to
