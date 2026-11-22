@@ -71,4 +71,10 @@ func TestReferenceCoversEveryOperation(t *testing.T) {
 	if !strings.HasPrefix(files["llms.txt"], "# mailgoose\n\n> ") {
 		t.Errorf("llms.txt doesn't start with a title and a summary, as llmstxt.org asks")
 	}
+	// MG-78: llms.txt lists the guide's Mailchimp section, and the anchor is
+	// the section's heading.
+	if !strings.Contains(files["llms.txt"], "(agent-guide.md#moving-from-mailchimp)") ||
+		!strings.Contains(files["agent-guide.md"], "\n## Moving from Mailchimp\n") {
+		t.Errorf("llms.txt doesn't list the guide's Moving from Mailchimp section")
+	}
 }

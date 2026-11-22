@@ -400,7 +400,10 @@ Manage my data) or an audience, then:
   2. mailgoose import mailchimp confirm <id> --permission-confirmed   does it
 
 Nothing is imported until you confirm. An upload is kept for 7 days, and an
-account keeps at most 3 unconfirmed uploads; delete one you don't need.`,
+account keeps at most 3 unconfirmed uploads; delete one you don't need.
+Agents: see "Moving from Mailchimp" in ` + "`mailgoose docs`" + `.`,
+		Example: `  mailgoose import mailchimp upload mailchimp-export.zip
+  mailgoose import mailchimp confirm 3f1c... --permission-confirmed`,
 	}
 
 	var audience string
