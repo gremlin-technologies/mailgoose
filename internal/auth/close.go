@@ -32,6 +32,7 @@ var AccountTables = []string{
 	"campaign_recipients",
 	"campaign_launch_codes",
 	"campaigns",
+	"segments",
 	"consents",
 	"forms",
 	"emails",
