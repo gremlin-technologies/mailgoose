@@ -1648,7 +1648,15 @@ paths:
     get:
       operationId: listContacts
       summary: List contacts
-      description: The account's contacts, newest first. Filters combine; empty ones are ignored.
+      description: |
+        The account's contacts, newest first. Filters combine, every one must
+        match, and empty ones are ignored. The engagement filters (MG-113) are
+        what contacts did with past campaigns, from the same events as the
+        campaign reports, kept 12 months; only campaigns sent with tracking
+        on count. A filter naming a campaign that isn't the account's answers
+        422 `unknown_campaign`, one sent with tracking off 422
+        `tracking_off`, and one whose events are archived 410
+        `report_archived`. `GET /v1/contacts/count` counts the matches.
       tags: [contacts]
       security:
         - apiKey: []
@@ -1656,33 +1664,18 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Cursor"
-        - name: email
-          in: query
-          required: false
-          description: Only contacts whose address contains this, ignoring case.
-          schema:
-            type: string
-            maxLength: 254
-        - name: name
-          in: query
-          required: false
-          description: Only contacts whose first, last or full name contains this, ignoring case.
-          schema:
-            type: string
-            maxLength: 201
-        - name: status
-          in: query
-          required: false
-          description: Only contacts with this status.
-          schema:
-            $ref: "#/components/schemas/ContactStatus"
-        - name: tag_id
-          in: query
-          required: false
-          description: Only contacts with this tag.
-          schema:
-            type: string
-            format: uuid
+        - $ref: "#/components/parameters/ContactEmailFilter"
+        - $ref: "#/components/parameters/ContactNameFilter"
+        - $ref: "#/components/parameters/ContactStatusFilter"
+        - $ref: "#/components/parameters/ContactTagFilter"
+        - $ref: "#/components/parameters/ContactOpenedFilter"
+        - $ref: "#/components/parameters/ContactNotOpenedFilter"
+        - $ref: "#/components/parameters/ContactClickedFilter"
+        - $ref: "#/components/parameters/ContactNotClickedFilter"
+        - $ref: "#/components/parameters/ContactNeverOpenedFilter"
+        - $ref: "#/components/parameters/ContactNeverClickedFilter"
+        - $ref: "#/components/parameters/ContactOpenedWithinDaysFilter"
+        - $ref: "#/components/parameters/ContactClickedWithinDaysFilter"
       responses:
         "200":
           description: A page of contacts.
@@ -1697,6 +1690,10 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "410":
+          $ref: "#/components/responses/ReportArchived"
+        "422":
+          $ref: "#/components/responses/ContactFilterUnusable"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "503":
@@ -1748,6 +1745,50 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/contacts/count:
+    get:
+      operationId: countContacts
+      summary: Count contacts
+      description: How many of the account's contacts match the same filters as listing them; with none, every contact.
+      tags: [contacts]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ContactEmailFilter"
+        - $ref: "#/components/parameters/ContactNameFilter"
+        - $ref: "#/components/parameters/ContactStatusFilter"
+        - $ref: "#/components/parameters/ContactTagFilter"
+        - $ref: "#/components/parameters/ContactOpenedFilter"
+        - $ref: "#/components/parameters/ContactNotOpenedFilter"
+        - $ref: "#/components/parameters/ContactClickedFilter"
+        - $ref: "#/components/parameters/ContactNotClickedFilter"
+        - $ref: "#/components/parameters/ContactNeverOpenedFilter"
+        - $ref: "#/components/parameters/ContactNeverClickedFilter"
+        - $ref: "#/components/parameters/ContactOpenedWithinDaysFilter"
+        - $ref: "#/components/parameters/ContactClickedWithinDaysFilter"
+      responses:
+        "200":
+          description: The number of matching contacts.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactCount"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "410":
+          $ref: "#/components/responses/ReportArchived"
+        "422":
+          $ref: "#/components/responses/ContactFilterUnusable"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/contacts/export:
     get:
       operationId: exportContacts
@@ -1767,33 +1808,18 @@ paths:
         - apiKey: []
         - sessionCookie: []
       parameters:
-        - name: email
-          in: query
-          required: false
-          description: Only contacts whose address contains this, ignoring case.
-          schema:
-            type: string
-            maxLength: 254
-        - name: name
-          in: query
-          required: false
-          description: Only contacts whose first, last or full name contains this, ignoring case.
-          schema:
-            type: string
-            maxLength: 201
-        - name: status
-          in: query
-          required: false
-          description: Only contacts with this status.
-          schema:
-            $ref: "#/components/schemas/ContactStatus"
-        - name: tag_id
-          in: query
-          required: false
-          description: Only contacts with this tag.
-          schema:
-            type: string
-            format: uuid
+        - $ref: "#/components/parameters/ContactEmailFilter"
+        - $ref: "#/components/parameters/ContactNameFilter"
+        - $ref: "#/components/parameters/ContactStatusFilter"
+        - $ref: "#/components/parameters/ContactTagFilter"
+        - $ref: "#/components/parameters/ContactOpenedFilter"
+        - $ref: "#/components/parameters/ContactNotOpenedFilter"
+        - $ref: "#/components/parameters/ContactClickedFilter"
+        - $ref: "#/components/parameters/ContactNotClickedFilter"
+        - $ref: "#/components/parameters/ContactNeverOpenedFilter"
+        - $ref: "#/components/parameters/ContactNeverClickedFilter"
+        - $ref: "#/components/parameters/ContactOpenedWithinDaysFilter"
+        - $ref: "#/components/parameters/ContactClickedWithinDaysFilter"
       responses:
         "200":
           description: The contacts, as CSV with a header row.
@@ -1813,6 +1839,10 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "410":
+          $ref: "#/components/responses/ReportArchived"
+        "422":
+          $ref: "#/components/responses/ContactFilterUnusable"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "503":
@@ -5313,6 +5343,15 @@ components:
         status_changed_at:
           type: string
           format: date-time
+    ContactCount:
+      type: object
+      additionalProperties: false
+      required: [count]
+      properties:
+        count:
+          type: integer
+          minimum: 0
+          description: How many contacts match.
     ContactList:
       type: object
       required: [data, next_cursor]
@@ -9518,6 +9557,135 @@ components:
       description: Which recipients to list.
       schema:
         $ref: "#/components/schemas/ReportActivity"
+    ContactEmailFilter:
+      name: email
+      in: query
+      required: false
+      description: Only contacts whose address contains this, ignoring case.
+      schema:
+        type: string
+        maxLength: 254
+    ContactNameFilter:
+      name: name
+      in: query
+      required: false
+      description: Only contacts whose first, last or full name contains this, ignoring case.
+      schema:
+        type: string
+        maxLength: 201
+    ContactStatusFilter:
+      name: status
+      in: query
+      required: false
+      description: Only contacts with this status.
+      schema:
+        $ref: "#/components/schemas/ContactStatus"
+    ContactTagFilter:
+      name: tag_id
+      in: query
+      required: false
+      description: Only contacts with this tag.
+      schema:
+        type: string
+        format: uuid
+    ContactOpenedFilter:
+      name: opened
+      in: query
+      required: false
+      description: |
+        Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
+        campaigns across the engagement filters.
+      style: form
+      explode: true
+      schema:
+        type: array
+        maxItems: 20
+        items:
+          type: string
+          format: uuid
+    ContactNotOpenedFilter:
+      name: not_opened
+      in: query
+      required: false
+      description: |
+        Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20
+        campaigns across the engagement filters.
+      style: form
+      explode: true
+      schema:
+        type: array
+        maxItems: 20
+        items:
+          type: string
+          format: uuid
+    ContactClickedFilter:
+      name: clicked
+      in: query
+      required: false
+      description: |
+        Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20
+        campaigns across the engagement filters.
+      style: form
+      explode: true
+      schema:
+        type: array
+        maxItems: 20
+        items:
+          type: string
+          format: uuid
+    ContactNotClickedFilter:
+      name: not_clicked
+      in: query
+      required: false
+      description: |
+        Only contacts who were delivered this campaign and didn't click it. Repeat it for more campaigns; each must match. At most 20
+        campaigns across the engagement filters.
+      style: form
+      explode: true
+      schema:
+        type: array
+        maxItems: 20
+        items:
+          type: string
+          format: uuid
+    ContactNeverOpenedFilter:
+      name: never_opened
+      in: query
+      required: false
+      description: |
+        With `true`, only contacts who were delivered at least one campaign
+        sent with tracking on, in the last 12 months of events, and opened
+        none. A contact who got no such campaign isn't one.
+      schema:
+        type: boolean
+    ContactNeverClickedFilter:
+      name: never_clicked
+      in: query
+      required: false
+      description: |
+        With `true`, only contacts who were delivered at least one campaign
+        sent with tracking on, in the last 12 months of events, and clicked
+        none.
+      schema:
+        type: boolean
+    ContactOpenedWithinDaysFilter:
+      name: opened_within_days
+      in: query
+      required: false
+      description: Only contacts who opened any campaign in the last this many days.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 365
+    ContactClickedWithinDaysFilter:
+      name: clicked_within_days
+      in: query
+      required: false
+      description: Only contacts who clicked any campaign in the last this many days.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 365
     ReportLinkPosition:
       name: link
       in: query
@@ -10017,6 +10185,19 @@ components:
         `report_archived`: the campaign launched more than 12 months ago,
         and its raw events were deleted; only the report's saved numbers
         are left.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ContactFilterUnusable:
+      description: |
+        An engagement filter names a campaign it can't use:
+        `unknown_campaign` (not one of the account's campaigns) or
+        `tracking_off` (sent with open and click tracking off, so it has no
+        opens or clicks).
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

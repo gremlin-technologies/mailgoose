@@ -210,6 +210,20 @@ mailgoose campaign report <campaign-id> --who not_opened --csv --output not-open
 12 months after launch; after that a campaign has only its numbers
 (`report_archived`).
 
+To find contacts by what they did across campaigns, filter the contact list:
+
+```sh
+mailgoose contacts count --never-opened --status subscribed --json
+mailgoose contacts list --opened <campaign-id> --not-clicked <campaign-id> --json
+mailgoose export --clicked-within-days 90 --output engaged.csv
+```
+
+`--opened`, `--not-opened`, `--clicked` and `--not-clicked` take a campaign id
+and can repeat; `--never-opened` and `--never-clicked` are contacts delivered at
+least one tracked campaign who opened or clicked none; `--opened-within-days`
+and `--clicked-within-days` reach back up to 365. Every filter must match. A
+campaign sent with tracking off answers `tracking_off`.
+
 ## Contacts and signup forms
 
 ```sh

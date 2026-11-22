@@ -457,6 +457,23 @@ mailgoose contacts list --tag vip
 mailgoose tags delete vip --yes   # says how many contacts lost it
 ```
 
+The contact list, its count and the export also filter on what contacts did
+with past campaigns (MG-113): `opened`, `not_opened`, `clicked` and
+`not_clicked` name campaigns, `never_opened` and `never_clicked` are contacts
+delivered at least one tracked campaign who opened or clicked none, and
+`opened_within_days` and `clicked_within_days` look back up to 365 days. They
+read the same events as the reports (`contacts.Engagement`), as `EXISTS`
+conditions over `campaign_recipients`, `send_events` and `engagement_events`,
+and `contacts.Service.CheckFilter` refuses a campaign that isn't the
+account's, wasn't tracked, or is archived. `TestEngagementFilterSpeed` times
+each filter over 50,000 contacts and 200,000 events.
+
+```sh
+mailgoose contacts count --never-opened --status subscribed
+mailgoose contacts list --opened <campaign-id> --not-clicked <campaign-id>
+mailgoose export --clicked-within-days 90 --output engaged.csv
+```
+
 Import a CSV with `mailgoose import`. Columns are detected from common headers
 or named with `--map`; contacts are `unconfirmed` unless you pass
 `--permission-confirmed`. `--list-source` (where the people came from) is

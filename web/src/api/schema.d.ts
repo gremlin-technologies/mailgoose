@@ -917,7 +917,14 @@ export interface paths {
         };
         /**
          * List contacts
-         * @description The account's contacts, newest first. Filters combine; empty ones are ignored.
+         * @description The account's contacts, newest first. Filters combine, every one must
+         *     match, and empty ones are ignored. The engagement filters (MG-113) are
+         *     what contacts did with past campaigns, from the same events as the
+         *     campaign reports, kept 12 months; only campaigns sent with tracking
+         *     on count. A filter naming a campaign that isn't the account's answers
+         *     422 `unknown_campaign`, one sent with tracking off 422
+         *     `tracking_off`, and one whose events are archived 410
+         *     `report_archived`. `GET /v1/contacts/count` counts the matches.
          */
         get: operations["listContacts"];
         put?: never;
@@ -932,6 +939,26 @@ export interface paths {
          *     `contact_limit`.
          */
         post: operations["createContact"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/contacts/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Count contacts
+         * @description How many of the account's contacts match the same filters as listing them; with none, every contact.
+         */
+        get: operations["countContacts"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2751,6 +2778,10 @@ export interface components {
             updated_at: string;
             /** Format: date-time */
             status_changed_at: string;
+        };
+        ContactCount: {
+            /** @description How many contacts match. */
+            count: number;
         };
         ContactList: {
             data: components["schemas"]["Contact"][];
@@ -5966,6 +5997,21 @@ export interface components {
             };
         };
         /**
+         * @description An engagement filter names a campaign it can't use:
+         *     `unknown_campaign` (not one of the account's campaigns) or
+         *     `tracking_off` (sent with open and click tracking off, so it has no
+         *     opens or clicks).
+         */
+        ContactFilterUnusable: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `tracking_off`: the campaign was sent with open and click tracking
          *     off, so there are no opens or clicks to list.
          */
@@ -6382,6 +6428,50 @@ export interface components {
         Cursor: string;
         /** @description Which recipients to list. */
         ReportActivity: components["schemas"]["ReportActivity"];
+        /** @description Only contacts whose address contains this, ignoring case. */
+        ContactEmailFilter: string;
+        /** @description Only contacts whose first, last or full name contains this, ignoring case. */
+        ContactNameFilter: string;
+        /** @description Only contacts with this status. */
+        ContactStatusFilter: components["schemas"]["ContactStatus"];
+        /** @description Only contacts with this tag. */
+        ContactTagFilter: string;
+        /**
+         * @description Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
+         *     campaigns across the engagement filters.
+         */
+        ContactOpenedFilter: string[];
+        /**
+         * @description Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20
+         *     campaigns across the engagement filters.
+         */
+        ContactNotOpenedFilter: string[];
+        /**
+         * @description Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20
+         *     campaigns across the engagement filters.
+         */
+        ContactClickedFilter: string[];
+        /**
+         * @description Only contacts who were delivered this campaign and didn't click it. Repeat it for more campaigns; each must match. At most 20
+         *     campaigns across the engagement filters.
+         */
+        ContactNotClickedFilter: string[];
+        /**
+         * @description With `true`, only contacts who were delivered at least one campaign
+         *     sent with tracking on, in the last 12 months of events, and opened
+         *     none. A contact who got no such campaign isn't one.
+         */
+        ContactNeverOpenedFilter: boolean;
+        /**
+         * @description With `true`, only contacts who were delivered at least one campaign
+         *     sent with tracking on, in the last 12 months of events, and clicked
+         *     none.
+         */
+        ContactNeverClickedFilter: boolean;
+        /** @description Only contacts who opened any campaign in the last this many days. */
+        ContactOpenedWithinDaysFilter: number;
+        /** @description Only contacts who clicked any campaign in the last this many days. */
+        ContactClickedWithinDaysFilter: number;
         /**
          * @description With `activity=clicked`, only those who clicked the link at this
          *     position in the report's `links`, from 1.
@@ -7722,13 +7812,49 @@ export interface operations {
                 /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
                 cursor?: components["parameters"]["Cursor"];
                 /** @description Only contacts whose address contains this, ignoring case. */
-                email?: string;
+                email?: components["parameters"]["ContactEmailFilter"];
                 /** @description Only contacts whose first, last or full name contains this, ignoring case. */
-                name?: string;
+                name?: components["parameters"]["ContactNameFilter"];
                 /** @description Only contacts with this status. */
-                status?: components["schemas"]["ContactStatus"];
+                status?: components["parameters"]["ContactStatusFilter"];
                 /** @description Only contacts with this tag. */
-                tag_id?: string;
+                tag_id?: components["parameters"]["ContactTagFilter"];
+                /**
+                 * @description Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                opened?: components["parameters"]["ContactOpenedFilter"];
+                /**
+                 * @description Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                not_opened?: components["parameters"]["ContactNotOpenedFilter"];
+                /**
+                 * @description Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                clicked?: components["parameters"]["ContactClickedFilter"];
+                /**
+                 * @description Only contacts who were delivered this campaign and didn't click it. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                not_clicked?: components["parameters"]["ContactNotClickedFilter"];
+                /**
+                 * @description With `true`, only contacts who were delivered at least one campaign
+                 *     sent with tracking on, in the last 12 months of events, and opened
+                 *     none. A contact who got no such campaign isn't one.
+                 */
+                never_opened?: components["parameters"]["ContactNeverOpenedFilter"];
+                /**
+                 * @description With `true`, only contacts who were delivered at least one campaign
+                 *     sent with tracking on, in the last 12 months of events, and clicked
+                 *     none.
+                 */
+                never_clicked?: components["parameters"]["ContactNeverClickedFilter"];
+                /** @description Only contacts who opened any campaign in the last this many days. */
+                opened_within_days?: components["parameters"]["ContactOpenedWithinDaysFilter"];
+                /** @description Only contacts who clicked any campaign in the last this many days. */
+                clicked_within_days?: components["parameters"]["ContactClickedWithinDaysFilter"];
             };
             header?: never;
             path?: never;
@@ -7748,6 +7874,8 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            410: components["responses"]["ReportArchived"];
+            422: components["responses"]["ContactFilterUnusable"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };
@@ -7785,17 +7913,125 @@ export interface operations {
             503: components["responses"]["ServiceUnavailable"];
         };
     };
+    countContacts: {
+        parameters: {
+            query?: {
+                /** @description Only contacts whose address contains this, ignoring case. */
+                email?: components["parameters"]["ContactEmailFilter"];
+                /** @description Only contacts whose first, last or full name contains this, ignoring case. */
+                name?: components["parameters"]["ContactNameFilter"];
+                /** @description Only contacts with this status. */
+                status?: components["parameters"]["ContactStatusFilter"];
+                /** @description Only contacts with this tag. */
+                tag_id?: components["parameters"]["ContactTagFilter"];
+                /**
+                 * @description Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                opened?: components["parameters"]["ContactOpenedFilter"];
+                /**
+                 * @description Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                not_opened?: components["parameters"]["ContactNotOpenedFilter"];
+                /**
+                 * @description Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                clicked?: components["parameters"]["ContactClickedFilter"];
+                /**
+                 * @description Only contacts who were delivered this campaign and didn't click it. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                not_clicked?: components["parameters"]["ContactNotClickedFilter"];
+                /**
+                 * @description With `true`, only contacts who were delivered at least one campaign
+                 *     sent with tracking on, in the last 12 months of events, and opened
+                 *     none. A contact who got no such campaign isn't one.
+                 */
+                never_opened?: components["parameters"]["ContactNeverOpenedFilter"];
+                /**
+                 * @description With `true`, only contacts who were delivered at least one campaign
+                 *     sent with tracking on, in the last 12 months of events, and clicked
+                 *     none.
+                 */
+                never_clicked?: components["parameters"]["ContactNeverClickedFilter"];
+                /** @description Only contacts who opened any campaign in the last this many days. */
+                opened_within_days?: components["parameters"]["ContactOpenedWithinDaysFilter"];
+                /** @description Only contacts who clicked any campaign in the last this many days. */
+                clicked_within_days?: components["parameters"]["ContactClickedWithinDaysFilter"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The number of matching contacts. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactCount"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            410: components["responses"]["ReportArchived"];
+            422: components["responses"]["ContactFilterUnusable"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
     exportContacts: {
         parameters: {
             query?: {
                 /** @description Only contacts whose address contains this, ignoring case. */
-                email?: string;
+                email?: components["parameters"]["ContactEmailFilter"];
                 /** @description Only contacts whose first, last or full name contains this, ignoring case. */
-                name?: string;
+                name?: components["parameters"]["ContactNameFilter"];
                 /** @description Only contacts with this status. */
-                status?: components["schemas"]["ContactStatus"];
+                status?: components["parameters"]["ContactStatusFilter"];
                 /** @description Only contacts with this tag. */
-                tag_id?: string;
+                tag_id?: components["parameters"]["ContactTagFilter"];
+                /**
+                 * @description Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                opened?: components["parameters"]["ContactOpenedFilter"];
+                /**
+                 * @description Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                not_opened?: components["parameters"]["ContactNotOpenedFilter"];
+                /**
+                 * @description Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                clicked?: components["parameters"]["ContactClickedFilter"];
+                /**
+                 * @description Only contacts who were delivered this campaign and didn't click it. Repeat it for more campaigns; each must match. At most 20
+                 *     campaigns across the engagement filters.
+                 */
+                not_clicked?: components["parameters"]["ContactNotClickedFilter"];
+                /**
+                 * @description With `true`, only contacts who were delivered at least one campaign
+                 *     sent with tracking on, in the last 12 months of events, and opened
+                 *     none. A contact who got no such campaign isn't one.
+                 */
+                never_opened?: components["parameters"]["ContactNeverOpenedFilter"];
+                /**
+                 * @description With `true`, only contacts who were delivered at least one campaign
+                 *     sent with tracking on, in the last 12 months of events, and clicked
+                 *     none.
+                 */
+                never_clicked?: components["parameters"]["ContactNeverClickedFilter"];
+                /** @description Only contacts who opened any campaign in the last this many days. */
+                opened_within_days?: components["parameters"]["ContactOpenedWithinDaysFilter"];
+                /** @description Only contacts who clicked any campaign in the last this many days. */
+                clicked_within_days?: components["parameters"]["ContactClickedWithinDaysFilter"];
             };
             header?: never;
             path?: never;
@@ -7817,6 +8053,8 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            410: components["responses"]["ReportArchived"];
+            422: components["responses"]["ContactFilterUnusable"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };
