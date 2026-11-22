@@ -40,7 +40,7 @@ async function checklist() {
   const list = await screen.findByRole("region", { name: "Getting started" });
   return within(list)
     .getAllByRole("listitem")
-    .map((li) => [within(li).getByRole("link").textContent, li.textContent?.includes("(done)")]);
+    .map((li) => [within(li).getAllByRole("link")[0].textContent, li.textContent?.includes("(done)")]);
 }
 
 describe("dashboard", () => {
@@ -55,7 +55,14 @@ describe("dashboard", () => {
       ["Launch a campaign", false],
     ]);
     const list = screen.getByRole("region", { name: "Getting started" });
-    expect(within(list).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual(["/domains", "/contacts", "/emails", "/campaigns", "/campaigns"]);
+    expect(within(list).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual([
+      "/domains",
+      "/contacts",
+      "/contacts/import/mailchimp",
+      "/emails",
+      "/campaigns",
+      "/campaigns",
+    ]);
     expect(within(list).getByText("Five steps to your first campaign.")).toBeTruthy();
     expect(within(screen.getByRole("region", { name: "Credits" })).getByText("1,000")).toBeTruthy();
     expect(screen.getByText("No campaigns yet.")).toBeTruthy();

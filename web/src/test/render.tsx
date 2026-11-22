@@ -35,8 +35,7 @@ export function fakeApi(routes: Record<string, Route>) {
   const calls: Call[] = [];
   const fetch = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
-    const text = await req.text();
-    const body: unknown = text ? JSON.parse(text) : undefined;
+    const body = await requestBody(req);
     const key = `${req.method} ${url.pathname}`;
     calls.push({ method: req.method, path: url.pathname, body });
     const route = routes[key];
@@ -50,6 +49,40 @@ export function fakeApi(routes: Record<string, Route>) {
     });
   };
   return { fetch, calls };
+}
+
+/**
+ * A request's body: parsed JSON, or for a multipart upload an object of its
+ * parts, where a file part is the File itself.
+ */
+async function requestBody(req: Request): Promise<unknown> {
+  const sent = req instanceof TestRequest ? req.sentBody : undefined;
+  if (sent instanceof FormData || req.headers.get("Content-Type")?.startsWith("multipart/form-data")) {
+    const parts: Record<string, FormDataEntryValue | FormDataEntryValue[]> = {};
+    const form = sent instanceof FormData ? sent : await req.formData();
+    for (const [name, value] of form.entries()) {
+      const had = parts[name];
+      parts[name] = had === undefined ? value : [...(Array.isArray(had) ? had : [had]), value];
+    }
+    return parts;
+  }
+  const text = await req.text();
+  return text ? JSON.parse(text) : undefined;
+}
+
+/**
+ * The Request the app's API client makes in tests, keeping the body it was
+ * given. Node's own Request takes jsdom's FormData only in Node versions
+ * whose fetch accepts any FormData-like object; later ones turn it into the
+ * text "[object FormData]". Keeping it lets the fake API read the upload as
+ * the app sent it, file name included, in every Node version.
+ */
+class TestRequest extends Request {
+  readonly sentBody: unknown;
+  constructor(input: RequestInfo | URL, init?: RequestInit) {
+    super(input, init);
+    this.sentBody = init?.body;
+  }
 }
 
 export function apiError(status: number, code: string, message: string, hint = ""): Reply {
@@ -90,7 +123,7 @@ function Where() {
  */
 export function renderApp(path: string | { pathname: string; state: unknown }, fetch: (req: Request) => Promise<Response>) {
   rendered = true;
-  const api = createApiClient({ baseUrl: "http://mailgoose.test", fetch });
+  const api = createApiClient({ baseUrl: "http://mailgoose.test", fetch, Request: TestRequest });
   return render(
     <ApiProvider client={api}>
       <SessionProvider>

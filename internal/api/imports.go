@@ -262,6 +262,31 @@ func (s *Server) ListImportSkippedRows(w http.ResponseWriter, r *http.Request, i
 	writeJSON(w, http.StatusOK, out)
 }
 
+// ExportImportSkippedRows is GET /v1/imports/{import_id}/skipped-rows/export.
+// Like the contacts export it streams, so an error part way can only cut
+// the file short; it's logged.
+func (s *Server) ExportImportSkippedRows(w http.ResponseWriter, r *http.Request, id string) {
+	c := s.contactsCaller(w, r)
+	if c == nil || !validImportID(w, id) {
+		return
+	}
+	started := false
+	_, err := s.Contacts.ExportSkippedCSV(r.Context(), c.AccountID, id, w, func() {
+		started = true
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="skipped-rows.csv"`)
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+	})
+	if !started {
+		s.importError(w, r, err)
+		return
+	}
+	if err != nil {
+		s.Log.ErrorContext(r.Context(), "skipped rows export cut short", "err", err)
+	}
+}
+
 func deref(p *string) string {
 	if p == nil {
 		return ""

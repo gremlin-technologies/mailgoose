@@ -1233,6 +1233,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/imports/{import_id}/skipped-rows/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download an import's skipped rows as CSV
+         * @description Every row the import didn't add, as a CSV file in file order, with a
+         *     header row. Columns: `row` (the line in the file, where the header is
+         *     1), `source` (for a Mailchimp import, the export file and row as
+         *     `file:row`; empty for a CSV), `email` (as written), `reason` (a
+         *     `SkipReason`) and `why` (the reason in a sentence). A cell that
+         *     starts with `=`, `+`, `-` or `@` gets a `'` in front so a
+         *     spreadsheet doesn't run it as a formula.
+         */
+        get: operations["exportImportSkippedRows"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/imports/mailchimp/bundles": {
         parameters: {
             query?: never;
@@ -3024,6 +3050,7 @@ export interface components {
         /**
          * @example {
          *       "connected": true,
+         *       "can_connect": true,
          *       "account_name": "Riverside Bakery",
          *       "data_center": "us21",
          *       "connected_at": "2026-11-21T12:02:00Z",
@@ -3032,6 +3059,12 @@ export interface components {
          */
         MailchimpConnection: {
             connected: boolean;
+            /**
+             * @description Whether connecting a Mailchimp account is set up here. When
+             *     false, `connectMailchimp` answers `mailchimp_not_configured`;
+             *     upload the export instead.
+             */
+            can_connect: boolean;
             /** @description The Mailchimp account's name, as Mailchimp gives it. */
             account_name: string | null;
             /** @description The Mailchimp data center the account is on, such as us21. */
@@ -8043,6 +8076,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkippedRowList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    exportImportSkippedRows: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The import's `id`. */
+                import_id: components["parameters"]["ImportId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The skipped rows, as CSV with a header row. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    /** @description Names the file `skipped-rows.csv`. */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
                 };
             };
             400: components["responses"]["BadRequest"];

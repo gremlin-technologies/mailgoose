@@ -105,10 +105,9 @@ type mailchimpBundle struct {
 // mailchimpHolds says what each hold a Mailchimp import may get means.
 var mailchimpHolds = map[string]string{
 	"over_contact_limit": "it would take the account past its contact limit",
-	"first_large_import": "it's the account's first import of more than 2,000 contacts",
-	"invalid_rows":       "too many rows aren't valid addresses",
-	"role_addresses":     "too many are role addresses like info@",
-	"disposable":         "too many are at disposable-address domains",
+	"large_first_import": "it's the account's first import of more than 2,000 contacts",
+	"invalid_addresses":  "too many rows aren't valid addresses",
+	"risky_addresses":    "too many are role addresses like info@ or at throwaway email domains",
 	"shared_list":        "many of its addresses are on lists other accounts imported",
 }
 
@@ -484,6 +483,7 @@ Confirming again shows the same import.`,
 
 // mailchimpConnection is the API's MailchimpConnection.
 type mailchimpConnection struct {
+	CanConnect  *bool      `json:"can_connect"`
 	Connected   bool       `json:"connected"`
 	AccountName *string    `json:"account_name"`
 	DataCenter  *string    `json:"data_center"`
@@ -579,6 +579,10 @@ func (a *App) mailchimpConnection(ctx context.Context, method, path string) erro
 		return fmt.Errorf("the API sent a response the CLI can't read: %w", err)
 	}
 	if !c.Connected {
+		if c.CanConnect != nil && !*c.CanConnect {
+			fmt.Fprintln(a.Stdout, "No Mailchimp account is connected, and connecting isn't set up here. Upload the export instead: mailgoose import mailchimp upload <file>")
+			return nil
+		}
 		fmt.Fprintln(a.Stdout, "No Mailchimp account is connected. Connect one with: mailgoose import mailchimp connect")
 		return nil
 	}

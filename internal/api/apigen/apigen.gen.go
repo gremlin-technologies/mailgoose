@@ -3810,10 +3810,15 @@ type MailchimpConnect struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-// MailchimpConnection Examples: {"account_name":"Riverside Bakery","connected":true,"connected_at":"2026-11-21T12:02:00Z","data_center":"us21","expires_at":"2026-11-22T12:02:00Z"}
+// MailchimpConnection Examples: {"account_name":"Riverside Bakery","can_connect":true,"connected":true,"connected_at":"2026-11-21T12:02:00Z","data_center":"us21","expires_at":"2026-11-22T12:02:00Z"}
 type MailchimpConnection struct {
 	// AccountName The Mailchimp account's name, as Mailchimp gives it.
-	AccountName *string    `json:"account_name"`
+	AccountName *string `json:"account_name"`
+
+	// CanConnect Whether connecting a Mailchimp account is set up here. When
+	// false, `connectMailchimp` answers `mailchimp_not_configured`;
+	// upload the export instead.
+	CanConnect  bool       `json:"can_connect"`
 	Connected   bool       `json:"connected"`
 	ConnectedAt *time.Time `json:"connected_at"`
 
@@ -6300,6 +6305,9 @@ type ServerInterface interface {
 	// ListImportSkippedRows List an import's skipped rows
 	// (GET /v1/imports/{import_id}/skipped-rows)
 	ListImportSkippedRows(w http.ResponseWriter, r *http.Request, importId ImportId, params ListImportSkippedRowsParams)
+	// ExportImportSkippedRows Download an import's skipped rows as CSV
+	// (GET /v1/imports/{import_id}/skipped-rows/export)
+	ExportImportSkippedRows(w http.ResponseWriter, r *http.Request, importId ImportId)
 	// GetPlan Show the account's plan
 	// (GET /v1/plan)
 	GetPlan(w http.ResponseWriter, r *http.Request)
@@ -9173,6 +9181,32 @@ func (siw *ServerInterfaceWrapper) ListImportSkippedRows(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// ExportImportSkippedRows operation middleware
+func (siw *ServerInterfaceWrapper) ExportImportSkippedRows(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "import_id" -------------
+	var importId ImportId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "import_id", r.PathValue("import_id"), &importId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "import_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportImportSkippedRows(w, r, importId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetPlan operation middleware
 func (siw *ServerInterfaceWrapper) GetPlan(w http.ResponseWriter, r *http.Request) {
 
@@ -9860,6 +9894,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}", wrapper.GetImport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/{import_id}/cancel", wrapper.CancelImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}/skipped-rows", wrapper.ListImportSkippedRows)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}/skipped-rows/export", wrapper.ExportImportSkippedRows)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/mailchimp/bundles", wrapper.CreateMailchimpBundle)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/imports/mailchimp/bundles/{bundle_id}", wrapper.DeleteMailchimpBundle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/mailchimp/bundles/{bundle_id}", wrapper.GetMailchimpBundle)

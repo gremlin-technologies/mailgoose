@@ -26,13 +26,28 @@ export type Overview = {
 const campaignsRead = 50;
 const campaignsShown = 5;
 
-export type Step = { key: string; label: string; about: string; to: string; done: boolean };
+export type Step = {
+  key: string;
+  label: string;
+  about: string;
+  to: string;
+  done: boolean;
+  /** A second way to do the step, shown until it's done. */
+  also?: { label: string; to: string };
+};
 
 /** The getting-started checklist (WEB-1), each step ticked from the account's real state. */
 export function steps(o: Overview): Step[] {
   return [
     { key: "domain", label: "Verify your domain", about: "So your emails come from your own address.", to: "/domains", done: o.domainVerified },
-    { key: "contacts", label: "Add contacts", about: "Import a CSV, add people one by one, or put a signup form on your site.", to: "/contacts", done: o.hasContacts },
+    {
+      key: "contacts",
+      label: "Add contacts",
+      about: "Import a CSV, add people one by one, or put a signup form on your site.",
+      to: "/contacts",
+      done: o.hasContacts,
+      also: { label: "Moving from Mailchimp? Import from Mailchimp", to: "/contacts/import/mailchimp" },
+    },
     { key: "email", label: "Build an email", about: "With blocks, or your own HTML.", to: "/emails", done: o.hasEmail },
     { key: "test", label: "Send a test", about: "Make a campaign and send yourself a copy.", to: "/campaigns", done: o.tested },
     { key: "launch", label: "Launch a campaign", about: "Check the summary, then send it or schedule it.", to: "/campaigns", done: o.launched },
@@ -104,6 +119,12 @@ function Body({ overview: o }: { overview: Overview }) {
                   <Link to={s.to}>{s.label}</Link>
                   <span className="visually-hidden">{s.done ? " (done)" : " (to do)"}</span>
                   {!s.done && <span className="muted small"> {s.about}</span>}
+                  {!s.done && s.also && (
+                    <span className="small">
+                      {" "}
+                      <Link to={s.also.to}>{s.also.label}</Link>
+                    </span>
+                  )}
                 </span>
               </li>
             ))}

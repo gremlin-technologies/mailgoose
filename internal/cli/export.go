@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -55,20 +56,7 @@ as a formula; import takes it off again.`,
 				return a.download(ctx, path, a.Stdout)
 			}
 
-			// The file holds people's data, so only its owner can read it.
-			f, err := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // the file the user named
-			if err != nil {
-				return usageError("Can't write "+output+": "+err.Error(), "Pass a path you can write to, or leave out --output for standard output.")
-			}
-			err = a.download(ctx, path, f)
-			if cerr := f.Close(); err == nil {
-				err = cerr
-			}
-			if err != nil {
-				_ = os.Remove(output)
-				return err
-			}
-			n, err := countCSVRows(output)
+			n, err := a.saveCSV(ctx, path, output)
 			if err != nil {
 				return err
 			}
@@ -90,6 +78,25 @@ as a formula; import takes it off again.`,
 	cmd.Flags().StringVar(&email, "email", "", "only contacts whose address contains this")
 	cmd.Flags().StringVar(&name, "name", "", "only contacts whose name contains this")
 	return cmd
+}
+
+// saveCSV downloads the CSV at path to the file output and returns how many
+// rows it has after the header. The file holds people's data, so only its
+// owner can read it; a download cut short leaves no file behind.
+func (a *App) saveCSV(ctx context.Context, path, output string) (int, error) {
+	f, err := os.OpenFile(output, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // the file the user named
+	if err != nil {
+		return 0, usageError("Can't write "+output+": "+err.Error(), "Pass a path you can write to, or leave out --output for standard output.")
+	}
+	err = a.download(ctx, path, f)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(output)
+		return 0, err
+	}
+	return countCSVRows(output)
 }
 
 // countCSVRows counts the rows after the header of the CSV file at path.

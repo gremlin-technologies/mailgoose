@@ -152,7 +152,8 @@ func TestConnectMailchimpThroughTheCallback(t *testing.T) {
 	state = startConnect(t, h)
 	rec = do(t, h, withSession(callback("code=good-code&state="+state))(t))
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Mailchimp is connected") ||
-		!strings.Contains(rec.Body.String(), "Riverside &lt;b&gt;Bakery&lt;/b&gt;") || rec.Header().Get("Referrer-Policy") != "no-referrer" {
+		!strings.Contains(rec.Body.String(), "Riverside &lt;b&gt;Bakery&lt;/b&gt;") || rec.Header().Get("Referrer-Policy") != "no-referrer" ||
+		!strings.Contains(rec.Body.String(), `href="/contacts/import/mailchimp"`) {
 		t.Fatalf("connected: %d %s", rec.Code, rec.Body)
 	}
 	if strings.Contains(rec.Body.String(), "tok-secret-value") {
@@ -162,12 +163,13 @@ func TestConnectMailchimpThroughTheCallback(t *testing.T) {
 	rec = do(t, h, withSession(mailchimpConnection)(t))
 	var conn struct {
 		Connected   bool    `json:"connected"`
+		CanConnect  bool    `json:"can_connect"`
 		AccountName *string `json:"account_name"`
 		DataCenter  *string `json:"data_center"`
 		ExpiresAt   *string `json:"expires_at"`
 	}
 	decodeInto(t, rec, &conn)
-	if !conn.Connected || conn.AccountName == nil || *conn.AccountName != "Riverside <b>Bakery</b>" || *conn.DataCenter != "us21" || conn.ExpiresAt == nil {
+	if !conn.Connected || !conn.CanConnect || conn.AccountName == nil || *conn.AccountName != "Riverside <b>Bakery</b>" || *conn.DataCenter != "us21" || conn.ExpiresAt == nil {
 		t.Fatalf("connection = %s", rec.Body)
 	}
 	if strings.Contains(rec.Body.String(), "tok-") {
@@ -211,6 +213,9 @@ func TestMailchimpCallbackPages(t *testing.T) {
 
 func TestConnectMailchimpNotSetUpPointsToTheUpload(t *testing.T) {
 	h := fullKey(authServer)(t).Handler()
+	if rec := do(t, h, bearer(mailchimpConnection)(t)); !strings.Contains(rec.Body.String(), `"can_connect":false`) {
+		t.Fatalf("connection: %d %s", rec.Code, rec.Body)
+	}
 	rec := do(t, h, bearer(connectMailchimp)(t))
 	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "mailchimp_not_configured") ||
 		!strings.Contains(rec.Body.String(), "mailgoose import mailchimp upload") {

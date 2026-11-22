@@ -623,6 +623,14 @@ var contractCases = map[string][]contractCase{
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/imports"))), req: bearer(importPath("/skipped-rows")), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(importPath("/skipped-rows")), status: http.StatusServiceUnavailable},
 	},
+	"exportImportSkippedRows": {
+		{name: "exported", server: draftKey(authServer), before: addedImport, req: bearer(importPath("/skipped-rows/export")), status: http.StatusOK},
+		{name: "bad id", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/imports/nope/skipped-rows/export")), status: http.StatusBadRequest},
+		{name: "unknown", server: fullKey(authServer), req: bearer(importPath("/skipped-rows/export")), status: http.StatusNotFound},
+		{name: "no credentials", server: authServer, req: importPath("/skipped-rows/export"), status: http.StatusUnauthorized},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/imports"))), req: bearer(importPath("/skipped-rows/export")), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(importPath("/skipped-rows/export")), status: http.StatusServiceUnavailable},
+	},
 	"listDomains": {
 		{name: "draft key", server: draftKey(authServer), before: addedDomain, req: bearer(request(http.MethodGet, "/v1/domains")), status: http.StatusOK},
 		{name: "by name", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/domains?name=example.com&limit=5")), status: http.StatusOK},

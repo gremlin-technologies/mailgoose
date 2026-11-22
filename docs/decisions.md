@@ -4,6 +4,42 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-22: The web app's Mailchimp import page (MG-75; reversible defaults)
+
+`/contacts/import/mailchimp`, linked from the contacts import page and the
+getting-started checklist, takes a customer from a Mailchimp export or a
+connected account to an import: upload or fetch, the preview in plain words,
+confirm, progress, and a list of what to do next. These defaults are each easy
+to change:
+
+- **Connecting shows only where it's set up.** `getMailchimpConnection` now
+  says `can_connect`, so the page leaves the connect option out where
+  `connectMailchimp` would answer `mailchimp_not_configured`, without trying
+  it. The CLI says the same and points to the upload.
+- **Back from Mailchimp.** The page Mailchimp's sign-in returns to now links
+  back to the import page and names the CLI command, so the customer carries
+  on where they started.
+- **Segments by id.** A fetch's saved segments are typed as Mailchimp's
+  segment ids, as in the CLI; mailgoose has no endpoint that lists an
+  audience's segments yet.
+- **Campaigns.** Confirming defaults to the number of campaigns the upload
+  was read with (10), at most the export's campaigns, and can be 1 to 100
+  (the API takes no fewer than 1).
+- **Permission.** The box reads as the CSV import's first sentence ("Everyone
+  in this file has given me permission to email them."); a Mailchimp import
+  can't go ahead without it, so there's no unconfirmed fallback to explain.
+- **Skipped rows as CSV.** `GET /v1/imports/{id}/skipped-rows/export` (and
+  `mailgoose import skipped <id>`) gives every skipped row in one file, with
+  the reason in a sentence; the import report links to it, for CSV imports
+  too.
+- **What's next.** Verify the sending domain, set up signup forms and swap
+  the embed code (MG-76's draft forms will be listed here once they exist),
+  fix each email with errors, and send a test. The steps aren't ticked off.
+- **Hold wording.** The CLI's and the page's reasons for a held import now use
+  the hold codes the server records (`large_first_import`,
+  `invalid_addresses`, `risky_addresses`, `shared_list`,
+  `over_contact_limit`); the CLI had older names for three of them.
+
 ## 2026-11-22: Fetching from a connected Mailchimp account (MG-74; reversible defaults)
 
 With a connected account, `GET /v1/imports/mailchimp/audiences` lists its

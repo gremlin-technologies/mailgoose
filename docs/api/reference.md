@@ -1473,6 +1473,36 @@ Responses:
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
+<a id="op-exportimportskippedrows"></a>
+
+### Download an import's skipped rows as CSV
+
+`GET /v1/imports/{import_id}/skipped-rows/export`
+
+- Operation: `exportImportSkippedRows`
+- CLI: `mailgoose import skipped`
+
+Every row the import didn't add, as a CSV file in file order, with a
+header row. Columns: `row` (the line in the file, where the header is
+1), `source` (for a Mailchimp import, the export file and row as
+`file:row`; empty for a CSV), `email` (as written), `reason` (a
+`SkipReason`) and `why` (the reason in a sentence). A cell that
+starts with `=`, `+`, `-` or `@` gets a `'` in front so a
+spreadsheet doesn't run it as a formula.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `import_id` | path | string (uuid) | yes | The import's `id`. |
+
+Responses:
+
+- `200`: The skipped rows, as CSV with a header row.
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
 <a id="op-createmailchimpbundle"></a>
 
 ### Upload a Mailchimp export
@@ -4112,6 +4142,7 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `connected` | boolean | yes |  |
+| `can_connect` | boolean | yes | Whether connecting a Mailchimp account is set up here. When false, `connectMailchimp` answers `mailchimp_not_configured`; upload the export instead. |
 | `account_name` | string or null | yes | The Mailchimp account's name, as Mailchimp gives it. |
 | `data_center` | string or null | yes | The Mailchimp data center the account is on, such as us21. |
 | `connected_at` | string (date-time) or null | yes |  |

@@ -305,6 +305,9 @@ describe("imports", () => {
     expect(screen.getByText("Where they came from: A trade show")).toBeTruthy();
     expect(screen.getByText("Role addresses (like info@ or sales@): 2")).toBeTruthy();
     expect(await screen.findByText("not-an-address")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Download skipped rows (CSV)" }).getAttribute("href")).toBe(
+      `/v1/imports/${importID}/skipped-rows/export`,
+    );
     await user.click(screen.getByRole("button", { name: "Show more" }));
     expect(await screen.findByRole("cell", { name: "Repeated in the file" })).toBeTruthy();
     expect(screen.getAllByRole("row")).toHaveLength(3);

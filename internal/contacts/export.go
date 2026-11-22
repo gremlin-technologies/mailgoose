@@ -291,3 +291,65 @@ func (s *Service) Erase(ctx context.Context, accountID, id string) error {
 	}
 	return tx.Commit(ctx)
 }
+
+// SkippedHeader is the header row of ExportSkippedCSV.
+var SkippedHeader = []string{"row", "source", "email", "reason", "why"}
+
+// skipWhy says each skip reason in a sentence, for people reading the file.
+var skipWhy = map[string]string{
+	"invalid_email":  "Not an email address.",
+	"invalid_row":    "The row couldn't be read as CSV.",
+	"duplicate":      "The same address is on an earlier row.",
+	"exists":         "Already a contact; left as it was.",
+	"suppressed":     "Unsubscribed, bounced or complained before.",
+	"over_limit":     "The account was full.",
+	"not_subscribed": "A non-subscribed (transactional) member in Mailchimp.",
+	"archived":       "Archived in Mailchimp.",
+}
+
+// ExportSkippedCSV writes every row an import skipped to w as CSV, in file
+// order. It answers ErrImportNotFound before writing anything, and calls
+// begin just before the first byte, so a caller can set its headers.
+func (s *Service) ExportSkippedCSV(ctx context.Context, accountID, importID string, w io.Writer, begin func()) (int, error) {
+	var exists bool
+	if err := s.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM imports WHERE account_id = $1 AND id = $2)`, accountID, importID).Scan(&exists); err != nil {
+		return 0, err
+	}
+	if !exists {
+		return 0, ErrImportNotFound
+	}
+	rows, err := s.DB.Query(ctx, `
+		SELECT row_number, coalesce(source_row, ''), email, reason FROM import_skips WHERE import_id = $1 ORDER BY row_number`, importID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	begin()
+	cw := csv.NewWriter(w)
+	if err := cw.Write(SkippedHeader); err != nil {
+		return 0, err
+	}
+	n := 0
+	for rows.Next() {
+		var row int
+		var source, email, reason string
+		if err := rows.Scan(&row, &source, &email, &reason); err != nil {
+			return n, err
+		}
+		if err := cw.Write([]string{strconv.Itoa(row), guardFormula(source), guardFormula(email), reason, skipWhy[reason]}); err != nil {
+			return n, err
+		}
+		n++
+		if n%1000 == 0 {
+			cw.Flush()
+			if err := cw.Error(); err != nil {
+				return n, err
+			}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return n, err
+	}
+	cw.Flush()
+	return n, cw.Error()
+}
