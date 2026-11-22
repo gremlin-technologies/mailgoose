@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -540,5 +541,22 @@ func TestFormPostJSONFields(t *testing.T) {
 	}
 	if e := b.elapsed(); e == nil || *e != 1500*time.Millisecond {
 		t.Fatalf("elapsed %v", e)
+	}
+}
+
+// The signup form's errors and confirm pages are read by whoever fills in a
+// form, so none of them names a CLI command (MG-121).
+func TestPublicSignupErrorsNameNoCLICommand(t *testing.T) {
+	src, err := os.ReadFile("signups.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, line := range strings.Split(string(src), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		if strings.Contains(line, "`mailgoose ") || strings.Contains(line, " --") {
+			t.Errorf("signups.go:%d names a CLI command or flag: %s", i+1, strings.TrimSpace(line))
+		}
 	}
 }

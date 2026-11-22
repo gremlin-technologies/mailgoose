@@ -263,7 +263,7 @@ func (f *fetcher) audiences(ctx context.Context) ([]*fetchAudience, error) {
 		}
 		err := f.c.Get(ctx, "/3.0/lists/"+url.PathEscape(id), url.Values{"fields": {"id,name,double_optin"}}, &l)
 		if apiNotFound(err) {
-			return nil, refuse(ErrUnknownAudience, "The connected Mailchimp account has no audience %s. `mailgoose import mailchimp audiences` lists them.", id)
+			return nil, refuse(ErrUnknownAudience, "The connected Mailchimp account has no audience %s. Pick one from its list of audiences.", id)
 		}
 		if err != nil {
 			return nil, err
