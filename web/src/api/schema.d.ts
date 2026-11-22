@@ -1790,9 +1790,10 @@ export interface paths {
         /**
          * Get a campaign's report
          * @description What happened to a campaign (REP-1, REP-2): copies sent, delivered,
-         *     hard bounced, complaints, unsubscribes, unique opens (always an
-         *     estimate), unique and total clicks, credits used, and clicks per
-         *     link. It's counted from the stored events when asked, so it's as
+         *     hard bounced, complaints, unsubscribes, unique opens, unique and
+         *     total clicks, credits used, and clicks per link. Opens come from a
+         *     tracking image that some mail apps load without anyone reading, so
+         *     they can run high; clicks are exact. It's counted from the stored events when asked, so it's as
          *     fresh as they are (deliveries, bounces and complaints arrive from
          *     SES within a minute or two). A draft's numbers are all 0. Raw events
          *     are kept 12 months after launch; after that the report is the one

@@ -138,7 +138,7 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 - [Send a test of a campaign](reference.md#op-testcampaign): `POST /v1/campaigns/{campaign_id}/test`, CLI `mailgoose campaign test`. Sends the campaign's email, rendered as recipients will get it, to the account owner, or to up to 5 addresses (`to`) that are the owner's or on one of the account's verified sending domains.
 - [Launch a campaign, after confirmation](reference.md#op-launchcampaign): `POST /v1/campaigns/{campaign_id}/launch`, CLI `mailgoose campaign launch`. Launching takes two calls (CAM-3, CAM-4).
 - [Cancel a scheduled campaign, or a waiting slice's rest](reference.md#op-cancelcampaign): `POST /v1/campaigns/{campaign_id}/cancel`, CLI `mailgoose campaign cancel`. Stops a scheduled campaign before its send time (CAM-6).
-- [Get a campaign's report](reference.md#op-getcampaignreport): `GET /v1/campaigns/{campaign_id}/report`, CLI `mailgoose campaign report`. What happened to a campaign (REP-1, REP-2): copies sent, delivered, hard bounced, complaints, unsubscribes, unique opens (always an estimate), unique and total clicks, credits used, and clicks per link.
+- [Get a campaign's report](reference.md#op-getcampaignreport): `GET /v1/campaigns/{campaign_id}/report`, CLI `mailgoose campaign report`. What happened to a campaign (REP-1, REP-2): copies sent, delivered, hard bounced, complaints, unsubscribes, unique opens, unique and total clicks, credits used, and clicks per link.
 - [Move a scheduled campaign's send time](reference.md#op-reschedulecampaign): `POST /v1/campaigns/{campaign_id}/reschedule`, CLI `mailgoose campaign reschedule`. Moves a scheduled campaign to a new send time (CAM-6), in the future and at most a year ahead.
 
 ## Signup forms
