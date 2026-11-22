@@ -2670,6 +2670,80 @@ Responses:
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
+<a id="op-listcampaignreportrecipients"></a>
+
+### List who opened, clicked, bounced or unsubscribed
+
+`GET /v1/campaigns/{campaign_id}/report/recipients`
+
+- Operation: `listCampaignReportRecipients`
+- CLI: `mailgoose campaign report`
+
+A campaign's recipients by what they did (REP-1, REP-3), in the
+order they were queued, each with the contact's id, email and name
+and when it first happened. `activity` picks the list: `opened`,
+`clicked` (with `link` to narrow it to one link, by its position in
+the report), `bounced` (hard bounces), `complained`,
+`unsubscribed`, or `not_opened` and `not_clicked`: recipients whose
+copy was delivered and who haven't opened or clicked. A contact
+deleted since the send is left out, so a list can be shorter than
+the report's count. Opens and clicks of a campaign sent with
+tracking off are a 422 `tracking_off`. Raw events are kept 12
+months after launch; after that this is a 410 `report_archived`,
+and only the report's saved numbers are left. A draft has none.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `campaign_id` | path | string (uuid) | yes | The campaign's `id`. |
+| `activity` | query | [ReportActivity](#schema-reportactivity) | yes | Which recipients to list. |
+| `link` | query | integer |  | With `activity=clicked`, only those who clicked the link at this position in the report's `links`, from 1. |
+| `limit` | query | integer |  | Items per page. |
+| `cursor` | query | string |  | The `next_cursor` of the previous page. Leave it out for the first page. |
+
+Responses:
+
+- `200`: A page of recipients. [ReportRecipientList](#schema-reportrecipientlist)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `410`: `report_archived`: the campaign launched more than 12 months ago, and its raw events were deleted; only the report's saved numbers are left. [Error](#schema-error)
+- `422`: `tracking_off`: the campaign was sent with open and click tracking off, so there are no opens or clicks to list. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-exportcampaignreportrecipients"></a>
+
+### Export who opened, clicked, bounced or unsubscribed as CSV
+
+`GET /v1/campaigns/{campaign_id}/report/recipients/export`
+
+- Operation: `exportCampaignReportRecipients`
+- CLI: `mailgoose campaign report`
+
+The whole of a recipient list (see listing them) as a CSV file.
+Columns: `email`, `first_name`, `last_name`, `contact_id`, then when
+it happened: `first_opened_at`, `first_clicked_at`, `bounced_at`,
+`complained_at` or `unsubscribed_at` (none for `not_opened` and
+`not_clicked`). A cell that starts with `=`, `+`, `-` or `@` gets a
+`'` in front so a spreadsheet doesn't run it as a formula.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `campaign_id` | path | string (uuid) | yes | The campaign's `id`. |
+| `activity` | query | [ReportActivity](#schema-reportactivity) | yes | Which recipients to list. |
+| `link` | query | integer |  | With `activity=clicked`, only those who clicked the link at this position in the report's `links`, from 1. |
+
+Responses:
+
+- `200`: The recipients, as CSV with a header row.
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `410`: `report_archived`: the campaign launched more than 12 months ago, and its raw events were deleted; only the report's saved numbers are left. [Error](#schema-error)
+- `422`: `tracking_off`: the campaign was sent with open and click tracking off, so there are no opens or clicks to list. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
 <a id="op-reschedulecampaign"></a>
 
 ### Move a scheduled campaign's send time
@@ -5598,6 +5672,37 @@ later. Present only on a campaign launched in a slice.
 | --- | --- | --- | --- |
 | `name` | string | yes |  |
 | `email` | string | yes |  |
+
+<a id="schema-reportactivity"></a>
+
+### ReportActivity
+
+`opened`, `clicked`, `bounced` (hard bounces), `complained` and
+`unsubscribed` list who did; `not_opened` and `not_clicked` list
+who got the email (it was delivered) and didn't.
+
+Type: string: one of `opened`, `not_opened`, `clicked`, `not_clicked`, `bounced`, `complained`, `unsubscribed`
+
+<a id="schema-reportrecipientlist"></a>
+
+### ReportRecipientList
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `data` | array of [ReportRecipient](#schema-reportrecipient) | yes |  |
+| `next_cursor` | string or null | yes |  |
+
+<a id="schema-reportrecipient"></a>
+
+### ReportRecipient
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `contact_id` | string (uuid) | yes |  |
+| `email` | string | yes |  |
+| `first_name` | string or null | yes |  |
+| `last_name` | string or null | yes |  |
+| `at` | string (date-time) or null | yes | When it first happened: the first open or click (of `link`, when given), the bounce, the complaint or the unsubscribe. Null for `not_opened` and `not_clicked`. |
 
 <a id="schema-campaignlist"></a>
 

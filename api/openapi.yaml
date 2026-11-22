@@ -3502,6 +3502,105 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/campaigns/{campaign_id}/report/recipients:
+    get:
+      operationId: listCampaignReportRecipients
+      summary: List who opened, clicked, bounced or unsubscribed
+      description: |
+        A campaign's recipients by what they did (REP-1, REP-3), in the
+        order they were queued, each with the contact's id, email and name
+        and when it first happened. `activity` picks the list: `opened`,
+        `clicked` (with `link` to narrow it to one link, by its position in
+        the report), `bounced` (hard bounces), `complained`,
+        `unsubscribed`, or `not_opened` and `not_clicked`: recipients whose
+        copy was delivered and who haven't opened or clicked. A contact
+        deleted since the send is left out, so a list can be shorter than
+        the report's count. Opens and clicks of a campaign sent with
+        tracking off are a 422 `tracking_off`. Raw events are kept 12
+        months after launch; after that this is a 410 `report_archived`,
+        and only the report's saved numbers are left. A draft has none.
+      tags: [campaigns]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+        - $ref: "#/components/parameters/ReportActivity"
+        - $ref: "#/components/parameters/ReportLinkPosition"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of recipients.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportRecipientList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/ReportArchived"
+        "422":
+          $ref: "#/components/responses/TrackingOff"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/campaigns/{campaign_id}/report/recipients/export:
+    get:
+      operationId: exportCampaignReportRecipients
+      summary: Export who opened, clicked, bounced or unsubscribed as CSV
+      description: |
+        The whole of a recipient list (see listing them) as a CSV file.
+        Columns: `email`, `first_name`, `last_name`, `contact_id`, then when
+        it happened: `first_opened_at`, `first_clicked_at`, `bounced_at`,
+        `complained_at` or `unsubscribed_at` (none for `not_opened` and
+        `not_clicked`). A cell that starts with `=`, `+`, `-` or `@` gets a
+        `'` in front so a spreadsheet doesn't run it as a formula.
+      tags: [campaigns]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/CampaignId"
+        - $ref: "#/components/parameters/ReportActivity"
+        - $ref: "#/components/parameters/ReportLinkPosition"
+      responses:
+        "200":
+          description: The recipients, as CSV with a header row.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+            Content-Disposition:
+              description: Names the file `<activity>.csv`, such as `clicked.csv`.
+              schema:
+                type: string
+          content:
+            text/csv:
+              schema:
+                type: string
+                examples: ["email,first_name,last_name,contact_id,first_clicked_at\npat@example.com,Pat,,6f3c2b9e-1a4d-4c8e-9b7a-2d5e8f0a1b3c,2026-11-19T10:04:00Z\n"]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          $ref: "#/components/responses/ReportArchived"
+        "422":
+          $ref: "#/components/responses/TrackingOff"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/campaigns/{campaign_id}/reschedule:
     post:
       operationId: rescheduleCampaign
@@ -8456,6 +8555,43 @@ components:
           type: string
         email:
           type: string
+    ReportActivity:
+      type: string
+      enum: [opened, not_opened, clicked, not_clicked, bounced, complained, unsubscribed]
+      description: |
+        `opened`, `clicked`, `bounced` (hard bounces), `complained` and
+        `unsubscribed` list who did; `not_opened` and `not_clicked` list
+        who got the email (it was delivered) and didn't.
+    ReportRecipientList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReportRecipient"
+        next_cursor:
+          type: [string, "null"]
+    ReportRecipient:
+      type: object
+      required: [contact_id, email, first_name, last_name, at]
+      properties:
+        contact_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+        first_name:
+          type: [string, "null"]
+        last_name:
+          type: [string, "null"]
+        at:
+          type: [string, "null"]
+          format: date-time
+          description: |
+            When it first happened: the first open or click (of `link`, when
+            given), the bounce, the complaint or the unsubscribe. Null for
+            `not_opened` and `not_clicked`.
     CampaignList:
       type: object
       required: [data, next_cursor]
@@ -9375,6 +9511,23 @@ components:
       description: The `next_cursor` of the previous page. Leave it out for the first page.
       schema:
         type: string
+    ReportActivity:
+      name: activity
+      in: query
+      required: true
+      description: Which recipients to list.
+      schema:
+        $ref: "#/components/schemas/ReportActivity"
+    ReportLinkPosition:
+      name: link
+      in: query
+      required: false
+      description: |
+        With `activity=clicked`, only those who clicked the link at this
+        position in the report's `links`, from 1.
+      schema:
+        type: integer
+        minimum: 1
     DomainId:
       name: domain_id
       in: path
@@ -9852,6 +10005,29 @@ components:
       description: |
         `test_address_email_failed`: the confirm email couldn't be sent. The
         address is kept, pending; resend its link in a minute.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ReportArchived:
+      description: |
+        `report_archived`: the campaign launched more than 12 months ago,
+        and its raw events were deleted; only the report's saved numbers
+        are left.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TrackingOff:
+      description: |
+        `tracking_off`: the campaign was sent with open and click tracking
+        off, so there are no opens or clicks to list.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

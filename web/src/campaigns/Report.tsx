@@ -9,6 +9,7 @@ import type { components } from "../api/schema";
 import { Badge, formatDate, LoadFailed, Loading, PageHeader, useLoad } from "../components";
 import { statusBadge } from "./campaign";
 import { polling } from "./CampaignDetail";
+import { recipientsPath } from "./Recipients";
 
 type Report = components["schemas"]["CampaignReport"];
 
@@ -54,12 +55,14 @@ export function CampaignReport() {
           <LoadFailed failure={report.state.failure} retry={report.reload} />
         </>
       )}
-      {report.state.status === "ok" && <ReportBody name={name} report={report.state.data} refresh={report.reload} />}
+      {report.state.status === "ok" && <ReportBody id={id} name={name} report={report.state.data} refresh={report.reload} />}
     </section>
   );
 }
 
-function ReportBody({ name, report: r, refresh }: { name: string; report: Report; refresh: () => void }) {
+type Activity = components["schemas"]["ReportActivity"];
+
+function ReportBody({ id, name, report: r, refresh }: { id: string; name: string; report: Report; refresh: () => void }) {
   const badge = statusBadge[r.status];
   const n = r.recipients;
   if (!r.launched_at) {
@@ -75,16 +78,18 @@ function ReportBody({ name, report: r, refresh }: { name: string; report: Report
   const asOf = r.archived
     ? `Saved ${formatDate(r.as_of)}, when its raw events were deleted, 12 months after launch.`
     : `As of ${formatDate(r.as_of)}.`;
-  const tiles: [string, string][] = [
+  // Each number of people links to who they are (MG-112), until the raw
+  // events are archived.
+  const tiles: [string, string, Activity?][] = [
     ["Sent", n.toLocaleString()],
     ["Delivered", share(r.delivered, n)],
-    ["Bounced", share(r.bounced, n)],
-    ["Complaints", share(r.complaints, n)],
-    ["Unsubscribes", share(r.unsubscribes, n)],
+    ["Bounced", share(r.bounced, n), "bounced"],
+    ["Complaints", share(r.complaints, n), "complained"],
+    ["Unsubscribes", share(r.unsubscribes, n), "unsubscribed"],
   ];
   if (r.opens && r.clicks) {
-    tiles.push(["Opens", share(r.opens.unique, r.delivered)]);
-    tiles.push(["Clicks", `${share(r.clicks.unique, r.delivered)} unique, ${r.clicks.total.toLocaleString()} total`]);
+    tiles.push(["Opens", share(r.opens.unique, r.delivered), "opened"]);
+    tiles.push(["Clicks", `${share(r.clicks.unique, r.delivered)} unique, ${r.clicks.total.toLocaleString()} total`, "clicked"]);
   }
   tiles.push(["Credits used", r.credits_used.toLocaleString()]);
 
@@ -101,10 +106,18 @@ function ReportBody({ name, report: r, refresh }: { name: string; report: Report
         </div>
       )}
       <dl className="tiles" aria-label="Numbers">
-        {tiles.map(([label, value]) => (
+        {tiles.map(([label, value, activity]) => (
           <div key={label} className="tile">
             <dt>{label}</dt>
-            <dd>{value}</dd>
+            <dd>
+              {activity && !r.archived ? (
+                <Link to={recipientsPath(id, activity)} aria-label={`${label}: ${value}, see who`}>
+                  {value}
+                </Link>
+              ) : (
+                value
+              )}
+            </dd>
           </div>
         ))}
       </dl>
@@ -132,7 +145,14 @@ function ReportBody({ name, report: r, refresh }: { name: string; report: Report
                     {l.varies && <span className="muted"> (differs per contact)</span>}
                   </span>
                   <span className="link-counts">
-                    {l.unique_clicks.toLocaleString()} unique, {l.total_clicks.toLocaleString()} total
+                    {r.archived ? (
+                      `${l.unique_clicks.toLocaleString()} unique`
+                    ) : (
+                      <Link to={recipientsPath(id, "clicked", l.position)} aria-label={`Link ${l.position}: ${l.unique_clicks.toLocaleString()} unique clicks, see who`}>
+                        {l.unique_clicks.toLocaleString()} unique
+                      </Link>
+                    )}
+                    , {l.total_clicks.toLocaleString()} total
                   </span>
                 </li>
               ))}

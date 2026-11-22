@@ -1808,6 +1808,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/campaigns/{campaign_id}/report/recipients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List who opened, clicked, bounced or unsubscribed
+         * @description A campaign's recipients by what they did (REP-1, REP-3), in the
+         *     order they were queued, each with the contact's id, email and name
+         *     and when it first happened. `activity` picks the list: `opened`,
+         *     `clicked` (with `link` to narrow it to one link, by its position in
+         *     the report), `bounced` (hard bounces), `complained`,
+         *     `unsubscribed`, or `not_opened` and `not_clicked`: recipients whose
+         *     copy was delivered and who haven't opened or clicked. A contact
+         *     deleted since the send is left out, so a list can be shorter than
+         *     the report's count. Opens and clicks of a campaign sent with
+         *     tracking off are a 422 `tracking_off`. Raw events are kept 12
+         *     months after launch; after that this is a 410 `report_archived`,
+         *     and only the report's saved numbers are left. A draft has none.
+         */
+        get: operations["listCampaignReportRecipients"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/campaigns/{campaign_id}/report/recipients/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export who opened, clicked, bounced or unsubscribed as CSV
+         * @description The whole of a recipient list (see listing them) as a CSV file.
+         *     Columns: `email`, `first_name`, `last_name`, `contact_id`, then when
+         *     it happened: `first_opened_at`, `first_clicked_at`, `bounced_at`,
+         *     `complained_at` or `unsubscribed_at` (none for `not_opened` and
+         *     `not_clicked`). A cell that starts with `=`, `+`, `-` or `@` gets a
+         *     `'` in front so a spreadsheet doesn't run it as a formula.
+         */
+        get: operations["exportCampaignReportRecipients"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/campaigns/{campaign_id}/reschedule": {
         parameters: {
             query?: never;
@@ -4909,6 +4965,31 @@ export interface components {
             name: string;
             email: string;
         };
+        /**
+         * @description `opened`, `clicked`, `bounced` (hard bounces), `complained` and
+         *     `unsubscribed` list who did; `not_opened` and `not_clicked` list
+         *     who got the email (it was delivered) and didn't.
+         * @enum {string}
+         */
+        ReportActivity: "opened" | "not_opened" | "clicked" | "not_clicked" | "bounced" | "complained" | "unsubscribed";
+        ReportRecipientList: {
+            data: components["schemas"]["ReportRecipient"][];
+            next_cursor: string | null;
+        };
+        ReportRecipient: {
+            /** Format: uuid */
+            contact_id: string;
+            email: string;
+            first_name: string | null;
+            last_name: string | null;
+            /**
+             * Format: date-time
+             * @description When it first happened: the first open or click (of `link`, when
+             *     given), the bounce, the complaint or the unsubscribe. Null for
+             *     `not_opened` and `not_clicked`.
+             */
+            at: string | null;
+        };
         CampaignList: {
             data: components["schemas"]["CampaignListItem"][];
             next_cursor: string | null;
@@ -5871,6 +5952,33 @@ export interface components {
             };
         };
         /**
+         * @description `report_archived`: the campaign launched more than 12 months ago,
+         *     and its raw events were deleted; only the report's saved numbers
+         *     are left.
+         */
+        ReportArchived: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `tracking_off`: the campaign was sent with open and click tracking
+         *     off, so there are no opens or clicks to list.
+         */
+        TrackingOff: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `test_address_link_expired`: the link is older than 7 days. Resend
          *     it from the web app or with `mailgoose test-addresses resend`.
          */
@@ -6272,6 +6380,13 @@ export interface components {
         Limit: number;
         /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
         Cursor: string;
+        /** @description Which recipients to list. */
+        ReportActivity: components["schemas"]["ReportActivity"];
+        /**
+         * @description With `activity=clicked`, only those who clicked the link at this
+         *     position in the report's `links`, from 1.
+         */
+        ReportLinkPosition: number;
         /** @description The domain's `id`. */
         DomainId: string;
         /** @description The contact's `id`. */
@@ -9002,6 +9117,90 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listCampaignReportRecipients: {
+        parameters: {
+            query: {
+                /** @description Which recipients to list. */
+                activity: components["parameters"]["ReportActivity"];
+                /**
+                 * @description With `activity=clicked`, only those who clicked the link at this
+                 *     position in the report's `links`, from 1.
+                 */
+                link?: components["parameters"]["ReportLinkPosition"];
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The campaign's `id`. */
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of recipients. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportRecipientList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["ReportArchived"];
+            422: components["responses"]["TrackingOff"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    exportCampaignReportRecipients: {
+        parameters: {
+            query: {
+                /** @description Which recipients to list. */
+                activity: components["parameters"]["ReportActivity"];
+                /**
+                 * @description With `activity=clicked`, only those who clicked the link at this
+                 *     position in the report's `links`, from 1.
+                 */
+                link?: components["parameters"]["ReportLinkPosition"];
+            };
+            header?: never;
+            path: {
+                /** @description The campaign's `id`. */
+                campaign_id: components["parameters"]["CampaignId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The recipients, as CSV with a header row. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    /** @description Names the file `<activity>.csv`, such as `clicked.csv`. */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/csv": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            410: components["responses"]["ReportArchived"];
+            422: components["responses"]["TrackingOff"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

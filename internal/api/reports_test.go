@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 )
 
@@ -16,6 +18,49 @@ func campaignReportPath() func(*testing.T) *http.Request {
 		r := campaignPath(http.MethodGet, "")(t)
 		r.URL.Path += "/report"
 		return r
+	}
+}
+
+// campaignRecipientsPath is GET /v1/campaigns/{the test's
+// campaign}/report/recipients, or its export, with query.
+func campaignRecipientsPath(export bool, query string) func(*testing.T) *http.Request {
+	return func(t *testing.T) *http.Request {
+		r := campaignPath(http.MethodGet, "")(t)
+		r.URL.Path += "/report/recipients"
+		if export {
+			r.URL.Path += "/export"
+		}
+		r.URL.RawQuery = query
+		return r
+	}
+}
+
+// untrackedCampaign is addedCampaign with tracking off.
+func untrackedCampaign(t *testing.T, h http.Handler) {
+	t.Helper()
+	addedCampaign(t, h)
+	id, _ := addedCampaigns.Load(t)
+	db, _ := testDBs.Load(t)
+	if _, err := db.(*pgxpool.Pool).Exec(t.Context(), `UPDATE campaigns SET tracking = false WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// archivedCampaign is addedCampaign with its report saved and its events
+// gone, as 12 months after launch.
+func archivedCampaign(t *testing.T, h http.Handler) {
+	t.Helper()
+	addedCampaign(t, h)
+	id, _ := addedCampaigns.Load(t)
+	db, _ := testDBs.Load(t)
+	if _, err := db.(*pgxpool.Pool).Exec(t.Context(), `
+		UPDATE campaigns SET status = 'sent', launched_at = now() - interval '13 months' WHERE id = $1;`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.(*pgxpool.Pool).Exec(t.Context(), `
+		INSERT INTO campaign_reports (campaign_id, account_id, report, frozen_at)
+		SELECT id, account_id, '{}', now() FROM campaigns WHERE id = $1`, id); err != nil {
+		t.Fatal(err)
 	}
 }
 
