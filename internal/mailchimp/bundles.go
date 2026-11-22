@@ -103,6 +103,9 @@ type Upload struct {
 	// Preview is the preview as it was worked out on upload (the API's
 	// JSON), nil once confirmed.
 	Preview []byte
+	// Fetched is true for a bundle read from a connected account (MG-74)
+	// rather than uploaded.
+	Fetched bool
 }
 
 // Options are how the upload is read.
@@ -124,13 +127,13 @@ func (s *Store) now() time.Time {
 }
 
 const uploadColumns = `id, account_id, coalesce(file_name, ''), bytes, audience_name, group_columns, created_at, expires_at,
-	confirmed_at, import_id, campaigns, emails_status, emails_total, emails, emails_error, data IS NOT NULL, preview`
+	confirmed_at, import_id, campaigns, emails_status, emails_total, emails, emails_error, data IS NOT NULL, preview, fetched`
 
 func scanUpload(row pgx.Row) (*Upload, error) {
 	u := &Upload{}
 	var emails []byte
 	err := row.Scan(&u.ID, &u.AccountID, &u.FileName, &u.Bytes, &u.AudienceName, &u.GroupColumns, &u.CreatedAt, &u.ExpiresAt,
-		&u.ConfirmedAt, &u.ImportID, &u.Campaigns, &u.EmailsStatus, &u.EmailsTotal, &emails, &u.EmailsError, &u.HasData, &u.Preview)
+		&u.ConfirmedAt, &u.ImportID, &u.Campaigns, &u.EmailsStatus, &u.EmailsTotal, &emails, &u.EmailsError, &u.HasData, &u.Preview, &u.Fetched)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUploadNotFound
 	}
@@ -184,6 +187,16 @@ func (s *Store) Unconfirmed(ctx context.Context, accountID string) (int, error) 
 // Save stores an export that Read has accepted, with its preview. It refuses
 // with ErrTooManyUploads past MaxUnconfirmedUploads.
 func (s *Store) Save(ctx context.Context, accountID, fileName string, data, preview []byte, opts Options) (*Upload, error) {
+	return s.save(ctx, accountID, fileName, data, preview, opts, false)
+}
+
+// SaveFetched stores a bundle fetched from a connected account, as Save
+// does an upload.
+func (s *Store) SaveFetched(ctx context.Context, accountID string, data, preview []byte, opts Options) (*Upload, error) {
+	return s.save(ctx, accountID, FetchedFileName, data, preview, opts, true)
+}
+
+func (s *Store) save(ctx context.Context, accountID, fileName string, data, preview []byte, opts Options, fetched bool) (*Upload, error) {
 	now := s.now().UTC()
 	var name *string
 	if n := strings.Join(strings.Fields(strings.ToValidUTF8(fileName, "")), " "); n != "" {
@@ -197,12 +210,12 @@ func (s *Store) Save(ctx context.Context, accountID, fileName string, data, prev
 		cols = []string{}
 	}
 	u, err := scanUpload(s.DB.QueryRow(ctx, `
-		INSERT INTO mailchimp_bundles (account_id, file_name, bytes, data, preview, audience_name, group_columns, created_at, expires_at)
-		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
+		INSERT INTO mailchimp_bundles (account_id, file_name, bytes, data, preview, audience_name, group_columns, created_at, expires_at, fetched)
+		SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $11
 		WHERE (SELECT count(*) FROM mailchimp_bundles
 			WHERE account_id = $1 AND confirmed_at IS NULL AND expires_at > $8) < $10
 		RETURNING `+uploadColumns,
-		accountID, name, len(data), data, preview, opts.AudienceName, cols, now, now.Add(UploadTTL), MaxUnconfirmedUploads))
+		accountID, name, len(data), data, preview, opts.AudienceName, cols, now, now.Add(UploadTTL), MaxUnconfirmedUploads, fetched))
 	if errors.Is(err, ErrUploadNotFound) {
 		return nil, ErrTooManyUploads
 	}
@@ -314,15 +327,21 @@ func (j *EmailJob) Run(ctx context.Context, log *slog.Logger, poll time.Duration
 	}
 }
 
-// Prune deletes unconfirmed uploads past their expiry, and Mailchimp
-// connections (MG-73) past theirs.
+// Prune deletes unconfirmed uploads past their expiry, Mailchimp
+// connections (MG-73) past theirs, and finished fetches (MG-74) after
+// FetchTTL.
 func (s *Store) Prune(ctx context.Context) (int64, error) {
 	tag, err := s.DB.Exec(ctx, `DELETE FROM mailchimp_bundles WHERE confirmed_at IS NULL AND expires_at <= $1`, s.now())
 	if err != nil {
 		return 0, err
 	}
 	n, err := pruneConnections(ctx, s.DB, s.now())
-	return tag.RowsAffected() + n, err
+	if err != nil {
+		return 0, err
+	}
+	f, err := s.DB.Exec(ctx, `DELETE FROM mailchimp_fetches WHERE status IN ('done', 'failed') AND finished_at <= $1`,
+		s.now().Add(-FetchTTL))
+	return tag.RowsAffected() + n + f.RowsAffected(), err
 }
 
 // RunNext makes the emails of one confirmed upload, carrying on from the
@@ -358,7 +377,7 @@ func (j *EmailJob) RunNext(ctx context.Context) (bool, error) {
 	}
 	// Keep the claim while this task works, however long one email takes;
 	// if another task took it, stop.
-	ctx, stop := s.keepLease(ctx, id, token, emailLease/5)
+	ctx, stop := s.keepLease(ctx, "mailchimp_bundles", id, token, emailLease/5)
 	defer stop()
 	finish := func(status string, msg *string) error {
 		_, err := s.DB.Exec(context.WithoutCancel(ctx), `
@@ -410,10 +429,10 @@ func (j *EmailJob) RunNext(ctx context.Context) (bool, error) {
 	return true, finish(EmailsDone, nil)
 }
 
-// keepLease renews the claim token holds on upload id every interval until
-// stop is called. The returned context ends, with errLostLease as its
-// cause, if another task has taken the claim.
-func (s *Store) keepLease(ctx context.Context, id, token string, every time.Duration) (context.Context, func()) {
+// keepLease renews the claim token holds on row id of table (an upload, or
+// a fetch) every interval until stop is called. The returned context ends,
+// with errLostLease as its cause, if another task has taken the claim.
+func (s *Store) keepLease(ctx context.Context, table, id, token string, every time.Duration) (context.Context, func()) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	go func() {
 		t := time.NewTicker(every)
@@ -423,7 +442,7 @@ func (s *Store) keepLease(ctx context.Context, id, token string, every time.Dura
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				tag, err := s.DB.Exec(ctx, `UPDATE mailchimp_bundles SET lease_until = $3 WHERE id = $1 AND lease_token = $2`,
+				tag, err := s.DB.Exec(ctx, `UPDATE `+table+` SET lease_until = $3 WHERE id = $1 AND lease_token = $2`,
 					id, token, s.now().Add(emailLease))
 				if err == nil && tag.RowsAffected() == 0 {
 					cancel(errLostLease)
@@ -435,4 +454,4 @@ func (s *Store) keepLease(ctx context.Context, id, token string, every time.Dura
 	return ctx, func() { cancel(nil) }
 }
 
-var errLostLease = errors.New("another task took over the Mailchimp email import")
+var errLostLease = errors.New("another task took over the Mailchimp job")

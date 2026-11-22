@@ -248,7 +248,7 @@ func TestTheEmailJobKeepsItsLeaseAndStopsWhenItLosesIt(t *testing.T) {
 		WHERE id = $1 RETURNING lease_token`, u.ID).Scan(&token); err != nil {
 		t.Fatal(err)
 	}
-	lctx, stop := s.keepLease(ctx, u.ID, token, 10*time.Millisecond)
+	lctx, stop := s.keepLease(ctx, "mailchimp_bundles", u.ID, token, 10*time.Millisecond)
 	defer stop()
 	deadline := time.Now().Add(5 * time.Second)
 	for {

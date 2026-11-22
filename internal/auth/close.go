@@ -37,6 +37,7 @@ var AccountTables = []string{
 	"emails",
 	"images",
 	"import_address_hashes",
+	"mailchimp_fetches",
 	"mailchimp_bundles",
 	"mailchimp_connections",
 	"imports",

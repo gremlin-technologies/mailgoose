@@ -230,9 +230,45 @@ func TestConnectionsAreForgotten(t *testing.T) {
 	if _, err := c.Client(ctx, acct); !errors.Is(err, ErrNotConnected) {
 		t.Errorf("client when expired: %v", err)
 	}
+	// Looking for it deleted the sealed token straight away.
+	var sealed int
+	if err := c.DB.QueryRow(ctx, `SELECT count(*) FROM mailchimp_connections WHERE token IS NOT NULL`).Scan(&sealed); err != nil || sealed != 0 {
+		t.Errorf("%d sealed tokens left after expiry (%v)", sealed, err)
+	}
 	s := &Store{DB: c.DB, Now: later}
 	if n, err := s.Prune(ctx); err != nil || n != 1 {
 		t.Errorf("prune = %d, %v", n, err)
+	}
+
+	// The fetch job's sweep deletes expired tokens nobody looked for.
+	c.Now = nil
+	connect()
+	if n, err := c.ClearExpired(ctx); err != nil || n != 0 {
+		t.Errorf("clear before expiry = %d, %v", n, err)
+	}
+	c.Now = later
+	if n, err := c.ClearExpired(ctx); err != nil || n != 1 {
+		t.Errorf("clear after expiry = %d, %v", n, err)
+	}
+}
+
+func TestTheTokenExchangeDoesntFollowRedirects(t *testing.T) {
+	var elsewhere atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		elsewhere.Add(1)
+		_, _ = w.Write([]byte(`{"access_token":"tok"}`))
+	}))
+	t.Cleanup(other.Close)
+	login := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(login.Close)
+	o := &OAuth{ClientID: "client-1", ClientSecret: "secret-1", RedirectURL: "https://mailgoose.test/cb", LoginURL: login.URL}
+	if _, err := o.Exchange(t.Context(), fakeCode); err == nil {
+		t.Error("the exchange followed a redirect")
+	}
+	if n := elsewhere.Load(); n != 0 {
+		t.Errorf("the client secret went to the redirect's target %d times", n)
 	}
 }
 

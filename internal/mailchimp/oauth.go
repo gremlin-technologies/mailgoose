@@ -83,8 +83,16 @@ func (o *OAuth) client() *http.Client {
 	if o.HTTP != nil {
 		return o.HTTP
 	}
-	return &http.Client{Timeout: oauthTimeout}
+	// No redirects: Go would send the token exchange's form, client secret
+	// and all, on to wherever a 307 or 308 points.
+	return &http.Client{Timeout: oauthTimeout, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return errOAuthRedirect
+	}}
 }
+
+// errOAuthRedirect means Mailchimp's login server answered with a redirect,
+// which isn't followed.
+var errOAuthRedirect = errors.New("mailchimp: the login server redirected, and redirects aren't followed")
 
 // AuthorizeURL is where the person goes to let mailgoose read their account.
 func (o *OAuth) AuthorizeURL(state string) string {

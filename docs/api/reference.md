@@ -1679,6 +1679,99 @@ Responses:
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
+<a id="op-listmailchimpaudiences"></a>
+
+### List the connected Mailchimp account's audiences
+
+`GET /v1/imports/mailchimp/audiences`
+
+- Operation: `listMailchimpAudiences`
+- CLI: `mailgoose import mailchimp audiences`
+
+The audiences of the Mailchimp account connected with
+`connectMailchimp`, by name, with Mailchimp's own counts and whether
+each asks for double opt-in. Pick their ids for
+`createMailchimpFetch`.
+
+Answers 409 `mailchimp_not_connected` when no account is connected,
+and 409 `mailchimp_access_revoked` (and forgets the connection) when
+Mailchimp no longer takes mailgoose's access.
+
+Responses:
+
+- `200`: The audiences. [MailchimpAudienceList](#schema-mailchimpaudiencelist)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `409`: `mailchimp_not_connected`: no Mailchimp account is connected, or the connection has expired; connect one with `connectMailchimp`. `mailchimp_access_revoked`: Mailchimp no longer takes mailgoose's access, so the connection was forgotten; connect again. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `502`: `mailchimp_unavailable`: Mailchimp's API didn't answer, or refused the request. Try again in a few minutes. [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-createmailchimpfetch"></a>
+
+### Fetch audiences and emails from the connected Mailchimp account
+
+`POST /v1/imports/mailchimp/fetch`
+
+- Operation: `createMailchimpFetch`
+- CLI: `mailgoose import mailchimp fetch`
+
+Starts reading the connected Mailchimp account: every member of the
+chosen audiences, whatever their status, with their merge fields,
+groups, tags, opt-in and signup times and IPs and GDPR permissions;
+each chosen saved segment as a tag `segment: <name>` on its members
+as they are now (a snapshot that doesn't update); and the content of
+the newest sent campaigns. It runs in the background: poll
+`getMailchimpFetch` until `status` is `done`, when `bundle` is the
+result, previewed and confirmed like an uploaded export
+(`confirmMailchimpBundle`). Confirming it forgets the connection.
+
+Mailchimp's API doesn't give a template's HTML, so templates come
+over only by uploading the account export.
+
+An account runs one fetch at a time (409 `fetch_in_progress`), and a
+finished one counts toward the 3 unconfirmed bundles an account
+keeps.
+
+Request body (`application/json`, required): [CreateMailchimpFetchRequest](#schema-createmailchimpfetchrequest)
+
+Responses:
+
+- `202`: The fetch, queued. [MailchimpFetch](#schema-mailchimpfetch)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `409`: `mailchimp_not_connected` or `mailchimp_access_revoked`, as for `listMailchimpAudiences`. `fetch_in_progress`: the account's earlier fetch hasn't finished. `too_many_uploads`: the account already has 3 unconfirmed bundles; confirm or delete one. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-getmailchimpfetch"></a>
+
+### Get a fetch from Mailchimp
+
+`GET /v1/imports/mailchimp/fetch/{fetch_id}`
+
+- Operation: `getMailchimpFetch`
+- CLI: `mailgoose import mailchimp fetch`, `mailgoose import mailchimp fetch-status`
+
+How a fetch is going: the step, the audience being read and the
+members read so far. Once `done`, `bundle` is the fetched bundle
+with its preview; once `failed`, `error` says why. Finished fetches
+are kept for 7 days.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `fetch_id` | path | string (uuid) | yes | The fetch's `id`, from `createMailchimpFetch`. |
+
+Responses:
+
+- `200`: The fetch. [MailchimpFetch](#schema-mailchimpfetch)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
 <a id="tag-images"></a>
 
 ## Images
@@ -4024,6 +4117,58 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 | `connected_at` | string (date-time) or null | yes |  |
 | `expires_at` | string (date-time) or null | yes | When mailgoose forgets the access, if the import hasn't already. |
 
+<a id="schema-mailchimpaudiencelist"></a>
+
+### MailchimpAudienceList
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `audiences` | array of [MailchimpAccountAudience](#schema-mailchimpaccountaudience) | yes |  |
+
+<a id="schema-mailchimpaccountaudience"></a>
+
+### MailchimpAccountAudience
+
+An audience of the connected Mailchimp account, with Mailchimp's own counts.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string | yes | Mailchimp's id for the audience (its list id). |
+| `name` | string | yes |  |
+| `double_optin` | boolean | yes | Whether the audience asks new subscribers to confirm. |
+| `members` | object | yes |  |
+
+<a id="schema-createmailchimpfetchrequest"></a>
+
+### CreateMailchimpFetchRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `audience_ids` | array of string | yes | Audience ids from `listMailchimpAudiences`. |
+| `segment_ids` | array of string |  | Saved segments of those audiences, by Mailchimp's segment id. Each becomes a tag `segment: <name>` on the members it has now. |
+| `campaigns` | integer |  | How many of the newest sent campaigns to read. |
+
+<a id="schema-mailchimpfetch"></a>
+
+### MailchimpFetch
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | yes |  |
+| `status` | string: one of `queued`, `running`, `done`, `failed` | yes |  |
+| `step` | string | yes | What it's reading while running: `audiences`, `segments`, `members` or `campaigns`; empty otherwise. |
+| `audience` | string or null | yes | The audience being read during `members`. |
+| `members_read` | integer | yes |  |
+| `members_total` | integer | yes | The members the audiences had when the fetch started. |
+| `audience_ids` | array of string | yes |  |
+| `segment_ids` | array of string | yes |  |
+| `campaigns` | integer | yes |  |
+| `error` | null or object | yes | Why it failed; null unless `failed`. |
+| `bundle_id` | string (uuid) or null | yes |  |
+| `bundle` | null or [MailchimpBundle](#schema-mailchimpbundle) | yes | The fetched bundle once `done`, as `getMailchimpBundle` shows it. |
+| `created_at` | string (date-time) | yes |  |
+| `finished_at` | string (date-time) or null | yes |  |
+
 <a id="schema-mailchimpbundle"></a>
 
 ### MailchimpBundle
@@ -4048,12 +4193,14 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `source` | string: one of `account_export`, `audience_export`, `audience_csv` | yes |  |
+| `source` | string: one of `account_export`, `audience_export`, `audience_csv`, `connected_account` | yes | `connected_account`: fetched from a connected Mailchimp account (`createMailchimpFetch`). |
 | `audiences` | array of [MailchimpAudience](#schema-mailchimpaudience) | yes |  |
 | `contacts` | null or [MailchimpContactsPreview](#schema-mailchimpcontactspreview) | yes | What importing the contacts would do; null when the export has none. |
 | `emails` | array of [MailchimpEmail](#schema-mailchimpemail) | yes | The emails confirming with the default `campaigns` would make, templates first, then campaigns newest first. |
 | `campaigns_available` | integer | yes | Campaigns in the export with HTML, of which `campaigns` come over. |
 | `ignored_files` | array of object | yes |  |
+| `segment_tags` | array of object |  | For a fetched bundle, the tags made from Mailchimp saved segments: a snapshot of each segment's members when fetched, which doesn't update. |
+| `templates_not_fetched` | integer |  | For a fetched bundle, the account's own templates. Mailchimp's API doesn't give their HTML; upload the account export to bring them over. |
 
 <a id="schema-mailchimpaudience"></a>
 

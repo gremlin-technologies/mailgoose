@@ -347,6 +347,13 @@ func (s *Server) ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request, 
 		if u, err = s.Mailchimp.Confirm(ctx, c.AccountID, id, importID, campaigns, len(mailchimp.PlanEmails(b, campaigns))); s.mailchimpError(w, r, err) {
 			return
 		}
+		// A fetched bundle holds all the import needs, so the Mailchimp
+		// connection that read it is forgotten (MG-73's rule).
+		if u.Fetched && s.MailchimpConnections != nil {
+			if err := s.MailchimpConnections.Forget(context.WithoutCancel(ctx), c.AccountID); err != nil {
+				s.Log.ErrorContext(ctx, "forgetting the Mailchimp connection after an import failed", "err", err)
+			}
+		}
 	}
 	out, err := s.mailchimpBundleJSON(u)
 	if s.mailchimpError(w, r, err) {
