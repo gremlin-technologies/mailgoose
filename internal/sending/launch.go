@@ -21,6 +21,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/emailcheck"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
+	"github.com/gremlin-technologies/mailgoose/internal/segments"
 	"github.com/gremlin-technologies/mailgoose/internal/tester"
 	"github.com/gremlin-technologies/mailgoose/internal/testmode"
 )
@@ -61,6 +62,9 @@ const (
 	// TesterLimit is a tester account (MG-86) that has ended, or whose
 	// campaign needs more tester credits than it has left.
 	TesterLimit = "tester_limit"
+	// SegmentInvalid is a campaign whose segment (MG-115) has a condition
+	// that can't be used now, such as a deleted tag.
+	SegmentInvalid = "segment_invalid"
 )
 
 // Summary is what a person confirms before a campaign launches (CAM-3).
@@ -220,8 +224,13 @@ func (s *Service) summarize(ctx context.Context, accountID string, c *campaigns.
 		return err
 	}
 	var sum *Summary
-	if p != nil {
-		n, err := (&contacts.Service{DB: s.DB}).CountRecipients(ctx, accountID, c.Audience())
+	aud, bad, err := campaignAudience(ctx, s.DB, accountID, c, false)
+	if err != nil {
+		return err
+	}
+	problems = append(problems, bad...)
+	if p != nil && bad == nil {
+		n, err := (&contacts.Service{DB: s.DB}).CountRecipients(ctx, accountID, aud)
 		if err != nil {
 			return err
 		}
@@ -235,12 +244,12 @@ func (s *Service) summarize(ctx context.Context, accountID string, c *campaigns.
 			return err
 		}
 		problems = append(problems, audienceProblems(c, n, bal)...)
-		tm, err := testModeProblems(ctx, s.DB, accountID, c)
+		tm, err := testModeProblems(ctx, s.DB, accountID, aud)
 		if err != nil {
 			return err
 		}
 		problems = append(problems, tm...)
-		tp, err := testerProblems(ctx, s.DB, accountID, c, s.now())
+		tp, err := testerProblems(ctx, s.DB, accountID, aud, s.now())
 		if err != nil {
 			return err
 		}
@@ -378,12 +387,12 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 // mode (MG-80) and the campaign reaches anyone but its confirmed test
 // addresses and its owner's own address. Such a launch is refused, not
 // queued.
-func testModeProblems(ctx context.Context, q testmode.Querier, accountID string, c *campaigns.Campaign) ([]Problem, error) {
+func testModeProblems(ctx context.Context, q testmode.Querier, accountID string, aud contacts.Audience) ([]Problem, error) {
 	g, err := testmode.Load(ctx, q, accountID)
 	if err != nil || !g.Test() {
 		return nil, err
 	}
-	total, outside, err := contacts.CountRecipientsOutside(ctx, q, accountID, c.Audience(), g.Allowed())
+	total, outside, err := contacts.CountRecipientsOutside(ctx, q, accountID, aud, g.Allowed())
 	if err != nil || outside == 0 {
 		return nil, err
 	}
@@ -393,7 +402,7 @@ func testModeProblems(ctx context.Context, q testmode.Querier, accountID string,
 	}
 	return []Problem{{Code: TestMode,
 		Message: "This account is in test mode, so it can only send to its test addresses. " + which,
-		Hint: "Send to a tag that holds only confirmed test addresses (see `mailgoose test-addresses list`), or ask mailgoose " +
+		Hint: "Send to a tag or segment that holds only confirmed test addresses (see `mailgoose test-addresses list`), or ask mailgoose " +
 			"to allow full sending for this account.",
 		Details: map[string]any{"recipients": total, "not_test_addresses": outside}}}, nil
 }
@@ -401,12 +410,12 @@ func testModeProblems(ctx context.Context, q testmode.Querier, accountID string,
 // testerProblems is the launch's problem when the account is a tester
 // (MG-86) that has ended, or whose campaign, as its audience stands now,
 // needs more tester credits than are left. Simulator addresses need none.
-func testerProblems(ctx context.Context, q contacts.RowQuerier, accountID string, c *campaigns.Campaign, now time.Time) ([]Problem, error) {
+func testerProblems(ctx context.Context, q contacts.RowQuerier, accountID string, aud contacts.Audience, now time.Time) ([]Problem, error) {
 	st, err := tester.Load(ctx, q, accountID, now, false)
 	if err != nil || st == nil {
 		return nil, err
 	}
-	total, simulated, err := contacts.CountSimulatorRecipients(ctx, q, accountID, c.Audience())
+	total, simulated, err := contacts.CountSimulatorRecipients(ctx, q, accountID, aud)
 	if err != nil {
 		return nil, err
 	}
@@ -425,12 +434,31 @@ func testerProblem(st *tester.Status, needed int) []Problem {
 			"until": st.Until, "ended": st.Ended}}}
 }
 
+// campaignAudience is who c goes to now, as segments.CampaignAudience
+// works it out, or the launch's problem when its segment can't be used.
+func campaignAudience(ctx context.Context, q segments.Querier, accountID string, c *campaigns.Campaign, lock bool) (contacts.Audience, []Problem, error) {
+	aud, err := segments.CampaignAudience(ctx, q, accountID, c, lock)
+	var ie *segments.InvalidError
+	if !errors.As(err, &ie) {
+		return aud, nil, err
+	}
+	sg := ie.Segment
+	ps := make([]map[string]any, len(sg.Problems))
+	for i, p := range sg.Problems {
+		ps[i] = map[string]any{"condition": p.Condition, "id": p.ID, "code": p.Code}
+	}
+	return aud, []Problem{{Code: SegmentInvalid,
+		Message: fmt.Sprintf("The campaign goes to segment %q, which has a condition it can't use now: %s.", sg.Name, sg.Problems[0].Text()),
+		Hint:    "Update the segment's conditions with `mailgoose segment update " + sg.ID + "`, or pick other recipients for the campaign.",
+		Details: map[string]any{"segment_id": sg.ID, "problems": ps}}}, nil
+}
+
 // audienceProblems are the launch's problems with who it goes to and what
 // it costs: n recipients against a balance of bal.
 func audienceProblems(c *campaigns.Campaign, n int, bal int64) []Problem {
 	if n == 0 {
 		return []Problem{{Code: NoRecipients, Message: "The campaign reaches no subscribed contacts.",
-			Hint: "Pick recipients with `mailgoose campaign update " + c.ID + " --all` or `--tag`, and see who they reach with `mailgoose campaign count`."}}
+			Hint: "Pick recipients with `mailgoose campaign update " + c.ID + " --all`, `--tag` or `--segment`, and see who they reach with `mailgoose campaign count`."}}
 	}
 	if int64(n) > bal {
 		return []Problem{{Code: CreditsShort,
@@ -501,9 +529,18 @@ func (s *Service) confirm(ctx context.Context, accountID, campaignID, code strin
 		if len(problems) > 0 {
 			return &NotReadyError{Problems: problems}
 		}
+		// A segment (MG-115) is worked out here, with its row locked so its
+		// conditions hold until the snapshot is taken.
+		aud, bad, err := campaignAudience(ctx, tx, accountID, c, true)
+		if err != nil {
+			return err
+		}
+		if len(bad) > 0 {
+			return &NotReadyError{Problems: bad}
+		}
 		// Test mode (MG-80) is checked again here, as a scheduled campaign
 		// is confirmed: anyone outside the test addresses refuses it.
-		tm, err := testModeProblems(ctx, tx, accountID, c)
+		tm, err := testModeProblems(ctx, tx, accountID, aud)
 		if err != nil {
 			return err
 		}
@@ -512,7 +549,7 @@ func (s *Service) confirm(ctx context.Context, accountID, campaignID, code strin
 		}
 
 		now := s.now()
-		n, err := contacts.SnapshotRecipients(ctx, tx, accountID, campaignID, c.Audience())
+		n, err := contacts.SnapshotRecipients(ctx, tx, accountID, campaignID, aud)
 		if err != nil {
 			return err
 		}

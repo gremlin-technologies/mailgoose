@@ -32,6 +32,9 @@ var (
 	ErrUnknownTag = errors.New("unknown tag")
 	// ErrUnknownEmail means an email id that isn't one of the account's emails.
 	ErrUnknownEmail = errors.New("unknown email")
+	// ErrUnknownSegment means a segment id that isn't one of the account's
+	// segments.
+	ErrUnknownSegment = errors.New("unknown segment")
 )
 
 // InvalidError is a campaign that breaks a rule; Field names which.
@@ -72,6 +75,12 @@ type Tag struct {
 	Name string
 }
 
+// SegmentRef is a campaign's recipient segment (MG-115).
+type SegmentRef struct {
+	ID   string
+	Name string
+}
+
 // Campaign is one campaign.
 type Campaign struct {
 	ID        string
@@ -81,9 +90,13 @@ type Campaign struct {
 	// draft.
 	EmailID *string
 	// AllContacts sends to every subscribed contact; otherwise to the
-	// contacts with any of Tags.
+	// contacts with any of Tags, or to Segment's subscribed contacts.
 	AllContacts bool
 	Tags        []Tag
+	// Segment is the saved segment it goes to (MG-115), worked out at
+	// launch; nil for all contacts or tags, and for a launched campaign
+	// whose segment was deleted since.
+	Segment *SegmentRef
 	// SendAt is nil for "when launched".
 	SendAt *time.Time
 	// Tracking counts opens and clicks with mailgoose's pixel and
@@ -130,7 +143,10 @@ func (c *Campaign) TestedAsIs(emailVersion int) bool {
 	return c.LastTest != nil && c.LastTest.Version == c.Version && c.LastTest.EmailVersion == emailVersion
 }
 
-// Audience is who the campaign goes to, for contacts.Recipients.
+// Audience is who the campaign goes to, for contacts.Recipients, when it
+// goes to all contacts or tags. A segment's audience needs its conditions:
+// segments.CampaignAudience works it out, and anything that counts or picks
+// recipients goes through that. Here a segment campaign reaches nobody.
 func (c *Campaign) Audience() contacts.Audience {
 	ids := make([]string, len(c.Tags))
 	for i, t := range c.Tags {
@@ -139,11 +155,38 @@ func (c *Campaign) Audience() contacts.Audience {
 	return contacts.Audience{All: c.AllContacts, TagIDs: ids}
 }
 
-// Recipients is who a campaign goes to: every subscribed contact, or those
-// with any of the tags.
+// Recipients is who a campaign goes to: every subscribed contact, those
+// with any of the tags, or a saved segment's subscribed contacts. Exactly
+// one is picked.
 type Recipients struct {
-	All    bool
-	TagIDs []string
+	All       bool
+	TagIDs    []string
+	SegmentID string
+}
+
+// pickMessage is the rule a choice of recipients breaks.
+const pickMessage = "pick all contacts, at least one tag, or a segment"
+
+// Check refuses a choice of recipients that picks none, or more than one,
+// of all contacts, tags and a segment.
+func (r *Recipients) Check() error {
+	picked := 0
+	if r.All {
+		picked++
+	}
+	if len(r.TagIDs) > 0 {
+		picked++
+	}
+	if r.SegmentID != "" {
+		picked++
+	}
+	switch {
+	case picked > 1:
+		return invalid("recipients", "pick all contacts, tags or a segment, not more than one")
+	case picked == 0:
+		return invalid("recipients", pickMessage)
+	}
+	return nil
 }
 
 // Changes are the parts of a campaign to set; nil leaves a part as it is.
@@ -180,7 +223,7 @@ func (s *Service) now() time.Time {
 	return time.Now()
 }
 
-const columns = `id, account_id, name, email_id, all_contacts, send_at, tracking, status, version, status_changed_at, created_at, updated_at,
+const columns = `id, account_id, name, email_id, all_contacts, segment_id, send_at, tracking, status, version, status_changed_at, created_at, updated_at,
 	last_test_at, last_test_version, last_test_email_version, launched_at, recipient_total, credits_reserved,
 	slice_state, slice_size, slice_release_at`
 
@@ -191,7 +234,8 @@ func scan(row pgx.Row) (*Campaign, error) {
 	var sliceState *string
 	var sliceSize *int
 	var sliceAt *time.Time
-	err := row.Scan(&c.ID, &c.AccountID, &c.Name, &c.EmailID, &c.AllContacts, &c.SendAt, &c.Tracking, &c.Status, &c.Version,
+	var segmentID *string
+	err := row.Scan(&c.ID, &c.AccountID, &c.Name, &c.EmailID, &c.AllContacts, &segmentID, &c.SendAt, &c.Tracking, &c.Status, &c.Version,
 		&c.StatusChangedAt, &c.CreatedAt, &c.UpdatedAt, &testAt, &testVersion, &testEmailVersion,
 		&c.LaunchedAt, &c.RecipientTotal, &c.CreditsReserved, &sliceState, &sliceSize, &sliceAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -205,6 +249,9 @@ func scan(row pgx.Row) (*Campaign, error) {
 	}
 	if sliceState != nil && sliceSize != nil {
 		c.Slice = &Slice{State: *sliceState, Size: *sliceSize, ReleaseAt: sliceAt}
+	}
+	if segmentID != nil {
+		c.Segment = &SegmentRef{ID: *segmentID}
 	}
 	return &c, nil
 }
@@ -251,12 +298,13 @@ func (s *Service) apply(c *Campaign, ch Changes) error {
 		c.SendAt = &at
 	}
 	if ch.Recipients != nil {
-		c.AllContacts = ch.Recipients.All
-		if ch.Recipients.All && len(ch.Recipients.TagIDs) > 0 {
-			return invalid("recipients", "pick all contacts or tags, not both")
+		if err := ch.Recipients.Check(); err != nil {
+			return err
 		}
-		if !ch.Recipients.All && len(ch.Recipients.TagIDs) == 0 {
-			return invalid("recipients", "pick all contacts, or at least one tag")
+		c.AllContacts = ch.Recipients.All
+		c.Segment = nil
+		if ch.Recipients.SegmentID != "" {
+			c.Segment = &SegmentRef{ID: strings.ToLower(ch.Recipients.SegmentID)}
 		}
 	}
 	return nil
@@ -270,6 +318,28 @@ func checkEmail(ctx context.Context, tx pgx.Tx, accountID, emailID string) error
 		return ErrUnknownEmail
 	}
 	return err
+}
+
+// checkSegment refuses a segment that isn't the account's. Its row is
+// locked until tx ends, so the segment can't be deleted under a campaign
+// that's being given it.
+func checkSegment(ctx context.Context, tx pgx.Tx, accountID string, seg *SegmentRef) error {
+	if seg == nil {
+		return nil
+	}
+	var ok bool
+	err := tx.QueryRow(ctx, `SELECT true FROM segments WHERE account_id = $1 AND id::text = $2 FOR KEY SHARE`, accountID, seg.ID).Scan(&ok)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrUnknownSegment
+	}
+	return err
+}
+
+func segmentID(seg *SegmentRef) *string {
+	if seg == nil {
+		return nil
+	}
+	return &seg.ID
 }
 
 // setTags replaces a campaign's tags, refusing any that isn't the account's.
@@ -312,17 +382,20 @@ func (s *Service) Create(ctx context.Context, accountID string, ch Changes) (*Ca
 		return nil, invalid("email_id", "a campaign needs an email")
 	}
 	if ch.Recipients == nil {
-		return nil, invalid("recipients", "pick all contacts, or at least one tag")
+		return nil, invalid("recipients", pickMessage)
 	}
 	var id string
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		if err := checkEmail(ctx, tx, accountID, *ch.EmailID); err != nil {
 			return err
 		}
+		if err := checkSegment(ctx, tx, accountID, c.Segment); err != nil {
+			return err
+		}
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO campaigns (account_id, name, email_id, all_contacts, send_at, tracking)
-			VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-			accountID, c.Name, *ch.EmailID, c.AllContacts, c.SendAt, c.Tracking).Scan(&id); err != nil {
+			INSERT INTO campaigns (account_id, name, email_id, all_contacts, segment_id, send_at, tracking)
+			VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+			accountID, c.Name, *ch.EmailID, c.AllContacts, segmentID(c.Segment), c.SendAt, c.Tracking).Scan(&id); err != nil {
 			return err
 		}
 		return setTags(ctx, tx, accountID, id, ch.Recipients.TagIDs)
@@ -360,11 +433,16 @@ func (s *Service) Update(ctx context.Context, accountID, id string, ch Changes) 
 			}
 			c.EmailID = ch.EmailID
 		}
+		if ch.Recipients != nil {
+			if err := checkSegment(ctx, tx, accountID, c.Segment); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.Exec(ctx, `
-			UPDATE campaigns SET name = $3, email_id = $4, all_contacts = $5, send_at = $6, tracking = $7,
+			UPDATE campaigns SET name = $3, email_id = $4, all_contacts = $5, segment_id = $6, send_at = $7, tracking = $8,
 				version = version + 1, updated_at = now()
 			WHERE account_id = $1 AND id = $2`,
-			accountID, id, c.Name, c.EmailID, c.AllContacts, c.SendAt, c.Tracking); err != nil {
+			accountID, id, c.Name, c.EmailID, c.AllContacts, segmentID(c.Segment), c.SendAt, c.Tracking); err != nil {
 			return err
 		}
 		if ch.Recipients != nil {
@@ -462,14 +540,50 @@ func (s *Service) loadTags(ctx context.Context, cs []*Campaign) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 	for rows.Next() {
 		var campaignID string
 		var t Tag
 		if err := rows.Scan(&campaignID, &t.ID, &t.Name); err != nil {
+			rows.Close()
 			return err
 		}
 		byID[campaignID].Tags = append(byID[campaignID].Tags, t)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return s.loadSegments(ctx, cs)
+}
+
+// loadSegments fills in the names of the campaigns' segments.
+func (s *Service) loadSegments(ctx context.Context, cs []*Campaign) error {
+	var ids []string
+	for _, c := range cs {
+		if c.Segment != nil {
+			ids = append(ids, c.Segment.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := s.DB.Query(ctx, `SELECT id::text, name FROM segments WHERE id::text = ANY($1)`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	names := map[string]string{}
+	for rows.Next() {
+		var id, name string
+		if err := rows.Scan(&id, &name); err != nil {
+			return err
+		}
+		names[id] = name
+	}
+	for _, c := range cs {
+		if c.Segment != nil {
+			c.Segment.Name = names[c.Segment.ID]
+		}
 	}
 	return rows.Err()
 }

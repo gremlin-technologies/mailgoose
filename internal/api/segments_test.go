@@ -172,3 +172,106 @@ func segmentByCampaign(method, path, condition string) func(*testing.T) *http.Re
 		return jsonRequest(method, path, `{"name":"By campaign","conditions":{"`+condition+`":["`+id+`"]}}`)(t)
 	}
 }
+
+// usedSegment is addedSegment with a draft campaign going to it.
+func usedSegment(t *testing.T, h http.Handler) {
+	t.Helper()
+	addedSegment(t, h)
+	addedEmail(t, h)
+	sg, _ := addedSegments.Load(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(newCampaign(`{"name":"Win back","email_id":"EMAIL","recipients":{"segment_id":"`+sg.(string)+`"}}`))(t))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("add campaign: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// MG-115: a campaign goes to a segment, counted now, and the segment can't
+// be deleted while a draft goes to it.
+func TestCampaignToSegment(t *testing.T) {
+	s := draftKey(authServer)(t)
+	h := s.Handler()
+	do := func(req func(*testing.T) *http.Request) (int, map[string]any) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, bearer(req)(t))
+		var body map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		return rec.Code, body
+	}
+	addedSegment(t, h) // VIPs: the tag, and subscribed
+	addedEmail(t, h)
+	for _, c := range []string{
+		`{"email":"ann@example.com","status":"subscribed"}`,
+		`{"email":"bo@example.com","status":"subscribed"}`,
+	} {
+		if code, body := do(jsonRequest(http.MethodPost, "/v1/contacts", c)); code != http.StatusCreated {
+			t.Fatalf("add contact: %d %v", code, body)
+		}
+	}
+	if code, body := do(tagPath(http.MethodPost, "/contacts", `{"filter":{"email":"ann"}}`)); code != http.StatusOK {
+		t.Fatalf("tag: %d %v", code, body)
+	}
+	v, _ := addedSegments.Load(t)
+	sgID := v.(string)
+
+	code, body := do(jsonRequest(http.MethodPost, "/v1/campaigns/recipient-count", `{"recipients":{"segment_id":"`+sgID+`"}}`))
+	if code != http.StatusOK || body["recipient_count"] != float64(1) {
+		t.Fatalf("count: %d %v", code, body)
+	}
+	code, body = do(jsonRequest(http.MethodPost, "/v1/campaigns/recipient-count", `{"recipients":{"segment_id":"`+noSuchID+`"}}`))
+	if e, _ := body["error"].(map[string]any); code != http.StatusUnprocessableEntity || e["code"] != "unknown_segment" {
+		t.Errorf("count of an unknown segment: %d %v", code, body)
+	}
+	code, body = do(jsonRequest(http.MethodPost, "/v1/campaigns/recipient-count", `{"recipients":{"all":true,"segment_id":"`+sgID+`"}}`))
+	if code != http.StatusUnprocessableEntity {
+		t.Errorf("count of all and a segment: %d %v", code, body)
+	}
+
+	code, cp := do(newCampaign(`{"name":"Win back","email_id":"EMAIL","recipients":{"segment_id":"` + sgID + `"}}`))
+	rc, _ := cp["recipients"].(map[string]any)
+	seg, _ := rc["segment"].(map[string]any)
+	if code != http.StatusCreated || seg["id"] != sgID || seg["name"] != "VIPs" || cp["recipient_count"] != float64(1) {
+		t.Fatalf("create: %d %v", code, cp)
+	}
+	campaignID := cp["id"].(string)
+	code, body = do(newCampaign(`{"name":"Nope","email_id":"EMAIL","recipients":{"segment_id":"` + noSuchID + `"}}`))
+	if e, _ := body["error"].(map[string]any); code != http.StatusUnprocessableEntity || e["code"] != "unknown_segment" {
+		t.Errorf("create with an unknown segment: %d %v", code, body)
+	}
+
+	code, body = do(segmentPath(http.MethodDelete, "", ""))
+	e, _ := body["error"].(map[string]any)
+	details, _ := e["details"].(map[string]any)
+	if code != http.StatusConflict || e["code"] != "segment_in_use" || details["campaign_id"] != campaignID || details["status"] != "draft" {
+		t.Fatalf("delete a segment a draft uses: %d %v", code, body)
+	}
+
+	// A broken segment leaves the campaign without a count, and its own
+	// count is refused with the condition.
+	if code, body := do(tagPath(http.MethodDelete, "", "")); code != http.StatusOK {
+		t.Fatalf("delete tag: %d %v", code, body)
+	}
+	code, cp = do(func(t *testing.T) *http.Request {
+		return httptest.NewRequest(http.MethodGet, "/v1/campaigns/"+campaignID, nil)
+	})
+	if _, has := cp["recipient_count"]; code != http.StatusOK || has {
+		t.Errorf("get with a broken segment: %d %v", code, cp)
+	}
+	code, body = do(jsonRequest(http.MethodPost, "/v1/campaigns/recipient-count", `{"recipients":{"segment_id":"`+sgID+`"}}`))
+	if e, _ := body["error"].(map[string]any); code != http.StatusUnprocessableEntity || e["code"] != "segment_invalid" {
+		t.Errorf("count of a broken segment: %d %v", code, body)
+	}
+
+	// Other recipients free the segment.
+	if code, body := do(func(t *testing.T) *http.Request {
+		return jsonRequest(http.MethodPatch, "/v1/campaigns/"+campaignID, `{"recipients":{"all":true}}`)(t)
+	}); code != http.StatusOK {
+		t.Fatalf("update: %d %v", code, body)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(segmentPath(http.MethodDelete, "", ""))(t))
+	if rec.Code != http.StatusNoContent {
+		t.Errorf("delete: %d %s", rec.Code, rec.Body)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/dbtest"
 )
@@ -387,5 +388,78 @@ func TestSegmentLimit(t *testing.T) {
 	// Another account has its own.
 	if _, err := h.svc.Create(ctx, h.acc2, "one more", Conditions{NeverOpened: true}); err != nil {
 		t.Errorf("another account: %v", err)
+	}
+}
+
+// MG-115: a draft or scheduled campaign's segment can't be deleted; once
+// the campaign has gone out, the segment can, and the campaign loses it.
+func TestDeleteSegmentACampaignUses(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	sg, err := h.svc.Create(ctx, h.acc, "Subscribed", Conditions{Statuses: []string{"subscribed"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	if err := h.svc.DB.QueryRow(ctx, `INSERT INTO campaigns (account_id, name, all_contacts, segment_id) VALUES ($1, 'Win back', false, $2) RETURNING id`,
+		h.acc, sg.ID).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	for _, status := range []string{"draft", "scheduled"} {
+		h.exec(t, `UPDATE campaigns SET status = $2 WHERE id = $1`, id, status)
+		var ue *InUseError
+		if err := h.svc.Delete(ctx, h.acc, sg.ID); !errors.As(err, &ue) || ue.CampaignID != id || ue.CampaignName != "Win back" || ue.Status != status {
+			t.Errorf("%s: %v", status, err)
+		}
+	}
+	h.exec(t, `UPDATE campaigns SET status = 'sending' WHERE id = $1`, id)
+	if err := h.svc.Delete(ctx, h.acc, sg.ID); err != nil {
+		t.Fatal(err)
+	}
+	var left *string
+	if err := h.svc.DB.QueryRow(ctx, `SELECT segment_id::text FROM campaigns WHERE id = $1`, id).Scan(&left); err != nil || left != nil {
+		t.Errorf("campaign's segment after the delete: %v %v", left, err)
+	}
+	if err := h.svc.Delete(ctx, h.acc, sg.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("second delete: %v", err)
+	}
+}
+
+// CampaignAudience works a segment campaign's audience out now, and
+// refuses an invalid segment.
+func TestCampaignAudience(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	vip := h.tag(t, h.acc, "vip")
+	ann := h.contact(t, "ann", "subscribed", vip)
+	h.contact(t, "bo", "subscribed")
+	h.contact(t, "cy", "unsubscribed", vip)
+	sg, err := h.svc.Create(ctx, h.acc, "VIPs", Conditions{TagIDs: []string{vip}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &campaigns.Campaign{Segment: &campaigns.SegmentRef{ID: sg.ID}}
+	aud, err := CampaignAudience(ctx, h.svc.DB, h.acc, c, false)
+	if err != nil || aud.Segment == nil {
+		t.Fatalf("audience %+v %v", aud, err)
+	}
+	// Only subscribed contacts are recipients, whatever the segment says.
+	got, err := h.svc.Contacts.Recipients(ctx, h.acc, aud, "", 10)
+	if err != nil || len(got) != 1 || got[0].ID != ann.ID {
+		t.Errorf("recipients %v %v", got, err)
+	}
+	if n, err := h.svc.Contacts.CountRecipients(ctx, h.acc, aud); err != nil || n != 1 {
+		t.Errorf("count %d %v", n, err)
+	}
+	if aud, err := CampaignAudience(ctx, h.svc.DB, h.acc, &campaigns.Campaign{AllContacts: true}, false); err != nil || !aud.All {
+		t.Errorf("all contacts: %+v %v", aud, err)
+	}
+
+	if _, err := h.svc.Contacts.DeleteTag(ctx, h.acc, vip); err != nil {
+		t.Fatal(err)
+	}
+	var ie *InvalidError
+	if _, err := CampaignAudience(ctx, h.svc.DB, h.acc, c, false); !errors.As(err, &ie) || ie.Segment.Problems[0].Code != ProblemTagDeleted {
+		t.Errorf("after the tag went: %v", err)
 	}
 }

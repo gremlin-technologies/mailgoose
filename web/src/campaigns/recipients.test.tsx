@@ -25,7 +25,7 @@ function server(list: (url: URL) => ReturnType<typeof apiError>) {
         id: campaignId,
         name: "May news",
         email_id: null,
-        recipients: { all: true, tags: [] },
+        recipients: { all: true, tags: [], segment: null },
         send_at: null,
         tracking: true,
         status: "sent",

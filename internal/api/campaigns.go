@@ -10,6 +10,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
+	"github.com/gremlin-technologies/mailgoose/internal/segments"
 )
 
 // campaignsCaller is requireCaller for the campaign endpoints, which also
@@ -42,6 +43,9 @@ func (s *Server) campaignError(w http.ResponseWriter, r *http.Request, err error
 	case errors.Is(err, campaigns.ErrUnknownTag):
 		WriteError(w, Unprocessable("unknown_tag", "A tag id isn't one of this account's tags.").
 			WithHint("`mailgoose tags list` shows the account's tags."))
+	case errors.Is(err, campaigns.ErrUnknownSegment), errors.Is(err, segments.ErrNotFound):
+		WriteError(w, Unprocessable("unknown_segment", "The segment_id isn't one of this account's segments.").
+			WithHint("`mailgoose segment list` shows the account's segments."))
 	case errors.As(err, &st):
 		hint := "Only drafts can be changed. A launched campaign was confirmed as it is."
 		if r.Method == http.MethodDelete {
@@ -83,6 +87,9 @@ func campaignJSON(c *campaigns.Campaign) apigen.Campaign {
 	for i, t := range c.Tags {
 		out.Recipients.Tags[i] = apigen.TagRef{Id: t.ID, Name: t.Name}
 	}
+	if sg := c.Segment; sg != nil {
+		out.Recipients.Segment = &apigen.SegmentRef{Id: sg.ID, Name: sg.Name}
+	}
 	if t := c.LastTest; t != nil {
 		out.LastTest = &apigen.CampaignTest{At: t.At.UTC(), Version: t.Version, EmailVersion: t.EmailVersion}
 	}
@@ -106,10 +113,20 @@ func campaignJSON(c *campaigns.Campaign) apigen.Campaign {
 	return out
 }
 
-// withCount adds the campaign's recipient count, counted now.
+// withCount adds the campaign's recipient count, counted now. A campaign
+// whose segment can't be used now (MG-115) has no count, and a launched
+// one whose segment was deleted counts as reaching nobody now.
 func (s *Server) withCount(r *http.Request, c *campaigns.Campaign) (apigen.Campaign, error) {
 	out := campaignJSON(c)
-	n, err := s.Contacts.CountRecipients(r.Context(), c.AccountID, c.Audience())
+	aud, err := segments.CampaignAudience(r.Context(), s.Campaigns.DB, c.AccountID, c, false)
+	var ie *segments.InvalidError
+	switch {
+	case errors.As(err, &ie):
+		return out, nil
+	case err != nil:
+		return out, err
+	}
+	n, err := s.Contacts.CountRecipients(r.Context(), c.AccountID, aud)
 	out.RecipientCount = &n
 	return out, err
 }
@@ -123,6 +140,9 @@ func recipientsInput(in *apigen.RecipientsInput) *campaigns.Recipients {
 	out := &campaigns.Recipients{All: in.All != nil && *in.All}
 	if in.TagIds != nil {
 		out.TagIDs = *in.TagIds
+	}
+	if in.SegmentId != nil {
+		out.SegmentID = *in.SegmentId
 	}
 	return out
 }
@@ -271,14 +291,28 @@ func (s *Server) CountCampaignRecipients(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	rc := recipientsInput(&req.Recipients)
-	switch {
-	case rc.All && len(rc.TagIDs) > 0:
-		WriteError(w, Unprocessable("invalid_campaign", "The campaign can't be saved: pick all contacts or tags, not both.").
-			WithDetails(map[string]any{"field": "recipients"}))
+	if s.campaignError(w, r, rc.Check()) {
 		return
-	case !rc.All && len(rc.TagIDs) == 0:
-		WriteError(w, Unprocessable("invalid_campaign", "The campaign can't be saved: pick all contacts, or at least one tag.").
-			WithDetails(map[string]any{"field": "recipients"}))
+	}
+	if rc.SegmentID != "" {
+		if s.Segments == nil {
+			s.campaignError(w, r, errors.New("no segments service"))
+			return
+		}
+		_, f, err := s.Segments.Resolve(r.Context(), c.AccountID, rc.SegmentID)
+		if errors.Is(err, segments.ErrNotFound) {
+			s.campaignError(w, r, campaigns.ErrUnknownSegment)
+			return
+		}
+		if err != nil {
+			s.segmentError(w, r, err)
+			return
+		}
+		n, err := s.Contacts.CountRecipients(r.Context(), c.AccountID, contacts.Audience{Segment: &f})
+		if s.campaignError(w, r, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, apigen.RecipientCount{RecipientCount: n})
 		return
 	}
 	for _, id := range rc.TagIDs {

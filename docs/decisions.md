@@ -339,6 +339,27 @@ import. The tickets are issues #250 to #255.
   order (newest first) and carries `count` on every page. A PATCH with
   `conditions` replaces them whole. `mailgoose segment delete` needs
   `--yes`, as every CLI delete does.
+- **Sending to a segment** (MG-115, reversible defaults): a campaign's
+  recipients are all contacts, tags, or one segment (`segment_id`), never
+  more than one; only subscribed contacts get it, whatever statuses the
+  segment names. The segment is worked out when the launch is confirmed and
+  fixed in `campaign_recipients`, the segment's row locked meanwhile so its
+  conditions can't change under the snapshot. That covers scheduled
+  campaigns too: this build keeps "recipients are fixed at launch,
+  scheduled campaigns included" (the MG-30 entry), as tag audiences are
+  today, and reads "at the send time of a scheduled campaign" in the choice
+  above as the confirm that schedules it. Working a scheduled segment out
+  at its send time instead would also move its credit reservation and its
+  test-mode and tester checks, so it's left for the owner to choose. A
+  segment with a problem stops the summary and the confirm with
+  `segment_invalid` (the segment's id and its problems). Deleting a segment
+  that a draft or scheduled campaign goes to answers 409 `segment_in_use`
+  naming the first such campaign; once a campaign is sending or done, the
+  segment can be deleted and the campaign shows no segment
+  (`recipients.segment` null). A draft may be saved with an invalid segment;
+  only launching refuses it. A campaign whose segment is invalid shows no
+  `recipient_count`. The web app shows a segment campaign's recipients, and
+  its recipient picker waits for MG-116.
 
 ## 2026-11-21: Social icons (MG-109; reversible defaults)
 

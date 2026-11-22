@@ -29,6 +29,7 @@ func (s *Server) segmentError(w http.ResponseWriter, r *http.Request, err error)
 	var le *segments.LimitError
 	var ce *segments.ConditionError
 	var ie *segments.InvalidError
+	var ue *segments.InUseError
 	switch {
 	case err == nil:
 		return false
@@ -46,9 +47,13 @@ func (s *Server) segmentError(w http.ResponseWriter, r *http.Request, err error)
 		WriteError(w, conditionError(ce))
 	case errors.As(err, &ie):
 		WriteError(w, Unprocessable("segment_invalid",
-			"Segment "+ie.Segment.Name+" has a condition it can't use now: "+problemText(ie.Segment.Problems[0])+".").
+			"Segment "+ie.Segment.Name+" has a condition it can't use now: "+ie.Segment.Problems[0].Text()+".").
 			WithHint("Update its conditions with `mailgoose segment update`; `mailgoose segment get` lists every problem.").
 			WithDetails(map[string]any{"problems": problemsJSON(ie.Segment.Problems)}))
+	case errors.As(err, &ue):
+		WriteError(w, Conflict("segment_in_use", fmt.Sprintf("Campaign %q (%s) goes to this segment, so it can't be deleted.", ue.CampaignName, ue.Status)).
+			WithHint("Give the campaign other recipients first (a scheduled one goes back to a draft to change it), or delete or cancel it. Campaigns already sending or sent don't count: their recipients are fixed.").
+			WithDetails(map[string]any{"campaign_id": ue.CampaignID, "campaign_name": ue.CampaignName, "status": ue.Status}))
 	default:
 		return s.contactError(w, r, err)
 	}
@@ -70,19 +75,6 @@ func conditionError(ce *segments.ConditionError) *Error {
 	default:
 		return Unprocessable("unknown_campaign", "No campaign "+ce.ID+" in this account.").
 			WithHint("`mailgoose campaign list` shows the account's campaigns and their ids.").WithDetails(details)
-	}
-}
-
-func problemText(p segments.Problem) string {
-	switch p.Code {
-	case segments.ProblemTagDeleted:
-		return "tag " + p.ID + " in " + p.Condition + " was deleted"
-	case segments.ProblemCampaignDeleted:
-		return "campaign " + p.ID + " in " + p.Condition + " was deleted"
-	case segments.ProblemTrackingOff:
-		return "campaign " + p.ID + " in " + p.Condition + " is set to send without tracking"
-	default:
-		return "campaign " + p.ID + " in " + p.Condition + " has its raw events archived"
 	}
 }
 

@@ -26,7 +26,7 @@ function campaign(over: Partial<Campaign> = {}): Campaign {
     id: campaignId,
     name: "May news",
     email_id: emailId,
-    recipients: { all: true, tags: [] },
+    recipients: { all: true, tags: [], segment: null },
     recipient_count: 120,
     send_at: null,
     tracking: true,
@@ -97,8 +97,9 @@ describe("campaign helpers", () => {
   });
 
   it("says who a campaign goes to", () => {
-    expect(recipientsText({ all: true, tags: [] })).toBe("All subscribed contacts");
-    expect(recipientsText({ all: false, tags: [news, vip] })).toBe("Contacts tagged news or vip");
+    expect(recipientsText({ all: true, tags: [], segment: null })).toBe("All subscribed contacts");
+    expect(recipientsText({ all: false, tags: [news, vip], segment: null })).toBe("Contacts tagged news or vip");
+    expect(recipientsText({ all: false, tags: [], segment: { id: "s1", name: "Clickers" } })).toBe("Contacts in segment Clickers");
   });
 
   it("reads a launch summary and problems from an error's details, skipping anything malformed", () => {

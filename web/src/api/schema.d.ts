@@ -1183,7 +1183,10 @@ export interface paths {
         post?: never;
         /**
          * Delete a segment
-         * @description Deletes the saved conditions; no contact changes.
+         * @description Deletes the saved conditions; no contact changes. A segment that a
+         *     draft or scheduled campaign goes to can't be deleted: `409
+         *     segment_in_use` names the campaign. A campaign already sending or
+         *     sent keeps its recipients and loses the link.
          */
         delete: operations["deleteSegment"];
         options?: never;
@@ -4910,15 +4913,33 @@ export interface components {
          */
         CampaignStatus: "draft" | "scheduled" | "sending" | "sent" | "cancelled" | "paused" | "failed";
         CampaignRecipients: {
-            /** @description True sends to every subscribed contact; tags is then empty. */
+            /** @description True sends to every subscribed contact; tags is then empty and segment null. */
             all: boolean;
             /** @description Otherwise the subscribed contacts with any of these tags. */
             tags: components["schemas"]["TagRef"][];
+            /**
+             * @description Or a saved segment's subscribed contacts, worked out at launch.
+             *     Null otherwise, and for a launched campaign whose segment was
+             *     deleted since.
+             */
+            segment: components["schemas"]["SegmentRef"] | null;
         };
-        /** @description `{"all": true}` for every subscribed contact, or `{"tag_ids": [...]}` for those with any of the tags. */
+        SegmentRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        /**
+         * @description Exactly one of: `{"all": true}` for every subscribed contact,
+         *     `{"tag_ids": [...]}` for those with any of the tags, or
+         *     `{"segment_id": "..."}` for a saved segment's subscribed contacts,
+         *     worked out at launch.
+         */
         RecipientsInput: {
             all?: boolean;
             tag_ids?: string[];
+            /** Format: uuid */
+            segment_id?: string;
         };
         Campaign: {
             /** Format: uuid */
@@ -5884,6 +5905,20 @@ export interface components {
             };
         };
         /**
+         * @description `segment_in_use`: a draft or scheduled campaign goes to the segment;
+         *     `details.campaign_id`, `details.campaign_name` and `details.status`
+         *     name the first one.
+         */
+        SegmentInUse: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description The segment can't be saved: `invalid_segment_name`,
          *     `invalid_conditions` (a malformed condition; `message` says which),
          *     `no_conditions`, or a condition naming something it can't use:
@@ -6093,8 +6128,11 @@ export interface components {
         };
         /**
          * @description `invalid_campaign`: a part breaks a rule; `details.field` names it
-         *     (`name`, `email_id`, `recipients` or `send_at`). `unknown_email` and
-         *     `unknown_tag`: an id isn't one of the account's.
+         *     (`name`, `email_id`, `recipients` or `send_at`). `unknown_email`,
+         *     `unknown_tag` and `unknown_segment`: an id isn't one of the
+         *     account's. `segment_invalid` (counting recipients only): the
+         *     segment has a condition it can't use now; `details.problems` lists
+         *     them.
          */
         InvalidCampaign: {
             headers: {
@@ -6412,7 +6450,9 @@ export interface components {
          *     payment until it's lifted), `no_recipients`, `credits_short` with `details.needed`,
          *     `details.balance` and `details.short`, and `tester_limit` (a tester account, MG-86, that has
          *     ended, or whose campaign needs more tester credits than are left; `details.needed`,
-         *     `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`). `invalid_confirmation`: the
+         *     `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`), and
+         *     `segment_invalid` (the campaign's segment has a condition it can't use now, such as a deleted
+         *     tag; `details.segment_id` and `details.problems`, each with `condition`, `id` and `code`). `invalid_confirmation`: the
          *     code can't be used; `details.reason` is `no_code`, `expired`,
          *     `wrong`, `too_many_attempts`, `changed`, or `audience_grew` (the
          *     campaign now reaches more than a tenth more contacts than the
@@ -8707,6 +8747,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["CrossOrigin"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["SegmentInUse"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

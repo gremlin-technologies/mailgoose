@@ -2619,8 +2619,13 @@ type CampaignListItem struct {
 
 // CampaignRecipients defines model for CampaignRecipients.
 type CampaignRecipients struct {
-	// All True sends to every subscribed contact; tags is then empty.
+	// All True sends to every subscribed contact; tags is then empty and segment null.
 	All bool `json:"all"`
+
+	// Segment Or a saved segment's subscribed contacts, worked out at launch.
+	// Null otherwise, and for a launched campaign whose segment was
+	// deleted since.
+	Segment *SegmentRef `json:"segment"`
 
 	// Tags Otherwise the subscribed contacts with any of these tags.
 	Tags []TagRef `json:"tags"`
@@ -3014,7 +3019,10 @@ type CreateCampaignRequest struct {
 	EmailId string `json:"email_id"`
 	Name    string `json:"name"`
 
-	// Recipients `{"all": true}` for every subscribed contact, or `{"tag_ids": [...]}` for those with any of the tags.
+	// Recipients Exactly one of: `{"all": true}` for every subscribed contact,
+	// `{"tag_ids": [...]}` for those with any of the tags, or
+	// `{"segment_id": "..."}` for a saved segment's subscribed contacts,
+	// worked out at launch.
 	Recipients RecipientsInput `json:"recipients"`
 
 	// SendAt A time in the next year; null or left out sends when launched.
@@ -4416,14 +4424,21 @@ type RecipientCount struct {
 
 // RecipientCountRequest defines model for RecipientCountRequest.
 type RecipientCountRequest struct {
-	// Recipients `{"all": true}` for every subscribed contact, or `{"tag_ids": [...]}` for those with any of the tags.
+	// Recipients Exactly one of: `{"all": true}` for every subscribed contact,
+	// `{"tag_ids": [...]}` for those with any of the tags, or
+	// `{"segment_id": "..."}` for a saved segment's subscribed contacts,
+	// worked out at launch.
 	Recipients RecipientsInput `json:"recipients"`
 }
 
-// RecipientsInput `{"all": true}` for every subscribed contact, or `{"tag_ids": [...]}` for those with any of the tags.
+// RecipientsInput Exactly one of: `{"all": true}` for every subscribed contact,
+// `{"tag_ids": [...]}` for those with any of the tags, or
+// `{"segment_id": "..."}` for a saved segment's subscribed contacts,
+// worked out at launch.
 type RecipientsInput struct {
-	All    *bool     `json:"all,omitempty"`
-	TagIds *[]string `json:"tag_ids,omitempty"`
+	All       *bool     `json:"all,omitempty"`
+	SegmentId *string   `json:"segment_id,omitempty"`
+	TagIds    *[]string `json:"tag_ids,omitempty"`
 }
 
 // RenameTagRequest defines model for RenameTagRequest.
@@ -4594,6 +4609,12 @@ type SegmentProblemCode string
 
 // SegmentProblemCondition The condition that names it.
 type SegmentProblemCondition string
+
+// SegmentRef defines model for SegmentRef.
+type SegmentRef struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
 
 // SendLimit How many campaign recipients the account may send to in 24 hours.
 // New accounts start low and double each week of clean sending up to
@@ -5018,7 +5039,10 @@ type UpdateCampaignRequest struct {
 	EmailId *string `json:"email_id,omitempty"`
 	Name    *string `json:"name,omitempty"`
 
-	// Recipients `{"all": true}` for every subscribed contact, or `{"tag_ids": [...]}` for those with any of the tags.
+	// Recipients Exactly one of: `{"all": true}` for every subscribed contact,
+	// `{"tag_ids": [...]}` for those with any of the tags, or
+	// `{"segment_id": "..."}` for a saved segment's subscribed contacts,
+	// worked out at launch.
 	Recipients *RecipientsInput `json:"recipients,omitempty"`
 
 	// SendAt A time in the next year; null sends when launched.
@@ -5312,6 +5336,9 @@ type RequestTooLarge = Error
 
 // SegmentConflict defines model for SegmentConflict.
 type SegmentConflict = Error
+
+// SegmentInUse defines model for SegmentInUse.
+type SegmentInUse = Error
 
 // SegmentInvalid defines model for SegmentInvalid.
 type SegmentInvalid = Error

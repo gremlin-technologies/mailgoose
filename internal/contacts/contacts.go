@@ -499,19 +499,28 @@ func (s *Service) List(ctx context.Context, accountID string, f Filter, after *C
 	return out, rows.Err()
 }
 
-// Audience picks a campaign's recipients: every subscribed contact, or the
-// subscribed contacts with any of the tags. No tags and not All picks nobody.
+// Audience picks a campaign's recipients: every subscribed contact, the
+// subscribed contacts with any of the tags, or the subscribed contacts a
+// segment's filter matches (MG-115). No tags, no segment and not All picks
+// nobody.
 type Audience struct {
 	All    bool
 	TagIDs []string
+	// Segment is a saved segment's conditions, worked out now; when set,
+	// TagIDs is ignored.
+	Segment *Filter
 }
 
 // recipientsWhere is the condition every campaign recipient meets, with the
-// account as $1 and, for a tag audience, the tags as $2.
+// account as $1 and the audience's own parameters after it.
 func recipientsWhere(accountID string, aud Audience) (string, []any) {
 	q := `account_id = $1 AND status = '` + StatusSubscribed + `' AND held_import_id IS NULL`
 	args := []any{accountID}
-	if !aud.All {
+	switch {
+	case aud.All:
+	case aud.Segment != nil:
+		q, args = aud.Segment.where(q, args)
+	default:
 		args = append(args, aud.TagIDs)
 		q += ` AND EXISTS (SELECT 1 FROM contact_tags ct WHERE ct.contact_id = contacts.id AND ct.tag_id::text = ANY($2))`
 	}

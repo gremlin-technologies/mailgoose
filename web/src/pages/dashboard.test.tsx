@@ -11,7 +11,7 @@ function campaign(over: Record<string, unknown>) {
     id: campaignId,
     name: "May news",
     email_id: null,
-    recipients: { all: true, tags: [] },
+    recipients: { all: true, tags: [], segment: null },
     send_at: null,
     tracking: true,
     status: "draft",

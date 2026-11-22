@@ -25,6 +25,10 @@ type campaign struct {
 			ID   string `json:"id"`
 			Name string `json:"name"`
 		} `json:"tags"`
+		Segment *struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"segment"`
 	} `json:"recipients"`
 	RecipientCount *int       `json:"recipient_count,omitempty"`
 	SendAt         *time.Time `json:"send_at"`
@@ -185,22 +189,36 @@ func (a *App) parseSendAt(ctx context.Context, flag, v string) (*time.Time, erro
 
 // recipientFlags pick who a campaign goes to.
 type recipientFlags struct {
-	all  bool
-	tags []string
+	all     bool
+	tags    []string
+	segment string
 }
 
 func (f *recipientFlags) register(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.all, "all", false, "send to every subscribed contact")
 	cmd.Flags().StringArrayVar(&f.tags, "tag", nil, "send to subscribed contacts with this tag (name or id); repeat for any of several")
+	cmd.Flags().StringVar(&f.segment, "segment", "", "send to a saved segment's subscribed contacts (name or id), worked out at launch")
 }
 
-// body is the RecipientsInput for the flags, or nil when neither is given.
+// body is the RecipientsInput for the flags, or nil when none is given.
 func (a *App) recipientsBody(ctx context.Context, f *recipientFlags) (map[string]any, error) {
+	picked := 0
+	for _, on := range []bool{f.all, len(f.tags) > 0, f.segment != ""} {
+		if on {
+			picked++
+		}
+	}
 	switch {
-	case f.all && len(f.tags) > 0:
-		return nil, usageError("Pass --all or --tag, not both.", "")
+	case picked > 1:
+		return nil, usageError("Pass one of --all, --tag or --segment.", "")
 	case f.all:
 		return map[string]any{"all": true}, nil
+	case f.segment != "":
+		id, err := a.segmentID(ctx, f.segment)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"segment_id": id}, nil
 	case len(f.tags) == 0:
 		return nil, nil
 	}
@@ -219,8 +237,14 @@ func (c campaign) audience() string {
 	if c.Recipients.All {
 		return "every subscribed contact"
 	}
+	if sg := c.Recipients.Segment; sg != nil {
+		return fmt.Sprintf("subscribed contacts in segment %q (%s)", sg.Name, sg.ID)
+	}
 	if len(c.Recipients.Tags) == 0 {
-		return "nobody (its tags were deleted; pick recipients with --all or --tag)"
+		if c.Launch != nil {
+			return "its recipients at launch (the segment or tags it went to were deleted since)"
+		}
+		return "nobody (its tags were deleted; pick recipients with --all, --tag or --segment)"
 	}
 	names := make([]string, len(c.Recipients.Tags))
 	for i, t := range c.Recipients.Tags {
@@ -293,9 +317,10 @@ func (a *App) campaignCmd() *cobra.Command {
 		Use:     "campaign",
 		Aliases: []string{"campaigns"},
 		Short:   "Set up campaigns: an email, who gets it and when",
-		Long: `A campaign sends one email to every subscribed contact (--all) or to the
-subscribed contacts with any of some tags (--tag), when it's launched or at a
-set time (--send-at). Unconfirmed, unsubscribed, bounced and complained
+		Long: `A campaign sends one email to every subscribed contact (--all), to the
+subscribed contacts with any of some tags (--tag), or to a saved segment's
+subscribed contacts (--segment, worked out at launch), when it's launched or
+at a set time (--send-at). Unconfirmed, unsubscribed, bounced and complained
 contacts never get it.
 
 A campaign starts as a draft. Its status then moves through scheduled,
@@ -369,10 +394,11 @@ campaign's summary. For one campaign's full report: mailgoose campaign report <c
 		Use:   "create",
 		Short: "Make a draft campaign",
 		Long: `Makes a draft campaign. It needs a name, an email (--email) and recipients:
---all, or one or more --tag. Without --send-at it goes out when launched.
-Nothing is sent until it's launched.`,
+--all, one or more --tag, or a --segment. Without --send-at it goes out when
+launched. Nothing is sent until it's launched.`,
 		Example: `  mailgoose campaign create --name "Spring sale" --email 3f1c... --all
-  mailgoose campaign create --name "VIP preview" --email 3f1c... --tag VIP --tag Wholesale --send-at "2026-12-01 09:00"`,
+  mailgoose campaign create --name "VIP preview" --email 3f1c... --tag VIP --tag Wholesale --send-at "2026-12-01 09:00"
+  mailgoose campaign create --name "Win back" --email 3f1c... --segment "Never opened"`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if name == "" {
@@ -386,7 +412,7 @@ Nothing is sent until it's launched.`,
 				return err
 			}
 			if recipients == nil {
-				return usageError("Say who gets it.", "Pass --all for every subscribed contact, or --tag for contacts with a tag.")
+				return usageError("Say who gets it.", "Pass --all for every subscribed contact, --tag for contacts with a tag, or --segment for a saved segment.")
 			}
 			body := map[string]any{"name": name, "email_id": emailID, "recipients": recipients}
 			if cmd.Flags().Changed("tracking") {
@@ -439,8 +465,8 @@ Nothing is sent until it's launched.`,
 	update := calls("updateCampaign", &cobra.Command{
 		Use:   "update <campaign-id>",
 		Short: "Change a draft campaign",
-		Long: `Changes the parts given and leaves the rest. --all or --tag replaces the
-recipients. --send-at now sends it when launched. With --version the change
+		Long: `Changes the parts given and leaves the rest. --all, --tag or --segment
+replaces the recipients. --send-at now sends it when launched. With --version the change
 is refused if the campaign changed since you read it.`,
 		Example: `  mailgoose campaign update 3f1c... --tag VIP --send-at 2026-12-01T09:00:00Z
   mailgoose campaign update 3f1c... --name "Spring sale, final" --version 3`,
@@ -476,7 +502,7 @@ is refused if the campaign changed since you read it.`,
 				body["recipients"] = recipients
 			}
 			if len(body) == 0 {
-				return usageError("Nothing to change.", "Pass --name, --email, --all, --tag, --send-at or --tracking.")
+				return usageError("Nothing to change.", "Pass --name, --email, --all, --tag, --segment, --send-at or --tracking.")
 			}
 			if flags.Changed("version") {
 				body["version"] = version
@@ -526,9 +552,10 @@ is refused if the campaign changed since you read it.`,
 	var cc recipientFlags
 	count := calls("countCampaignRecipients", &cobra.Command{
 		Use:   "count",
-		Short: "Count who --all or --tag would reach now",
+		Short: "Count who --all, --tag or --segment would reach now",
 		Example: `  mailgoose campaign count --all
-  mailgoose campaign count --tag VIP --tag Wholesale`,
+  mailgoose campaign count --tag VIP --tag Wholesale
+  mailgoose campaign count --segment "Clicked in November"`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			recipients, err := a.recipientsBody(cmd.Context(), &cc)
@@ -536,7 +563,7 @@ is refused if the campaign changed since you read it.`,
 				return err
 			}
 			if recipients == nil {
-				return usageError("Say whom to count.", "Pass --all, or --tag for contacts with a tag.")
+				return usageError("Say whom to count.", "Pass --all, --tag for contacts with a tag, or --segment for a saved segment.")
 			}
 			var out struct {
 				RecipientCount int `json:"recipient_count"`

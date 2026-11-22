@@ -333,3 +333,76 @@ func TestRecipientsAndTagDelete(t *testing.T) {
 		t.Errorf("after tag delete: %+v", g)
 	}
 }
+
+func (h *harness) segment(t *testing.T, account, name string) string {
+	t.Helper()
+	var id string
+	if err := h.db.QueryRow(context.Background(), `
+		INSERT INTO segments (account_id, name, conditions, created_at, updated_at)
+		VALUES ($1, $2, '{"statuses":["subscribed"]}', now(), now()) RETURNING id`, account, name).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+// MG-115: a campaign can go to a segment instead of all contacts or tags.
+func TestSegmentRecipients(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	seg, vip := h.segment(t, h.acc, "Clickers"), h.tag(t, h.acc, "VIP")
+	c, err := h.svc.Create(ctx, h.acc, Changes{Name: ptr("Win back"), EmailID: &h.email,
+		Recipients: &Recipients{SegmentID: strings.ToUpper(seg)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Segment == nil || c.Segment.ID != seg || c.Segment.Name != "Clickers" || c.AllContacts || len(c.Tags) != 0 {
+		t.Fatalf("created %+v", c)
+	}
+	// Without the segment's conditions, Audience reaches nobody.
+	if aud := c.Audience(); aud.All || len(aud.TagIDs) != 0 || aud.Segment != nil {
+		t.Errorf("audience %+v", aud)
+	}
+	list, err := h.svc.List(ctx, h.acc, "", nil, 10)
+	if err != nil || len(list) != 1 || list[0].Segment == nil || list[0].Segment.Name != "Clickers" {
+		t.Fatalf("list %v %v", list, err)
+	}
+
+	// Other recipients replace the segment, and the segment them.
+	if c, err = h.svc.Update(ctx, h.acc, c.ID, Changes{Recipients: &Recipients{TagIDs: []string{vip}}}); err != nil || c.Segment != nil || len(c.Tags) != 1 {
+		t.Fatalf("to tags: %+v %v", c, err)
+	}
+	if c, err = h.svc.Update(ctx, h.acc, c.ID, Changes{Recipients: &Recipients{SegmentID: seg}}); err != nil || c.Segment == nil || len(c.Tags) != 0 {
+		t.Fatalf("to the segment: %+v %v", c, err)
+	}
+	// A change that leaves recipients alone keeps the segment.
+	if c, err = h.svc.Update(ctx, h.acc, c.ID, Changes{Name: ptr("Win back 2")}); err != nil || c.Segment == nil || c.Segment.ID != seg {
+		t.Fatalf("rename: %+v %v", c, err)
+	}
+
+	theirs := h.segment(t, h.acc2, "Theirs")
+	for _, id := range []string{theirs, "not-a-uuid", "7a1b5f7e-0000-4000-8000-000000000000"} {
+		if _, err := h.svc.Create(ctx, h.acc, Changes{Name: ptr("x"), EmailID: &h.email, Recipients: &Recipients{SegmentID: id}}); !errors.Is(err, ErrUnknownSegment) {
+			t.Errorf("segment %s: %v", id, err)
+		}
+	}
+	for name, r := range map[string]*Recipients{
+		"all and a segment":  {All: true, SegmentID: seg},
+		"tags and a segment": {TagIDs: []string{vip}, SegmentID: seg},
+	} {
+		if _, err := h.svc.Create(ctx, h.acc, Changes{Name: ptr("x"), EmailID: &h.email, Recipients: r}); field(err) != "recipients" {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+
+	// A launched campaign loses the link when its segment goes; the
+	// database clears it.
+	if _, err := h.db.Exec(ctx, `UPDATE campaigns SET status = 'sent' WHERE id = $1`, c.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.Exec(ctx, `DELETE FROM segments WHERE id = $1`, seg); err != nil {
+		t.Fatal(err)
+	}
+	if c, err = h.svc.Get(ctx, h.acc, c.ID); err != nil || c.Segment != nil {
+		t.Errorf("after the segment was deleted: %+v %v", c, err)
+	}
+}
