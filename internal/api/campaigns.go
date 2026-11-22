@@ -9,6 +9,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
+	"github.com/gremlin-technologies/mailgoose/internal/reports"
 )
 
 // campaignsCaller is requireCaller for the campaign endpoints, which also
@@ -191,11 +192,37 @@ func (s *Server) ListCampaigns(w http.ResponseWriter, r *http.Request, params ap
 		return
 	}
 	page := NewPage(cs, pr.Limit, campaignCursor)
-	out := apigen.CampaignList{Data: make([]apigen.Campaign, len(page.Data)), NextCursor: page.NextCursor}
+	// Each launched campaign's summary, for the whole page in one query
+	// (MG-111).
+	summaries := map[string]*reports.Summary{}
+	if s.Reports != nil {
+		ids := make([]string, 0, len(page.Data))
+		for _, cp := range page.Data {
+			if cp.LaunchedAt != nil {
+				ids = append(ids, cp.ID)
+			}
+		}
+		if summaries, err = s.Reports.Summaries(r.Context(), c.AccountID, ids); s.campaignError(w, r, err) {
+			return
+		}
+	}
+	out := campaignListJSON{Data: make([]campaignListItem, len(page.Data)), NextCursor: page.NextCursor}
 	for i, cp := range page.Data {
-		out.Data[i] = campaignJSON(cp)
+		out.Data[i] = campaignListItem{Campaign: campaignJSON(cp), Summary: summaries[cp.ID]}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// campaignListItem is apigen.CampaignListItem: a campaign with its
+// report's summary, null before launch.
+type campaignListItem struct {
+	apigen.Campaign
+	Summary *reports.Summary `json:"summary"`
+}
+
+type campaignListJSON struct {
+	Data       []campaignListItem `json:"data"`
+	NextCursor *string            `json:"next_cursor"`
 }
 
 // CreateCampaign is POST /v1/campaigns.

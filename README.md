@@ -892,13 +892,20 @@ redirect.
 
 `GET /v1/campaigns/{id}/report` and `mailgoose campaign report <id>`
 (`--json` for the API's shape) show a campaign's copies sent, delivered,
-hard bounced, complaints, unsubscribes, unique opens (always flagged
-estimated), unique and total clicks, credits used, and clicks per link.
-Both read `reports.Service.Campaign`, one query over `campaign_recipients`,
+hard bounced, complaints, unsubscribes, unique opens, unique and total
+clicks, credits used, and clicks per link. Opens and clicks are shares of
+the copies delivered, the rest of those sent. Both read
+`reports.Service.Campaign`, one query over `campaign_recipients`,
 `send_events`, `engagement_events`, `unsubscribes` and the credit ledger,
 run when asked, so the numbers move as soon as an event is stored. Counts
 of people count each copy once. A link whose address differs per copy
 (merge tags) shows only its site, so nobody's own link is shown.
+
+The campaign list (`GET /v1/campaigns`, `mailgoose campaign list`, the
+web list) carries each launched campaign's `summary`: delivered, bounced,
+opens and clicks with their rates (MG-111). `reports.Service.Summaries`
+works them out for the whole page in one query over the same counts, or
+from the saved numbers once a report is archived.
 
 Raw events are kept 12 months (REP-5). The worker's pruner runs hourly: a
 campaign launched more than 12 months ago (and finished) has its report

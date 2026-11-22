@@ -9,6 +9,43 @@ import { recipientsText, statusBadge, type Campaign, type CampaignStatus } from 
 import { CampaignForm } from "../campaigns/CampaignForm";
 
 type Page = components["schemas"]["CampaignList"];
+type Summary = components["schemas"]["CampaignSummary"];
+
+/** A rate from 0 to 1 as a percentage, "40.8%", or a dash when there's none. */
+export function rateText(rate: number | null | undefined): string {
+  return rate == null ? "–" : `${(100 * rate).toFixed(1)}%`;
+}
+
+/** A sent campaign's report numbers (MG-111), each cell linking to its report. */
+function SummaryCells({ id, summary }: { id: string; summary: Summary | null }) {
+  if (!summary) {
+    return (
+      <>
+        {[0, 1, 2, 3].map((i) => (
+          <td key={i} className="num muted">
+            –
+          </td>
+        ))}
+      </>
+    );
+  }
+  const to = `/campaigns/${id}/report`;
+  const cell = (text: string, label: string) => (
+    <td className="num">
+      <Link to={to} aria-label={`${label}: ${text}, see the report`}>
+        {text}
+      </Link>
+    </td>
+  );
+  return (
+    <>
+      {cell(summary.delivered.toLocaleString(), "Delivered")}
+      {cell(rateText(summary.open_rate), "Open rate")}
+      {cell(rateText(summary.click_rate), "Click rate")}
+      {cell(rateText(summary.bounce_rate), "Bounce rate")}
+    </>
+  );
+}
 
 const filters: { value: CampaignStatus | ""; label: string }[] = [
   { value: "", label: "All" },
@@ -82,6 +119,12 @@ export function Campaigns() {
                   <th>Status</th>
                   <th>To</th>
                   <th>When</th>
+                  <th className="num">Delivered</th>
+                  <th className="num" title="Opens come from a tracking image, which some mail apps load without anyone reading, so they can run high.">
+                    Open rate
+                  </th>
+                  <th className="num">Click rate</th>
+                  <th className="num">Bounce rate</th>
                 </tr>
               </thead>
               <tbody>
@@ -97,10 +140,17 @@ export function Campaigns() {
                       {c.launch ? `${c.launch.recipient_count.toLocaleString()} contacts` : recipientsText(c.recipients)}
                     </td>
                     <td className="muted">{whenText(c)}</td>
+                    <SummaryCells id={c.id} summary={c.summary} />
                   </tr>
                 ))}
               </tbody>
             </table>
+            {state.data.data.some((c) => c.summary) && (
+              <p className="muted small">
+                Open and click rates are of the emails delivered, bounce rate of those sent. Opens can run high: some
+                mail apps load the tracking image without anyone reading.
+              </p>
+            )}
             <nav className="row pager" aria-label="Pages">
               <button type="button" className="button small" disabled={cursors.length === 0} onClick={() => setCursors((c) => c.slice(0, -1))}>
                 Previous

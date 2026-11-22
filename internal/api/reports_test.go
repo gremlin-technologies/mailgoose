@@ -73,4 +73,40 @@ func TestCampaignReport(t *testing.T) {
 		len(rep.Links) != 1 || rep.Links[0].URL != "https://example.com/a" || rep.Links[0].TotalClicks != 2 {
 		t.Errorf("report %s", rec.Body)
 	}
+
+	// MG-111: the campaign list gives the launched campaign the report's
+	// numbers, and a draft none.
+	if _, err := f.db.Exec(ctx, `UPDATE campaigns SET launched_at = now() WHERE id = $1`, campaign); err != nil {
+		t.Fatal(err)
+	}
+	var draft string
+	if err := f.db.QueryRow(ctx, `INSERT INTO campaigns (account_id, name, all_contacts) VALUES ($1, 'Draft', true) RETURNING id`, acc).Scan(&draft); err != nil {
+		t.Fatal(err)
+	}
+	r = httptest.NewRequest(http.MethodGet, "/v1/campaigns", nil)
+	r.Header.Set("Authorization", "Bearer "+key)
+	rec = httptest.NewRecorder()
+	f.h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body)
+	}
+	var list struct {
+		Data []struct {
+			ID      string          `json:"id"`
+			Summary json.RawMessage `json:"summary"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	summaries := map[string]string{}
+	for _, c := range list.Data {
+		summaries[c.ID] = string(c.Summary)
+	}
+	if want := `{"recipients":1,"delivered":0,"bounced":0,"opens":1,"clicks":1,"delivered_rate":0,"bounce_rate":0,"open_rate":0,"click_rate":0,"archived":false}`; summaries[campaign] != want {
+		t.Errorf("summary = %s, want %s", summaries[campaign], want)
+	}
+	if summaries[draft] != "null" {
+		t.Errorf("draft summary = %q in %s", summaries[draft], rec.Body)
+	}
 }

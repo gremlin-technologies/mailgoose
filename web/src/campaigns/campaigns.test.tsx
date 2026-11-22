@@ -123,6 +123,35 @@ describe("campaign list", () => {
     await waitFor(() => expect(api.calls.at(-1)?.path).toBe("/v1/campaigns"));
     expect(screen.getByTestId("location").textContent).toBe("/campaigns?status=scheduled");
   });
+
+  it("shows a sent campaign's report numbers, each linking to its report, and dashes for the rest (MG-111)", async () => {
+    const sent = {
+      ...campaign({ status: "sent", launch: { at: "2026-11-19T10:00:00Z", recipient_count: 120, credits_reserved: 120 } }),
+      summary: {
+        recipients: 120,
+        delivered: 117,
+        bounced: 3,
+        opens: 48,
+        clicks: null,
+        delivered_rate: 0.975,
+        bounce_rate: 0.025,
+        open_rate: 48 / 117,
+        click_rate: null,
+        archived: false,
+      },
+    };
+    const draft = { ...campaign(), id: "77777777-7777-4777-8777-777777777777", name: "June news", summary: null };
+    const api = server(sent, { "GET /v1/campaigns": () => ({ status: 200, body: { data: [sent, draft], next_cursor: null } }) });
+    renderApp("/campaigns", api.fetch);
+    const row = (await screen.findByRole("link", { name: "May news" })).closest("tr")!;
+    const cells = [...row.querySelectorAll("td.num")].map((td) => td.textContent);
+    expect(cells).toEqual(["117", "41.0%", "–", "2.5%"]);
+    const open = within(row).getByRole("link", { name: "Open rate: 41.0%, see the report" });
+    expect(open.getAttribute("href")).toBe(`/campaigns/${campaignId}/report`);
+    const draftRow = screen.getByRole("link", { name: "June news" }).closest("tr")!;
+    expect([...draftRow.querySelectorAll("td.num")].map((td) => td.textContent)).toEqual(["–", "–", "–", "–"]);
+    expect(screen.getByText(/Open and click rates are of the emails delivered/)).toBeTruthy();
+  });
 });
 
 describe("new campaign", () => {

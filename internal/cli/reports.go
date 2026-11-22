@@ -38,7 +38,8 @@ type campaignReport struct {
 	AsOf     time.Time `json:"as_of"`
 }
 
-// share is n as a share of the copies sent, when any were.
+// share is n as a share of of (the copies sent, or for opens and clicks
+// the copies delivered), when there were any.
 func share(n, of int) string {
 	if of == 0 {
 		return fmt.Sprint(n)
@@ -52,9 +53,11 @@ func (a *App) campaignReportCmd() *cobra.Command {
 		Short: "Show what happened to a campaign: deliveries, bounces, opens, clicks",
 		Long: `Shows a campaign's copies sent, delivered, hard bounced, complaints,
 unsubscribes, unique opens, unique and total clicks, credits used, and clicks
-per link. Shares are of the copies sent. Opens are always an estimate: some
-mail apps load images for privacy, others block them. The numbers are counted
-when you ask, from events that arrive within a minute or two.`,
+per link. Opens and clicks are shares of the copies delivered, the rest of the
+copies sent, as in ` + "`mailgoose campaign list`" + `. Opens come from a tracking
+image, which some mail apps load without anyone reading, so they can run high;
+clicks are exact. The numbers are counted when you ask, from events that
+arrive within a minute or two.`,
 		Example: `  mailgoose campaign report 3f1c...
   mailgoose campaign report 3f1c... --json`,
 		Args: cobra.ExactArgs(1),
@@ -92,8 +95,8 @@ func (a *App) printReport(rep campaignReport) {
 	fmt.Fprintf(tw, "Complaints:\t%s\n", share(rep.Complaints, n))
 	fmt.Fprintf(tw, "Unsubscribes:\t%s\n", share(rep.Unsubscribes, n))
 	if rep.Opens != nil && rep.Clicks != nil {
-		fmt.Fprintf(tw, "Opens (estimated):\t%s\n", share(rep.Opens.Unique, n))
-		fmt.Fprintf(tw, "Clicks:\t%s unique, %d total\n", share(rep.Clicks.Unique, n), rep.Clicks.Total)
+		fmt.Fprintf(tw, "Opens:\t%s\n", share(rep.Opens.Unique, rep.Delivered))
+		fmt.Fprintf(tw, "Clicks:\t%s unique, %d total\n", share(rep.Clicks.Unique, rep.Delivered), rep.Clicks.Total)
 	} else {
 		fmt.Fprintf(tw, "Opens and clicks:\tnot tracked\n")
 	}

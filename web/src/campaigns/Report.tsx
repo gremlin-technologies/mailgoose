@@ -12,7 +12,7 @@ import { polling } from "./CampaignDetail";
 
 type Report = components["schemas"]["CampaignReport"];
 
-/** A count and its share of the copies sent, as the CLI shows it: "40 (33.3%)". */
+/** A count and its share (of the copies sent, or for opens and clicks of those delivered), as the CLI shows it: "40 (33.3%)". */
 export function share(n: number, of: number): string {
   if (of === 0) return n.toLocaleString();
   return `${n.toLocaleString()} (${((100 * n) / of).toFixed(1)}%)`;
@@ -83,8 +83,8 @@ function ReportBody({ name, report: r, refresh }: { name: string; report: Report
     ["Unsubscribes", share(r.unsubscribes, n)],
   ];
   if (r.opens && r.clicks) {
-    tiles.push(["Opens (estimated)", share(r.opens.unique, n)]);
-    tiles.push(["Clicks", `${share(r.clicks.unique, n)} unique, ${r.clicks.total.toLocaleString()} total`]);
+    tiles.push(["Opens", share(r.opens.unique, r.delivered)]);
+    tiles.push(["Clicks", `${share(r.clicks.unique, r.delivered)} unique, ${r.clicks.total.toLocaleString()} total`]);
   }
   tiles.push(["Credits used", r.credits_used.toLocaleString()]);
 
@@ -110,8 +110,8 @@ function ReportBody({ name, report: r, refresh }: { name: string; report: Report
       </dl>
       {r.opens && r.clicks ? (
         <p className="muted small">
-          Opens are an estimate: some mail apps load images for privacy, which opens every copy, and others block them,
-          which opens none. Clicks are exact.
+          Opens and clicks are shares of the emails delivered, the rest of those sent. Opens can run high: some mail apps
+          load the tracking image without anyone reading.
         </p>
       ) : (
         <p className="muted small">Opens and clicks weren't counted for this campaign.</p>

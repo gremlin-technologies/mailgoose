@@ -107,13 +107,10 @@ func (s *Service) Campaign(ctx context.Context, accountID, campaignID string) (*
 	return s.campaign(ctx, s.DB, accountID, campaignID, true)
 }
 
-func (s *Service) campaign(ctx context.Context, q querier, accountID, campaignID string, archived bool) (*Report, error) {
-	r := &Report{CampaignID: campaignID, AsOf: s.now().UTC(), Links: []Link{}}
-	var saved []byte
-	var frozenAt *time.Time
-	var opens, uniqueClicks, totalClicks int
-	err := q.QueryRow(ctx, `
-		SELECT c.status, c.launched_at, c.tracking,
+// countColumns are the report's counts for the campaign aliased c, joined
+// to its saved report as s. The report and the campaign list's summaries
+// both select them, so a list's numbers are the report's.
+const countColumns = `c.status, c.launched_at, c.tracking,
 			(SELECT count(*) FROM campaign_recipients r WHERE r.campaign_id = c.id AND r.status = 'sent'),
 			(SELECT count(DISTINCT recipient_id) FROM send_events e
 				WHERE e.campaign_id = c.id AND e.kind = 'campaign' AND e.type = 'delivery'),
@@ -127,15 +124,19 @@ func (s *Service) campaign(ctx context.Context, q querier, accountID, campaignID
 			(SELECT count(*) FROM engagement_events g WHERE g.campaign_id = c.id AND g.type = 'click'),
 			(SELECT coalesce(-sum(t.amount), 0) FROM credit_transactions t
 				WHERE t.account_id = c.account_id AND t.ref = 'campaign:' || c.id AND t.type IN ('reserve', 'release')),
-			s.report, s.frozen_at
-		FROM campaigns c LEFT JOIN campaign_reports s ON s.campaign_id = c.id
-		WHERE c.id = $1 AND c.account_id = $2`, campaignID, accountID).Scan(
-		&r.Status, &r.LaunchedAt, &r.Tracking, &r.Recipients, &r.Delivered, &r.Bounced, &r.Complaints,
+			s.report, s.frozen_at`
+
+// scanCounts reads countColumns into a report for campaignID, without its
+// links. With archived, a campaign whose events are gone gives the numbers
+// saved then.
+func (s *Service) scanCounts(row pgx.Row, campaignID string, archived bool, extra ...any) (*Report, error) {
+	r := &Report{CampaignID: campaignID, AsOf: s.now().UTC(), Links: []Link{}}
+	var saved []byte
+	var frozenAt *time.Time
+	var opens, uniqueClicks, totalClicks int
+	dest := append(extra, &r.Status, &r.LaunchedAt, &r.Tracking, &r.Recipients, &r.Delivered, &r.Bounced, &r.Complaints,
 		&r.Unsubscribes, &opens, &uniqueClicks, &totalClicks, &r.CreditsUsed, &saved, &frozenAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, campaigns.ErrNotFound
-	}
-	if err != nil {
+	if err := row.Scan(dest...); err != nil {
 		return nil, err
 	}
 	if archived && saved != nil {
@@ -149,11 +150,27 @@ func (s *Service) campaign(ctx context.Context, q querier, accountID, campaignID
 		}
 		return &old, nil
 	}
-	if !r.Tracking {
+	if r.Tracking {
+		r.Opens = &Opens{Unique: opens, Estimated: true}
+		r.Clicks = &Clicks{Unique: uniqueClicks, Total: totalClicks}
+	}
+	return r, nil
+}
+
+func (s *Service) campaign(ctx context.Context, q querier, accountID, campaignID string, archived bool) (*Report, error) {
+	r, err := s.scanCounts(q.QueryRow(ctx, `
+		SELECT `+countColumns+`
+		FROM campaigns c LEFT JOIN campaign_reports s ON s.campaign_id = c.id
+		WHERE c.id = $1 AND c.account_id = $2`, campaignID, accountID), campaignID, archived)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, campaigns.ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if r.Archived || !r.Tracking {
 		return r, nil
 	}
-	r.Opens = &Opens{Unique: opens, Estimated: true}
-	r.Clicks = &Clicks{Unique: uniqueClicks, Total: totalClicks}
 	rows, err := q.Query(ctx, `
 		SELECT link, min(url), count(DISTINCT url) > 1, count(DISTINCT recipient_id), count(*)
 		FROM engagement_events WHERE campaign_id = $1 AND type = 'click'

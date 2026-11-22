@@ -2371,7 +2371,9 @@ Responses:
 - Operation: `listCampaigns`
 - CLI: `mailgoose campaign list`
 
-The account's campaigns, newest first. List items leave out `recipient_count`.
+The account's campaigns, newest first. List items leave out
+`recipient_count`, and each has a `summary` of its report's numbers:
+null for a campaign that hasn't been launched.
 
 | Parameter | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
@@ -2646,9 +2648,10 @@ Responses:
 - CLI: `mailgoose campaign report`
 
 What happened to a campaign (REP-1, REP-2): copies sent, delivered,
-hard bounced, complaints, unsubscribes, unique opens (always an
-estimate), unique and total clicks, credits used, and clicks per
-link. It's counted from the stored events when asked, so it's as
+hard bounced, complaints, unsubscribes, unique opens, unique and
+total clicks, credits used, and clicks per link. Opens come from a
+tracking image that some mail apps load without anyone reading, so
+they can run high; clicks are exact. It's counted from the stored events when asked, so it's as
 fresh as they are (deliveries, bounces and complaints arrive from
 SES within a minute or two). A draft's numbers are all 0. Raw events
 are kept 12 months after launch; after that the report is the one
@@ -5432,6 +5435,23 @@ Type: string: one of `draft`, `scheduled`, `sending`, `sent`, `cancelled`, `paus
 | `created_at` | string (date-time) | yes |  |
 | `updated_at` | string (date-time) | yes |  |
 
+<a id="schema-campaignsummary"></a>
+
+### CampaignSummary
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `recipients` | integer | yes | Copies sent. |
+| `delivered` | integer | yes | Copies SES delivered to the receiving mail server. |
+| `bounced` | integer | yes | Copies that hard bounced. |
+| `opens` | integer or null | yes | Copies opened at least once; null when the campaign wasn't tracked. |
+| `clicks` | integer or null | yes | Copies with at least one click; null when the campaign wasn't tracked. |
+| `delivered_rate` | number | yes | Delivered as a share of copies sent, from 0 to 1. |
+| `bounce_rate` | number | yes | Bounced as a share of copies sent, from 0 to 1. |
+| `open_rate` | number or null | yes | Opens as a share of delivered, from 0 to 1; null when the campaign wasn't tracked. |
+| `click_rate` | number or null | yes | Clicks as a share of delivered, from 0 to 1; null when the campaign wasn't tracked. |
+| `archived` | boolean | yes | True when these are the numbers saved 12 months after launch. |
+
 <a id="schema-campaignslice"></a>
 
 ### CampaignSlice
@@ -5477,7 +5497,7 @@ later. Present only on a campaign launched in a slice.
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `unique` | integer | yes | Copies opened at least once (or clicked). |
-| `estimated` | boolean | yes | Always true: mail apps that load images for privacy open every copy, and those that block images open none. |
+| `estimated` | boolean | yes | Always true, kept for older clients; show opens as a plain number. Opens come from a tracking pixel, and some mail apps load it without anyone reading the email, so they run high. |
 
 <a id="schema-reportclicks"></a>
 
@@ -5585,8 +5605,14 @@ later. Present only on a campaign launched in a slice.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `data` | array of [Campaign](#schema-campaign) | yes |  |
+| `data` | array of [CampaignListItem](#schema-campaignlistitem) | yes |  |
 | `next_cursor` | string or null | yes |  |
+
+<a id="schema-campaignlistitem"></a>
+
+### CampaignListItem
+
+Type: [Campaign](#schema-campaign) and object
 
 <a id="schema-createcampaignrequest"></a>
 
