@@ -1411,6 +1411,39 @@ func (e PlanCheckoutRequestInterval) Valid() bool {
 	}
 }
 
+// Defines values for ReportActivity.
+const (
+	ReportActivityBounced      ReportActivity = "bounced"
+	ReportActivityClicked      ReportActivity = "clicked"
+	ReportActivityComplained   ReportActivity = "complained"
+	ReportActivityNotClicked   ReportActivity = "not_clicked"
+	ReportActivityNotOpened    ReportActivity = "not_opened"
+	ReportActivityOpened       ReportActivity = "opened"
+	ReportActivityUnsubscribed ReportActivity = "unsubscribed"
+)
+
+// Valid indicates whether the value is a known member of the ReportActivity enum.
+func (e ReportActivity) Valid() bool {
+	switch e {
+	case ReportActivityBounced:
+		return true
+	case ReportActivityClicked:
+		return true
+	case ReportActivityComplained:
+		return true
+	case ReportActivityNotClicked:
+		return true
+	case ReportActivityNotOpened:
+		return true
+	case ReportActivityOpened:
+		return true
+	case ReportActivityUnsubscribed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SenderAddressStatus.
 const (
 	SenderAddressStatusConfirmed SenderAddressStatus = "confirmed"
@@ -4339,6 +4372,11 @@ type ReplaceEmailDocumentRequest struct {
 	Version int `json:"version"`
 }
 
+// ReportActivity `opened`, `clicked`, `bounced` (hard bounces), `complained` and
+// `unsubscribed` list who did; `not_opened` and `not_clicked` list
+// who got the email (it was delivered) and didn't.
+type ReportActivity string
+
 // ReportClicks defines model for ReportClicks.
 type ReportClicks struct {
 	// Total All clicks.
@@ -4372,6 +4410,24 @@ type ReportOpens struct {
 
 	// Unique Copies opened at least once (or clicked).
 	Unique int `json:"unique"`
+}
+
+// ReportRecipient defines model for ReportRecipient.
+type ReportRecipient struct {
+	// At When it first happened: the first open or click (of `link`, when
+	// given), the bounce, the complaint or the unsubscribe. Null for
+	// `not_opened` and `not_clicked`.
+	At        *time.Time `json:"at"`
+	ContactId string     `json:"contact_id"`
+	Email     string     `json:"email"`
+	FirstName *string    `json:"first_name"`
+	LastName  *string    `json:"last_name"`
+}
+
+// ReportRecipientList defines model for ReportRecipientList.
+type ReportRecipientList struct {
+	Data       []ReportRecipient `json:"data"`
+	NextCursor *string           `json:"next_cursor"`
 }
 
 // RescheduleCampaignRequest defines model for RescheduleCampaignRequest.
@@ -4931,6 +4987,9 @@ type ImportId = string
 // Limit defines model for Limit.
 type Limit = int
 
+// ReportLinkPosition defines model for ReportLinkPosition.
+type ReportLinkPosition = int
+
 // SenderAddressId defines model for SenderAddressId.
 type SenderAddressId = string
 
@@ -5033,6 +5092,9 @@ type PaymentProviderError = Error
 // PlanConflict defines model for PlanConflict.
 type PlanConflict = Error
 
+// ReportArchived defines model for ReportArchived.
+type ReportArchived = Error
+
 // RequestTooLarge defines model for RequestTooLarge.
 type RequestTooLarge = Error
 
@@ -5083,6 +5145,9 @@ type TesterConflict = Error
 
 // TooManyRequests defines model for TooManyRequests.
 type TooManyRequests = Error
+
+// TrackingOff defines model for TrackingOff.
+type TrackingOff = Error
 
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = Error
@@ -5168,6 +5233,32 @@ type ListCampaignsParams struct {
 
 	// Status Only campaigns in this status.
 	Status *CampaignStatus `form:"status,omitempty" json:"status,omitempty"`
+}
+
+// ListCampaignReportRecipientsParams defines parameters for ListCampaignReportRecipients.
+type ListCampaignReportRecipientsParams struct {
+	// Activity Which recipients to list.
+	Activity ReportActivity `form:"activity" json:"activity"`
+
+	// Link With `activity=clicked`, only those who clicked the link at this
+	// position in the report's `links`, from 1.
+	Link *ReportLinkPosition `form:"link,omitempty" json:"link,omitempty"`
+
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ExportCampaignReportRecipientsParams defines parameters for ExportCampaignReportRecipients.
+type ExportCampaignReportRecipientsParams struct {
+	// Activity Which recipients to list.
+	Activity ReportActivity `form:"activity" json:"activity"`
+
+	// Link With `activity=clicked`, only those who clicked the link at this
+	// position in the report's `links`, from 1.
+	Link *ReportLinkPosition `form:"link,omitempty" json:"link,omitempty"`
 }
 
 // ListContactsParams defines parameters for ListContacts.
@@ -6285,6 +6376,12 @@ type ServerInterface interface {
 	// GetCampaignReport Get a campaign's report
 	// (GET /v1/campaigns/{campaign_id}/report)
 	GetCampaignReport(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
+	// ListCampaignReportRecipients List who opened, clicked, bounced or unsubscribed
+	// (GET /v1/campaigns/{campaign_id}/report/recipients)
+	ListCampaignReportRecipients(w http.ResponseWriter, r *http.Request, campaignId CampaignId, params ListCampaignReportRecipientsParams)
+	// ExportCampaignReportRecipients Export who opened, clicked, bounced or unsubscribed as CSV
+	// (GET /v1/campaigns/{campaign_id}/report/recipients/export)
+	ExportCampaignReportRecipients(w http.ResponseWriter, r *http.Request, campaignId CampaignId, params ExportCampaignReportRecipientsParams)
 	// RescheduleCampaign Move a scheduled campaign's send time
 	// (POST /v1/campaigns/{campaign_id}/reschedule)
 	RescheduleCampaign(w http.ResponseWriter, r *http.Request, campaignId CampaignId)
@@ -7587,6 +7684,142 @@ func (siw *ServerInterfaceWrapper) GetCampaignReport(w http.ResponseWriter, r *h
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetCampaignReport(w, r, campaignId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListCampaignReportRecipients operation middleware
+func (siw *ServerInterfaceWrapper) ListCampaignReportRecipients(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "campaign_id" -------------
+	var campaignId CampaignId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "campaign_id", r.PathValue("campaign_id"), &campaignId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "campaign_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListCampaignReportRecipientsParams
+
+	// ------------- Required query parameter "activity" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "activity", r.URL.Query(), &params.Activity, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "activity"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "activity", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "link" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "link", r.URL.Query(), &params.Link, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "link"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "link", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListCampaignReportRecipients(w, r, campaignId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ExportCampaignReportRecipients operation middleware
+func (siw *ServerInterfaceWrapper) ExportCampaignReportRecipients(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "campaign_id" -------------
+	var campaignId CampaignId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "campaign_id", r.PathValue("campaign_id"), &campaignId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "campaign_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ExportCampaignReportRecipientsParams
+
+	// ------------- Required query parameter "activity" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "activity", r.URL.Query(), &params.Activity, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "activity"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "activity", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "link" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "link", r.URL.Query(), &params.Link, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "link"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "link", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ExportCampaignReportRecipients(w, r, campaignId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10087,6 +10320,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/launch", wrapper.LaunchCampaign)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/cancel", wrapper.CancelCampaign)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/report", wrapper.GetCampaignReport)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/report/recipients", wrapper.ListCampaignReportRecipients)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/report/recipients/export", wrapper.ExportCampaignReportRecipients)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/campaigns/{campaign_id}/reschedule", wrapper.RescheduleCampaign)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/emails", wrapper.ListEmails)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/emails", wrapper.CreateEmail)

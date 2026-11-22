@@ -194,7 +194,21 @@ mailgoose campaign report <campaign-id> --json
 ```
 
 Sent, delivered, bounced, complaints, unsubscribes, opens and clicks. Opens
-are estimates: many mail apps load images on their own, or never.
+can run high, since some mail apps load the tracking image without anyone
+reading; clicks are exact. `mailgoose campaign list --json` gives each sent
+campaign's rates side by side.
+
+To see who is behind a number:
+
+```sh
+mailgoose campaign report <campaign-id> --who clicked --json
+mailgoose campaign report <campaign-id> --who not_opened --csv --output not-opened.csv
+```
+
+`--who` takes `opened`, `not_opened`, `clicked` (with `--link N` for one link),
+`not_clicked`, `bounced`, `complained` or `unsubscribed`. These lists are kept
+12 months after launch; after that a campaign has only its numbers
+(`report_archived`).
 
 ## Contacts and signup forms
 

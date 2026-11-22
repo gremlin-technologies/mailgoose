@@ -293,6 +293,22 @@ import. The tickets are issues #250 to #255.
   tracked shows dashes for opens and clicks.
 - **`opens.estimated` stays in the API** (MG-111, reversible default):
   always true, so older CLIs keep working; nothing shows it any more.
+- **Who is behind each number** (MG-112, reversible defaults): the lists
+  are opened, not_opened, clicked (optionally one link, by its position),
+  not_clicked, bounced, complained and unsubscribed, from
+  `GET /v1/campaigns/{id}/report/recipients` and, as CSV,
+  `.../report/recipients/export`, `mailgoose campaign report <id> --who`
+  and links on the report page. Each row is the contact's email, first and
+  last name and id, and when it first happened (none for the not_ lists);
+  the CSV's time column is named for the list (`first_opened_at`,
+  `bounced_at` and so on). Lists are in the order the copies were queued.
+  "Didn't open" and "didn't click" count only copies SES reported
+  delivered; "bounced" is hard bounces only, as in the report; a contact
+  deleted since the send isn't listed, so a list can be shorter than its
+  number. `link` is only for clicked. Open and click lists of an untracked
+  campaign answer 422 `tracking_off`; once a campaign's raw events are
+  archived (12 months), every list answers 410 `report_archived`. The CLI's
+  `--who` prints the whole list; `--csv` writes it as the export does.
 
 ## 2026-11-21: Social icons (MG-109; reversible defaults)
 

@@ -12,9 +12,7 @@ func (s *Server) GetCampaignReport(w http.ResponseWriter, r *http.Request, id st
 	if c == nil || !validCampaignID(w, id) {
 		return
 	}
-	if s.Reports == nil {
-		WriteError(w, &Error{Status: http.StatusServiceUnavailable, Code: "service_unavailable",
-			Message: "Reports need a database, and none is configured."})
+	if !s.reportsReady(w) {
 		return
 	}
 	rep, err := s.Reports.Campaign(r.Context(), c.AccountID, id)

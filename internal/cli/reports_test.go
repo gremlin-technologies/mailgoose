@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -99,5 +101,80 @@ func TestCampaignListShowsReportNumbers(t *testing.T) {
 	}
 	if !strings.Contains(string(out.Data[0].Summary), `"open_rate": 0.40816`) || string(out.Data[2].Summary) != "null" {
 		t.Errorf("summaries = %s, %s", out.Data[0].Summary, out.Data[2].Summary)
+	}
+}
+
+// MG-112: `campaign report --who` lists the people behind a number, over
+// every page, and --csv downloads the list.
+func TestReportWho(t *testing.T) {
+	const id = "6f3c2b9e-1a4d-4c8e-9b7a-2d5e8f0a1b3c"
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.Path+"?"+r.URL.RawQuery)
+		switch {
+		case r.URL.Path == "/v1/account":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"time_zone":"UTC"}`))
+		case strings.HasSuffix(r.URL.Path, "/report/recipients/export"):
+			w.Header().Set("Content-Type", "text/csv")
+			_, _ = w.Write([]byte("email,first_name,last_name,contact_id,first_clicked_at\npat@example.com,Pat,,k1,2026-11-19T10:04:00Z\n"))
+		case r.URL.Query().Get("cursor") == "":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"contact_id":"k1","email":"pat@example.com","first_name":"Pat","last_name":"Baker","at":"2026-11-19T10:04:00Z"}],"next_cursor":"next"}`))
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"contact_id":"k2","email":"sam@example.com","first_name":null,"last_name":null,"at":"2026-11-19T11:30:00Z"}],"next_cursor":null}`))
+		}
+	}))
+	t.Cleanup(srv.Close)
+	h := newHarness(t, "")
+	h.env[EnvAPIURL] = srv.URL
+	h.env[EnvAPIKey] = "mg_test_key"
+
+	if code := h.run("campaign", "report", id, "--who", "clicked", "--link", "2"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	for _, want := range []string{"EMAIL", "WHEN", "pat@example.com  Pat Baker  2026-11-19 10:04 UTC", "sam@example.com", "2026-11-19 11:30 UTC", "2 people clicked link 2."} {
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, h.out)
+		}
+	}
+	if !slices.Contains(seen, "/v1/campaigns/"+id+"/report/recipients?activity=clicked&limit=100&link=2") ||
+		!slices.Contains(seen, "/v1/campaigns/"+id+"/report/recipients?activity=clicked&cursor=next&limit=100&link=2") {
+		t.Errorf("requests = %v", seen)
+	}
+
+	if code := h.run("campaign", "report", id, "--who", "not_opened", "--json"); code != ExitOK {
+		t.Fatalf("json: exit %d: %s", code, h.errOut)
+	}
+	var out struct {
+		Data []struct {
+			Email string `json:"email"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(h.out.Bytes(), &out); err != nil || len(out.Data) != 2 || out.Data[1].Email != "sam@example.com" {
+		t.Errorf("json = %s (%v)", h.out, err)
+	}
+
+	if code := h.run("campaign", "report", id, "--who", "clicked", "--csv"); code != ExitOK {
+		t.Fatalf("csv: exit %d: %s", code, h.errOut)
+	}
+	if !strings.HasPrefix(h.out.String(), "email,first_name,last_name,contact_id,first_clicked_at\npat@example.com") {
+		t.Errorf("csv = %s", h.out)
+	}
+	file := filepath.Join(t.TempDir(), "clicked.csv")
+	if code := h.run("campaign", "report", id, "--who", "clicked", "--csv", "--output", file); code != ExitOK || !strings.Contains(h.out.String(), "Wrote 1 recipient to") {
+		t.Errorf("csv file: exit %d: %s %s", code, h.out, h.errOut)
+	}
+
+	for _, args := range [][]string{
+		{"--who", "maybe"},
+		{"--who", "opened", "--link", "1"},
+		{"--link", "1"},
+		{"--who", "clicked", "--output", file},
+	} {
+		if code := h.run(append([]string{"campaign", "report", id}, args...)...); code != ExitUsage {
+			t.Errorf("%v: exit %d", args, code)
+		}
 	}
 }

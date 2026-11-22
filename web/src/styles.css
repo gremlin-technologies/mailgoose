@@ -1896,7 +1896,8 @@ h3.canvas-heading {
   font-weight: 600;
 }
 
-.segmented .button[aria-pressed="true"] {
+.segmented .button[aria-pressed="true"],
+.segmented .button[aria-current="page"] {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-text);

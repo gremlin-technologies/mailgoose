@@ -111,6 +111,25 @@ describe("report", () => {
     renderApp(`/campaigns/${campaignId}/report`, api.fetch);
     expect(await screen.findByText(/when its raw events were deleted, 12 months after launch/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Count again" })).toBeNull();
+    // Its people are gone with the raw events, so the numbers aren't links.
+    expect(screen.queryByRole("link", { name: /see who/ })).toBeNull();
+  });
+
+  it("links each number of people, and each link's clicks, to who they are (MG-112)", async () => {
+    const api = server(report);
+    renderApp(`/campaigns/${campaignId}/report`, api.fetch);
+    await screen.findByLabelText("Numbers");
+    const hrefs = screen.getAllByRole("link", { name: /see who/ }).map((a) => [a.getAttribute("aria-label"), a.getAttribute("href")]);
+    const list = `/campaigns/${campaignId}/report`;
+    expect(hrefs).toEqual([
+      ["Bounced: 3 (2.5%), see who", `${list}/bounced`],
+      ["Complaints: 0 (0.0%), see who", `${list}/complained`],
+      ["Unsubscribes: 2 (1.7%), see who", `${list}/unsubscribed`],
+      ["Opens: 48 (41.0%), see who", `${list}/opened`],
+      ["Clicks: 12 (10.3%) unique, 19 total, see who", `${list}/clicked`],
+      ["Link 1: 10 unique clicks, see who", `${list}/clicked?link=1`],
+      ["Link 3: 2 unique clicks, see who", `${list}/clicked?link=3`],
+    ]);
   });
 
   it("counts again while the campaign is sending", async () => {

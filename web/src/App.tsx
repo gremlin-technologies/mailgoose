@@ -7,6 +7,7 @@ import { AppLayout } from "./pages/AppLayout";
 import { Billing } from "./billing/Billing";
 import { CampaignDetail } from "./campaigns/CampaignDetail";
 import { CampaignReport } from "./campaigns/Report";
+import { ReportRecipients } from "./campaigns/Recipients";
 import { Campaigns, NewCampaign } from "./pages/Campaigns";
 import { ContactDetail, Contacts } from "./pages/Contacts";
 import { Dashboard } from "./pages/Dashboard";
@@ -102,6 +103,7 @@ export function AppRoutes() {
         <Route path="/campaigns/new" element={<NewCampaign />} />
         <Route path="/campaigns/:id" element={<CampaignDetail />} />
         <Route path="/campaigns/:id/report" element={<CampaignReport />} />
+        <Route path="/campaigns/:id/report/:activity" element={<ReportRecipients />} />
         <Route path="/forms/:id" element={<FormEditor />} />
         <Route path="/billing" element={<Billing />} />
         <Route path="/test-addresses" element={<TestAddresses />} />

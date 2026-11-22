@@ -3,6 +3,10 @@ package cli
 import (
 	"fmt"
 	"net/http"
+	"net/url"
+	"slices"
+	"strconv"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -47,8 +51,27 @@ func share(n, of int) string {
 	return fmt.Sprintf("%d (%.1f%%)", n, 100*float64(n)/float64(of))
 }
 
+// reportActivities are the recipient lists --who can show (MG-112).
+var reportActivities = []string{"opened", "not_opened", "clicked", "not_clicked", "bounced", "complained", "unsubscribed"}
+
+type reportRecipient struct {
+	ContactID string     `json:"contact_id"`
+	Email     string     `json:"email"`
+	FirstName *string    `json:"first_name"`
+	LastName  *string    `json:"last_name"`
+	At        *time.Time `json:"at"`
+}
+
+type reportRecipientPage struct {
+	Data       []reportRecipient `json:"data"`
+	NextCursor *string           `json:"next_cursor"`
+}
+
 func (a *App) campaignReportCmd() *cobra.Command {
-	return calls("getCampaignReport", &cobra.Command{
+	var who, output string
+	var link int
+	var asCSV bool
+	cmd := callsAll([]string{"getCampaignReport", "listCampaignReportRecipients", "exportCampaignReportRecipients"}, &cobra.Command{
 		Use:   "report <campaign-id>",
 		Short: "Show what happened to a campaign: deliveries, bounces, opens, clicks",
 		Long: `Shows a campaign's copies sent, delivered, hard bounced, complaints,
@@ -57,14 +80,28 @@ per link. Opens and clicks are shares of the copies delivered, the rest of the
 copies sent, as in ` + "`mailgoose campaign list`" + `. Opens come from a tracking
 image, which some mail apps load without anyone reading, so they can run high;
 clicks are exact. The numbers are counted when you ask, from events that
-arrive within a minute or two.`,
+arrive within a minute or two.
+
+--who lists the people behind a number instead: opened, clicked (--link N for
+one link, by its # under "Clicks per link"), bounced (hard bounces),
+complained or unsubscribed, or not_opened and not_clicked (their copy was
+delivered and they haven't). Each row has the contact's address, name and
+when it first happened; --json gives every row, and --csv the list as CSV
+(to standard output, or to the file --output names). A contact deleted since
+the send isn't listed. Raw events are kept 12 months after launch, so older
+campaigns have their numbers but no lists.`,
 		Example: `  mailgoose campaign report 3f1c...
-  mailgoose campaign report 3f1c... --json`,
+  mailgoose campaign report 3f1c... --json
+  mailgoose campaign report 3f1c... --who clicked --link 2
+  mailgoose campaign report 3f1c... --who not_opened --csv --output not-opened.csv`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := campaignIDArg(args[0])
 			if err != nil {
 				return err
+			}
+			if who != "" || link != 0 || asCSV || output != "" {
+				return a.reportRecipients(cmd, id, who, link, asCSV, output)
 			}
 			var rep campaignReport
 			if err := a.call(cmd.Context(), http.MethodGet, campaignPath(id)+"/report", nil, &rep, true); err != nil {
@@ -79,6 +116,96 @@ arrive within a minute or two.`,
 			return nil
 		},
 	})
+	cmd.Flags().StringVar(&who, "who", "", "list who: "+strings.Join(reportActivities, ", "))
+	cmd.Flags().IntVar(&link, "link", 0, "with --who clicked, only who clicked this link (its # in the report)")
+	cmd.Flags().BoolVar(&asCSV, "csv", false, "with --who, the list as CSV")
+	cmd.Flags().StringVarP(&output, "output", "o", "", "with --csv, write the CSV to this file instead of standard output")
+	return cmd
+}
+
+// reportRecipients is `campaign report --who`.
+func (a *App) reportRecipients(cmd *cobra.Command, id, who string, link int, asCSV bool, output string) error {
+	ctx := cmd.Context()
+	if who == "" {
+		return usageError("--link, --csv and --output go with --who.", "Pass --who with one of: "+strings.Join(reportActivities, ", ")+".")
+	}
+	if !slices.Contains(reportActivities, who) {
+		return usageError("--who must be one of: "+strings.Join(reportActivities, ", ")+".", "")
+	}
+	if link != 0 && (who != "clicked" || link < 1) {
+		return usageError("--link goes with --who clicked, and is a link's # in the report, from 1.", "")
+	}
+	if output != "" && !asCSV {
+		return usageError("--output goes with --csv.", "Add --csv to write the list as CSV.")
+	}
+	q := url.Values{"activity": {who}}
+	if link > 0 {
+		q.Set("link", strconv.Itoa(link))
+	}
+	if asCSV {
+		path := campaignPath(id) + "/report/recipients/export?" + q.Encode()
+		if output == "" {
+			return a.download(ctx, path, a.Stdout)
+		}
+		n, err := a.saveCSV(ctx, path, output)
+		if err != nil {
+			return err
+		}
+		if a.jsonOut {
+			a.printJSON(map[string]any{"file": output, "recipients": n})
+			return nil
+		}
+		fmt.Fprintf(a.Stdout, "Wrote %d %s to %s.\n", n, plural(n, "recipient", "recipients"), output)
+		return nil
+	}
+	q.Set("limit", "100")
+	rows := []reportRecipient{}
+	for {
+		var page reportRecipientPage
+		if err := a.call(ctx, http.MethodGet, campaignPath(id)+"/report/recipients?"+q.Encode(), nil, &page, true); err != nil {
+			return err
+		}
+		rows = append(rows, page.Data...)
+		if page.NextCursor == nil {
+			break
+		}
+		q.Set("cursor", *page.NextCursor)
+	}
+	if a.jsonOut {
+		a.printJSON(map[string]any{"data": rows})
+		return nil
+	}
+	label := map[string]string{
+		"opened": "opened", "not_opened": "got it and didn't open", "clicked": "clicked",
+		"not_clicked": "got it and didn't click", "bounced": "hard bounced", "complained": "marked it as spam",
+		"unsubscribed": "unsubscribed",
+	}[who]
+	if link > 0 {
+		label += fmt.Sprintf(" link %d", link)
+	}
+	if len(rows) == 0 {
+		fmt.Fprintf(a.Stdout, "Nobody %s.\n", label)
+		return nil
+	}
+	a.accountZone(ctx)
+	timed := who != "not_opened" && who != "not_clicked"
+	tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
+	if timed {
+		fmt.Fprintln(tw, "EMAIL\tNAME\tWHEN")
+	} else {
+		fmt.Fprintln(tw, "EMAIL\tNAME")
+	}
+	for _, r := range rows {
+		name := contact{FirstName: r.FirstName, LastName: r.LastName}.name()
+		if timed && r.At != nil {
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", r.Email, name, r.At.In(a.loc()).Format(timeLayout))
+		} else {
+			fmt.Fprintf(tw, "%s\t%s\n", r.Email, name)
+		}
+	}
+	_ = tw.Flush()
+	fmt.Fprintf(a.Stdout, "\n%d %s %s.\n", len(rows), plural(len(rows), "person", "people"), label)
+	return nil
 }
 
 func (a *App) printReport(rep campaignReport) {

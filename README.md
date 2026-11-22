@@ -907,6 +907,17 @@ opens and clicks with their rates (MG-111). `reports.Service.Summaries`
 works them out for the whole page in one query over the same counts, or
 from the saved numbers once a report is archived.
 
+Each number of people has its list (MG-112): `GET
+/v1/campaigns/{id}/report/recipients?activity=...` pages through who
+opened, didn't open, clicked (`&link=N` for one link), didn't click,
+bounced, complained or unsubscribed, with when it first happened, and
+`.../report/recipients/export` streams the same list as CSV.
+`reports.Service.Recipients` reads one keyset page of the same tables,
+in the order the copies were queued; `RecipientsCSV` reads 1,000 at a
+time and guards cells a spreadsheet would read as formulas. In the CLI it
+is `mailgoose campaign report <id> --who opened` (`--link`, `--csv`,
+`-o`), and on the web each number on the report page links to its list.
+
 Raw events are kept 12 months (REP-5). The worker's pruner runs hourly: a
 campaign launched more than 12 months ago (and finished) has its report
 saved in `campaign_reports` and its raw events deleted; after that its
