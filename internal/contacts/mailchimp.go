@@ -176,6 +176,14 @@ func mcRank(m *mailchimp.Member) (rank int, status string) {
 	return 0, ""
 }
 
+// MailchimpGroupTag is the tag a member's Mailchimp group becomes, or ""
+// when nothing is left of its name.
+func MailchimpGroupTag(g mailchimp.Group) string { return mcTagName(g.Category + ": " + g.Name) }
+
+// MailchimpAudienceTag is the tag that says which audience a contact came
+// from, put on them when an import has more than one.
+func MailchimpAudienceTag(name string) string { return mcTagName("audience: " + name) }
+
 // mcTagName is a Mailchimp tag or group name as a mailgoose tag name: commas
 // and line breaks become spaces and it's cut to MaxTagNameLen characters.
 // It returns "" when nothing is left.

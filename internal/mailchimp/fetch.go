@@ -135,6 +135,9 @@ type Fetched struct {
 	// template's HTML, so they aren't in Data.
 	Templates int
 	Members   int
+	// DoubleOptin is each audience's own double opt-in setting, by the name
+	// Read gives the audience (its folder in Data), for the preview (MG-76).
+	DoubleOptin map[string]bool
 }
 
 // FetchedFileName is the name a fetched bundle is stored and read under.
@@ -254,10 +257,11 @@ func (f *fetcher) audiences(ctx context.Context) ([]*fetchAudience, error) {
 	folders := map[string]bool{}
 	for _, id := range f.req.AudienceIDs {
 		var l struct {
-			ID   string `json:"id"`
-			Name string `json:"name"`
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			DoubleOptin bool   `json:"double_optin"`
 		}
-		err := f.c.Get(ctx, "/3.0/lists/"+url.PathEscape(id), url.Values{"fields": {"id,name"}}, &l)
+		err := f.c.Get(ctx, "/3.0/lists/"+url.PathEscape(id), url.Values{"fields": {"id,name,double_optin"}}, &l)
 		if apiNotFound(err) {
 			return nil, refuse(ErrUnknownAudience, "The connected Mailchimp account has no audience %s. `mailgoose import mailchimp audiences` lists them.", id)
 		}
@@ -267,6 +271,10 @@ func (f *fetcher) audiences(ctx context.Context) ([]*fetchAudience, error) {
 		a := &fetchAudience{id: id, name: strings.TrimSpace(l.Name), byStatus: map[Status]int{}, interests: map[string]Group{},
 			tags: map[string][]string{}}
 		a.folder = folderName(a.name, folders)
+		if f.out.DoubleOptin == nil {
+			f.out.DoubleOptin = map[string]bool{}
+		}
+		f.out.DoubleOptin[a.folder] = l.DoubleOptin
 		for _, st := range Statuses {
 			var page struct {
 				TotalItems int `json:"total_items"`

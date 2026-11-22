@@ -3,6 +3,8 @@ package cli
 import (
 	"strings"
 	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestFormsAgainstAPI(t *testing.T) {
@@ -122,5 +124,37 @@ func TestFormsAgainstAPI(t *testing.T) {
 	}
 	if code := h.run("form", "get", id); code != ExitNotFound {
 		t.Errorf("get deleted: exit %d", code)
+	}
+}
+
+// A draft form from a Mailchimp import (MG-76) says so, and --live saves it
+// as it is.
+func TestFormLiveSavesADraft(t *testing.T) {
+	h := liveAPI(t)
+	if code := h.run("form", "create", "--name", "Bakery news", "--json"); code != ExitOK {
+		t.Fatalf("create: exit %d %s", code, h.errOut)
+	}
+	id := h.jsonOut(t)["id"].(string)
+	v, _ := liveDBs.Load(t)
+	if _, err := v.(*pgxpool.Pool).Exec(t.Context(), `UPDATE forms SET draft = true, mailchimp_audience = 'Bakery news'`); err != nil {
+		t.Fatal(err)
+	}
+	if code := h.run("form", "get", id); code != ExitOK {
+		t.Fatalf("get: exit %d %s", code, h.errOut)
+	}
+	for _, want := range []string{"Status:", "draft from your Mailchimp import", "mailgoose form update " + id + " --live",
+		"made this form as a draft"} {
+		if !strings.Contains(h.out.String(), want) {
+			t.Errorf("get lacks %q:\n%s", want, h.out)
+		}
+	}
+	if code := h.run("form", "list"); code != ExitOK || !strings.Contains(h.out.String(), "Bakery news (draft)") {
+		t.Errorf("list: exit %d %s", code, h.out)
+	}
+	if code := h.run("form", "update", id, "--live", "--json"); code != ExitOK {
+		t.Fatalf("live: exit %d %s", code, h.errOut)
+	}
+	if f := h.jsonOut(t); f["draft"] != false || f["name"] != "Bakery news" {
+		t.Errorf("live = %v", f)
 	}
 }

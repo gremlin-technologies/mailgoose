@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,7 +20,7 @@ const testBundlePreview = `{"id":"` + testBundleID + `","file_name":"export.zip"
 "created_at":"2026-11-21T12:00:00Z","expires_at":"2026-11-28T12:00:00Z","confirmed_at":null,"import_id":null,"campaigns":10,
 "emails":{"status":"none","total":0,"made":[],"error":null},
 "preview":{"source":"account_export","campaigns_available":12,
-"audiences":[{"name":"Newsletter","members":5,"by_status":{"subscribed":2,"unsubscribed":1,"cleaned":1,"pending":0,"transactional":1,"archived":0}}],
+"audiences":[{"name":"Newsletter","members":5,"by_status":{"subscribed":2,"unsubscribed":1,"cleaned":1,"pending":0,"transactional":1,"archived":0},"groups":["Interests: Baking"],"double_optin":false}],
 "contacts":{"new":{"subscribed":2,"unconfirmed":0,"unsubscribed":1,"bounced":1},"existing_tagged":3,"existing_suppressed":1,
 "skipped":{"invalid_email":1,"invalid_row":0,"suppressed":0,"not_subscribed":1,"archived":0},"tags_to_create":["audience: Newsletter","VIP"],
 "renamed_tags":[{"from":"Smith, Jones","to":"Smith Jones"}],"merge_suppressed":0,"dropped_fields":["Phone Number"],"holds":["over_contact_limit"],"waits":true,
@@ -35,7 +36,9 @@ func testBundleConfirmed(status string, made int) string {
 	}
 	return `{"id":"` + testBundleID + `","file_name":"export.zip","bytes":4412,"status":"confirmed","created_at":"2026-11-21T12:00:00Z",
 "expires_at":"2026-11-28T12:00:00Z","confirmed_at":"2026-11-21T12:01:00Z","import_id":"` + testImportID + `","campaigns":3,"preview":null,
-"emails":{"status":"` + status + `","total":2,"made":[` + strings.Join(m, ",") + `],"error":null}}`
+"emails":{"status":"` + status + `","total":2,"made":[` + strings.Join(m, ",") + `],"error":null},
+"forms":[{"id":"9a8b7c6d-1111-4c55-9a0e-2f9b8b6f4a10","name":"Newsletter","audience":"Newsletter","new":true},
+{"id":"9a8b7c6d-2222-4c55-9a0e-2f9b8b6f4a10","name":"Recipe Club","audience":"Recipe Club","new":false}]}`
 }
 
 type seenUpload struct {
@@ -112,6 +115,8 @@ func TestImportMailchimpUploadShowsThePreview(t *testing.T) {
 		"Tags to create: audience: Newsletter, VIP.", `Tag "Smith, Jones" becomes "Smith Jones".`, "needs the paid plan, $10.00 a month",
 		"wait for the paid plan", "Held for review: it would take the account past its contact limit",
 		"1 templates and the newest 1 of 12 campaigns", "Spring sale", "1 files in the export",
+		"Groups: Interests: Baking.", "double opt-in was off in Mailchimp; mailgoose's form has it on",
+		"Each audience gets a draft signup form", `--form-tag "<group>"`,
 		"mailgoose import mailchimp confirm " + testBundleID + " --permission-confirmed", "--campaigns N"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
@@ -149,14 +154,18 @@ func TestImportMailchimpConfirmNeedsPermission(t *testing.T) {
 
 func TestImportMailchimpConfirmWaitsForTheEmails(t *testing.T) {
 	h, seen, _ := mailchimpStub(t)
-	if code := h.run("import", "mailchimp", "confirm", testBundleID, "--permission-confirmed", "--campaigns", "3", "--wait"); code != ExitOK {
+	if code := h.run("import", "mailchimp", "confirm", testBundleID, "--permission-confirmed", "--campaigns", "3", "--wait",
+		"--form-tag", "Interests: Baking", "--form-tag", "Region: North"); code != ExitOK {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
-	if len(*seen) != 3 || (*seen)[0].body["permission_confirmed"] != true || (*seen)[0].body["campaigns"] != float64(3) {
+	if len(*seen) != 3 || (*seen)[0].body["permission_confirmed"] != true || (*seen)[0].body["campaigns"] != float64(3) ||
+		fmt.Sprint((*seen)[0].body["form_tags"]) != "[Interests: Baking Region: North]" {
 		t.Errorf("requests = %+v", *seen)
 	}
 	out := h.out.String()
-	for _, want := range []string{"is confirmed", "mailgoose import status " + testImportID, "Emails: all 2 made", "e1"} {
+	for _, want := range []string{"is confirmed", "mailgoose import status " + testImportID, "Emails: all 2 made", "e1",
+		"9a8b7c6d-1111-4c55-9a0e-2f9b8b6f4a10  Newsletter (draft)", "Recipe Club (made by an earlier import)",
+		"form update <form-id> --live"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}

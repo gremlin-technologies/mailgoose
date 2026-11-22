@@ -68,6 +68,12 @@ export function Forms() {
                   <tr key={f.id}>
                     <td>
                       <Link to={`/forms/${f.id}`}>{f.name}</Link>
+                      {f.draft && (
+                        <>
+                          {" "}
+                          <Badge tone="warn">Draft</Badge>
+                        </>
+                      )}
                     </td>
                     <td>{f.signups.toLocaleString()}</td>
                     <td>{f.double_opt_in ? f.confirmations.toLocaleString() : "Not asked"}</td>

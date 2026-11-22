@@ -664,6 +664,11 @@ export function ConfirmBundle({ bundle, onConfirmed }: { bundle: Bundle; onConfi
   const campaigns = Math.max(1, Math.min(maxCampaigns, available, Math.floor(Number(campaignsText)) || 1));
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure>();
+  const audiences = bundle.preview?.audiences.filter((a) => a.members > 0) ?? [];
+  // Every audience's groups, once each; a ticked one goes on the form of
+  // each audience that has it.
+  const groups = [...new Set(audiences.flatMap((a) => a.groups ?? []))];
+  const [formTags, setFormTags] = useState<string[]>([]);
 
   async function confirm(e: FormEvent) {
     e.preventDefault();
@@ -673,7 +678,7 @@ export function ConfirmBundle({ bundle, onConfirmed }: { bundle: Bundle; onConfi
     const res = await attempt(() =>
       api.POST("/v1/imports/mailchimp/bundles/{bundle_id}/confirm", {
         params: { path: { bundle_id: bundle.id } },
-        body: { permission_confirmed: true, campaigns },
+        body: { permission_confirmed: true, campaigns, ...(formTags.length > 0 && { form_tags: formTags }) },
       }),
     );
     setBusy(false);
@@ -695,6 +700,43 @@ export function ConfirmBundle({ bundle, onConfirmed }: { bundle: Bundle; onConfi
             onChange={(e) => setCampaignsText(e.target.value)}
           />
         </label>
+      )}
+      {audiences.length > 0 && (
+        <fieldset className="stack">
+          <legend>Signup forms</legend>
+          <p className="muted small">
+            {audiences.length === 1 ? "The audience gets" : "Each audience gets"} a signup form in its name, to replace
+            Mailchimp's: email, first and last name, and an email to confirm. It's a draft, taking no signups until you
+            check it and save it.
+          </p>
+          {audiences.some((a) => a.double_optin !== undefined) && (
+            <ul className="plain small">
+              {audiences
+                .filter((a) => a.double_optin !== undefined)
+                .map((a) => (
+                  <li key={a.name}>
+                    {a.name}: Mailchimp {a.double_optin ? "asked" : "didn't ask"} signups to confirm by email. mailgoose's
+                    form does.
+                  </li>
+                ))}
+            </ul>
+          )}
+          {groups.length > 0 && (
+            <>
+              <p className="small">Tag people who sign up with these groups:</p>
+              {groups.map((g) => (
+                <label className="check" key={g}>
+                  <input
+                    type="checkbox"
+                    checked={formTags.includes(g)}
+                    onChange={(e) => setFormTags((t) => (e.target.checked ? [...t, g] : t.filter((x) => x !== g)))}
+                  />
+                  <span>{g}</span>
+                </label>
+              ))}
+            </>
+          )}
+        </fieldset>
       )}
       <label className="check">
         <input type="checkbox" checked={permission} onChange={(e) => setPermission(e.target.checked)} />
@@ -737,14 +779,38 @@ function Imported({ bundle }: { bundle: Bundle }) {
       </div>
       {emails.made.length > 0 && <EmailTable emails={emails.made} />}
 
+      {bundle.forms.length > 0 && (
+        <>
+          <h2>Signup forms</h2>
+          <ul className="plain">
+            {bundle.forms.map((f) => (
+              <li key={f.id}>
+                <Link to={`/forms/${f.id}`}>{f.name}</Link>{" "}
+                {f.new ? <Badge tone="warn">Draft</Badge> : <span className="muted small">made by an earlier import</span>}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
       <h2>What's next</h2>
       <ol className="stack">
         <li>
           <Link to="/domains">Verify your sending domain</Link>, so your campaigns come from your own address.
         </li>
         <li>
-          <Link to="/forms">Set up your signup forms</Link> and put their embed code on your site in place of
-          Mailchimp's.
+          {bundle.forms.some((f) => f.new) ? (
+            <>
+              Check and save your new signup {bundle.forms.filter((f) => f.new).length === 1 ? "form" : "forms"} above, so{" "}
+              {bundle.forms.filter((f) => f.new).length === 1 ? "it takes" : "they take"} signups, then put the embed code
+              on your site in place of Mailchimp's.
+            </>
+          ) : (
+            <>
+              <Link to="/forms">Set up your signup forms</Link> and put their embed code on your site in place of
+              Mailchimp's.
+            </>
+          )}
         </li>
         {withErrors.length > 0 && (
           <li>

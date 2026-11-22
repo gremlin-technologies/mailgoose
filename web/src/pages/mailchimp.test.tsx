@@ -44,6 +44,7 @@ function preview(extra = {}, contacts = {}) {
         name: "Bakery news",
         members: 6,
         by_status: { subscribed: 3, unsubscribed: 1, cleaned: 1, pending: 1, transactional: 0, archived: 0 },
+        groups: [],
       },
     ],
     contacts: {
@@ -92,6 +93,7 @@ function bundle(extra = {}) {
     campaigns: 10,
     preview: preview(),
     emails: { status: "none", total: 0, made: [], error: null },
+    forms: [],
     ...extra,
   };
 }
@@ -369,5 +371,61 @@ describe("Mailchimp import", () => {
       ["Old promo", `/emails/${emailID}`],
       ["Send a test", "/campaigns/new"],
     ]);
+  });
+  it("gives each audience a draft signup form, tagged with the groups picked", async () => {
+    let posted: unknown;
+    const audience = (name: string, groups: string[], double_optin: boolean) => ({
+      name,
+      members: 3,
+      by_status: { subscribed: 3, unsubscribed: 0, cleaned: 0, pending: 0, transactional: 0, archived: 0 },
+      groups,
+      double_optin,
+    });
+    const fetched = bundle({
+      file_name: null,
+      preview: preview({
+        source: "connected_account",
+        campaigns_available: 0,
+        emails: [],
+        audiences: [audience("Bakery news", ["Interests: Bread", "Interests: Cakes"], false), audience("Wholesale", ["Interests: Bread"], true)],
+      }),
+    });
+    const forms = [
+      { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Bakery news", audience: "Bakery news", new: true },
+      { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Trade signups", audience: "Wholesale", new: false },
+    ];
+    const api = fakeApi({
+      ...signedIn,
+      [`GET /v1/imports/mailchimp/bundles/${bundleID}`]: () => ({ status: 200, body: fetched }),
+      [`POST /v1/imports/mailchimp/bundles/${bundleID}/confirm`]: (body) => {
+        posted = body;
+        return {
+          status: 202,
+          body: bundle({ status: "confirmed", confirmed_at: "2026-11-22T10:01:00Z", preview: null, emails: { status: "done", total: 0, made: [], error: null }, forms }),
+        };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp(`/contacts/import/mailchimp/${bundleID}`, api.fetch);
+
+    const group = await screen.findByRole("group", { name: "Signup forms" });
+    expect(within(group).getByText(/Each audience gets a signup form in its name/)).toBeTruthy();
+    expect(within(group).getByText("Bakery news: Mailchimp didn't ask signups to confirm by email. mailgoose's form does.")).toBeTruthy();
+    expect(within(group).getByText("Wholesale: Mailchimp asked signups to confirm by email. mailgoose's form does.")).toBeTruthy();
+    // A group two audiences share is offered once.
+    expect(within(group).getAllByRole("checkbox").map((c) => c.parentElement?.textContent)).toEqual(["Interests: Bread", "Interests: Cakes"]);
+    await user.click(within(group).getByRole("checkbox", { name: "Interests: Cakes" }));
+    await user.click(screen.getByRole("checkbox", { name: "Everyone in this file has given me permission to email them." }));
+    await user.click(screen.getByRole("button", { name: "Import" }));
+
+    await waitFor(() => expect(posted).toEqual({ permission_confirmed: true, campaigns: 1, form_tags: ["Interests: Cakes"] }));
+    const list = (await screen.findByRole("heading", { name: "Signup forms" })).nextElementSibling as HTMLElement;
+    expect(within(list).getAllByRole("link").map((a) => [a.textContent, a.getAttribute("href")])).toEqual([
+      ["Bakery news", "/forms/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+      ["Trade signups", "/forms/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"],
+    ]);
+    expect(within(list).getByText("Draft")).toBeTruthy();
+    expect(within(list).getByText("made by an earlier import")).toBeTruthy();
+    expect(screen.getByText(/Check and save your new signup form above, so it takes signups/)).toBeTruthy();
   });
 });

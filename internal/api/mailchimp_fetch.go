@@ -245,6 +245,11 @@ func (s *Server) SaveFetched(ctx context.Context, accountID string, f *mailchimp
 		return "", err
 	}
 	p.Source = apigen.MailchimpPreviewSourceConnectedAccount
+	for i, a := range p.Audiences {
+		if v, ok := f.DoubleOptin[a.Name]; ok {
+			p.Audiences[i].DoubleOptin = &v
+		}
+	}
 	tags := make([]struct {
 		Audience string `json:"audience"`
 		Members  int    `json:"members"`

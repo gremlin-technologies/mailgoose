@@ -10,12 +10,16 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"slices"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
+	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/mailchimp"
 )
 
@@ -335,6 +339,11 @@ func (s *Server) ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request, 
 			s.mailchimpError(w, r, mailchimp.ErrUploadUsed)
 			return
 		}
+		drafts, aerr := mailchimpFormDrafts(b, req.FormTags)
+		if aerr != nil {
+			WriteError(w, aerr)
+			return
+		}
 		var importID *string
 		if b.Members() > 0 {
 			im, _, err := s.Contacts.CreateMailchimpImport(ctx, c.AccountID, contacts.MailchimpImportInput{
@@ -344,7 +353,23 @@ func (s *Server) ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request, 
 			}
 			importID = &im.ID
 		}
-		if u, err = s.Mailchimp.Confirm(ctx, c.AccountID, id, importID, campaigns, len(mailchimp.PlanEmails(b, campaigns))); s.mailchimpError(w, r, err) {
+		// The forms are made before the bundle is marked confirmed, so a
+		// confirm cut short makes them on the next try; making them again
+		// finds the ones already made.
+		made, err := s.Forms.MailchimpDrafts(ctx, c.AccountID, drafts)
+		var inv *forms.InvalidError
+		if errors.As(err, &inv) {
+			WriteError(w, Unprocessable("too_many_form_tags", inv.Message))
+			return
+		}
+		if s.mailchimpError(w, r, err) {
+			return
+		}
+		bundleForms := make([]mailchimp.BundleForm, len(made))
+		for i, f := range made {
+			bundleForms[i] = mailchimp.BundleForm{ID: f.ID, Name: f.Name, Audience: f.Audience, New: f.New}
+		}
+		if u, err = s.Mailchimp.Confirm(ctx, c.AccountID, id, importID, campaigns, len(mailchimp.PlanEmails(b, campaigns)), bundleForms); s.mailchimpError(w, r, err) {
 			return
 		}
 		// A fetched bundle holds all the import needs, so the Mailchimp
@@ -362,6 +387,68 @@ func (s *Server) ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request, 
 	writeJSON(w, http.StatusAccepted, out)
 }
 
+// mailchimpGroups are the group tags of an audience's members, sorted and
+// without repeats.
+func mailchimpGroups(a *mailchimp.Audience) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, m := range a.Members {
+		for _, g := range m.Groups {
+			t := contacts.MailchimpGroupTag(g)
+			if t != "" && !seen[strings.ToLower(t)] {
+				seen[strings.ToLower(t)] = true
+				out = append(out, t)
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i]) < strings.ToLower(out[j]) })
+	return out
+}
+
+// mailchimpFormDrafts are the signup forms the bundle's audiences get
+// (MG-76): one for each audience with members, with its audience tag when
+// there's more than one audience, and the requested group tags it has.
+func mailchimpFormDrafts(b *mailchimp.Bundle, formTags *[]string) ([]forms.MailchimpDraft, *Error) {
+	var want []string
+	if formTags != nil {
+		want = *formTags
+	}
+	var drafts []forms.MailchimpDraft
+	found := map[string]bool{}
+	for _, a := range b.Audiences {
+		if len(a.Members) == 0 {
+			continue
+		}
+		d := forms.MailchimpDraft{Audience: a.Name}
+		if len(b.Audiences) > 1 {
+			if t := contacts.MailchimpAudienceTag(a.Name); t != "" {
+				d.Tags = append(d.Tags, t)
+			}
+		}
+		groups := mailchimpGroups(a)
+		for _, w := range want {
+			k := strings.ToLower(strings.TrimSpace(w))
+			i := slices.IndexFunc(groups, func(g string) bool { return strings.ToLower(g) == k })
+			if i >= 0 && !slices.Contains(d.Tags, groups[i]) {
+				d.Tags = append(d.Tags, groups[i])
+				found[k] = true
+			}
+		}
+		if len(d.Tags) > forms.MaxTags {
+			return nil, Unprocessable("too_many_form_tags", fmt.Sprintf(
+				"A form puts up to %d tags on people, and the form for %s would put %d. Pick fewer form_tags.", forms.MaxTags, a.Name, len(d.Tags)))
+		}
+		drafts = append(drafts, d)
+	}
+	for _, w := range want {
+		if !found[strings.ToLower(strings.TrimSpace(w))] {
+			return nil, Unprocessable("unknown_form_tag", fmt.Sprintf(
+				"%q isn't a group of the export's audiences.", w)).WithHint("The preview's audiences[].groups lists the groups each audience has.")
+		}
+	}
+	return drafts, nil
+}
+
 func validBundleID(w http.ResponseWriter, id string) bool {
 	if !uuidPattern.MatchString(id) {
 		WriteError(w, BadRequest("invalid_parameter", "bundle_id must be an uploaded export's id."))
@@ -375,7 +462,10 @@ func validBundleID(w http.ResponseWriter, id string) bool {
 func (s *Server) mailchimpBundleJSON(u *mailchimp.Upload) (apigen.MailchimpBundle, error) {
 	out := apigen.MailchimpBundle{Id: u.ID, Bytes: u.Bytes, Status: "unconfirmed", CreatedAt: u.CreatedAt.UTC(),
 		ExpiresAt: u.ExpiresAt.UTC(), ConfirmedAt: utcPtr(u.ConfirmedAt), ImportId: u.ImportID, Campaigns: u.Campaigns,
-		Emails: mailchimpProgressJSON(u)}
+		Emails: mailchimpProgressJSON(u), Forms: make([]apigen.MailchimpBundleForm, len(u.Forms))}
+	for i, f := range u.Forms {
+		out.Forms[i] = apigen.MailchimpBundleForm{Id: f.ID, Name: f.Name, Audience: f.Audience, New: f.New}
+	}
 	if u.FileName != "" {
 		out.FileName = &u.FileName
 	}
@@ -386,6 +476,12 @@ func (s *Server) mailchimpBundleJSON(u *mailchimp.Upload) (apigen.MailchimpBundl
 		var p apigen.MailchimpPreview
 		if err := json.Unmarshal(u.Preview, &p); err != nil {
 			return out, fmt.Errorf("read stored mailchimp preview: %w", err)
+		}
+		// A preview stored before MG-76 has no groups.
+		for i := range p.Audiences {
+			if p.Audiences[i].Groups == nil {
+				p.Audiences[i].Groups = []string{}
+			}
 		}
 		out.Preview = &p
 	}
@@ -414,7 +510,8 @@ func (s *Server) mailchimpPreviewJSON(ctx context.Context, accountID string, b *
 				by.Archived++
 			}
 		}
-		p.Audiences = append(p.Audiences, apigen.MailchimpAudience{Name: a.Name, Members: len(a.Members), ByStatus: by})
+		p.Audiences = append(p.Audiences, apigen.MailchimpAudience{Name: a.Name, Members: len(a.Members), ByStatus: by,
+			Groups: mailchimpGroups(a)})
 	}
 	for _, e := range mailchimp.PlanEmails(b, campaigns) {
 		p.Emails = append(p.Emails, mailchimpEmailJSON(e, nil))

@@ -1617,6 +1617,15 @@ unsubscribed ones unsubscribed and cleaned ones bounced. `campaigns`
 is how many of the newest campaigns become emails (default 10, at
 most 100); every template does.
 
+Each audience also gets a signup form in its name, listed in
+`forms`, to replace its Mailchimp embedded form: email, first name
+and last name, double opt-in on, and the `audience: <name>` tag
+when there's more than one audience, plus the `form_tags` picked
+from its groups. These forms are drafts and take no signups until
+they're saved. Running the import again makes no second form for an
+audience. `form_tags` that aren't groups of the export's audiences
+are refused with 422 `unknown_form_tag`.
+
 Confirming again returns the upload as it is. `idempotency_key`
 (default: the hash of the contacts) makes a second upload of the same
 export return the import already made.
@@ -4125,6 +4134,7 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 | `permission_confirmed` | boolean | yes | True says these people agreed to get your email. Required. |
 | `campaigns` | integer |  | How many of the newest campaigns become HTML emails. |
 | `idempotency_key` | string |  | Confirming the same export again with this key returns the import already made. |
+| `form_tags` | array of string |  | Group tags (from the preview's `audiences[].groups`) that each audience's new signup form puts on everyone who signs up with it, besides its `audience: <name>` tag when the export has more than one audience. A tag goes on the form of every audience that has that group. None by default. |
 
 <a id="schema-mailchimpconnect"></a>
 
@@ -4217,6 +4227,7 @@ An audience of the connected Mailchimp account, with Mailchimp's own counts.
 | `campaigns` | integer | yes | How many of the newest campaigns become emails. |
 | `preview` | null or [MailchimpPreview](#schema-mailchimppreview) | yes | What importing would do; null once the file has been used and removed. |
 | `emails` | [MailchimpEmailProgress](#schema-mailchimpemailprogress) | yes |  |
+| `forms` | array of [MailchimpBundleForm](#schema-mailchimpbundleform) | yes | Once confirmed, each audience's signup form, which replaces its Mailchimp embedded form: email, first name and last name, double opt-in on. A new one is a draft, taking no signups until it's saved (`updateForm`, or opening and saving it in the web app); an audience an earlier import already made a form for keeps that one (`new` false). Empty before confirming. |
 
 <a id="schema-mailchimppreview"></a>
 
@@ -4233,6 +4244,19 @@ An audience of the connected Mailchimp account, with Mailchimp's own counts.
 | `segment_tags` | array of object |  | For a fetched bundle, the tags made from Mailchimp saved segments: a snapshot of each segment's members when fetched, which doesn't update. |
 | `templates_not_fetched` | integer |  | For a fetched bundle, the account's own templates. Mailchimp's API doesn't give their HTML; upload the account export to bring them over. |
 
+<a id="schema-mailchimpbundleform"></a>
+
+### MailchimpBundleForm
+
+A signup form an import made, or found from an earlier one, for an audience.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | yes |  |
+| `name` | string | yes |  |
+| `audience` | string | yes | The Mailchimp audience it was made for. |
+| `new` | boolean | yes | False when an earlier import had already made it. |
+
 <a id="schema-mailchimpaudience"></a>
 
 ### MailchimpAudience
@@ -4242,6 +4266,8 @@ An audience of the connected Mailchimp account, with Mailchimp's own counts.
 | `name` | string | yes |  |
 | `members` | integer | yes |  |
 | `by_status` | [MailchimpStatusCounts](#schema-mailchimpstatuscounts) | yes |  |
+| `groups` | array of string | yes | The tags its members' Mailchimp groups become, `Category: Name`, sorted. Confirming with some of them in `form_tags` puts them on the audience's new signup form. |
+| `double_optin` | boolean |  | Only for a bundle fetched from a connected account: whether Mailchimp asked this audience's signups to confirm. The signup form mailgoose makes for it has double opt-in on either way. |
 
 <a id="schema-mailchimpstatuscounts"></a>
 
@@ -5258,7 +5284,8 @@ Type: [BlockDocument](#schema-blockdocument) or [HtmlDocument](#schema-htmldocum
 | `confirm_text` | string | yes | The confirmation email's text, above its confirm link. |
 | `signups` | integer | yes | How many submissions the form has taken, bots' left out. A person who signs up twice counts twice. |
 | `confirmations` | integer | yes | How many confirm links from the form's confirmation emails have been used. |
-| `problems` | array of [FormProblem](#schema-formproblem) |  | Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. `signup_cap_reached`: the form has added its daily cap of new contacts (1,000 by default) in the last 24 hours, so its public endpoint answers 429 `form_signup_limit` until older signups age out; the message says when. |
+| `draft` | boolean | yes | True for a form a Mailchimp import made that hasn't been saved since: it takes no signups, and its public endpoint answers 403 `form_draft`. Saving it (any `PATCH`, even an empty one) makes it live. |
+| `problems` | array of [FormProblem](#schema-formproblem) |  | Only on getting one form: what stops it taking signups, empty when it can. `draft`: a Mailchimp import made the form and it hasn't been saved yet. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. `signup_cap_reached`: the form has added its daily cap of new contacts (1,000 by default) in the last 24 hours, so its public endpoint answers 429 `form_signup_limit` until older signups age out; the message says when. |
 | `created_at` | string (date-time) | yes |  |
 | `updated_at` | string (date-time) | yes |  |
 

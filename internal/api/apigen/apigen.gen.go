@@ -2598,10 +2598,13 @@ type ColumnsBlockLayout string
 // ColumnsBlockType defines model for ColumnsBlock.Type.
 type ColumnsBlockType string
 
-// ConfirmMailchimpBundleRequest Examples: {"campaigns":10,"permission_confirmed":true}
+// ConfirmMailchimpBundleRequest Examples: {"campaigns":10,"form_tags":["Interests: Baking"],"permission_confirmed":true}
 type ConfirmMailchimpBundleRequest struct {
 	// Campaigns How many of the newest campaigns become HTML emails.
 	Campaigns *int `json:"campaigns,omitempty"`
+
+	// FormTags Group tags (from the preview's `audiences[].groups`) that each audience's new signup form puts on everyone who signs up with it, besides its `audience: <name>` tag when the export has more than one audience. A tag goes on the form of every audience that has that group. None by default.
+	FormTags *[]string `json:"form_tags,omitempty"`
 
 	// IdempotencyKey Confirming the same export again with this key returns the import already made.
 	IdempotencyKey *string `json:"idempotency_key,omitempty"`
@@ -3362,12 +3365,15 @@ type Form struct {
 	// DoubleOptIn When on, people get an email to confirm before they're subscribed.
 	DoubleOptIn bool `json:"double_opt_in"`
 
+	// Draft True for a form a Mailchimp import made that hasn't been saved since: it takes no signups, and its public endpoint answers 403 `form_draft`. Saving it (any `PATCH`, even an empty one) makes it live.
+	Draft bool `json:"draft"`
+
 	// Fields The fields the form asks for, in order.
 	Fields []FormField `json:"fields"`
 	Id     string      `json:"id"`
 	Name   string      `json:"name"`
 
-	// Problems Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. `signup_cap_reached`: the form has added its daily cap of new contacts (1,000 by default) in the last 24 hours, so its public endpoint answers 429 `form_signup_limit` until older signups age out; the message says when.
+	// Problems Only on getting one form: what stops it taking signups, empty when it can. `draft`: a Mailchimp import made the form and it hasn't been saved yet. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. `signup_cap_reached`: the form has added its daily cap of new contacts (1,000 by default) in the last 24 hours, so its public endpoint answers 429 `form_signup_limit` until older signups age out; the message says when.
 	Problems *[]FormProblem `json:"problems,omitempty"`
 
 	// RedirectUrl Where people go after signing up, instead of seeing the success message.
@@ -3765,8 +3771,14 @@ type MailchimpAccountAudience struct {
 type MailchimpAudience struct {
 	// ByStatus Member rows by their Mailchimp status.
 	ByStatus MailchimpStatusCounts `json:"by_status"`
-	Members  int                   `json:"members"`
-	Name     string                `json:"name"`
+
+	// DoubleOptin Only for a bundle fetched from a connected account: whether Mailchimp asked this audience's signups to confirm. The signup form mailgoose makes for it has double opt-in on either way.
+	DoubleOptin *bool `json:"double_optin,omitempty"`
+
+	// Groups The tags its members' Mailchimp groups become, `Category: Name`, sorted. Confirming with some of them in `form_tags` puts them on the audience's new signup form.
+	Groups  []string `json:"groups"`
+	Members int      `json:"members"`
+	Name    string   `json:"name"`
 }
 
 // MailchimpAudienceList defines model for MailchimpAudienceList.
@@ -3774,7 +3786,7 @@ type MailchimpAudienceList struct {
 	Audiences []MailchimpAccountAudience `json:"audiences"`
 }
 
-// MailchimpBundle Examples: {"bytes":482113,"campaigns":10,"confirmed_at":null,"created_at":"2026-11-21T12:00:00Z","emails":{"error":null,"made":[],"status":"none","total":0},"expires_at":"2026-11-28T12:00:00Z","file_name":"mailchimp-export.zip","id":"7c1e5a52-3d1f-4c55-9a0e-2f9b8b6f4a10","import_id":null,"preview":{"audiences":[{"by_status":{"archived":0,"cleaned":20,"pending":14,"subscribed":1100,"transactional":10,"unsubscribed":60},"members":1204,"name":"Newsletter"}],"campaigns_available":24,"contacts":{"dropped_fields":["Birthday","Phone Number"],"existing_suppressed":0,"existing_tagged":20,"holds":["over_contact_limit"],"merge_suppressed":0,"merge_suppressed_examples":[],"names_cut":0,"new":{"bounced":20,"subscribed":1080,"unconfirmed":14,"unsubscribed":60},"newest_optin":"2026-10-30T09:12:00Z","plan":{"contacts":1100,"limit":500,"month_cents":500,"plan":"paid","tester":false,"units":1,"upgrade":true,"year_cents":5000},"renamed_tags":[],"skipped":{"archived":0,"invalid_email":0,"invalid_row":0,"not_subscribed":10,"suppressed":0},"tags_to_create":["vip","Interests: Baking"],"waits":true,"with_optin_time":1000},"emails":[{"email_id":null,"errors":[],"file":"templates/Monthly_newsletter.html","from":"template","images":2,"name":"Monthly newsletter","preview_text":"","subject":"","warnings":[]}],"ignored_files":[{"path":"reports/opens.csv","reason":"unknown_file"}],"source":"account_export"},"status":"unconfirmed"}
+// MailchimpBundle Examples: {"bytes":482113,"campaigns":10,"confirmed_at":null,"created_at":"2026-11-21T12:00:00Z","emails":{"error":null,"made":[],"status":"none","total":0},"expires_at":"2026-11-28T12:00:00Z","file_name":"mailchimp-export.zip","forms":[],"id":"7c1e5a52-3d1f-4c55-9a0e-2f9b8b6f4a10","import_id":null,"preview":{"audiences":[{"by_status":{"archived":0,"cleaned":20,"pending":14,"subscribed":1100,"transactional":10,"unsubscribed":60},"groups":["Interests: Baking"],"members":1204,"name":"Newsletter"}],"campaigns_available":24,"contacts":{"dropped_fields":["Birthday","Phone Number"],"existing_suppressed":0,"existing_tagged":20,"holds":["over_contact_limit"],"merge_suppressed":0,"merge_suppressed_examples":[],"names_cut":0,"new":{"bounced":20,"subscribed":1080,"unconfirmed":14,"unsubscribed":60},"newest_optin":"2026-10-30T09:12:00Z","plan":{"contacts":1100,"limit":500,"month_cents":500,"plan":"paid","tester":false,"units":1,"upgrade":true,"year_cents":5000},"renamed_tags":[],"skipped":{"archived":0,"invalid_email":0,"invalid_row":0,"not_subscribed":10,"suppressed":0},"tags_to_create":["vip","Interests: Baking"],"waits":true,"with_optin_time":1000},"emails":[{"email_id":null,"errors":[],"file":"templates/Monthly_newsletter.html","from":"template","images":2,"name":"Monthly newsletter","preview_text":"","subject":"","warnings":[]}],"ignored_files":[{"path":"reports/opens.csv","reason":"unknown_file"}],"source":"account_export"},"status":"unconfirmed"}
 type MailchimpBundle struct {
 	// Bytes The uploaded file's size.
 	Bytes int `json:"bytes"`
@@ -3788,7 +3800,10 @@ type MailchimpBundle struct {
 	// ExpiresAt When an unconfirmed upload is deleted.
 	ExpiresAt time.Time `json:"expires_at"`
 	FileName  *string   `json:"file_name"`
-	Id        string    `json:"id"`
+
+	// Forms Once confirmed, each audience's signup form, which replaces its Mailchimp embedded form: email, first name and last name, double opt-in on. A new one is a draft, taking no signups until it's saved (`updateForm`, or opening and saving it in the web app); an audience an earlier import already made a form for keeps that one (`new` false). Empty before confirming.
+	Forms []MailchimpBundleForm `json:"forms"`
+	Id    string                `json:"id"`
 
 	// ImportId The contacts import, once confirmed; null when the export had no contacts.
 	ImportId *string `json:"import_id"`
@@ -3800,6 +3815,17 @@ type MailchimpBundle struct {
 
 // MailchimpBundleStatus defines model for MailchimpBundle.Status.
 type MailchimpBundleStatus string
+
+// MailchimpBundleForm A signup form an import made, or found from an earlier one, for an audience.
+type MailchimpBundleForm struct {
+	// Audience The Mailchimp audience it was made for.
+	Audience string `json:"audience"`
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+
+	// New False when an earlier import had already made it.
+	New bool `json:"new"`
+}
 
 // MailchimpConnect Examples: {"authorize_url":"https://login.mailchimp.com/oauth2/authorize?client_id=123456789012\u0026redirect_uri=https%3A%2F%2Fmailgoose.app%2Foauth%2Fmailchimp%2Fcallback\u0026response_type=code\u0026state=Zx8...","expires_at":"2026-11-21T12:10:00Z"}
 type MailchimpConnect struct {
