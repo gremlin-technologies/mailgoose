@@ -1344,6 +1344,15 @@ export interface paths {
          *     is how many of the newest campaigns become emails (default 10, at
          *     most 100); every template does.
          *
+         *     Each audience also gets a signup form in its name, listed in
+         *     `forms`, to replace its Mailchimp embedded form: email, first name
+         *     and last name, double opt-in on, and the `audience: <name>` tag
+         *     when there's more than one audience, plus the `form_tags` picked
+         *     from its groups. These forms are drafts and take no signups until
+         *     they're saved. Running the import again makes no second form for an
+         *     audience. `form_tags` that aren't groups of the export's audiences
+         *     are refused with 422 `unknown_form_tag`.
+         *
          *     Confirming again returns the upload as it is. `idempotency_key`
          *     (default: the hash of the contacts) makes a second upload of the same
          *     export return the import already made.
@@ -3015,7 +3024,10 @@ export interface components {
         /**
          * @example {
          *       "permission_confirmed": true,
-         *       "campaigns": 10
+         *       "campaigns": 10,
+         *       "form_tags": [
+         *         "Interests: Baking"
+         *       ]
          *     }
          */
         ConfirmMailchimpBundleRequest: {
@@ -3028,6 +3040,8 @@ export interface components {
             campaigns: number;
             /** @description Confirming the same export again with this key returns the import already made. */
             idempotency_key?: string;
+            /** @description Group tags (from the preview's `audiences[].groups`) that each audience's new signup form puts on everyone who signs up with it, besides its `audience: <name>` tag when the export has more than one audience. A tag goes on the form of every audience that has that group. None by default. */
+            form_tags?: string[];
         };
         /**
          * @example {
@@ -3195,7 +3209,10 @@ export interface components {
          *               "pending": 14,
          *               "transactional": 10,
          *               "archived": 0
-         *             }
+         *             },
+         *             "groups": [
+         *               "Interests: Baking"
+         *             ]
          *           }
          *         ],
          *         "contacts": {
@@ -3269,7 +3286,8 @@ export interface components {
          *         "total": 0,
          *         "made": [],
          *         "error": null
-         *       }
+         *       },
+         *       "forms": []
          *     }
          */
         MailchimpBundle: {
@@ -3299,6 +3317,8 @@ export interface components {
             /** @description What importing would do; null once the file has been used and removed. */
             preview: null | components["schemas"]["MailchimpPreview"];
             emails: components["schemas"]["MailchimpEmailProgress"];
+            /** @description Once confirmed, each audience's signup form, which replaces its Mailchimp embedded form: email, first name and last name, double opt-in on. A new one is a draft, taking no signups until it's saved (`updateForm`, or opening and saving it in the web app); an audience an earlier import already made a form for keeps that one (`new` false). Empty before confirming. */
+            forms: components["schemas"]["MailchimpBundleForm"][];
         };
         MailchimpPreview: {
             /**
@@ -3339,10 +3359,24 @@ export interface components {
              */
             templates_not_fetched?: number;
         };
+        /** @description A signup form an import made, or found from an earlier one, for an audience. */
+        MailchimpBundleForm: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description The Mailchimp audience it was made for. */
+            audience: string;
+            /** @description False when an earlier import had already made it. */
+            new: boolean;
+        };
         MailchimpAudience: {
             name: string;
             members: number;
             by_status: components["schemas"]["MailchimpStatusCounts"];
+            /** @description The tags its members' Mailchimp groups become, `Category: Name`, sorted. Confirming with some of them in `form_tags` puts them on the audience's new signup form. */
+            groups: string[];
+            /** @description Only for a bundle fetched from a connected account: whether Mailchimp asked this audience's signups to confirm. The signup form mailgoose makes for it has double opt-in on either way. */
+            double_optin?: boolean;
         };
         /** @description Member rows by their Mailchimp status. */
         MailchimpStatusCounts: {
@@ -4539,7 +4573,9 @@ export interface components {
             signups: number;
             /** @description How many confirm links from the form's confirmation emails have been used. */
             confirmations: number;
-            /** @description Only on getting one form: what stops it taking signups, empty when it can. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. `signup_cap_reached`: the form has added its daily cap of new contacts (1,000 by default) in the last 24 hours, so its public endpoint answers 429 `form_signup_limit` until older signups age out; the message says when. */
+            /** @description True for a form a Mailchimp import made that hasn't been saved since: it takes no signups, and its public endpoint answers 403 `form_draft`. Saving it (any `PATCH`, even an empty one) makes it live. */
+            draft: boolean;
+            /** @description Only on getting one form: what stops it taking signups, empty when it can. `draft`: a Mailchimp import made the form and it hasn't been saved yet. `no_verified_from`: the form uses double opt-in and the account has no From address on a verified sending domain to send the confirmation email from. `signup_cap_reached`: the form has added its daily cap of new contacts (1,000 by default) in the last 24 hours, so its public endpoint answers 429 `form_signup_limit` until older signups age out; the message says when. */
             problems?: components["schemas"]["FormProblem"][];
             /** Format: date-time */
             created_at: string;

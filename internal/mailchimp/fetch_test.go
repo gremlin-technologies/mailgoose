@@ -320,7 +320,7 @@ func (f *fakeAPI) answer(r *http.Request) (any, int) {
 		if l == nil {
 			return nil, 404
 		}
-		return obj{"id": l.id, "name": l.name}, 200
+		return obj{"id": l.id, "name": l.name, "double_optin": l.doubleOptin}, 200
 	}
 	return nil, 404
 }
@@ -385,6 +385,9 @@ func TestFetchReadsAnAccountIntoAnExport(t *testing.T) {
 	}
 	if len(out.Segments) != 1 || out.Segments[0] != (SegmentTag{Audience: "Newsletter", Tag: "segment: Regulars", Members: 2}) {
 		t.Errorf("segments = %+v", out.Segments)
+	}
+	if v, ok := out.DoubleOptin["Newsletter"]; !ok || !v {
+		t.Errorf("double opt-in = %v", out.DoubleOptin)
 	}
 
 	b, err := Read(bytes.NewReader(out.Data), int64(len(out.Data)), FetchedFileName, Options{GroupColumns: out.GroupColumns})

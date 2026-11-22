@@ -64,9 +64,11 @@ type mailchimpBundle struct {
 	Preview     *struct {
 		Source    string `json:"source"`
 		Audiences []struct {
-			Name     string         `json:"name"`
-			Members  int            `json:"members"`
-			ByStatus map[string]int `json:"by_status"`
+			Name        string         `json:"name"`
+			Members     int            `json:"members"`
+			ByStatus    map[string]int `json:"by_status"`
+			Groups      []string       `json:"groups"`
+			DoubleOptin *bool          `json:"double_optin"`
 		} `json:"audiences"`
 		Contacts *struct {
 			New                map[string]int `json:"new"`
@@ -100,6 +102,34 @@ type mailchimpBundle struct {
 		} `json:"ignored_files"`
 	} `json:"preview"`
 	Emails mailchimpProgress `json:"emails"`
+	Forms  []struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Audience string `json:"audience"`
+		New      bool   `json:"new"`
+	} `json:"forms"`
+}
+
+// printMailchimpForms lists the signup forms a confirmed import made or
+// found.
+func (a *App) printMailchimpForms(b mailchimpBundle) {
+	if len(b.Forms) == 0 {
+		return
+	}
+	w := a.Stdout
+	fmt.Fprintln(w, "Signup forms, to replace your Mailchimp forms:")
+	drafts := false
+	for _, f := range b.Forms {
+		if f.New {
+			drafts = true
+			fmt.Fprintf(w, "  %s  %s (draft)\n", f.ID, f.Name)
+		} else {
+			fmt.Fprintf(w, "  %s  %s (made by an earlier import)\n", f.ID, f.Name)
+		}
+	}
+	if drafts {
+		fmt.Fprintln(w, "Drafts take no signups until you save them: check one with mailgoose form get <form-id>, then mailgoose form update <form-id> --live.")
+	}
 }
 
 // mailchimpHolds says what each hold a Mailchimp import may get means.
@@ -201,6 +231,7 @@ func (a *App) printMailchimpBundle(b mailchimpBundle, raw json.RawMessage) {
 			fmt.Fprintln(w, "Contacts: the export has none.")
 		}
 		a.printMailchimpEmails(b.Emails)
+		a.printMailchimpForms(b)
 		return
 	}
 	fmt.Fprintf(w, "Mailchimp upload %s%s, %s, kept until %s. Nothing is imported yet.\n",
@@ -218,6 +249,16 @@ func (a *App) printMailchimpBundle(b mailchimpBundle, raw json.RawMessage) {
 			}
 		}
 		fmt.Fprintf(w, "Audience %q: %d members (%s).\n", au.Name, au.Members, strings.Join(parts, ", "))
+		if len(au.Groups) > 0 {
+			fmt.Fprintf(w, "  Groups: %s.\n", strings.Join(au.Groups, ", "))
+		}
+		if au.DoubleOptin != nil {
+			was := "off"
+			if *au.DoubleOptin {
+				was = "on"
+			}
+			fmt.Fprintf(w, "  Its signup form: double opt-in was %s in Mailchimp; mailgoose's form has it on.\n", was)
+		}
 	}
 	if c := p.Contacts; c != nil {
 		fmt.Fprintf(w, "\nNew contacts: %d subscribed, %d unconfirmed, %d unsubscribed, %d bounced.\n",
@@ -285,6 +326,15 @@ func (a *App) printMailchimpBundle(b mailchimpBundle, raw json.RawMessage) {
 	}
 	if n := len(p.IgnoredFiles) - leftOut; n > 0 {
 		fmt.Fprintf(w, "\n%d files in the export aren't imported (see --json).\n", n)
+	}
+	if len(p.Audiences) > 0 {
+		fmt.Fprintln(w, "\nEach audience gets a draft signup form in its name, to replace its Mailchimp form.")
+		for _, au := range p.Audiences {
+			if len(au.Groups) > 0 {
+				fmt.Fprintln(w, "Add --form-tag \"<group>\" to have the forms tag signups with a group.")
+				break
+			}
+		}
 	}
 	fmt.Fprintf(w, "\nTo import it: mailgoose import mailchimp confirm %s --permission-confirmed\n", b.ID)
 	if p.CampaignsAvailable > campaignsShown(p.Emails) {
@@ -400,6 +450,7 @@ any others with --group-column.`,
 	var permission, wait bool
 	var campaigns int
 	var key string
+	var formTags []string
 	confirm := callsAll([]string{"confirmMailchimpBundle", "getMailchimpBundle"}, &cobra.Command{
 		Use:   "confirm <id>",
 		Short: "Import an uploaded Mailchimp export",
@@ -413,8 +464,17 @@ ones unsubscribed and cleaned ones bounced.
 
 --campaigns sets how many of the newest campaigns to bring (default 10, up
 to 100). The import runs in the background; --wait waits for its emails.
-Confirming again shows the same import.`,
+Confirming again shows the same import.
+
+Each audience also gets a signup form in its name, to replace its Mailchimp
+embedded form: email, first and last name, double opt-in on, and the
+"audience: <name>" tag when the export has more than one audience. Add
+--form-tag for each group (as the preview lists them) the forms should tag
+signups with. The forms are drafts: they take no signups until you check and
+save them (mailgoose form update <form-id> --live). Importing again makes no
+second form for an audience.`,
 		Example: `  mailgoose import mailchimp confirm 3f1c... --permission-confirmed
+  mailgoose import mailchimp confirm 3f1c... --permission-confirmed --form-tag "Interests: Baking"
   mailgoose import mailchimp confirm 3f1c... --permission-confirmed --campaigns 25 --wait --json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -428,6 +488,9 @@ Confirming again shows the same import.`,
 			}
 			if key != "" {
 				body["idempotency_key"] = key
+			}
+			if len(formTags) > 0 {
+				body["form_tags"] = formTags
 			}
 			ctx := cmd.Context()
 			path := "/v1/imports/mailchimp/bundles/" + url.PathEscape(args[0])
@@ -451,6 +514,7 @@ Confirming again shows the same import.`,
 	confirm.Flags().IntVar(&campaigns, "campaigns", 10, "how many of the newest campaigns to bring, 1 to 100")
 	confirm.Flags().StringVar(&key, "idempotency-key", "", "a key that makes retrying return the same import (default: the export's own)")
 	confirm.Flags().BoolVar(&wait, "wait", false, "wait until the emails are made")
+	confirm.Flags().StringArrayVar(&formTags, "form-tag", nil, "a group tag the audiences' signup forms put on signups (repeatable)")
 
 	var yes bool
 	del := calls("deleteMailchimpBundle", &cobra.Command{

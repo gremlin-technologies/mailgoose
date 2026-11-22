@@ -216,6 +216,9 @@ func (s *Server) writeSubmitError(w http.ResponseWriter, r *http.Request, err er
 		writeSignupError(w, r, formNotFound)
 	case errors.Is(err, signups.ErrFormClosed):
 		writeSignupError(w, r, Forbidden("form_closed", "This form isn't taking signups right now."))
+	case errors.Is(err, signups.ErrFormDraft):
+		writeSignupError(w, r, Forbidden("form_draft", "This form isn't taking signups yet.").
+			WithHint("The form's owner needs to save it in mailgoose first: forms a Mailchimp import makes start as drafts."))
 	case errors.Is(err, signups.ErrTestMode):
 		writeSignupError(w, r, Forbidden("test_mode", "This form is in test mode, so it only takes signups from its account's test addresses.").
 			WithHint("The form's owner can add and confirm test addresses with `mailgoose test-addresses add`, or ask mailgoose to allow full sending."))

@@ -106,6 +106,18 @@ type Upload struct {
 	// Fetched is true for a bundle read from a connected account (MG-74)
 	// rather than uploaded.
 	Fetched bool
+	// Forms are the signup forms confirming made or found for its
+	// audiences (MG-76); empty before.
+	Forms []BundleForm
+}
+
+// BundleForm is an audience's signup form, as a confirmed bundle lists it.
+// New is false for one an earlier import had made.
+type BundleForm struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Audience string `json:"audience"`
+	New      bool   `json:"new"`
 }
 
 // Options are how the upload is read.
@@ -127,13 +139,13 @@ func (s *Store) now() time.Time {
 }
 
 const uploadColumns = `id, account_id, coalesce(file_name, ''), bytes, audience_name, group_columns, created_at, expires_at,
-	confirmed_at, import_id, campaigns, emails_status, emails_total, emails, emails_error, data IS NOT NULL, preview, fetched`
+	confirmed_at, import_id, campaigns, emails_status, emails_total, emails, emails_error, data IS NOT NULL, preview, fetched, forms`
 
 func scanUpload(row pgx.Row) (*Upload, error) {
 	u := &Upload{}
-	var emails []byte
+	var emails, forms []byte
 	err := row.Scan(&u.ID, &u.AccountID, &u.FileName, &u.Bytes, &u.AudienceName, &u.GroupColumns, &u.CreatedAt, &u.ExpiresAt,
-		&u.ConfirmedAt, &u.ImportID, &u.Campaigns, &u.EmailsStatus, &u.EmailsTotal, &emails, &u.EmailsError, &u.HasData, &u.Preview, &u.Fetched)
+		&u.ConfirmedAt, &u.ImportID, &u.Campaigns, &u.EmailsStatus, &u.EmailsTotal, &emails, &u.EmailsError, &u.HasData, &u.Preview, &u.Fetched, &forms)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUploadNotFound
 	}
@@ -145,6 +157,12 @@ func scanUpload(row pgx.Row) (*Upload, error) {
 	}
 	if u.Emails == nil {
 		u.Emails = []ImportedEmail{}
+	}
+	if err := json.Unmarshal(forms, &u.Forms); err != nil {
+		return nil, fmt.Errorf("read upload forms: %w", err)
+	}
+	if u.Forms == nil {
+		u.Forms = []BundleForm{}
 	}
 	return u, nil
 }
@@ -274,17 +292,25 @@ func (s *Store) Data(ctx context.Context, accountID, id string) ([]byte, error) 
 }
 
 // Confirm records that the upload was confirmed, with the contacts import
-// made from it (nil when it had no contacts) and the emails it makes, and
-// queues those emails. Confirming again returns the upload as it is.
-func (s *Store) Confirm(ctx context.Context, accountID, id string, importID *string, campaigns, emails int) (*Upload, error) {
+// made from it (nil when it had no contacts), the emails it makes and the
+// signup forms made or found for its audiences, and queues those emails.
+// Confirming again returns the upload as it is.
+func (s *Store) Confirm(ctx context.Context, accountID, id string, importID *string, campaigns, emails int, forms []BundleForm) (*Upload, error) {
 	status := EmailsQueued
 	if emails == 0 {
 		status = EmailsDone
 	}
-	_, err := s.DB.Exec(ctx, `
+	if forms == nil {
+		forms = []BundleForm{}
+	}
+	formsJSON, err := json.Marshal(forms)
+	if err != nil {
+		return nil, err
+	}
+	_, err = s.DB.Exec(ctx, `
 		UPDATE mailchimp_bundles SET confirmed_at = $3, import_id = $4, campaigns = $5, emails_total = $6, emails_status = $7,
-			data = CASE WHEN $6 = 0 THEN NULL ELSE data END, preview = NULL
-		WHERE id = $1 AND account_id = $2 AND confirmed_at IS NULL`, id, accountID, s.now().UTC(), importID, campaigns, emails, status)
+			data = CASE WHEN $6 = 0 THEN NULL ELSE data END, preview = NULL, forms = $8
+		WHERE id = $1 AND account_id = $2 AND confirmed_at IS NULL`, id, accountID, s.now().UTC(), importID, campaigns, emails, status, formsJSON)
 	if err != nil {
 		return nil, err
 	}

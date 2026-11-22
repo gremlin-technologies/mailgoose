@@ -31,6 +31,9 @@ type form struct {
 	ConfirmText    string  `json:"confirm_text"`
 	Signups        int     `json:"signups"`
 	Confirmations  int     `json:"confirmations"`
+	// Draft is true for a form a Mailchimp import made that hasn't been
+	// saved: it takes no signups.
+	Draft bool `json:"draft"`
 	// Problems is only on getting one form; nil otherwise.
 	Problems  []formProblem `json:"problems,omitempty"`
 	CreatedAt time.Time     `json:"created_at"`
@@ -129,7 +132,7 @@ func (a *App) formBody(ctx context.Context, cmd *cobra.Command, f *formFlags, fi
 				body["tag_ids"] = ids
 			}
 		}
-		for _, k := range []string{"id", "tags", "signups", "confirmations", "problems", "created_at", "updated_at"} {
+		for _, k := range []string{"id", "tags", "signups", "confirmations", "draft", "problems", "created_at", "updated_at"} {
 			delete(body, k)
 		}
 		if raw, ok := body["fields"]; ok && fields != nil {
@@ -252,6 +255,9 @@ func (a *App) printForm(f form, verb string) {
 	tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintf(tw, "Name:\t%s\n", f.Name)
 	fmt.Fprintf(tw, "ID:\t%s\n", f.ID)
+	if f.Draft {
+		fmt.Fprintf(tw, "Status:\tdraft from your Mailchimp import: it takes no signups until you save it (mailgoose form update %s --live)\n", f.ID)
+	}
 	fmt.Fprintf(tw, "Fields:\t%s\n", strings.Join(fields, ", "))
 	fmt.Fprintf(tw, "Tags:\t%s\n", orDash(strings.Join(tags, ", ")))
 	fmt.Fprintf(tw, "Button:\t%q\n", f.ButtonText)
@@ -334,7 +340,11 @@ the result in the page.`,
 				if f.DoubleOptIn {
 					doi = "on"
 				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", f.ID, f.Name, strings.Join(names, ","), doi, f.UpdatedAt.Local().Format("2006-01-02 15:04"))
+				name := f.Name
+				if f.Draft {
+					name += " (draft)"
+				}
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", f.ID, name, strings.Join(names, ","), doi, f.UpdatedAt.Local().Format("2006-01-02 15:04"))
 			}
 			_ = tw.Flush()
 			if page.NextCursor != nil {
@@ -396,15 +406,20 @@ double opt-in on, and a success message and confirmation email to match.
 	})
 
 	var uf formFlags
+	var live bool
 	update := callsAll([]string{"updateForm", "getForm"}, &cobra.Command{
 		Use:   "update <form-id>",
 		Short: "Change a signup form",
 		Long: `Changes the parts given and leaves the rest. --tag replaces the form's tags;
 --no-tags takes them all off. Pass "" to --redirect-url to show the success
 message again. Embed code already on a site keeps working, but shows the
-fields it was made with until you paste the new code.`,
+fields it was made with until you paste the new code.
+
+Any update saves the form, which makes a draft from a Mailchimp import live.
+--live saves it as it is.`,
 		Example: `  mailgoose form update 3f1c... --button "Join" --last-name off
-  mailgoose form update 3f1c... --file footer.json`,
+  mailgoose form update 3f1c... --file footer.json
+  mailgoose form update 3f1c... --live`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := formIDArg(args[0])
@@ -423,8 +438,8 @@ fields it was made with until you paste the new code.`,
 			if err != nil {
 				return err
 			}
-			if len(body) == 0 {
-				return usageError("Nothing to change.", "Pass a part to change, such as --button or --file; `mailgoose form update --help` lists them.")
+			if len(body) == 0 && !live {
+				return usageError("Nothing to change.", "Pass a part to change, such as --button or --file, or --live to save a draft as it is; `mailgoose form update --help` lists them.")
 			}
 			var f form
 			if err := a.call(cmd.Context(), http.MethodPatch, formPath(id), body, &f, true); err != nil {
@@ -435,6 +450,7 @@ fields it was made with until you paste the new code.`,
 		},
 	})
 	uf.register(update, true)
+	update.Flags().BoolVar(&live, "live", false, "save the form as it is, making a draft from a Mailchimp import take signups")
 
 	var yes bool
 	del := calls("deleteForm", &cobra.Command{

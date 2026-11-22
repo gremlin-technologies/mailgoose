@@ -58,6 +58,9 @@ var (
 	// suspended (MG-65), or its sign-up review (MG-66) waits or was rejected
 	// (MG-106) and it has full sending.
 	ErrFormClosed = errors.New("the form isn't taking signups")
+	// ErrFormDraft means a form a Mailchimp import made (MG-76) that its
+	// owner hasn't saved yet.
+	ErrFormDraft = errors.New("the form is a draft")
 	// ErrTestMode means a signup from an address that isn't a confirmed
 	// test address (or the owner's) of an account in test mode (MG-80).
 	// Nothing is stored and no confirmation email goes.
@@ -163,6 +166,9 @@ func (s *Service) Submit(ctx context.Context, formID string, sub Submission, bas
 	}
 	if err != nil {
 		return nil, err
+	}
+	if f.Draft {
+		return nil, ErrFormDraft
 	}
 	if err := s.accepting(ctx, f.AccountID); err != nil {
 		return nil, err
@@ -379,6 +385,11 @@ type Problem struct {
 // Problems lists what stops a form taking signups; none when it can.
 func (s *Service) Problems(ctx context.Context, f *forms.Form) ([]Problem, error) {
 	var out []Problem
+	if f.Draft {
+		out = append(out, Problem{Code: "draft",
+			Message: "Signups are refused: your Mailchimp import made this form as a draft, so nothing went live by surprise.",
+			Hint:    "Check its fields, tags and messages, then save it: in the web app, or with `mailgoose form update <form-id> --live`."})
+	}
 	from, err := s.fromProblem(ctx, f)
 	if err != nil {
 		return nil, err

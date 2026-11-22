@@ -26,6 +26,7 @@ function form(over: Partial<Form> = {}): Form {
     confirm_text: "Thanks for signing up. Please confirm with the link below.",
     signups: 42,
     confirmations: 30,
+    draft: false,
     problems: [],
     created_at: "2026-11-18T10:00:00Z",
     updated_at: "2026-11-18T10:00:00Z",
@@ -61,6 +62,9 @@ function server(start: Form) {
         fields: body.fields as Form["fields"],
         tags: [news, vip].filter((t) => tag_ids.includes(t.id)),
         redirect_url: redirect_url || null,
+        // Saving makes a draft live, as the API.
+        draft: false,
+        problems: (state.form.problems as { code: string }[]).filter((p) => p.code !== "draft"),
         updated_at: "2026-11-19T10:00:00Z",
       };
       return { status: 200, body: { ...state.form, problems: undefined } };
@@ -222,6 +226,27 @@ describe("form editor", () => {
     await user.click(within(options).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(api.calls.some((c) => c.method === "PATCH")).toBe(true));
     expect((api.calls.find((c) => c.method === "PATCH")?.body as { double_opt_in: boolean }).double_opt_in).toBe(false);
+  });
+
+  it("saves a draft from a Mailchimp import as it is, so it takes signups", async () => {
+    const api = server(
+      form({
+        name: "Bakery news",
+        draft: true,
+        problems: [{ code: "draft", message: "Signups are refused: your Mailchimp import made this form as a draft.", hint: "Save it." }],
+      }),
+    );
+    const user = userEvent.setup();
+    renderApp(`/forms/${formId}`, api.fetch);
+    expect(await screen.findByText("Draft")).toBeTruthy();
+    expect(screen.getByText(/made this form as a draft/)).toBeTruthy();
+    const save = within(screen.getByRole("form", { name: "Form options" })).getByRole("button", { name: "Save and take signups" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(false);
+    await user.click(save);
+    await waitFor(() => expect(api.calls.some((c) => c.method === "PATCH")).toBe(true));
+    await waitFor(() => expect(screen.queryByText(/made this form as a draft/)).toBeNull());
+    expect(screen.queryByText("Draft")).toBeNull();
+    expect((within(screen.getByRole("form", { name: "Form options" })).getByRole("button", { name: "Save changes" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("deletes a form only after a second press", async () => {

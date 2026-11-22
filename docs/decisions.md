@@ -4,6 +4,39 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-22: Draft signup forms from a Mailchimp import (MG-76; reversible defaults)
+
+Mailchimp's embedded form code posts to Mailchimp, so confirming an import now
+gives each audience with members a mailgoose signup form in its name: email,
+first name and last name, double opt-in on, and the `audience: <name>` tag
+when the export has more than one audience. The bundle lists them in `forms`;
+the web app's import page links them, and the CLI prints their ids (and
+`--json` gives the bundle as the API does). These defaults are each easy to
+change:
+
+- **Drafts until saved.** A new form is a draft (`draft: true` on the form):
+  it takes no signups (its public endpoint answers 403 `form_draft`) and its
+  problems list says so, until the customer saves it. Any save does it: the
+  web editor's button reads "Save and take signups" and works with nothing
+  changed, `PATCH /v1/forms/{id}` with `{}` works, and the CLI has
+  `mailgoose form update <id> --live`.
+- **Group tags, picked once.** The preview lists each audience's groups as
+  the tags they become (`audiences[].groups`); confirming with `form_tags`
+  (web: tick boxes; CLI: `--form-tag`) puts each picked group on the form of
+  every audience that has it. None are picked by default. A tag that isn't
+  one of the audiences' groups is refused (422 `unknown_form_tag`).
+- **Mailchimp's double opt-in is shown, not copied.** A bundle fetched over
+  OAuth shows each audience's own Mailchimp setting (`double_optin`) beside
+  its form; mailgoose's form has double opt-in on either way. An uploaded
+  export doesn't carry the setting, so nothing is shown.
+- **One form per audience, by name.** A form remembers the audience it was
+  made for, matched ignoring case, so importing again finds that form and
+  leaves it as it is (`new: false`), saved or renamed or not. A deleted form
+  is made again on the next import. An audience with no members gets no form.
+- **Success message and button** are the usual defaults; nothing from the
+  Mailchimp form's own wording comes over, since neither export nor API
+  gives it.
+
 ## 2026-11-22: The web app's Mailchimp import page (MG-75; reversible defaults)
 
 `/contacts/import/mailchimp`, linked from the contacts import page and the
@@ -33,7 +66,7 @@ to change:
   the reason in a sentence; the import report links to it, for CSV imports
   too.
 - **What's next.** Verify the sending domain, set up signup forms and swap
-  the embed code (MG-76's draft forms will be listed here once they exist),
+  the embed code (MG-76's draft forms are listed above it),
   fix each email with errors, and send a test. The steps aren't ticked off.
 - **Hold wording.** The CLI's and the page's reasons for a held import now use
   the hold codes the server records (`large_first_import`,

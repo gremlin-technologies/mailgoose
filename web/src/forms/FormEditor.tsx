@@ -117,6 +117,7 @@ export function FormEditor() {
         <Link to="/forms">Signup forms</Link>
       </p>
       <PageHeader title={f.name}>
+        {f.draft && <Badge tone="warn">Draft</Badge>}
         {f.double_opt_in ? <Badge tone="good">Confirm by email</Badge> : <Badge tone="neutral">No confirmation</Badge>}
       </PageHeader>
       <dl className="tiles" aria-label="Counts">
@@ -147,8 +148,9 @@ export function FormEditor() {
           edited={() => setJustSaved(false)}
           saved={(next) => {
             setJustSaved(true);
-            // The answer to a change has no problems list; read it again for them.
-            replace({ ...next, problems: f.problems });
+            // The answer to a change has no problems list; read it again for
+            // them. Saving made a draft live, so that one goes at once.
+            replace({ ...next, problems: f.problems?.filter((p) => p.code !== "draft" || next.draft) });
             setSaves((n) => n + 1);
             reload();
           }}
@@ -320,8 +322,8 @@ function Options({
 
       <FailureNotice failure={failure} />
       <div className="row">
-        <button type="submit" className="button primary" disabled={busy || !dirty}>
-          {busy ? "Saving…" : "Save changes"}
+        <button type="submit" className="button primary" disabled={busy || (!dirty && !form.draft)}>
+          {busy ? "Saving…" : form.draft ? "Save and take signups" : "Save changes"}
         </button>
         {justSaved && !dirty ? (
           <span className="muted small" role="status">

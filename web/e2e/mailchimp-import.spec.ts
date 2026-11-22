@@ -6,7 +6,8 @@ import { axeTags, names, signUp } from "./helpers";
 // MG-75: a Mailchimp customer uploads an audience export (Mailchimp names
 // each file for its members' status, as here), reads the preview,
 // confirms it, and gets the checklist of what's next, at desktop and phone
-// width. The addresses are on SES's mailbox simulator, and nothing is sent.
+// width, then saves the draft signup form the import made (MG-76). The
+// addresses are on SES's mailbox simulator, and nothing is sent.
 
 async function noViolations(page: Page, where: string) {
   const result = await new AxeBuilder({ page }).withTags(axeTags).exclude("iframe").analyze();
@@ -55,6 +56,8 @@ test("upload a Mailchimp audience export, preview it and import it", async ({ pa
     await expect(page.getByText("2 contacts added, 1 skipped.")).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("heading", { name: "What's next" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Verify your sending domain" })).toBeVisible();
+    // MG-76: the audience gets a draft signup form in its name.
+    await expect(page.getByRole("link", { name: "Bakery news", exact: true })).toBeVisible();
     await noViolations(page, "imported");
   });
 
@@ -63,6 +66,18 @@ test("upload a Mailchimp audience export, preview it and import it", async ({ pa
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow, "no sideways scroll at phone width").toBeLessThanOrEqual(0);
     await noViolations(page, "imported, phone");
+  });
+
+  await test.step("save the draft signup form so it takes signups", async () => {
+    const imported = page.url();
+    await page.getByRole("link", { name: "Bakery news", exact: true }).click();
+    await expect(page.getByText(/made this form as a draft/)).toBeVisible();
+    await page.getByRole("button", { name: "Save and take signups" }).click();
+    await expect(page.getByText(/made this form as a draft/)).toBeHidden();
+    await noViolations(page, "form saved");
+    // WebKit's goBack can wait on a load that a client-side page change
+    // never fires, so the import page is opened by its address.
+    await page.goto(imported);
   });
 
   await test.step("download the skipped rows from the report", async () => {

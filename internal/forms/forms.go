@@ -101,8 +101,13 @@ type Form struct {
 	// Confirmations the confirm links used (FRM-6).
 	Signups       int
 	Confirmations int
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// Draft is true for a form a Mailchimp import made (MG-76) that hasn't
+	// been saved since: it takes no signups. MailchimpAudience is the
+	// audience such a form was made for, nil for any other form.
+	Draft             bool
+	MailchimpAudience *string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 // Asks reports whether the form has the field.
@@ -141,13 +146,13 @@ type Service struct {
 }
 
 const columns = `id, account_id, name, fields, button_text, success_message, redirect_url, double_opt_in,
-	confirm_subject, confirm_text, signing_key, signup_count, confirm_count, created_at, updated_at`
+	confirm_subject, confirm_text, signing_key, signup_count, confirm_count, draft, mailchimp_audience, created_at, updated_at`
 
 func scan(row pgx.Row) (*Form, error) {
 	var f Form
 	var fields []byte
 	err := row.Scan(&f.ID, &f.AccountID, &f.Name, &fields, &f.ButtonText, &f.SuccessMessage, &f.RedirectURL,
-		&f.DoubleOptIn, &f.ConfirmSubject, &f.ConfirmText, &f.SigningKey, &f.Signups, &f.Confirmations, &f.CreatedAt, &f.UpdatedAt)
+		&f.DoubleOptIn, &f.ConfirmSubject, &f.ConfirmText, &f.SigningKey, &f.Signups, &f.Confirmations, &f.Draft, &f.MailchimpAudience, &f.CreatedAt, &f.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -309,7 +314,8 @@ func (s *Service) Create(ctx context.Context, accountID string, c Changes) (*For
 	return s.Get(ctx, accountID, id)
 }
 
-// Update changes a form.
+// Update changes a form. Saving a draft form, even with no changes, makes
+// it live.
 func (s *Service) Update(ctx context.Context, accountID, id string, c Changes) (*Form, error) {
 	err := s.inTx(ctx, func(tx pgx.Tx) error {
 		f, err := scan(tx.QueryRow(ctx, `SELECT `+columns+` FROM forms WHERE account_id = $1 AND id = $2 FOR UPDATE`, accountID, id))
@@ -322,7 +328,7 @@ func (s *Service) Update(ctx context.Context, accountID, id string, c Changes) (
 		fields, _ := json.Marshal(f.Fields)
 		if _, err := tx.Exec(ctx, `
 			UPDATE forms SET name = $3, fields = $4, button_text = $5, success_message = $6, redirect_url = $7,
-				double_opt_in = $8, confirm_subject = $9, confirm_text = $10, updated_at = now()
+				double_opt_in = $8, confirm_subject = $9, confirm_text = $10, draft = false, updated_at = now()
 			WHERE account_id = $1 AND id = $2`,
 			accountID, id, f.Name, fields, f.ButtonText, f.SuccessMessage, f.RedirectURL, f.DoubleOptIn,
 			f.ConfirmSubject, f.ConfirmText); err != nil {

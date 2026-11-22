@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -65,16 +66,23 @@ func TestStoreConfirmsOnce(t *testing.T) {
 	s, _, acct := storeWithAccount(t)
 	ctx := t.Context()
 	u := savedExport(t, s, acct)
-	c, err := s.Confirm(ctx, acct, u.ID, nil, 1, 2)
+	if len(u.Forms) != 0 {
+		t.Errorf("forms before confirming = %+v", u.Forms)
+	}
+	made := []BundleForm{{ID: "3f1c0e8e-1111-4c55-9a0e-2f9b8b6f4a10", Name: "Newsletter", Audience: "Newsletter", New: true}}
+	c, err := s.Confirm(ctx, acct, u.ID, nil, 1, 2, made)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.ConfirmedAt == nil || c.Campaigns != 1 || c.EmailsTotal != 2 || c.EmailsStatus != EmailsQueued || !c.HasData {
 		t.Fatalf("confirmed = %+v", c)
 	}
+	if !slices.Equal(c.Forms, made) {
+		t.Errorf("forms = %+v", c.Forms)
+	}
 	// A second confirm changes nothing, and a confirmed upload doesn't expire.
-	again, err := s.Confirm(ctx, acct, u.ID, nil, 5, 6)
-	if err != nil || again.Campaigns != 1 || again.EmailsTotal != 2 {
+	again, err := s.Confirm(ctx, acct, u.ID, nil, 5, 6, nil)
+	if err != nil || again.Campaigns != 1 || again.EmailsTotal != 2 || len(again.Forms) != 1 {
 		t.Fatalf("again = %+v, %v", again, err)
 	}
 	s.Now = func() time.Time { return time.Now().Add(UploadTTL + time.Minute) }
@@ -84,7 +92,7 @@ func TestStoreConfirmsOnce(t *testing.T) {
 
 	// With no emails to make, the file goes at once.
 	u2 := savedExport(t, &Store{DB: s.DB}, acct)
-	c2, err := (&Store{DB: s.DB}).Confirm(ctx, acct, u2.ID, nil, 1, 0)
+	c2, err := (&Store{DB: s.DB}).Confirm(ctx, acct, u2.ID, nil, 1, 0, nil)
 	if err != nil || c2.EmailsStatus != EmailsDone || c2.HasData {
 		t.Fatalf("no emails = %+v, %v", c2, err)
 	}
@@ -109,7 +117,7 @@ func TestEmailJobMakesEmailsAndCarriesOn(t *testing.T) {
 
 	// A job that stopped after its first email carries on from the second.
 	u := savedExport(t, s, acct)
-	if _, err := s.Confirm(ctx, acct, u.ID, nil, 2, 3); err != nil {
+	if _, err := s.Confirm(ctx, acct, u.ID, nil, 2, 3, nil); err != nil {
 		t.Fatal(err)
 	}
 	first, err := json.Marshal(ImportedEmail{EmailPlan: EmailPlan{From: EmailFromTemplate, Name: "made before the stop"},
@@ -148,7 +156,7 @@ func TestEmailJobGivesUpAfterThreeTries(t *testing.T) {
 	s, db, acct := storeWithAccount(t)
 	ctx := t.Context()
 	u := savedExport(t, s, acct)
-	if _, err := s.Confirm(ctx, acct, u.ID, nil, 1, 2); err != nil {
+	if _, err := s.Confirm(ctx, acct, u.ID, nil, 1, 2, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(ctx, `UPDATE mailchimp_bundles SET emails_status = 'running',
@@ -182,7 +190,7 @@ func TestStoreCapsUnconfirmedUploadsAndDeletes(t *testing.T) {
 		t.Fatalf("past the cap: %v", err)
 	}
 	// Confirming one frees a place, and so does deleting one.
-	if _, err := s.Confirm(ctx, acct, ids[0], nil, 1, 0); err != nil {
+	if _, err := s.Confirm(ctx, acct, ids[0], nil, 1, 0, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Delete(ctx, acct, ids[0]); !errors.Is(err, ErrUploadConfirmed) {
@@ -204,7 +212,7 @@ func TestStoreCapsUnconfirmedUploadsAndDeletes(t *testing.T) {
 	if string(u.Preview) != `{}` {
 		t.Errorf("preview = %s", u.Preview)
 	}
-	c, err := s.Confirm(ctx, acct, u.ID, nil, 1, 1)
+	c, err := s.Confirm(ctx, acct, u.ID, nil, 1, 1, nil)
 	if err != nil || c.Preview != nil {
 		t.Errorf("preview after confirm = %s, %v", c.Preview, err)
 	}

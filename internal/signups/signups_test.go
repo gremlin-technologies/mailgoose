@@ -340,9 +340,27 @@ func TestRefusals(t *testing.T) {
 		t.Errorf("unknown form: %v", err)
 	}
 
+	var err error
+	// A draft form from a Mailchimp import (MG-76) takes nothing until it's
+	// saved, and says why.
+	if _, err := h.db.Exec(ctx, `UPDATE forms SET draft = true WHERE id = $1`, h.form.ID); err != nil {
+		t.Fatal(err)
+	}
+	if h.form, err = h.svc.Forms.Get(ctx, h.acc, h.form.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.submit(h.post("ann@example.com")); !errors.Is(err, ErrFormDraft) {
+		t.Errorf("draft: %v", err)
+	}
+	if ps, err := h.svc.Problems(ctx, h.form); err != nil || len(ps) != 1 || ps[0].Code != "draft" {
+		t.Errorf("draft problems %+v %v", ps, err)
+	}
+	if h.form, err = h.svc.Forms.Update(ctx, h.acc, h.form.ID, forms.Changes{}); err != nil || h.form.Draft {
+		t.Fatalf("saved draft = %+v, %v", h.form, err)
+	}
+
 	// A required name.
 	fields := []forms.Field{{Name: forms.FieldEmail, Required: true}, {Name: forms.FieldFirstName, Label: "First name", Required: true}}
-	var err error
 	if h.form, err = h.svc.Forms.Update(ctx, h.acc, h.form.ID, forms.Changes{Fields: &fields}); err != nil {
 		t.Fatal(err)
 	}
