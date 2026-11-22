@@ -69,12 +69,15 @@ test("upload a Mailchimp audience export, preview it and import it", async ({ pa
   });
 
   await test.step("save the draft signup form so it takes signups", async () => {
+    const imported = page.url();
     await page.getByRole("link", { name: "Bakery news", exact: true }).click();
     await expect(page.getByText(/made this form as a draft/)).toBeVisible();
     await page.getByRole("button", { name: "Save and take signups" }).click();
     await expect(page.getByText(/made this form as a draft/)).toBeHidden();
     await noViolations(page, "form saved");
-    await page.goBack();
+    // WebKit's goBack can wait on a load that a client-side page change
+    // never fires, so the import page is opened by its address.
+    await page.goto(imported);
   });
 
   await test.step("download the skipped rows from the report", async () => {
