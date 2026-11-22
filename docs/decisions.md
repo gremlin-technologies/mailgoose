@@ -54,6 +54,30 @@ Nov 22, to the four picks it put to him: "Go with all four picks".
   been 36%). The estimates (30% of the allowance used, 4% converting) should
   be checked against beta numbers; raising the allowance later is easy.
 
+## 2026-11-22: The "Sent by mailgoose" footer, as built (MG-119; reversible defaults)
+
+Free accounts' copies end with the wordmark, alt text "Sent by mailgoose",
+linked to `PUBLIC_BASE_URL/signup?ref=footer`, and a plain-text line `Sent by
+mailgoose: <url>`. Defaults, each easy to change:
+
+- **A slot in every compiled template, filled per copy.** The renderer always
+  leaves the footer's place (under the compliance footer, or before `</body>`
+  in html emails, after the postal address), and a copy fills it when the
+  account is free or a tester at the moment that copy is rendered. So an
+  upgrade ends it from the next copy and a plan that ends brings it back, and
+  nothing in the email document, the API or the CLI can edit or remove it.
+- **Testers carry it** (the ticket's default), on any plan.
+- **Test sends and the preview show it**, for the same accounts.
+- **The wordmark is `docs/brand/wordmark.png` as is** (1843 by 445, shown at
+  96 pixels wide), served at `/assets/brand/v1/` and cached for a year, like
+  the social icons; a redrawn one gets `v2`.
+- **No base URL, no footer.** Without `PUBLIC_BASE_URL` (local runs) there's
+  nothing to link or load, so no footer is rendered.
+- **The link is left out of click tracking**, so it isn't a click.
+- **Campaigns launched before this change keep the template they were
+  launched with** and carry no footer; only campaigns launched afterwards do.
+- **The email check doesn't see the footer**: it checks the customer's email.
+
 ## 2026-11-22: The web app speaks in its own words, never CLI commands (owner decision, confirmed)
 
 Asked about the untested-campaign error in the web app, which tells people to

@@ -9,6 +9,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
+	"github.com/gremlin-technologies/mailgoose/internal/sending"
 )
 
 // previewRecipient is the sample person a preview is filled in for.
@@ -51,6 +52,7 @@ func (s *Server) PreviewEmail(w http.ResponseWriter, r *http.Request, id string,
 		return
 	}
 	acct := render.Account{PostalAddress: previewPostalAddress, AssetsURL: s.webURL(r)}
+	branded := false
 	if s.Auth != nil {
 		st, err := s.Auth.AccountSettings(r.Context(), c.AccountID)
 		if err != nil {
@@ -60,6 +62,7 @@ func (s *Server) PreviewEmail(w http.ResponseWriter, r *http.Request, id string,
 		if st.PostalAddress != nil && strings.TrimSpace(*st.PostalAddress) != "" {
 			acct.PostalAddress = *st.PostalAddress
 		}
+		branded = st.Plan == "free"
 	}
 
 	var tpl *render.Template
@@ -96,7 +99,17 @@ func (s *Server) PreviewEmail(w http.ResponseWriter, r *http.Request, id string,
 		s.emailError(w, r, err)
 		return
 	}
-	page := tpl.Personalize(previewRecipient).HTML
+	// The preview shows the "Sent by mailgoose" footer a free account's
+	// copies carry (MG-119).
+	rcpt := previewRecipient
+	rcpt.Branded = branded
+	if s.Sending != nil {
+		if rcpt.Branded, err = sending.Branded(r.Context(), s.Sending.DB, c.AccountID); err != nil {
+			s.emailError(w, r, err)
+			return
+		}
+	}
+	page := tpl.Personalize(rcpt).HTML
 	if width == "mobile" {
 		page = mobileFrame(page)
 	}

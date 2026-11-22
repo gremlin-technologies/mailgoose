@@ -120,6 +120,18 @@ func TestLocalImageFiles(t *testing.T) {
 	}
 }
 
+// The wordmark in free accounts' "Sent by mailgoose" footer (MG-119) is
+// served the same way.
+func TestBrandWordmark(t *testing.T) {
+	s := newServer(nil)
+	s.Web = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Errorf("web app served %s", r.URL.Path) })
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/assets/brand/v1/wordmark.png", nil))
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/png" || !strings.Contains(rec.Header().Get("Cache-Control"), "immutable") {
+		t.Errorf("served %d %v", rec.Code, rec.Header())
+	}
+}
+
 // The social block's icons (MG-109) are served without a session, ahead of
 // the web app, so emails can load them.
 func TestSocialIcons(t *testing.T) {

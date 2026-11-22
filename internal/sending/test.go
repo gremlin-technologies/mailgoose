@@ -176,9 +176,15 @@ func (s *Service) Test(ctx context.Context, accountID, campaignID string, to []s
 		return nil, err
 	}
 
+	// A test shows the footer a free account's campaign carries (MG-119).
+	branded, err := Branded(ctx, s.DB, accountID)
+	if err != nil {
+		return nil, err
+	}
 	for i, addr := range recipients {
 		r := s.testRecipient(ctx, accountID, addr)
 		r.UnsubscribeURL = unsubURL
+		r.Branded = branded
 		m := p.Template.Personalize(r)
 		msg := mail.Message{
 			From:       p.From,

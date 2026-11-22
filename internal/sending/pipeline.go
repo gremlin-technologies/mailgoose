@@ -699,11 +699,18 @@ func (p *Pipeline) send(ctx context.Context, b Batch, s *sendable, id int64, r c
 	if err != nil {
 		return false, err
 	}
-	m := s.copy.Template.Personalize(render.Recipient{Email: r.email, FirstName: r.first, LastName: r.last, UnsubscribeURL: url})
+	// Whether this copy carries the "Sent by mailgoose" footer is decided
+	// now, from the account's plan (MG-119).
+	branded, err := Branded(ctx, p.DB, b.AccountID)
+	if err != nil {
+		return false, err
+	}
+	m := s.copy.Template.Personalize(render.Recipient{Email: r.email, FirstName: r.first, LastName: r.last, UnsubscribeURL: url, Branded: branded})
 	if s.links != nil {
 		unsub := strings.TrimRight(p.BaseURL, "/") + unsubscribe.PathPrefix
 		m.HTML = render.Track(m.HTML, s.links.For(id), func(href string) bool {
-			return href == url || strings.HasPrefix(href, unsub)
+			// The footer's link isn't tracked, so it isn't a click.
+			return href == url || strings.HasPrefix(href, unsub) || render.IsBrandLink(p.BaseURL, href)
 		})
 	}
 	msg := mail.Message{

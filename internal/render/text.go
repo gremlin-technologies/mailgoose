@@ -14,7 +14,7 @@ func (r *renderer) text() string {
 	for _, b := range r.doc.Blocks {
 		out = append(out, textOf(b, r.acct)...)
 	}
-	return strings.Join(out, "\n\n") + "\n"
+	return strings.Join(out, "\n\n") + "\n" + brandSlot
 }
 
 func textOf(b emails.Block, acct Account) []string {
