@@ -2687,6 +2687,133 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/imports/mailchimp/audiences:
+    get:
+      operationId: listMailchimpAudiences
+      summary: List the connected Mailchimp account's audiences
+      description: |
+        The audiences of the Mailchimp account connected with
+        `connectMailchimp`, by name, with Mailchimp's own counts and whether
+        each asks for double opt-in. Pick their ids for
+        `createMailchimpFetch`.
+
+        Answers 409 `mailchimp_not_connected` when no account is connected,
+        and 409 `mailchimp_access_revoked` (and forgets the connection) when
+        Mailchimp no longer takes mailgoose's access.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      responses:
+        "200":
+          description: The audiences.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailchimpAudienceList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/MailchimpNotConnected"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "502":
+          $ref: "#/components/responses/MailchimpUnavailable"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/imports/mailchimp/fetch:
+    post:
+      operationId: createMailchimpFetch
+      summary: Fetch audiences and emails from the connected Mailchimp account
+      description: |
+        Starts reading the connected Mailchimp account: every member of the
+        chosen audiences, whatever their status, with their merge fields,
+        groups, tags, opt-in and signup times and IPs and GDPR permissions;
+        each chosen saved segment as a tag `segment: <name>` on its members
+        as they are now (a snapshot that doesn't update); and the content of
+        the newest sent campaigns. It runs in the background: poll
+        `getMailchimpFetch` until `status` is `done`, when `bundle` is the
+        result, previewed and confirmed like an uploaded export
+        (`confirmMailchimpBundle`). Confirming it forgets the connection.
+
+        Mailchimp's API doesn't give a template's HTML, so templates come
+        over only by uploading the account export.
+
+        An account runs one fetch at a time (409 `fetch_in_progress`), and a
+        finished one counts toward the 3 unconfirmed bundles an account
+        keeps.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMailchimpFetchRequest"
+      responses:
+        "202":
+          description: The fetch, queued.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailchimpFetch"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/MailchimpFetchConflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/imports/mailchimp/fetch/{fetch_id}:
+    get:
+      operationId: getMailchimpFetch
+      summary: Get a fetch from Mailchimp
+      description: |
+        How a fetch is going: the step, the audience being read and the
+        members read so far. Once `done`, `bundle` is the fetched bundle
+        with its preview; once `failed`, `error` says why. Finished fetches
+        are kept for 7 days.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/FetchId"
+      responses:
+        "200":
+          description: The fetch.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MailchimpFetch"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/forms:
     get:
       operationId: listForms
@@ -5613,6 +5740,146 @@ components:
           data_center: us21
           connected_at: "2026-11-21T12:02:00Z"
           expires_at: "2026-11-22T12:02:00Z"
+    MailchimpAudienceList:
+      type: object
+      additionalProperties: false
+      required: [audiences]
+      properties:
+        audiences:
+          type: array
+          items:
+            $ref: "#/components/schemas/MailchimpAccountAudience"
+    MailchimpAccountAudience:
+      type: object
+      additionalProperties: false
+      required: [id, name, double_optin, members]
+      description: An audience of the connected Mailchimp account, with Mailchimp's own counts.
+      properties:
+        id:
+          type: string
+          description: Mailchimp's id for the audience (its list id).
+        name:
+          type: string
+        double_optin:
+          type: boolean
+          description: Whether the audience asks new subscribers to confirm.
+        members:
+          type: object
+          additionalProperties: false
+          required: [subscribed, unsubscribed, cleaned, total]
+          properties:
+            subscribed:
+              type: integer
+            unsubscribed:
+              type: integer
+            cleaned:
+              type: integer
+            total:
+              type: integer
+              description: Mailchimp's approximate count of every contact, whatever their status.
+      examples:
+        - id: "a1b2c3d4e5"
+          name: Newsletter
+          double_optin: true
+          members: {subscribed: 1204, unsubscribed: 88, cleaned: 12, total: 1320}
+    CreateMailchimpFetchRequest:
+      type: object
+      additionalProperties: false
+      required: [audience_ids]
+      properties:
+        audience_ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+            pattern: "^[A-Za-z0-9]{1,32}$"
+          description: Audience ids from `listMailchimpAudiences`.
+        segment_ids:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            pattern: "^[0-9]{1,20}$"
+          description: |
+            Saved segments of those audiences, by Mailchimp's segment id. Each
+            becomes a tag `segment: <name>` on the members it has now.
+        campaigns:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 10
+          description: How many of the newest sent campaigns to read.
+      examples:
+        - audience_ids: ["a1b2c3d4e5"]
+          segment_ids: ["40213"]
+          campaigns: 10
+    MailchimpFetch:
+      type: object
+      additionalProperties: false
+      required: [id, status, step, audience, members_read, members_total, audience_ids, segment_ids, campaigns,
+        error, bundle_id, bundle, created_at, finished_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, running, done, failed]
+        step:
+          type: string
+          description: |
+            What it's reading while running: `audiences`, `segments`,
+            `members` or `campaigns`; empty otherwise.
+        audience:
+          type: [string, "null"]
+          description: The audience being read during `members`.
+        members_read:
+          type: integer
+        members_total:
+          type: integer
+          description: The members the audiences had when the fetch started.
+        audience_ids:
+          type: array
+          items:
+            type: string
+        segment_ids:
+          type: array
+          items:
+            type: string
+        campaigns:
+          type: integer
+        error:
+          description: Why it failed; null unless `failed`.
+          oneOf:
+            - type: "null"
+            - type: object
+              additionalProperties: false
+              required: [code, message]
+              properties:
+                code:
+                  type: string
+                  description: |
+                    `mailchimp_not_connected`, `mailchimp_access_revoked`,
+                    `mailchimp_unavailable`, `unknown_audience`,
+                    `unknown_segment`, `too_many_members`, `too_large`,
+                    `too_many_uploads` or `fetch_stopped`.
+                message:
+                  type: string
+        bundle_id:
+          type: [string, "null"]
+          format: uuid
+        bundle:
+          description: The fetched bundle once `done`, as `getMailchimpBundle` shows it.
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/MailchimpBundle"
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: [string, "null"]
+          format: date-time
     MailchimpBundle:
       type: object
       additionalProperties: false
@@ -5705,7 +5972,8 @@ components:
       properties:
         source:
           type: string
-          enum: [account_export, audience_export, audience_csv]
+          enum: [account_export, audience_export, audience_csv, connected_account]
+          description: "`connected_account`: fetched from a connected Mailchimp account (`createMailchimpFetch`)."
         audiences:
           type: array
           items:
@@ -5738,6 +6006,29 @@ components:
                 description: |
                   `too_many_templates`: a template past the first 100 (in
                   file order), which doesn't come over as an email.
+        segment_tags:
+          type: array
+          description: |
+            For a fetched bundle, the tags made from Mailchimp saved
+            segments: a snapshot of each segment's members when fetched,
+            which doesn't update.
+          items:
+            type: object
+            additionalProperties: false
+            required: [audience, tag, members]
+            properties:
+              audience:
+                type: string
+              tag:
+                type: string
+              members:
+                type: integer
+        templates_not_fetched:
+          type: integer
+          description: |
+            For a fetched bundle, the account's own templates. Mailchimp's
+            API doesn't give their HTML; upload the account export to bring
+            them over.
     MailchimpAudience:
       type: object
       additionalProperties: false
@@ -8916,6 +9207,14 @@ components:
       schema:
         type: string
         format: uuid
+    FetchId:
+      name: fetch_id
+      in: path
+      required: true
+      description: The fetch's `id`, from `createMailchimpFetch`.
+      schema:
+        type: string
+        format: uuid
     BundleId:
       name: bundle_id
       in: path
@@ -8999,6 +9298,43 @@ components:
         500 characters), `amount` (not 1 to 1,000,000), or for a tester
         grant `until` (passed, or over 366 days away) or `credits` (not 1 to
         10,000).
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    MailchimpNotConnected:
+      description: |
+        `mailchimp_not_connected`: no Mailchimp account is connected, or the
+        connection has expired; connect one with `connectMailchimp`.
+        `mailchimp_access_revoked`: Mailchimp no longer takes mailgoose's
+        access, so the connection was forgotten; connect again.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    MailchimpFetchConflict:
+      description: |
+        `mailchimp_not_connected` or `mailchimp_access_revoked`, as for
+        `listMailchimpAudiences`. `fetch_in_progress`: the account's earlier
+        fetch hasn't finished. `too_many_uploads`: the account already has 3
+        unconfirmed bundles; confirm or delete one.
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    MailchimpUnavailable:
+      description: |
+        `mailchimp_unavailable`: Mailchimp's API didn't answer, or refused
+        the request. Try again in a few minutes.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

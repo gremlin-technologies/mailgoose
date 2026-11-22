@@ -1240,6 +1240,30 @@ func (e MailchimpEmailProgressStatus) Valid() bool {
 	}
 }
 
+// Defines values for MailchimpFetchStatus.
+const (
+	MailchimpFetchStatusDone    MailchimpFetchStatus = "done"
+	MailchimpFetchStatusFailed  MailchimpFetchStatus = "failed"
+	MailchimpFetchStatusQueued  MailchimpFetchStatus = "queued"
+	MailchimpFetchStatusRunning MailchimpFetchStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the MailchimpFetchStatus enum.
+func (e MailchimpFetchStatus) Valid() bool {
+	switch e {
+	case MailchimpFetchStatusDone:
+		return true
+	case MailchimpFetchStatusFailed:
+		return true
+	case MailchimpFetchStatusQueued:
+		return true
+	case MailchimpFetchStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MailchimpPreviewIgnoredFilesReason.
 const (
 	MailchimpPreviewIgnoredFilesReasonTooLarge         MailchimpPreviewIgnoredFilesReason = "too_large"
@@ -1263,9 +1287,10 @@ func (e MailchimpPreviewIgnoredFilesReason) Valid() bool {
 
 // Defines values for MailchimpPreviewSource.
 const (
-	MailchimpPreviewSourceAccountExport  MailchimpPreviewSource = "account_export"
-	MailchimpPreviewSourceAudienceCsv    MailchimpPreviewSource = "audience_csv"
-	MailchimpPreviewSourceAudienceExport MailchimpPreviewSource = "audience_export"
+	MailchimpPreviewSourceAccountExport    MailchimpPreviewSource = "account_export"
+	MailchimpPreviewSourceAudienceCsv      MailchimpPreviewSource = "audience_csv"
+	MailchimpPreviewSourceAudienceExport   MailchimpPreviewSource = "audience_export"
+	MailchimpPreviewSourceConnectedAccount MailchimpPreviewSource = "connected_account"
 )
 
 // Valid indicates whether the value is a known member of the MailchimpPreviewSource enum.
@@ -1276,6 +1301,8 @@ func (e MailchimpPreviewSource) Valid() bool {
 	case MailchimpPreviewSourceAudienceCsv:
 		return true
 	case MailchimpPreviewSourceAudienceExport:
+		return true
+	case MailchimpPreviewSourceConnectedAccount:
 		return true
 	default:
 		return false
@@ -2875,6 +2902,19 @@ type CreateMailchimpBundleRequest struct {
 	GroupColumns *[]string `json:"group_columns,omitempty"`
 }
 
+// CreateMailchimpFetchRequest Examples: {"audience_ids":["a1b2c3d4e5"],"campaigns":10,"segment_ids":["40213"]}
+type CreateMailchimpFetchRequest struct {
+	// AudienceIds Audience ids from `listMailchimpAudiences`.
+	AudienceIds []string `json:"audience_ids"`
+
+	// Campaigns How many of the newest sent campaigns to read.
+	Campaigns *int `json:"campaigns,omitempty"`
+
+	// SegmentIds Saved segments of those audiences, by Mailchimp's segment id. Each
+	// becomes a tag `segment: <name>` on the members it has now.
+	SegmentIds *[]string `json:"segment_ids,omitempty"`
+}
+
 // CreateTagRequest defines model for CreateTagRequest.
 type CreateTagRequest struct {
 	// Name Unique in the account, ignoring case; one line, no commas.
@@ -3701,12 +3741,37 @@ type MailAddress struct {
 	Name  string `json:"name"`
 }
 
+// MailchimpAccountAudience An audience of the connected Mailchimp account, with Mailchimp's own counts.
+//
+// Examples: {"double_optin":true,"id":"a1b2c3d4e5","members":{"cleaned":12,"subscribed":1204,"total":1320,"unsubscribed":88},"name":"Newsletter"}
+type MailchimpAccountAudience struct {
+	// DoubleOptin Whether the audience asks new subscribers to confirm.
+	DoubleOptin bool `json:"double_optin"`
+
+	// Id Mailchimp's id for the audience (its list id).
+	Id      string `json:"id"`
+	Members struct {
+		Cleaned    int `json:"cleaned"`
+		Subscribed int `json:"subscribed"`
+
+		// Total Mailchimp's approximate count of every contact, whatever their status.
+		Total        int `json:"total"`
+		Unsubscribed int `json:"unsubscribed"`
+	} `json:"members"`
+	Name string `json:"name"`
+}
+
 // MailchimpAudience defines model for MailchimpAudience.
 type MailchimpAudience struct {
 	// ByStatus Member rows by their Mailchimp status.
 	ByStatus MailchimpStatusCounts `json:"by_status"`
 	Members  int                   `json:"members"`
 	Name     string                `json:"name"`
+}
+
+// MailchimpAudienceList defines model for MailchimpAudienceList.
+type MailchimpAudienceList struct {
+	Audiences []MailchimpAccountAudience `json:"audiences"`
 }
 
 // MailchimpBundle Examples: {"bytes":482113,"campaigns":10,"confirmed_at":null,"created_at":"2026-11-21T12:00:00Z","emails":{"error":null,"made":[],"status":"none","total":0},"expires_at":"2026-11-28T12:00:00Z","file_name":"mailchimp-export.zip","id":"7c1e5a52-3d1f-4c55-9a0e-2f9b8b6f4a10","import_id":null,"preview":{"audiences":[{"by_status":{"archived":0,"cleaned":20,"pending":14,"subscribed":1100,"transactional":10,"unsubscribed":60},"members":1204,"name":"Newsletter"}],"campaigns_available":24,"contacts":{"dropped_fields":["Birthday","Phone Number"],"existing_suppressed":0,"existing_tagged":20,"holds":["over_contact_limit"],"merge_suppressed":0,"merge_suppressed_examples":[],"names_cut":0,"new":{"bounced":20,"subscribed":1080,"unconfirmed":14,"unsubscribed":60},"newest_optin":"2026-10-30T09:12:00Z","plan":{"contacts":1100,"limit":500,"month_cents":500,"plan":"paid","tester":false,"units":1,"upgrade":true,"year_cents":5000},"renamed_tags":[],"skipped":{"archived":0,"invalid_email":0,"invalid_row":0,"not_subscribed":10,"suppressed":0},"tags_to_create":["vip","Interests: Baking"],"waits":true,"with_optin_time":1000},"emails":[{"email_id":null,"errors":[],"file":"templates/Monthly_newsletter.html","from":"template","images":2,"name":"Monthly newsletter","preview_text":"","subject":"","warnings":[]}],"ignored_files":[{"path":"reports/opens.csv","reason":"unknown_file"}],"source":"account_export"},"status":"unconfirmed"}
@@ -3873,6 +3938,44 @@ type MailchimpEmailProgress struct {
 // MailchimpEmailProgressStatus `none` until confirmed.
 type MailchimpEmailProgressStatus string
 
+// MailchimpFetch defines model for MailchimpFetch.
+type MailchimpFetch struct {
+	// Audience The audience being read during `members`.
+	Audience    *string  `json:"audience"`
+	AudienceIds []string `json:"audience_ids"`
+
+	// Bundle The fetched bundle once `done`, as `getMailchimpBundle` shows it.
+	Bundle    *MailchimpBundle `json:"bundle"`
+	BundleId  *string          `json:"bundle_id"`
+	Campaigns int              `json:"campaigns"`
+	CreatedAt time.Time        `json:"created_at"`
+
+	// Error Why it failed; null unless `failed`.
+	Error *struct {
+		// Code `mailchimp_not_connected`, `mailchimp_access_revoked`,
+		// `mailchimp_unavailable`, `unknown_audience`,
+		// `unknown_segment`, `too_many_members`, `too_large`,
+		// `too_many_uploads` or `fetch_stopped`.
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+	FinishedAt  *time.Time `json:"finished_at"`
+	Id          string     `json:"id"`
+	MembersRead int        `json:"members_read"`
+
+	// MembersTotal The members the audiences had when the fetch started.
+	MembersTotal int                  `json:"members_total"`
+	SegmentIds   []string             `json:"segment_ids"`
+	Status       MailchimpFetchStatus `json:"status"`
+
+	// Step What it's reading while running: `audiences`, `segments`,
+	// `members` or `campaigns`; empty otherwise.
+	Step string `json:"step"`
+}
+
+// MailchimpFetchStatus defines model for MailchimpFetch.Status.
+type MailchimpFetchStatus string
+
 // MailchimpPreview defines model for MailchimpPreview.
 type MailchimpPreview struct {
 	Audiences []MailchimpAudience `json:"audiences"`
@@ -3892,14 +3995,30 @@ type MailchimpPreview struct {
 		// file order), which doesn't come over as an email.
 		Reason MailchimpPreviewIgnoredFilesReason `json:"reason"`
 	} `json:"ignored_files"`
+
+	// SegmentTags For a fetched bundle, the tags made from Mailchimp saved
+	// segments: a snapshot of each segment's members when fetched,
+	// which doesn't update.
+	SegmentTags *[]struct {
+		Audience string `json:"audience"`
+		Members  int    `json:"members"`
+		Tag      string `json:"tag"`
+	} `json:"segment_tags,omitempty"`
+
+	// Source `connected_account`: fetched from a connected Mailchimp account (`createMailchimpFetch`).
 	Source MailchimpPreviewSource `json:"source"`
+
+	// TemplatesNotFetched For a fetched bundle, the account's own templates. Mailchimp's
+	// API doesn't give their HTML; upload the account export to bring
+	// them over.
+	TemplatesNotFetched *int `json:"templates_not_fetched,omitempty"`
 }
 
 // MailchimpPreviewIgnoredFilesReason `too_many_templates`: a template past the first 100 (in
 // file order), which doesn't come over as an email.
 type MailchimpPreviewIgnoredFilesReason string
 
-// MailchimpPreviewSource defines model for MailchimpPreview.Source.
+// MailchimpPreviewSource `connected_account`: fetched from a connected Mailchimp account (`createMailchimpFetch`).
 type MailchimpPreviewSource string
 
 // MailchimpStatusCounts Member rows by their Mailchimp status.
@@ -4626,6 +4745,9 @@ type DomainId = string
 // EmailId defines model for EmailId.
 type EmailId = string
 
+// FetchId defines model for FetchId.
+type FetchId = string
+
 // FormId defines model for FormId.
 type FormId = string
 
@@ -4716,8 +4838,17 @@ type LaunchConfirmation = Error
 // LaunchRefused defines model for LaunchRefused.
 type LaunchRefused = Error
 
+// MailchimpFetchConflict defines model for MailchimpFetchConflict.
+type MailchimpFetchConflict = Error
+
+// MailchimpNotConnected defines model for MailchimpNotConnected.
+type MailchimpNotConnected = Error
+
 // MailchimpRefused defines model for MailchimpRefused.
 type MailchimpRefused = Error
+
+// MailchimpUnavailable defines model for MailchimpUnavailable.
+type MailchimpUnavailable = Error
 
 // MailchimpUploadConflict defines model for MailchimpUploadConflict.
 type MailchimpUploadConflict = Error
@@ -5131,6 +5262,9 @@ type CreateMailchimpBundleMultipartRequestBody = CreateMailchimpBundleRequest
 
 // ConfirmMailchimpBundleJSONRequestBody defines body for ConfirmMailchimpBundle for application/json ContentType.
 type ConfirmMailchimpBundleJSONRequestBody = ConfirmMailchimpBundleRequest
+
+// CreateMailchimpFetchJSONRequestBody defines body for CreateMailchimpFetch for application/json ContentType.
+type CreateMailchimpFetchJSONRequestBody = CreateMailchimpFetchRequest
 
 // CreatePlanCheckoutJSONRequestBody defines body for CreatePlanCheckout for application/json ContentType.
 type CreatePlanCheckoutJSONRequestBody = PlanCheckoutRequest
@@ -6127,6 +6261,9 @@ type ServerInterface interface {
 	// CreateImport Import contacts from a CSV file
 	// (POST /v1/imports)
 	CreateImport(w http.ResponseWriter, r *http.Request)
+	// ListMailchimpAudiences List the connected Mailchimp account's audiences
+	// (GET /v1/imports/mailchimp/audiences)
+	ListMailchimpAudiences(w http.ResponseWriter, r *http.Request)
 	// CreateMailchimpBundle Upload a Mailchimp export
 	// (POST /v1/imports/mailchimp/bundles)
 	CreateMailchimpBundle(w http.ResponseWriter, r *http.Request)
@@ -6148,6 +6285,12 @@ type ServerInterface interface {
 	// DisconnectMailchimp Forget the connected Mailchimp account
 	// (POST /v1/imports/mailchimp/disconnect)
 	DisconnectMailchimp(w http.ResponseWriter, r *http.Request)
+	// CreateMailchimpFetch Fetch audiences and emails from the connected Mailchimp account
+	// (POST /v1/imports/mailchimp/fetch)
+	CreateMailchimpFetch(w http.ResponseWriter, r *http.Request)
+	// GetMailchimpFetch Get a fetch from Mailchimp
+	// (GET /v1/imports/mailchimp/fetch/{fetch_id})
+	GetMailchimpFetch(w http.ResponseWriter, r *http.Request, fetchId FetchId)
 	// GetImport Get an import
 	// (GET /v1/imports/{import_id})
 	GetImport(w http.ResponseWriter, r *http.Request, importId ImportId)
@@ -8735,6 +8878,20 @@ func (siw *ServerInterfaceWrapper) CreateImport(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListMailchimpAudiences operation middleware
+func (siw *ServerInterfaceWrapper) ListMailchimpAudiences(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMailchimpAudiences(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateMailchimpBundle operation middleware
 func (siw *ServerInterfaceWrapper) CreateMailchimpBundle(w http.ResponseWriter, r *http.Request) {
 
@@ -8860,6 +9017,46 @@ func (siw *ServerInterfaceWrapper) DisconnectMailchimp(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DisconnectMailchimp(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateMailchimpFetch operation middleware
+func (siw *ServerInterfaceWrapper) CreateMailchimpFetch(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateMailchimpFetch(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMailchimpFetch operation middleware
+func (siw *ServerInterfaceWrapper) GetMailchimpFetch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "fetch_id" -------------
+	var fetchId FetchId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "fetch_id", r.PathValue("fetch_id"), &fetchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "fetch_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMailchimpFetch(w, r, fetchId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9670,6 +9867,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/mailchimp/connect", wrapper.ConnectMailchimp)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/mailchimp/connection", wrapper.GetMailchimpConnection)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/mailchimp/disconnect", wrapper.DisconnectMailchimp)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/mailchimp/audiences", wrapper.ListMailchimpAudiences)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/mailchimp/fetch", wrapper.CreateMailchimpFetch)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/mailchimp/fetch/{fetch_id}", wrapper.GetMailchimpFetch)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/forms", wrapper.ListForms)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/forms", wrapper.CreateForm)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/forms/{form_id}", wrapper.DeleteForm)

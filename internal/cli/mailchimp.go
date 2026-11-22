@@ -477,7 +477,8 @@ Confirming again shows the same import.`,
 	})
 	del.Flags().BoolVar(&yes, "yes", false, "confirm the delete")
 
-	cmd.AddCommand(upload, preview, confirm, del, a.mailchimpConnectCmd(), a.mailchimpConnectionCmd(), a.mailchimpDisconnectCmd())
+	cmd.AddCommand(upload, preview, confirm, del, a.mailchimpConnectCmd(), a.mailchimpConnectionCmd(), a.mailchimpDisconnectCmd(),
+		a.mailchimpAudiencesCmd(), a.mailchimpFetchCmd(), a.mailchimpFetchStatusCmd())
 	return cmd
 }
 

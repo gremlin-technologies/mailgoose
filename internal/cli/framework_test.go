@@ -242,6 +242,9 @@ func TestNoCommandWaitsForInput(t *testing.T) {
 		"/v1/imports/mailchimp/disconnect": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte(`{"connected":false}`))
 		},
+		"/v1/imports/mailchimp/audiences": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"audiences":[]}`))
+		},
 		"/v1/whoami": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte(`{"account":{"id":"x","name":"A","status":"active","plan":"free","created_at":"2026-11-18T12:00:00Z"},"user":null,"auth_method":"api_key","scope":"full","key_id":"k"}`))
 		},

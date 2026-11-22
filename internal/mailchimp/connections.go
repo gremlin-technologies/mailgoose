@@ -144,15 +144,23 @@ func (c *Connections) Finish(ctx context.Context, state, signedIn, code, denied 
 	if err != nil {
 		return nil, err
 	}
+	return c.Put(ctx, accountID, token, meta.DataCenter, meta.AccountName)
+}
+
+// Put stores token as the account's connection, replacing any it has, for
+// ConnectionTTL. Finish calls it once Mailchimp has given the token.
+func (c *Connections) Put(ctx context.Context, accountID, token, dataCenter, accountName string) (*Connection, error) {
 	sealed, err := c.seal(accountID, token)
 	if err != nil {
 		return nil, err
 	}
 	now := c.now().UTC()
-	conn := &Connection{AccountName: meta.AccountName, DataCenter: meta.DataCenter, ConnectedAt: now, ExpiresAt: now.Add(ConnectionTTL)}
+	conn := &Connection{AccountName: accountName, DataCenter: dataCenter, ConnectedAt: now, ExpiresAt: now.Add(ConnectionTTL)}
 	if _, err := c.DB.Exec(ctx, `
-		UPDATE mailchimp_connections SET token = $2, data_center = $3, account_name = $4, connected_at = $5, expires_at = $6
-		WHERE account_id = $1`, accountID, sealed, conn.DataCenter, conn.AccountName, conn.ConnectedAt, conn.ExpiresAt); err != nil {
+		INSERT INTO mailchimp_connections (account_id, token, data_center, account_name, connected_at, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (account_id) DO UPDATE SET token = $2, data_center = $3, account_name = $4, connected_at = $5, expires_at = $6`,
+		accountID, sealed, conn.DataCenter, conn.AccountName, conn.ConnectedAt, conn.ExpiresAt); err != nil {
 		return nil, err
 	}
 	return conn, nil
@@ -160,6 +168,9 @@ func (c *Connections) Finish(ctx context.Context, state, signedIn, code, denied 
 
 // Get is the account's connection, or nil when there's none or it expired.
 func (c *Connections) Get(ctx context.Context, accountID string) (*Connection, error) {
+	if err := c.dropExpired(ctx, accountID); err != nil {
+		return nil, err
+	}
 	var conn Connection
 	var name *string
 	err := c.DB.QueryRow(ctx, `
@@ -191,6 +202,9 @@ func (c *Connections) Client(ctx context.Context, accountID string) (*Client, er
 	if !c.Configured() {
 		return nil, ErrNotConfigured
 	}
+	if err := c.dropExpired(ctx, accountID); err != nil {
+		return nil, err
+	}
 	var sealed []byte
 	var dc string
 	err := c.DB.QueryRow(ctx, `
@@ -209,6 +223,25 @@ func (c *Connections) Client(ctx context.Context, accountID string) (*Client, er
 		return nil, ErrNotConnected
 	}
 	return NewClient(token, dc, c.APIURL, c.HTTP)
+}
+
+// dropExpired deletes the account's token once it's past ConnectionTTL, so
+// it goes as soon as anything looks for it rather than at the next prune. A
+// connect link on the same row stays.
+func (c *Connections) dropExpired(ctx context.Context, accountID string) error {
+	_, err := c.DB.Exec(ctx, `
+		UPDATE mailchimp_connections SET token = NULL, data_center = NULL, account_name = NULL, connected_at = NULL, expires_at = NULL
+		WHERE account_id = $1 AND token IS NOT NULL AND expires_at <= $2`, accountID, c.now())
+	return err
+}
+
+// ClearExpired deletes every token past ConnectionTTL. The fetch job calls
+// it each minute, so no token outlives its 24 hours by more than that.
+func (c *Connections) ClearExpired(ctx context.Context) (int64, error) {
+	tag, err := c.DB.Exec(ctx, `
+		UPDATE mailchimp_connections SET token = NULL, data_center = NULL, account_name = NULL, connected_at = NULL, expires_at = NULL
+		WHERE token IS NOT NULL AND expires_at <= $1`, c.now())
+	return tag.RowsAffected(), err
 }
 
 // pruneConnections deletes expired connections and unused connect links.

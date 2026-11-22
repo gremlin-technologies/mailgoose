@@ -4,6 +4,54 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-22: Fetching from a connected Mailchimp account (MG-74; reversible defaults)
+
+With a connected account, `GET /v1/imports/mailchimp/audiences` lists its
+audiences with Mailchimp's member counts and double opt-in setting, and
+`POST /v1/imports/mailchimp/fetch` reads the chosen audiences, saved segments
+and recent campaigns into a bundle like an uploaded export's, so preview,
+confirm and the import are the same. `GET .../fetch/{id}` shows its progress
+and, when done, the bundle and its preview. The CLI has
+`mailgoose import mailchimp audiences|fetch|fetch-status`; `fetch` waits and
+shows the preview unless `--no-wait`. These defaults are each easy to change:
+
+- **Where it runs.** The fetch runs in the API task, not the worker, because
+  only the API task holds the Mailchimp app's secret that unseals the token.
+  It's a leased job like the email job: a fetch whose task stopped starts
+  again from the beginning, up to 3 times.
+- **One at a time.** An account has one fetch queued or running at a time
+  (409 `fetch_in_progress`), and a fetched bundle counts toward the 3
+  unconfirmed bundles an account may keep. Up to 20 audiences and 20 saved
+  segments per fetch; campaigns 0 to 100, default 10. A finished fetch is
+  kept 7 days.
+- **Same as the export.** The fetch writes the files Mailchimp's own export
+  has (each status's members CSV per audience, campaign HTML and text,
+  `campaigns.csv`) and reads them with the upload's reader, so the upload's
+  limits (the import's member cap, 25 MB zipped) and rules apply. Members of
+  every status are read 1,000 at a time. Merge fields other than first and
+  last name are dropped and listed, as for an upload; interest categories
+  become group columns; opt-in and confirm times and IPs and GDPR
+  permissions come over as the export has them.
+- **Tags.** A member's tags are the ones the members endpoint returns, which
+  is at most 50 per member. Each chosen saved segment adds a tag
+  `segment: <name>` to the members it has at the time of the fetch; it
+  doesn't follow later changes, and the preview says so.
+- **Templates aren't fetched.** Mailchimp's API gives a user template's name
+  but not its HTML, so a fetch counts the account's user templates
+  (`templates_not_fetched` in the preview) and points to the account export
+  for them. Campaign content is fetched.
+- **Mailchimp's limits.** The client keeps to Mailchimp's 10 simultaneous
+  connections per account, retries 429 and 5xx up to 5 times with backoff
+  (honouring `Retry-After`, at most a minute), and stops on a 401: the
+  fetch fails with `mailchimp_access_revoked` and the connection is
+  forgotten.
+- **The token.** Confirming a fetched bundle forgets the connection at once,
+  so the token goes before the import finishes; otherwise it goes after 24
+  hours, as MG-73 set, now deleted as soon as anything looks for it and by a
+  sweep each minute rather than by the hourly prune. The token exchange with
+  Mailchimp's login server follows no redirects, so the client secret can't
+  be carried on to another address.
+
 ## 2026-11-21: Connecting a Mailchimp account with OAuth (MG-73; reversible defaults)
 
 Customers can connect their Mailchimp account instead of uploading the

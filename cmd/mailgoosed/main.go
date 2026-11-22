@@ -173,6 +173,10 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		}
 		mailchimpEmails := &mailchimp.EmailJob{Store: srv.Mailchimp, MaxMembers: cfg.MailchimpImportMaxContacts,
 			Importer: &mailchimp.EmailImporter{Emails: srv.Emails, Images: srv.Images}}
+		// Fetches from a connected Mailchimp account (MG-74) run here too:
+		// only the API has the Mailchimp app's secret that opens the token.
+		mailchimpFetches := &mailchimp.FetchJob{Store: srv.Mailchimp, Connections: srv.MailchimpConnections,
+			Save: srv.SaveFetched, MaxMembers: cfg.MailchimpImportMaxContacts}
 
 		sender, err := mail.New(ctx, cfg)
 		if err != nil {
@@ -254,6 +258,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		// because only the API's role may read SES identities.
 		go srv.Domains.RecheckLoop(ctx, time.Minute)
 		go mailchimpEmails.Run(ctx, log.With("job", "mailchimp-emails"), 5*time.Second)
+		go mailchimpFetches.Run(ctx, log.With("job", "mailchimp-fetches"), 5*time.Second)
 	} else {
 		log.Warn("no database configured; /readyz will report unavailable and idempotency keys stay in memory")
 	}
