@@ -483,3 +483,61 @@ func TestThrottleNotices(t *testing.T) {
 		t.Errorf("sent %d", len(fake.Sent()))
 	}
 }
+
+// A free account's daily limit is capped last (MG-120): a lower throttle or
+// staff-set limit still wins, and a paid account isn't capped.
+func TestFreeDailyLimit(t *testing.T) {
+	h := launchedHarness(t, 1)
+	ctx := context.Background()
+	l := Limits{PerSecond: 100, Daily: 10000, NewDaily: 500, FreeDaily: 1000}
+	since := h.now.AddDate(0, -3, 0)
+	at := func(own *int) SendLimit {
+		t.Helper()
+		got, err := l.ForAccount(ctx, h.db, h.acc, own, since, h.now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	// Three clean months would be 10,000, but the free plan stops at 1,000.
+	got := at(nil)
+	if got.Daily != 1000 || got.Usual != 1000 || got.Reason == nil || !strings.Contains(*got.Reason, "free plan sends at most 1,000 a day") {
+		t.Errorf("free: %+v %s", got, deref(got.Reason))
+	}
+	// A lower limit set by staff wins.
+	two := 200
+	if got := at(&two); got.Daily != 200 {
+		t.Errorf("own lower limit: %+v", got)
+	}
+	// A higher one set by staff is held to the cap.
+	big := 5000
+	if got := at(&big); got.Daily != 1000 {
+		t.Errorf("own higher limit: %+v", got)
+	}
+	// A throttle's new-account limit, lower than the cap, wins.
+	if _, err := h.db.Exec(ctx, `INSERT INTO account_throttles (account_id, campaign_id, reason, rates, created_at, until)
+		SELECT $1, id, 'Lowered automatically.', '{}', $2, $3 FROM campaigns WHERE account_id = $1 LIMIT 1`,
+		h.acc, h.now.Add(-time.Hour), h.now.Add(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if got := at(nil); got.Daily != 500 || got.LoweredUntil == nil {
+		t.Errorf("throttled: %+v", got)
+	}
+	// Paid accounts keep the ramp's 10,000, and a limit of zero is no cap.
+	if _, err := h.db.Exec(ctx, `DELETE FROM account_throttles WHERE account_id = $1`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.db.Exec(ctx, `UPDATE accounts SET plan = 'paid' WHERE id = $1`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	if got := at(nil); got.Daily != 10000 {
+		t.Errorf("paid: %+v", got)
+	}
+	l.FreeDaily = 0
+	if _, err := h.db.Exec(ctx, `UPDATE accounts SET plan = 'free' WHERE id = $1`, h.acc); err != nil {
+		t.Fatal(err)
+	}
+	if got := at(nil); got.Daily != 10000 {
+		t.Errorf("no cap configured: %+v", got)
+	}
+}

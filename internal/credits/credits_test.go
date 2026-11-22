@@ -168,10 +168,10 @@ func TestDebitsUseTheLotExpiringFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := h.ledger.Debit(ctx, id, TypeReserve, 1500, "campaign-1"); err != nil {
+	if _, err := h.ledger.Debit(ctx, id, TypeReserve, FreeMonthlyGrant+500, "campaign-1"); err != nil {
 		t.Fatal(err)
 	}
-	// 1,000 from the grant, 500 from the purchase.
+	// The whole grant, then 500 from the purchase.
 	var fromPurchase int64
 	if err := h.db.QueryRow(ctx, `SELECT -sum(amount) FROM credit_allocations WHERE lot_id = $1`, purchase).Scan(&fromPurchase); err != nil {
 		t.Fatal(err)
@@ -185,12 +185,12 @@ func TestDebitsUseTheLotExpiringFirst(t *testing.T) {
 	if err != nil || got != 600 {
 		t.Fatalf("release = %d, %v", got, err)
 	}
-	if b := h.balance(t, id); b != 11000-1500+600 {
+	if b := h.balance(t, id); b != FreeMonthlyGrant+10000-(FreeMonthlyGrant+500)+600 {
 		t.Errorf("balance = %d", b)
 	}
 	// Releasing more than is held gives back only what's left.
-	if got, err := h.ledger.Release(ctx, id, "campaign-1", 5000); err != nil || got != 900 {
-		t.Errorf("release the rest = %d, %v; want 900", got, err)
+	if got, err := h.ledger.Release(ctx, id, "campaign-1", 5000); err != nil || got != FreeMonthlyGrant+500-600 {
+		t.Errorf("release the rest = %d, %v; want %d", got, err, FreeMonthlyGrant+500-600)
 	}
 	if got, err := h.ledger.Release(ctx, id, "campaign-1", 1); err != nil || got != 0 {
 		t.Errorf("release with nothing held = %d, %v", got, err)
@@ -229,8 +229,9 @@ func TestBalanceNeverGoesNegative(t *testing.T) {
 	h.balance(t, id)
 
 	var wg sync.WaitGroup
-	errs := make(chan error, 20)
-	for i := range 20 {
+	debits := int(FreeMonthlyGrant / 100)
+	errs := make(chan error, 2*debits)
+	for i := range 2 * debits {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -251,8 +252,8 @@ func TestBalanceNeverGoesNegative(t *testing.T) {
 			t.Errorf("debit: %v", err)
 		}
 	}
-	if ok != 10 || short != 10 {
-		t.Errorf("%d debits went through and %d were refused, want 10 and 10", ok, short)
+	if ok != debits || short != debits {
+		t.Errorf("%d debits went through and %d were refused, want %d and %[3]d", ok, short, debits)
 	}
 	if b := h.balance(t, id); b != 0 {
 		t.Errorf("balance = %d, want 0", b)

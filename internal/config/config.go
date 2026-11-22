@@ -49,6 +49,9 @@ type Config struct {
 	AccountDailySendLimit int
 	// NewAccountDailySendLimit is that limit in an account's first week.
 	NewAccountDailySendLimit int
+	// FreeDailySendLimit is the most a free account may send a day, whatever
+	// its ramp has reached (MG-120). FREE_DAILY_SEND_LIMIT, 1,000 by default.
+	FreeDailySendLimit int
 	// PlatformDailySendLimit is the most campaign copies sent in 24 hours
 	// across every account together, under the SES account's daily quota
 	// (MG-87): PLATFORM_DAILY_SEND_LIMIT, default 45000; 0 means no cap.
@@ -256,8 +259,10 @@ func load(getenv func(string) string) (Config, error) {
 	errs = append(errs, err)
 	newDailyLimit, err := intEnv(getenv, "NEW_ACCOUNT_DAILY_SEND_LIMIT", 1000)
 	errs = append(errs, err)
+	freeDailyLimit, err := intEnv(getenv, "FREE_DAILY_SEND_LIMIT", 1000)
+	errs = append(errs, err)
 	for name, v := range map[string]int{"SEND_RATE_PER_SECOND": sendRate, "ACCOUNT_DAILY_SEND_LIMIT": dailyLimit,
-		"NEW_ACCOUNT_DAILY_SEND_LIMIT": newDailyLimit} {
+		"NEW_ACCOUNT_DAILY_SEND_LIMIT": newDailyLimit, "FREE_DAILY_SEND_LIMIT": freeDailyLimit} {
 		if v < 1 {
 			errs = append(errs, fmt.Errorf("%s must be 1 or more", name))
 		}
@@ -347,6 +352,7 @@ func load(getenv func(string) string) (Config, error) {
 		SendRatePerSecond:          sendRate,
 		AccountDailySendLimit:      dailyLimit,
 		NewAccountDailySendLimit:   newDailyLimit,
+		FreeDailySendLimit:         freeDailyLimit,
 		PlatformDailySendLimit:     platformLimit,
 		FormDailySignupLimit:       formSignupLimit,
 		MailchimpImportMaxContacts: mailchimpMax,

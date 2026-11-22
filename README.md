@@ -154,6 +154,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `SEND_RATE_PER_SECOND` | Campaign emails sent a second, across every worker. Default 10. |
 | `ACCOUNT_DAILY_SEND_LIMIT`, `NEW_ACCOUNT_DAILY_SEND_LIMIT` | The most campaign emails an account may send in any 24 hours (10,000 by default), and its limit in its first 7 days (1,000). In between the limit grows on a schedule (see [Account health](#account-health-and-send-limits)). An account's own `daily_send_limit` overrides both. |
 | `PLATFORM_DAILY_SEND_LIMIT` | The most campaign emails sent in any 24 hours across every account together, kept under the SES account's daily quota (50,000). Default 45,000; `0` means no cap. Copies past it wait, as they do for an account's limit. |
+| `FREE_DAILY_SEND_LIMIT` | The most campaign emails a free account may send in any 24 hours (1,000 by default), applied after the ramp, a throttle and any limit staff set, so a lower one still wins. Paid accounts aren't capped by it (MG-120). |
 | `FORM_DAILY_SIGNUP_LIMIT` | The most new contacts one signup form adds in any 24 hours, counted in Postgres so it holds across API tasks. Default 1,000; `0` means no cap. Past it the form answers 429 `form_signup_limit`, and the owner and `OPS_ALERT_EMAIL` are told once a day per form (see [Submissions and double opt-in](#submissions-and-double-opt-in)). |
 | `MAILCHIMP_IMPORT_MAX_CONTACTS` | The most contacts one Mailchimp import takes, across every audience in the export. Default 250,000 during the beta; a larger export or fetch is refused with `too_many_members` and a message to contact support. |
 | `IMPORT_HOLD_RISKY_PERCENT`, `IMPORT_HOLD_INVALID_PERCENT`, `IMPORT_HOLD_SHARED_PERCENT`, `IMPORT_HOLD_SHARED_MIN` | When an import is held for review: role plus disposable addresses over 10% of its valid rows, invalid rows over 5% of all rows, or at least 50% of its addresses, and at least 200, in other accounts' imports. Percentages are 1 to 100. |
@@ -335,7 +336,7 @@ One credit sends one email to one recipient. `internal/credits` is the ledger:
 every change is a row in `credit_transactions` (grant, purchase, reserve,
 release, spend, expiry) and the balance is their sum, never stored.
 Debits lock the account row, so parallel reservations can't overdraw it. Free
-accounts get 1,000 credits on activation and on each monthly anniversary, and
+accounts get 2,500 credits on activation and on each monthly anniversary, and
 unused free credits expire at the next grant; both happen lazily when the
 account is next read or debited.
 
@@ -441,9 +442,13 @@ mailgoose contacts update pat@example.com --status unsubscribed
 mailgoose contacts delete pat@example.com --yes
 ```
 
-A free account holds at most 500 counted contacts (subscribed or
+A free account holds at most 1,000 counted contacts (subscribed or
 unconfirmed); one more gets 402 `contact_limit`, with `details.limit` and
-`details.count`. Paid accounts have no cap; `contacts.CountedContacts` gives
+`details.count`. Its signup forms keep taking signups up to 1,100 (MG-120,
+`contacts.FreeFormOverflow`), then answer `contact_limit`; while it holds more
+than 1,000, launches are refused with `over_contact_limit` and a campaign
+already sending waits at its next batch until it upgrades or is back at 1,000.
+A free account sends to at most `FREE_DAILY_SEND_LIMIT` (1,000) people a day. Paid accounts have no cap; `contacts.CountedContacts` gives
 the count the paid plan's units (MG-40) are based on.
 
 Tags are basic labels; a campaign can go to the contacts with any of the

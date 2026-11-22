@@ -203,14 +203,14 @@ func TestWebDirSetting(t *testing.T) {
 
 func TestSendLimitSettings(t *testing.T) {
 	cfg, err := load(env(nil))
-	if err != nil || cfg.SendRatePerSecond != 10 || cfg.AccountDailySendLimit != 10000 || cfg.NewAccountDailySendLimit != 1000 {
+	if err != nil || cfg.SendRatePerSecond != 10 || cfg.AccountDailySendLimit != 10000 || cfg.NewAccountDailySendLimit != 1000 || cfg.FreeDailySendLimit != 1000 {
 		t.Fatalf("defaults = %d, %d, %d, %v", cfg.SendRatePerSecond, cfg.AccountDailySendLimit, cfg.NewAccountDailySendLimit, err)
 	}
 	cfg, err = load(env(map[string]string{"SEND_RATE_PER_SECOND": "14", "ACCOUNT_DAILY_SEND_LIMIT": "50000"}))
 	if err != nil || cfg.SendRatePerSecond != 14 || cfg.AccountDailySendLimit != 50000 {
 		t.Fatalf("set = %d, %d, %v", cfg.SendRatePerSecond, cfg.AccountDailySendLimit, err)
 	}
-	for _, name := range []string{"SEND_RATE_PER_SECOND", "ACCOUNT_DAILY_SEND_LIMIT", "NEW_ACCOUNT_DAILY_SEND_LIMIT"} {
+	for _, name := range []string{"SEND_RATE_PER_SECOND", "ACCOUNT_DAILY_SEND_LIMIT", "NEW_ACCOUNT_DAILY_SEND_LIMIT", "FREE_DAILY_SEND_LIMIT"} {
 		for _, bad := range []string{"0", "-3", "fast"} {
 			if _, err := load(env(map[string]string{name: bad})); err == nil {
 				t.Errorf("%s=%q should be an error", name, bad)

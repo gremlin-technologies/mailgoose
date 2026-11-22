@@ -43,7 +43,7 @@ func TestCreateContactOverFreeLimit(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.Error.Code != "contact_limit" || body.Error.Details["limit"] != 500 || body.Error.Details["count"] != 500 || body.Error.Hint == "" {
+	if body.Error.Code != "contact_limit" || body.Error.Details["limit"] != 1000 || body.Error.Details["count"] != 1000 || body.Error.Hint == "" {
 		t.Errorf("body = %s", rec.Body)
 	}
 

@@ -12,7 +12,13 @@ import (
 // FreeContactLimit is the most counted contacts a free account may hold
 // (CON-9, BIL-2). Paid accounts have no hard cap; their count sets the
 // paid plan's units (MG-40).
-const FreeContactLimit = 500
+const FreeContactLimit = 1000
+
+// FreeFormOverflow is how many counted contacts past FreeContactLimit a
+// free account's signup forms keep taking (MG-120): a form never turns a
+// subscriber away at the cap, but the account's sends are held until it
+// upgrades or is back at the limit. Imports and the API stop at the limit.
+const FreeFormOverflow = 100
 
 // LimitError means a change would take a free or tester account over its
 // contact limit. Count is the counted contacts before the change. Tester
@@ -51,6 +57,17 @@ func (s *Service) CountedContacts(ctx context.Context, accountID string) (int, e
 // can't both slip under the limit. Import (MG-17) and form signups (MG-36)
 // call it, or lockedCount, in the transaction that adds the contacts.
 func ensureRoom(ctx context.Context, tx pgx.Tx, accountID string, adding int) error {
+	return ensureRoomUpTo(ctx, tx, accountID, adding, false)
+}
+
+// ensureFormRoom is ensureRoom for a signup form (MG-36, MG-120): a free
+// account's form takes signups up to FreeFormOverflow past the limit. A
+// tester account has no overflow.
+func ensureFormRoom(ctx context.Context, tx pgx.Tx, accountID string, adding int) error {
+	return ensureRoomUpTo(ctx, tx, accountID, adding, true)
+}
+
+func ensureRoomUpTo(ctx context.Context, tx pgx.Tx, accountID string, adding int, form bool) error {
 	if adding <= 0 {
 		return nil
 	}
@@ -58,8 +75,17 @@ func ensureRoom(ctx context.Context, tx pgx.Tx, accountID string, adding int) er
 	if err != nil {
 		return err
 	}
-	if l.capped() && l.count+adding > l.limit {
-		return l.err()
+	if !l.capped() {
+		return nil
+	}
+	limit := l.limit
+	if form && !l.tester {
+		limit += FreeFormOverflow
+	}
+	if l.count+adding > limit {
+		e := l.err()
+		e.Limit = limit
+		return e
 	}
 	return nil
 }

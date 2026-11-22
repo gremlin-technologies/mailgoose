@@ -62,6 +62,9 @@ const (
 	// TesterLimit is a tester account (MG-86) that has ended, or whose
 	// campaign needs more tester credits than it has left.
 	TesterLimit = "tester_limit"
+	// OverContactLimit is a free account holding more than its contact
+	// limit, which its signup forms may take it over by a few (MG-120).
+	OverContactLimit = "over_contact_limit"
 	// SegmentInvalid is a campaign whose segment (MG-115) has a condition
 	// that can't be used now, such as a deleted tag.
 	SegmentInvalid = "segment_invalid"
@@ -254,6 +257,11 @@ func (s *Service) summarize(ctx context.Context, accountID string, c *campaigns.
 			return err
 		}
 		problems = append(problems, tp...)
+		cl, err := contactLimitProblems(ctx, s.DB, accountID)
+		if err != nil {
+			return err
+		}
+		problems = append(problems, cl...)
 		sum = &Summary{
 			CampaignID: c.ID, Name: c.Name, Subject: p.Email.Document.Settings.Subject,
 			From: p.From, ReplyTo: p.ReplyTo, SharedDomain: p.Shared, Sender: p.Sender, DefaultFrom: p.DefaultFrom, RecipientCount: n, SendAt: c.SendAt,
@@ -407,6 +415,28 @@ func testModeProblems(ctx context.Context, q testmode.Querier, accountID string,
 		Details: map[string]any{"recipients": total, "not_test_addresses": outside}}}, nil
 }
 
+// contactLimitProblems is the launch's problem when a free account holds
+// more counted contacts than FreeContactLimit (MG-120): its forms may take
+// it past the limit, and its sends wait until it upgrades or is back under.
+// A tester account keeps its own contact limit and isn't held by this one.
+func contactLimitProblems(ctx context.Context, q contacts.RowQuerier, accountID string) ([]Problem, error) {
+	var over bool
+	var count int
+	if err := q.QueryRow(ctx, `
+		SELECT `+overContactLimitSQL("a")+`, (SELECT count(*) FROM contacts WHERE account_id = a.id AND status IN ('unconfirmed', 'subscribed'))
+		FROM accounts a WHERE a.id = $1`, accountID).Scan(&over, &count); err != nil {
+		return nil, err
+	}
+	if !over {
+		return nil, nil
+	}
+	return []Problem{{Code: OverContactLimit,
+		Message: fmt.Sprintf("This account has %s contacts that are subscribed or unconfirmed, over the free plan's %s, so it can't send until it's back under the limit or on the paid plan.",
+			thousands(count), thousands(contacts.FreeContactLimit)),
+		Hint:    "Upgrade to the paid plan, or delete or unsubscribe contacts you no longer mail.",
+		Details: map[string]any{"count": count, "limit": contacts.FreeContactLimit}}}, nil
+}
+
 // testerProblems is the launch's problem when the account is a tester
 // (MG-86) that has ended, or whose campaign, as its audience stands now,
 // needs more tester credits than are left. Simulator addresses need none.
@@ -546,6 +576,11 @@ func (s *Service) confirm(ctx context.Context, accountID, campaignID, code strin
 		}
 		if len(tm) > 0 {
 			return &NotReadyError{Problems: tm}
+		}
+		if cl, err := contactLimitProblems(ctx, tx, accountID); err != nil {
+			return err
+		} else if len(cl) > 0 {
+			return &NotReadyError{Problems: cl}
 		}
 
 		now := s.now()

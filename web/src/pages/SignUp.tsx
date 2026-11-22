@@ -51,7 +51,7 @@ export function SignUp() {
         <CodeStep email={sentTo} resend={requestCode} onBack={() => setSentTo(undefined)} />
       ) : (
         <form onSubmit={submit} className="stack">
-          <p>Free for up to 500 contacts and 1,000 emails a month.</p>
+          <p>Free for up to 1,000 contacts and 2,500 emails a month.</p>
           <label className="field">
             <span>Email</span>
             <input

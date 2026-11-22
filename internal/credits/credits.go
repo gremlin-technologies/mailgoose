@@ -23,7 +23,7 @@ import (
 )
 
 // FreeMonthlyGrant is what a free account gets each month (BIL-2).
-const FreeMonthlyGrant = 1000
+const FreeMonthlyGrant = 2500
 
 // Transaction types.
 const (

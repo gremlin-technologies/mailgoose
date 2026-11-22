@@ -133,7 +133,7 @@ These are launch blockers, not features: one bad sender on a shared IP hurts eve
 
 Pricing is decided: a small free tier, then a $5 monthly account fee plus prepaid email credits. **(stated, Nov 18)**
 
-- **Free tier:** 500 contacts and 1,000 credits a month, sending only from a verified domain.
+- **Free tier:** 1,000 contacts and 2,500 credits a month, at most 1,000 sends a day, no domain needed (changed Nov 22; it was 500 contacts and 1,000 credits, from a verified domain).
 - **Paid account fee:** $5 a month, including the first 2,500 contacts, then $5 per extra 10,000 contacts. The fee comes out of credits by default, with yearly card billing as the alternative.
 - **Credits:** prepaid at $20 per 10,000 emails, valid for 24 months.
 

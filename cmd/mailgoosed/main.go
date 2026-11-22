@@ -549,6 +549,7 @@ func sendLimits(cfg config.Config) sending.Limits {
 		PerSecond: cfg.SendRatePerSecond,
 		Daily:     cfg.AccountDailySendLimit,
 		NewDaily:  cfg.NewAccountDailySendLimit,
+		FreeDaily: cfg.FreeDailySendLimit,
 		// MG-98: with shared sending on, an account without a domain of
 		// its own doesn't grow past NewDaily.
 		SharedDomain: cfg.SharedSendingDomain != "",
