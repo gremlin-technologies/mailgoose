@@ -11,18 +11,21 @@ Nov 22, to the four picks it put to him: "Go with all four picks".
 
 - **Free tier:** 1,000 contacts (was 500) and 2,500 credits a month (was
   1,000), at most 1,000 sends a day, and every feature included. Free emails
-  carry the required "Sent by mailgoose" footer (MG-119); removing it is a
-  paid benefit. No domain is needed, as decided earlier today. This replaces
-  the free tier in the Nov 18 pricing decision and in the entry below.
+  carry the required "Sent by mailgoose" footer (MG-119, #275); removing it
+  is a paid benefit. No domain is needed, as decided earlier today. This
+  replaces the free tier in the Nov 18 pricing decision and in the entry
+  below. The limits are ticketed as MG-120 (#277), and the pricing page
+  (MG-117, #272) uses them.
 - **Paid keeps the free allowance:** paid accounts get the same 2,500 credits a
-  month, so upgrading never cuts sends (MG-118 grants 2,500, not 1,000).
+  month, so upgrading never cuts sends (MG-118, #273, grants whatever the
+  free grant is).
 - **Forms past the cap:** a free account's forms keep taking signups up to
   1,100 contacts instead of refusing them (409) at the cap, and the account's
   sends are held until it upgrades or is back at 1,000. This replaces "Over
   the free contact limit a signup or a confirmation is refused" (MG-36) for
-  forms.
+  forms (MG-120).
 - **Footer link:** the footer links to the signup page with `?ref=footer`, so
-  signups it brings in can be counted.
+  signups it brings in can be counted (MG-119).
 - **Why these numbers:** Mailchimp and MailerLite both cut free to 250
   contacts this year; 1,000 holds a Mailchimp free user's whole list and stays
   under the $5 plan's 2,500. Modelled at about $0.35 a month per free account,

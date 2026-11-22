@@ -88,7 +88,7 @@ One audience per account, with tags doing the work that lists do elsewhere. [D7]
 - **CON-6 Import review:** a first import over 2,000 contacts, or any import that would put the account over its contact limit, is held for review before those contacts can be mailed. (inferred, from PRD abuse controls)
 - **CON-7 CSV export** of all contacts or a tag, including status and consent fields. (inferred)
 - **CON-8 Search and filter** the list by email, name, tag and status, paginated. (inferred)
-- **CON-9 Contact limits:** the free tier holds at most 500 contacts. Paid accounts include 2,500, and each extra 10,000 adds $5 a month to the fee. Unsubscribed, bounced and complained contacts don't count. (stated limits, inferred counting)
+- **CON-9 Contact limits:** the free tier holds at most 1,000 contacts (500 until Nov 22). A free account's forms keep taking signups up to 1,100; past 1,000 its sends are held until it upgrades or is back at 1,000 (Nov 22, MG-120). Paid accounts include 2,500, and each extra 10,000 adds $5 a month to the fee. Unsubscribed, bounced and complained contacts don't count. (stated limits, inferred counting)
 
 Acceptance:
 
@@ -206,7 +206,7 @@ Acceptance:
 The pricing is decided; this is how the MVP enforces it. (stated prices) [D1]
 
 - **BIL-1 Credit ledger:** every grant, purchase, reservation, refund, fee and expiry is a ledger entry; the balance is their sum. One credit is one email to one recipient. Test sends and confirmation emails are free. (inferred)
-- **BIL-2 Free tier:** 1,000 credits a month that don't roll over, and 500 contacts. (stated)
+- **BIL-2 Free tier:** 2,500 credits a month that don't roll over, at most 1,000 sends a day, and 1,000 contacts, with a required "Sent by mailgoose" footer (changed Nov 22 from 1,000 credits and 500 contacts; MG-120, MG-119). Paid accounts get the same monthly credits (MG-118). (stated)
 - **BIL-3 Buying credits** through Stripe Checkout: $20 for 10,000, $75 for 50,000, $240 for 200,000, $900 for 1,000,000. Bought credits last 24 months and are used oldest first. (stated prices and expiry, inferred order)
 - **BIL-4 Account fee:** a paid account pays $5 a month, including 2,500 contacts, plus $5 per extra 10,000 contacts, taken from credits on the billing date at the credit price (2,500 credits per $5). If the balance can't cover it, sending pauses until it can; contacts and emails are kept. (stated fee and default, inferred mechanics) **Changed Nov 18 by the owner:** a card subscription, $5 a month or $50 a year for the same contacts; a failed payment pauses sending until it goes through. See `docs/decisions.md`.
 - **BIL-5 When an account becomes paid:** on its first purchase. It then stops getting the monthly free grant. (inferred) **Changed Nov 18:** when its subscription starts; credit packs are for paid accounts.
