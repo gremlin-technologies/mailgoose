@@ -27,7 +27,7 @@ func TestCredits(t *testing.T) {
 	if code := h.run("credits"); code != ExitOK {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
-	if !strings.Contains(h.out.String(), "740 credits (free plan)") || !strings.Contains(h.out.String(), "Next 1,000 free credits") {
+	if !strings.Contains(h.out.String(), "740 credits (free plan)") || !strings.Contains(h.out.String(), "Next free credits") {
 		t.Errorf("output %q", h.out)
 	}
 	if code := h.run("credits", "--json"); code != ExitOK || !strings.Contains(h.out.String(), `"balance": 740`) {

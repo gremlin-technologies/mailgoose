@@ -108,7 +108,7 @@ func TestSubscriptionLifecycle(t *testing.T) {
 	}
 
 	// A pack bought, then a renewal a month on: still paid, the period moves
-	// on, and no free grant arrives.
+	// on, and the free monthly grant arrives too (MG-118).
 	if got := h.send(t, h.event("evt_buy", "checkout.session.completed", "cs_1", "paid", "10k", 2000)); got != OutcomeCredited {
 		t.Fatalf("buy: %s", got)
 	}
@@ -121,13 +121,13 @@ func TestSubscriptionLifecycle(t *testing.T) {
 	if st := h.state(t); st.plan != "paid" || st.paused || !periodEnd.Equal(h.now.AddDate(0, 1, 0)) {
 		t.Fatalf("renewed: %+v, period ends %v", st, periodEnd)
 	}
-	if got := h.balance(t); got != 10_000 {
-		t.Errorf("balance %d after a month on the paid plan, want only the pack", got)
+	if got := h.balance(t); got != 10_000+credits.FreeMonthlyGrant {
+		t.Errorf("balance %d after a month on the paid plan, want the pack and the free grant", got)
 	}
 	var grants int
 	if err := h.db.QueryRow(ctx, `SELECT count(*) FROM credit_transactions WHERE account_id = $1 AND type = $2`,
-		h.acc, credits.TypeGrant).Scan(&grants); err != nil || grants != 0 {
-		t.Errorf("%d free grants while paid (%v)", grants, err)
+		h.acc, credits.TypeGrant).Scan(&grants); err != nil || grants != 2 {
+		t.Errorf("%d free grants while paid (%v), want one a period", grants, err)
 	}
 
 	// A renewal fails: sending pauses with its own code.

@@ -764,9 +764,9 @@ paths:
       summary: Show the credit balance
       description: |
         The account's balance, its plan, and when its next free grant comes.
-        One credit sends one email to one recipient. Free accounts get 1,000
-        credits when they activate and on each monthly anniversary of that,
-        and unused free credits expire when the next grant arrives.
+        One credit sends one email to one recipient. Every account, on the
+        free plan or the paid one, gets the free monthly credits when it
+        activates and on each monthly anniversary of that, and unused free credits expire when the next grant arrives.
       tags: [credits]
       security:
         - apiKey: []
@@ -7570,7 +7570,7 @@ components:
         next_grant_at:
           type: [string, "null"]
           format: date-time
-          description: When the next 1,000 free credits arrive; null on the paid plan.
+          description: When the next free monthly credits arrive, on the free or the paid plan; null while the account is pending.
     CreditTransactionType:
       type: string
       enum: [grant, purchase, reserve, release, spend, fee, expiry]

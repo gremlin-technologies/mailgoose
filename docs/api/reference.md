@@ -726,9 +726,9 @@ Responses:
 - CLI: `mailgoose credits`
 
 The account's balance, its plan, and when its next free grant comes.
-One credit sends one email to one recipient. Free accounts get 1,000
-credits when they activate and on each monthly anniversary of that,
-and unused free credits expire when the next grant arrives.
+One credit sends one email to one recipient. Every account, on the
+free plan or the paid one, gets the free monthly credits when it
+activates and on each monthly anniversary of that, and unused free credits expire when the next grant arrives.
 
 Responses:
 
@@ -5170,7 +5170,7 @@ Type: string: one of `full`, `draft`
 | --- | --- | --- | --- |
 | `balance` | integer | yes | Credits available now, not counting any reserved for a send in progress. |
 | `plan` | string: one of `free`, `paid` | yes |  |
-| `next_grant_at` | string (date-time) or null | yes | When the next 1,000 free credits arrive; null on the paid plan. |
+| `next_grant_at` | string (date-time) or null | yes | When the next free monthly credits arrive, on the free or the paid plan; null while the account is pending. |
 
 <a id="schema-credittransactiontype"></a>
 

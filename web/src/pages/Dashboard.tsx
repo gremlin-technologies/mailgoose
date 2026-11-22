@@ -138,7 +138,7 @@ function Body({ overview: o }: { overview: Overview }) {
           <p className="balance">
             <span className="balance-number">{o.balance.toLocaleString()}</span> credits
           </p>
-          {o.nextGrantAt && <p className="muted small">1,000 more arrive {formatDate(o.nextGrantAt)}.</p>}
+          {o.nextGrantAt && <p className="muted small">More free credits arrive {formatDate(o.nextGrantAt)}.</p>}
           <Link to="/credits">Credits and billing</Link>
         </section>
         <section className="panel stack" aria-label="Start something">

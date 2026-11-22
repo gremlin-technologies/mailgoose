@@ -111,18 +111,65 @@ func TestFreeGrantAndExpiry(t *testing.T) {
 	}
 }
 
-func TestPaidAccountsGetNoGrant(t *testing.T) {
+func TestPaidAccountsGetTheGrant(t *testing.T) {
 	h := newHarness(t)
 	id := h.account(t, "paid")
 	s, err := h.ledger.Summary(context.Background(), id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Balance != 0 || s.NextGrantAt != nil {
-		t.Errorf("summary = %+v", s)
+	if s.Balance != FreeMonthlyGrant || s.Plan != "paid" || s.NextGrantAt == nil ||
+		!s.NextGrantAt.Equal(time.Date(2026, 2, 28, 9, 0, 0, 0, time.UTC)) {
+		t.Errorf("summary = %+v (next %v)", s, s.NextGrantAt)
 	}
-	if _, err := h.ledger.Debit(context.Background(), id, TypeFee, 1, ""); !errors.Is(err, ErrInsufficientCredits) {
-		t.Errorf("debit with nothing: err = %v", err)
+}
+
+// An account that upgrades mid-period keeps the grant it has and gets no
+// second one; the next period's grant comes on either plan, and a
+// cancelled subscription goes on getting it.
+func TestGrantAcrossPlanChanges(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	id := h.account(t, "free")
+	setPlan := func(plan string) {
+		t.Helper()
+		if _, err := h.db.Exec(ctx, `UPDATE accounts SET plan = $2 WHERE id = $1`, id, plan); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if b := h.balance(t, id); b != FreeMonthlyGrant {
+		t.Fatalf("free: balance = %d", b)
+	}
+	if _, err := h.ledger.Debit(ctx, id, TypeSpend, 300, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	// Upgrade mid-period: nothing is added, nothing is taken away.
+	h.set(time.Date(2026, 2, 10, 9, 0, 0, 0, time.UTC))
+	setPlan("paid")
+	if b := h.balance(t, id); b != FreeMonthlyGrant-300 {
+		t.Errorf("upgraded mid-period: balance = %d, want %d", b, FreeMonthlyGrant-300)
+	}
+
+	// The next period on the paid plan: the leftover expires, a new grant arrives.
+	h.set(time.Date(2026, 2, 28, 9, 0, 0, 0, time.UTC))
+	if b := h.balance(t, id); b != FreeMonthlyGrant {
+		t.Errorf("paid, next period: balance = %d, want %d", b, FreeMonthlyGrant)
+	}
+
+	// Cancelled mid-period: the grant stays, and the period after brings another.
+	h.set(time.Date(2026, 3, 5, 9, 0, 0, 0, time.UTC))
+	setPlan("free")
+	if b := h.balance(t, id); b != FreeMonthlyGrant {
+		t.Errorf("cancelled mid-period: balance = %d", b)
+	}
+	h.set(time.Date(2026, 3, 31, 9, 0, 0, 0, time.UTC))
+	if b := h.balance(t, id); b != FreeMonthlyGrant {
+		t.Errorf("free again, next period: balance = %d", b)
+	}
+	var grants int
+	if err := h.db.QueryRow(ctx, `SELECT count(*) FROM credit_transactions WHERE account_id = $1 AND type = 'grant'`, id).Scan(&grants); err != nil || grants != 3 {
+		t.Errorf("%d grants (%v), want 3: one a period", grants, err)
 	}
 }
 
