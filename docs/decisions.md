@@ -268,6 +268,14 @@ import. The tickets are issues #250 to #255.
   no OR or nesting at first.
 - **When a segment is worked out** (recommended): at launch, or at the send
   time of a scheduled campaign, then fixed, as tag audiences are today.
+- **What each rate is a share of** (MG-111, reversible default): open and
+  click rates are of the copies delivered; delivered and bounce rates are of
+  the copies sent, the usual base for a bounce rate. The report page and
+  `mailgoose campaign report` now show opens and clicks as shares of
+  delivered too, so they match the campaign list. A campaign that wasn't
+  tracked shows dashes for opens and clicks.
+- **`opens.estimated` stays in the API** (MG-111, reversible default):
+  always true, so older CLIs keep working; nothing shows it any more.
 
 ## 2026-11-21: Social icons (MG-109; reversible defaults)
 

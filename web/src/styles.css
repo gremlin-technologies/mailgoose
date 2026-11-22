@@ -776,6 +776,12 @@ progress {
   text-align: right;
 }
 
+.table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .badge {
   display: inline-block;
   padding: 0.0625rem 0.5rem;

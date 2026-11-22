@@ -69,7 +69,7 @@ describe("report", () => {
     expect(share(1500, 3000)).toBe("1,500 (50.0%)");
   });
 
-  it("shows the CLI's numbers, with opens marked as estimated, and clicks per link", async () => {
+  it("shows the CLI's numbers, with opens as a plain share of delivered, and clicks per link", async () => {
     const api = server(report);
     renderApp(`/campaigns/${campaignId}/report`, api.fetch);
     const numbers = await screen.findByLabelText("Numbers");
@@ -80,11 +80,12 @@ describe("report", () => {
       ["Bounced", "3 (2.5%)"],
       ["Complaints", "0 (0.0%)"],
       ["Unsubscribes", "2 (1.7%)"],
-      ["Opens (estimated)", "48 (40.0%)"],
-      ["Clicks", "12 (10.0%) unique, 19 total"],
+      ["Opens", "48 (41.0%)"],
+      ["Clicks", "12 (10.3%) unique, 19 total"],
       ["Credits used", "120"],
     ]);
-    expect(screen.getByText(/Opens are an estimate/)).toBeTruthy();
+    expect(screen.getByText(/Opens can run high/)).toBeTruthy();
+    expect(screen.queryByText(/estimate/i)).toBeNull();
     const links = screen.getByRole("list", { name: "Clicks per link" });
     expect(within(links).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
       "1. https://patsbakery.com/menu10 unique, 15 total",
@@ -97,7 +98,7 @@ describe("report", () => {
     const api = server({ ...report, tracking: false, opens: null, clicks: null, links: [] });
     renderApp(`/campaigns/${campaignId}/report`, api.fetch);
     expect(await screen.findByText("Opens and clicks weren't counted for this campaign.")).toBeTruthy();
-    expect(screen.queryByText("Opens (estimated)")).toBeNull();
+    expect(screen.queryByText("Opens")).toBeNull();
     expect(screen.queryByRole("heading", { name: "Clicks per link" })).toBeNull();
 
     api.state.report = { ...report, status: "draft", launched_at: null, recipients: 0 };

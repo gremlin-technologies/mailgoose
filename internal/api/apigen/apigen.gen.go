@@ -2480,8 +2480,57 @@ type CampaignLaunch struct {
 
 // CampaignList defines model for CampaignList.
 type CampaignList struct {
-	Data       []Campaign `json:"data"`
-	NextCursor *string    `json:"next_cursor"`
+	Data       []CampaignListItem `json:"data"`
+	NextCursor *string            `json:"next_cursor"`
+}
+
+// CampaignListItem defines model for CampaignListItem.
+type CampaignListItem struct {
+	CreatedAt time.Time `json:"created_at"`
+
+	// EmailId The email it sends. Null when a draft's email was deleted.
+	EmailId *string `json:"email_id"`
+	Id      string  `json:"id"`
+
+	// LastTest The campaign's last test send; null before the first.
+	LastTest *CampaignTest `json:"last_test"`
+
+	// Launch When the campaign was launched, to how many and for how many credits; null for a draft.
+	Launch *CampaignLaunch `json:"launch"`
+	Name   string          `json:"name"`
+
+	// RecipientCount How many contacts the recipients reach now. Single-campaign responses only.
+	RecipientCount *int               `json:"recipient_count,omitempty"`
+	Recipients     CampaignRecipients `json:"recipients"`
+
+	// SendAt When it goes out; null for when it's launched.
+	SendAt *time.Time `json:"send_at"`
+
+	// Slice A new account's campaign goes out first to a slice of its
+	// recipients, picked at random, then waits for bounces and complaints
+	// before the rest is released (MG-62). An account is new for its
+	// first 30 days or its first 3 launched campaigns, whichever ends
+	// later. Present only on a campaign launched in a slice.
+	Slice *CampaignSlice `json:"slice,omitempty"`
+
+	// Status `draft` is being set up; `scheduled` is launched and waiting for its
+	// send time; `sending`, then `sent`. `cancelled` was stopped by the
+	// account, `paused` by us mid-send, and `failed` couldn't finish.
+	Status CampaignStatus `json:"status"`
+
+	// Summary The report's headline numbers (MG-111), the same as
+	// `GET /v1/campaigns/{campaign_id}/report`; null for a campaign
+	// that hasn't been launched.
+	Summary *CampaignSummary `json:"summary"`
+
+	// Tracking Whether opens and clicks are counted, with mailgoose's own open
+	// pixel and link redirects. On by default; off means no pixel and
+	// no rewritten links. The unsubscribe link is never rewritten.
+	Tracking  bool      `json:"tracking"`
+	UpdatedAt time.Time `json:"updated_at"`
+
+	// Version Goes up with every change.
+	Version int `json:"version"`
 }
 
 // CampaignRecipients defines model for CampaignRecipients.
@@ -2585,6 +2634,39 @@ type CampaignSliceState string
 // send time; `sending`, then `sent`. `cancelled` was stopped by the
 // account, `paused` by us mid-send, and `failed` couldn't finish.
 type CampaignStatus string
+
+// CampaignSummary defines model for CampaignSummary.
+type CampaignSummary struct {
+	// Archived True when these are the numbers saved 12 months after launch.
+	Archived bool `json:"archived"`
+
+	// BounceRate Bounced as a share of copies sent, from 0 to 1.
+	BounceRate float32 `json:"bounce_rate"`
+
+	// Bounced Copies that hard bounced.
+	Bounced int `json:"bounced"`
+
+	// ClickRate Clicks as a share of delivered, from 0 to 1; null when the campaign wasn't tracked.
+	ClickRate *float32 `json:"click_rate"`
+
+	// Clicks Copies with at least one click; null when the campaign wasn't tracked.
+	Clicks *int `json:"clicks"`
+
+	// Delivered Copies SES delivered to the receiving mail server.
+	Delivered int `json:"delivered"`
+
+	// DeliveredRate Delivered as a share of copies sent, from 0 to 1.
+	DeliveredRate float32 `json:"delivered_rate"`
+
+	// OpenRate Opens as a share of delivered, from 0 to 1; null when the campaign wasn't tracked.
+	OpenRate *float32 `json:"open_rate"`
+
+	// Opens Copies opened at least once; null when the campaign wasn't tracked.
+	Opens *int `json:"opens"`
+
+	// Recipients Copies sent.
+	Recipients int `json:"recipients"`
+}
 
 // CampaignTest defines model for CampaignTest.
 type CampaignTest struct {
@@ -4283,8 +4365,9 @@ type ReportLink struct {
 
 // ReportOpens defines model for ReportOpens.
 type ReportOpens struct {
-	// Estimated Always true: mail apps that load images for privacy open every
-	// copy, and those that block images open none.
+	// Estimated Always true, kept for older clients; show opens as a plain
+	// number. Opens come from a tracking pixel, and some mail apps load
+	// it without anyone reading the email, so they run high.
 	Estimated bool `json:"estimated"`
 
 	// Unique Copies opened at least once (or clicked).

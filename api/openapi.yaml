@@ -3084,7 +3084,10 @@ paths:
     get:
       operationId: listCampaigns
       summary: List campaigns
-      description: The account's campaigns, newest first. List items leave out `recipient_count`.
+      description: |
+        The account's campaigns, newest first. List items leave out
+        `recipient_count`, and each has a `summary` of its report's numbers:
+        null for a campaign that hasn't been launched.
       tags: [campaigns]
       security:
         - apiKey: []
@@ -8165,6 +8168,40 @@ components:
         updated_at:
           type: string
           format: date-time
+    CampaignSummary:
+      type: object
+      required: [recipients, delivered, bounced, opens, clicks, delivered_rate, bounce_rate, open_rate, click_rate, archived]
+      properties:
+        recipients:
+          type: integer
+          description: Copies sent.
+        delivered:
+          type: integer
+          description: Copies SES delivered to the receiving mail server.
+        bounced:
+          type: integer
+          description: Copies that hard bounced.
+        opens:
+          type: [integer, "null"]
+          description: Copies opened at least once; null when the campaign wasn't tracked.
+        clicks:
+          type: [integer, "null"]
+          description: Copies with at least one click; null when the campaign wasn't tracked.
+        delivered_rate:
+          type: number
+          description: Delivered as a share of copies sent, from 0 to 1.
+        bounce_rate:
+          type: number
+          description: Bounced as a share of copies sent, from 0 to 1.
+        open_rate:
+          type: [number, "null"]
+          description: Opens as a share of delivered, from 0 to 1; null when the campaign wasn't tracked.
+        click_rate:
+          type: [number, "null"]
+          description: Clicks as a share of delivered, from 0 to 1; null when the campaign wasn't tracked.
+        archived:
+          type: boolean
+          description: True when these are the numbers saved 12 months after launch.
     CampaignSlice:
       type: object
       description: |
@@ -8265,8 +8302,9 @@ components:
         estimated:
           type: boolean
           description: |
-            Always true: mail apps that load images for privacy open every
-            copy, and those that block images open none.
+            Always true, kept for older clients; show opens as a plain
+            number. Opens come from a tracking pixel, and some mail apps load
+            it without anyone reading the email, so they run high.
     ReportClicks:
       type: object
       required: [unique, total]
@@ -8424,9 +8462,23 @@ components:
         data:
           type: array
           items:
-            $ref: "#/components/schemas/Campaign"
+            $ref: "#/components/schemas/CampaignListItem"
         next_cursor:
           type: [string, "null"]
+    CampaignListItem:
+      allOf:
+        - $ref: "#/components/schemas/Campaign"
+        - type: object
+          required: [summary]
+          properties:
+            summary:
+              description: |
+                The report's headline numbers (MG-111), the same as
+                `GET /v1/campaigns/{campaign_id}/report`; null for a campaign
+                that hasn't been launched.
+              oneOf:
+                - $ref: "#/components/schemas/CampaignSummary"
+                - type: "null"
     CreateCampaignRequest:
       type: object
       additionalProperties: false

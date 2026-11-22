@@ -1617,7 +1617,9 @@ export interface paths {
         };
         /**
          * List campaigns
-         * @description The account's campaigns, newest first. List items leave out `recipient_count`.
+         * @description The account's campaigns, newest first. List items leave out
+         *     `recipient_count`, and each has a `summary` of its report's numbers:
+         *     null for a campaign that hasn't been launched.
          */
         get: operations["listCampaigns"];
         put?: never;
@@ -4703,6 +4705,28 @@ export interface components {
             /** Format: date-time */
             updated_at: string;
         };
+        CampaignSummary: {
+            /** @description Copies sent. */
+            recipients: number;
+            /** @description Copies SES delivered to the receiving mail server. */
+            delivered: number;
+            /** @description Copies that hard bounced. */
+            bounced: number;
+            /** @description Copies opened at least once; null when the campaign wasn't tracked. */
+            opens: number | null;
+            /** @description Copies with at least one click; null when the campaign wasn't tracked. */
+            clicks: number | null;
+            /** @description Delivered as a share of copies sent, from 0 to 1. */
+            delivered_rate: number;
+            /** @description Bounced as a share of copies sent, from 0 to 1. */
+            bounce_rate: number;
+            /** @description Opens as a share of delivered, from 0 to 1; null when the campaign wasn't tracked. */
+            open_rate: number | null;
+            /** @description Clicks as a share of delivered, from 0 to 1; null when the campaign wasn't tracked. */
+            click_rate: number | null;
+            /** @description True when these are the numbers saved 12 months after launch. */
+            archived: boolean;
+        };
         /**
          * @description A new account's campaign goes out first to a slice of its
          *     recipients, picked at random, then waits for bounces and complaints
@@ -4778,8 +4802,9 @@ export interface components {
             /** @description Copies opened at least once (or clicked). */
             unique: number;
             /**
-             * @description Always true: mail apps that load images for privacy open every
-             *     copy, and those that block images open none.
+             * @description Always true, kept for older clients; show opens as a plain
+             *     number. Opens come from a tracking pixel, and some mail apps load
+             *     it without anyone reading the email, so they run high.
              */
             estimated: boolean;
         };
@@ -4884,8 +4909,16 @@ export interface components {
             email: string;
         };
         CampaignList: {
-            data: components["schemas"]["Campaign"][];
+            data: components["schemas"]["CampaignListItem"][];
             next_cursor: string | null;
+        };
+        CampaignListItem: components["schemas"]["Campaign"] & {
+            /**
+             * @description The report's headline numbers (MG-111), the same as
+             *     `GET /v1/campaigns/{campaign_id}/report`; null for a campaign
+             *     that hasn't been launched.
+             */
+            summary: components["schemas"]["CampaignSummary"] | null;
         };
         CreateCampaignRequest: {
             name: string;

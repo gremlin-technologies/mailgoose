@@ -80,8 +80,44 @@ func (s *campaignSlice) describe(loc *time.Location) string {
 }
 
 type campaignPage struct {
-	Data       []campaign `json:"data"`
-	NextCursor *string    `json:"next_cursor"`
+	Data       []campaignListItem `json:"data"`
+	NextCursor *string            `json:"next_cursor"`
+}
+
+// campaignListItem is a campaign in a list, with its report's summary
+// (MG-111): null before launch.
+type campaignListItem struct {
+	campaign
+	Summary *campaignSummary `json:"summary"`
+}
+
+type campaignSummary struct {
+	Recipients    int      `json:"recipients"`
+	Delivered     int      `json:"delivered"`
+	Bounced       int      `json:"bounced"`
+	Opens         *int     `json:"opens"`
+	Clicks        *int     `json:"clicks"`
+	DeliveredRate float64  `json:"delivered_rate"`
+	BounceRate    float64  `json:"bounce_rate"`
+	OpenRate      *float64 `json:"open_rate"`
+	ClickRate     *float64 `json:"click_rate"`
+	Archived      bool     `json:"archived"`
+}
+
+// columns are the list's report columns: delivered, open rate, click rate
+// and bounce rate, with "-" for a campaign not launched and for opens and
+// clicks that weren't tracked.
+func (s *campaignSummary) columns() string {
+	if s == nil {
+		return "-\t-\t-\t-"
+	}
+	pct := func(f *float64) string {
+		if f == nil {
+			return "-"
+		}
+		return fmt.Sprintf("%.1f%%", 100**f)
+	}
+	return fmt.Sprintf("%d\t%s\t%s\t%s", s.Delivered, pct(s.OpenRate), pct(s.ClickRate), pct(&s.BounceRate))
 }
 
 func campaignIDArg(arg string) (string, error) {
@@ -273,9 +309,14 @@ as it is.`,
 	list := calls("listCampaigns", &cobra.Command{
 		Use: "list",
 		Example: `  mailgoose campaign list
-  mailgoose campaign list --status scheduled --json`,
-		Short: "List campaigns, newest first",
-		Args:  cobra.NoArgs,
+  mailgoose campaign list --status sent --json`,
+		Short: "List campaigns, newest first, with each sent one's numbers",
+		Long: `Lists campaigns, newest first. A launched campaign shows its report's
+numbers: copies delivered, and its open, click and bounce rates. Open and
+click rates are of the copies delivered, the bounce rate of the copies sent;
+"-" means not launched, or opens and clicks not tracked. --json gives each
+campaign's summary. For one campaign's full report: mailgoose campaign report <campaign-id>.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			q := url.Values{}
 			if limit > 0 {
@@ -305,9 +346,10 @@ as it is.`,
 			}
 			a.accountZone(cmd.Context())
 			tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
-			fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tSEND\tUPDATED")
+			fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tSEND\tUPDATED\tDELIVERED\tOPEN RATE\tCLICK RATE\tBOUNCE RATE")
 			for _, c := range page.Data {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", c.ID, c.Name, c.Status, c.sendTime(a.loc()), c.UpdatedAt.In(a.loc()).Format("2006-01-02 15:04"))
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", c.ID, c.Name, c.Status, c.sendTime(a.loc()),
+					c.UpdatedAt.In(a.loc()).Format("2006-01-02 15:04"), c.Summary.columns())
 			}
 			_ = tw.Flush()
 			if page.NextCursor != nil {
