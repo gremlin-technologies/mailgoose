@@ -37,7 +37,8 @@ func TestContactEngagementFilters(t *testing.T) {
 	h.env[EnvAPIKey] = "mg_test_fullkey"
 
 	filters := []string{"--opened", testCampaign, "--opened", "c1a2b3c4-0000-4000-8000-000000000002", "--not-clicked", testCampaign,
-		"--never-opened", "--never-clicked", "--opened-within-days", "30", "--clicked-within-days", "7", "--status", "subscribed"}
+		"--never-opened", "--never-clicked", "--opened-within-days", "30", "--clicked-within-days", "7", "--status", "subscribed", "--status", "unconfirmed",
+		"--tag", "7a90e000-0000-4000-8000-000000000001", "--tag", "7a90e000-0000-4000-8000-000000000002"}
 	want := url.Values{
 		"opened":              {testCampaign, "c1a2b3c4-0000-4000-8000-000000000002"},
 		"not_clicked":         {testCampaign},
@@ -45,7 +46,8 @@ func TestContactEngagementFilters(t *testing.T) {
 		"never_clicked":       {"true"},
 		"opened_within_days":  {"30"},
 		"clicked_within_days": {"7"},
-		"status":              {"subscribed"},
+		"status":              {"subscribed", "unconfirmed"},
+		"tag_id":              {"7a90e000-0000-4000-8000-000000000001", "7a90e000-0000-4000-8000-000000000002"},
 	}
 	for _, args := range [][]string{
 		append([]string{"contacts", "list"}, filters...),

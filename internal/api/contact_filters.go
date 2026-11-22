@@ -13,8 +13,9 @@ import (
 // contactFilterParams are the filters listing, counting and exporting
 // contacts share; each operation's params give the same fields.
 type contactFilterParams struct {
-	Email, Name, TagID                     *string
-	Status                                 *apigen.ContactStatus
+	Email, Name                            *string
+	Statuses                               *[]apigen.ContactStatus
+	TagIDs                                 *[]string
 	Opened, NotOpened, Clicked, NotClicked *[]string
 	NeverOpened, NeverClicked              *bool
 	OpenedWithinDays, ClickedWithinDays    *int
@@ -30,19 +31,31 @@ func contactFilter(w http.ResponseWriter, p contactFilterParams) (contacts.Filte
 	if p.Name != nil {
 		f.Name = *p.Name
 	}
-	if p.Status != nil {
-		if !p.Status.Valid() {
-			WriteError(w, BadRequest("invalid_parameter", "status must be unconfirmed, subscribed, unsubscribed, bounced or complained."))
-			return f, false
+	if p.Statuses != nil {
+		// Several statuses are any of them, as a segment's are (MG-116).
+		for _, st := range *p.Statuses {
+			if !st.Valid() {
+				WriteError(w, BadRequest("invalid_parameter", "status must be unconfirmed, subscribed, unsubscribed, bounced or complained."))
+				return f, false
+			}
+			f.Statuses = append(f.Statuses, string(st))
 		}
-		f.Status = string(*p.Status)
+		if len(f.Statuses) == 1 {
+			f.Status, f.Statuses = f.Statuses[0], nil
+		}
 	}
-	if p.TagID != nil {
-		if !uuidPattern.MatchString(*p.TagID) {
-			WriteError(w, BadRequest("invalid_parameter", "tag_id must be a tag's id."))
-			return f, false
+	if p.TagIDs != nil {
+		// Several tags must all be on the contact, as a segment's must.
+		for _, id := range *p.TagIDs {
+			if !uuidPattern.MatchString(id) {
+				WriteError(w, BadRequest("invalid_parameter", "tag_id must be a tag's id."))
+				return f, false
+			}
+			f.TagIDs = append(f.TagIDs, id)
 		}
-		f.TagID = *p.TagID
+		if len(f.TagIDs) == 1 {
+			f.TagID, f.TagIDs = f.TagIDs[0], nil
+		}
 	}
 	e := &f.Engagement
 	for _, l := range []struct {
@@ -127,7 +140,7 @@ func (s *Server) CountContacts(w http.ResponseWriter, r *http.Request, params ap
 		return
 	}
 	f, ok := contactFilter(w, contactFilterParams{
-		Email: params.Email, Name: params.Name, Status: params.Status, TagID: params.TagId,
+		Email: params.Email, Name: params.Name, Statuses: params.Status, TagIDs: params.TagId,
 		Opened: params.Opened, NotOpened: params.NotOpened, Clicked: params.Clicked, NotClicked: params.NotClicked,
 		NeverOpened: params.NeverOpened, NeverClicked: params.NeverClicked,
 		OpenedWithinDays: params.OpenedWithinDays, ClickedWithinDays: params.ClickedWithinDays,

@@ -5185,13 +5185,11 @@ type ContactOpenedFilter = []string
 // ContactOpenedWithinDaysFilter defines model for ContactOpenedWithinDaysFilter.
 type ContactOpenedWithinDaysFilter = int
 
-// ContactStatusFilter Only `subscribed` contacts receive campaigns. `unconfirmed` is waiting
-// for double opt-in or permission; `bounced` and `complained` come from
-// Amazon SES.
-type ContactStatusFilter = ContactStatus
+// ContactStatusFilter defines model for ContactStatusFilter.
+type ContactStatusFilter = []ContactStatus
 
 // ContactTagFilter defines model for ContactTagFilter.
-type ContactTagFilter = string
+type ContactTagFilter = []string
 
 // Cursor defines model for Cursor.
 type Cursor = string
@@ -5523,10 +5521,12 @@ type ListContactsParams struct {
 	// Name Only contacts whose first, last or full name contains this, ignoring case.
 	Name *ContactNameFilter `form:"name,omitempty" json:"name,omitempty"`
 
-	// Status Only contacts with this status.
+	// Status Only contacts with this status. Repeat it for more statuses; a contact with any one of them
+	// matches, as a segment's `statuses` do.
 	Status *ContactStatusFilter `form:"status,omitempty" json:"status,omitempty"`
 
-	// TagId Only contacts with this tag.
+	// TagId Only contacts with this tag. Repeat it for more tags; the contact must have every one, as a
+	// segment's `tag_ids` must.
 	TagId *ContactTagFilter `form:"tag_id,omitempty" json:"tag_id,omitempty"`
 
 	// Opened Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
@@ -5570,10 +5570,12 @@ type CountContactsParams struct {
 	// Name Only contacts whose first, last or full name contains this, ignoring case.
 	Name *ContactNameFilter `form:"name,omitempty" json:"name,omitempty"`
 
-	// Status Only contacts with this status.
+	// Status Only contacts with this status. Repeat it for more statuses; a contact with any one of them
+	// matches, as a segment's `statuses` do.
 	Status *ContactStatusFilter `form:"status,omitempty" json:"status,omitempty"`
 
-	// TagId Only contacts with this tag.
+	// TagId Only contacts with this tag. Repeat it for more tags; the contact must have every one, as a
+	// segment's `tag_ids` must.
 	TagId *ContactTagFilter `form:"tag_id,omitempty" json:"tag_id,omitempty"`
 
 	// Opened Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
@@ -5617,10 +5619,12 @@ type ExportContactsParams struct {
 	// Name Only contacts whose first, last or full name contains this, ignoring case.
 	Name *ContactNameFilter `form:"name,omitempty" json:"name,omitempty"`
 
-	// Status Only contacts with this status.
+	// Status Only contacts with this status. Repeat it for more statuses; a contact with any one of them
+	// matches, as a segment's `statuses` do.
 	Status *ContactStatusFilter `form:"status,omitempty" json:"status,omitempty"`
 
-	// TagId Only contacts with this tag.
+	// TagId Only contacts with this tag. Repeat it for more tags; the contact must have every one, as a
+	// segment's `tag_ids` must.
 	TagId *ContactTagFilter `form:"tag_id,omitempty" json:"tag_id,omitempty"`
 
 	// Opened Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
@@ -8379,7 +8383,7 @@ func (siw *ServerInterfaceWrapper) ListContacts(w http.ResponseWriter, r *http.R
 
 	// ------------- Optional query parameter "status" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
@@ -8392,7 +8396,7 @@ func (siw *ServerInterfaceWrapper) ListContacts(w http.ResponseWriter, r *http.R
 
 	// ------------- Optional query parameter "tag_id" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag_id", r.URL.Query(), &params.TagId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag_id", r.URL.Query(), &params.TagId, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
@@ -8569,7 +8573,7 @@ func (siw *ServerInterfaceWrapper) CountContacts(w http.ResponseWriter, r *http.
 
 	// ------------- Optional query parameter "status" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
@@ -8582,7 +8586,7 @@ func (siw *ServerInterfaceWrapper) CountContacts(w http.ResponseWriter, r *http.
 
 	// ------------- Optional query parameter "tag_id" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag_id", r.URL.Query(), &params.TagId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag_id", r.URL.Query(), &params.TagId, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
@@ -8745,7 +8749,7 @@ func (siw *ServerInterfaceWrapper) ExportContacts(w http.ResponseWriter, r *http
 
 	// ------------- Optional query parameter "status" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
@@ -8758,7 +8762,7 @@ func (siw *ServerInterfaceWrapper) ExportContacts(w http.ResponseWriter, r *http
 
 	// ------------- Optional query parameter "tag_id" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag_id", r.URL.Query(), &params.TagId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag_id", r.URL.Query(), &params.TagId, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {

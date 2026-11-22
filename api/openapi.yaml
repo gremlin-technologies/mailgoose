@@ -9983,17 +9983,31 @@ components:
       name: status
       in: query
       required: false
-      description: Only contacts with this status.
+      description: |
+        Only contacts with this status. Repeat it for more statuses; a contact with any one of them
+        matches, as a segment's `statuses` do.
+      style: form
+      explode: true
       schema:
-        $ref: "#/components/schemas/ContactStatus"
+        type: array
+        maxItems: 5
+        items:
+          $ref: "#/components/schemas/ContactStatus"
     ContactTagFilter:
       name: tag_id
       in: query
       required: false
-      description: Only contacts with this tag.
+      description: |
+        Only contacts with this tag. Repeat it for more tags; the contact must have every one, as a
+        segment's `tag_ids` must.
+      style: form
+      explode: true
       schema:
-        type: string
-        format: uuid
+        type: array
+        maxItems: 20
+        items:
+          type: string
+          format: uuid
     ContactOpenedFilter:
       name: opened
       in: query

@@ -1,6 +1,6 @@
 // The form that makes a campaign or changes a draft: its email, who gets
-// it (everyone, or contacts with chosen tags, with a live count), when it
-// goes out and whether opens and clicks are counted.
+// it (everyone, contacts with chosen tags, or a saved segment, with a live
+// count), when it goes out and whether opens and clicks are counted.
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 
@@ -8,6 +8,7 @@ import { useApi } from "../api/context";
 import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
 import { FailureNotice, LoadFailed, Loading, useLoad } from "../components";
+import { useSegments } from "../pages/Segments";
 import { useTags } from "../pages/Tags";
 import { fromLocalInput, plural, toLocalInput, type Campaign, type RecipientsInput } from "./campaign";
 
@@ -48,11 +49,15 @@ export function CampaignForm({
   );
   const emails = useLoad<EmailPage>(loadEmails);
   const tags = useTags();
+  const segments = useSegments();
 
   const [name, setName] = useState(initial?.name ?? "");
   const [emailId, setEmailId] = useState(initial?.email_id ?? "");
-  const [audience, setAudience] = useState<"all" | "tags">(initial && !initial.recipients.all ? "tags" : "all");
+  const [audience, setAudience] = useState<"all" | "tags" | "segment">(
+    !initial || initial.recipients.all ? "all" : initial.recipients.segment ? "segment" : "tags",
+  );
   const [tagIds, setTagIds] = useState<string[]>(initial?.recipients.tags.map((t) => t.id) ?? []);
+  const [segmentId, setSegmentId] = useState(initial?.recipients.segment?.id ?? "");
   const [later, setLater] = useState(!!initial?.send_at);
   const [sendAt, setSendAt] = useState(toLocalInput(initial?.send_at));
   const [tracking, setTracking] = useState(initial?.tracking ?? true);
@@ -61,15 +66,26 @@ export function CampaignForm({
   const [problem, setProblem] = useState<string>();
 
   const recipients: RecipientsInput | undefined =
-    audience === "all" ? { all: true } : tagIds.length ? { tag_ids: tagIds } : undefined;
-  const count = useRecipientCount(recipients);
+    audience === "all"
+      ? { all: true }
+      : audience === "segment"
+        ? segmentId
+          ? { segment_id: segmentId }
+          : undefined
+        : tagIds.length
+          ? { tag_ids: tagIds }
+          : undefined;
+  const count = useRecipientCount(recipients, audience === "segment" ? "Pick a segment." : "Pick at least one tag.");
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setFailure(undefined);
     let at: string | null = null;
     if (!emailId) return setProblem("Pick the email to send.");
-    if (!recipients) return setProblem("Pick at least one tag, or send to all subscribed contacts.");
+    if (!recipients)
+      return setProblem(
+        audience === "segment" ? "Pick a segment, or send to all subscribed contacts." : "Pick at least one tag, or send to all subscribed contacts.",
+      );
     if (later) {
       const iso = fromLocalInput(sendAt);
       if (!iso) return setProblem("Pick the date and time to send it.");
@@ -82,11 +98,15 @@ export function CampaignForm({
     setFailure(failed);
   }
 
-  if (emails.state.status === "loading" || tags.state.status === "loading") return <Loading />;
+  if (emails.state.status === "loading" || tags.state.status === "loading" || segments.state.status === "loading") return <Loading />;
   if (emails.state.status === "failed") return <LoadFailed failure={emails.state.failure} retry={emails.reload} />;
   if (tags.state.status === "failed") return <LoadFailed failure={tags.state.failure} retry={tags.reload} />;
   const emailList = emails.state.data.data;
   const tagList = tags.state.data;
+  // Segments that won't load leave the other choices working.
+  const segmentList = segments.state.status === "ok" ? segments.state.data : [];
+  // A segment deleted since the draft was saved stays picked, so it shows.
+  const goneSegment = audience === "segment" && segmentId && !segmentList.some((sg) => sg.id === segmentId);
   const missingEmail = !!initial && initial.email_id === null;
 
   return (
@@ -144,6 +164,37 @@ export function CampaignForm({
               ))}
             </div>
           ))}
+        <label className="choice">
+          <input type="radio" name="audience" checked={audience === "segment"} onChange={() => setAudience("segment")} />
+          Contacts in a saved segment
+        </label>
+        {audience === "segment" &&
+          (segments.state.status === "failed" ? (
+            <p className="muted">
+              Couldn't load your segments.{" "}
+              <button type="button" className="button small" onClick={segments.reload}>
+                Try again
+              </button>
+            </p>
+          ) : segmentList.length === 0 && !goneSegment ? (
+            <p className="muted">
+              You have no segments yet. <Link to="/segments/new">Make a segment</Link>, or filter your contacts and save it.
+            </p>
+          ) : (
+            <label className="field indent">
+              <span>Segment</span>
+              <select value={segmentId} onChange={(e) => setSegmentId(e.target.value)}>
+                <option value="">Pick a segment</option>
+                {goneSegment && <option value={segmentId}>A deleted segment</option>}
+                {segmentList.map((sg) => (
+                  <option key={sg.id} value={sg.id}>
+                    {sg.name}
+                    {sg.valid ? "" : " (needs fixing)"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
         <p className="muted small recipient-count" role="status" aria-label="Recipient count">
           {count}
         </p>
@@ -196,7 +247,7 @@ export function CampaignForm({
 }
 
 /** How many subscribed contacts the recipients reach now, counted by the API a moment after a change. */
-function useRecipientCount(recipients: RecipientsInput | undefined): string {
+function useRecipientCount(recipients: RecipientsInput | undefined, pick: string): string {
   const api = useApi();
   const key = recipients ? JSON.stringify(recipients) : "";
   const [answer, setAnswer] = useState<{ key: string; text: string }>({ key: "", text: "" });
@@ -208,9 +259,12 @@ function useRecipientCount(recipients: RecipientsInput | undefined): string {
       void attempt(() => api.POST("/v1/campaigns/recipient-count", { body: { recipients: JSON.parse(key) as RecipientsInput } })).then(
         (res) => {
           if (!current) return;
+          // A segment that can't be used says which condition is wrong.
           const text = res.ok
             ? `Reaches ${plural(res.data?.recipient_count ?? 0, "subscribed contact")} now.`
-            : "Couldn't count the recipients just now.";
+            : res.failure.code === "segment_invalid"
+              ? res.failure.message
+              : "Couldn't count the recipients just now.";
           setAnswer({ key, text });
         },
       );
@@ -221,6 +275,6 @@ function useRecipientCount(recipients: RecipientsInput | undefined): string {
     };
   }, [api, key]);
 
-  if (!key) return "Pick at least one tag.";
+  if (!key) return pick;
   return answer.key === key ? answer.text : "Counting…";
 }
