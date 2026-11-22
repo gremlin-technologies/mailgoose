@@ -45,6 +45,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/mailchimp"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
+	"github.com/gremlin-technologies/mailgoose/internal/segments"
 	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/sesevents"
@@ -149,6 +150,7 @@ func serve(ctx context.Context, log *slog.Logger) error {
 		srv.Unsubscribe = &unsubscribe.Service{DB: pool}
 		srv.Tracking = &tracking.Service{DB: pool, Unsubscribe: srv.Unsubscribe}
 		srv.Reports = &reports.Service{DB: pool}
+		srv.Segments = &segments.Service{DB: pool, Contacts: srv.Contacts}
 		if srv.Billing, err = newBilling(cfg, pool, log); err != nil {
 			return err
 		}

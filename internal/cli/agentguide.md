@@ -224,6 +224,19 @@ least one tracked campaign who opened or clicked none; `--opened-within-days`
 and `--clicked-within-days` reach back up to 365. Every filter must match. A
 campaign sent with tracking off answers `tracking_off`.
 
+To keep a set of conditions, save it as a segment:
+
+```sh
+mailgoose segment create engaged --status subscribed --opened-within-days 90 --json
+mailgoose segment contacts engaged --json
+```
+
+A segment takes `--tag` (repeat for more; every tag must match), `--status`
+(repeat for any of several) and the engagement flags above. It's worked out
+each time it's used. `"valid": false` means a condition names a tag or
+campaign that's gone or can't be used now; `problems` says which, and
+`mailgoose segment update <name>` with new condition flags fixes it.
+
 ## Contacts and signup forms
 
 ```sh

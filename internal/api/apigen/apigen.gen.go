@@ -1444,6 +1444,57 @@ func (e ReportActivity) Valid() bool {
 	}
 }
 
+// Defines values for SegmentProblemCode.
+const (
+	SegmentProblemCodeCampaignDeleted SegmentProblemCode = "campaign_deleted"
+	SegmentProblemCodeReportArchived  SegmentProblemCode = "report_archived"
+	SegmentProblemCodeTagDeleted      SegmentProblemCode = "tag_deleted"
+	SegmentProblemCodeTrackingOff     SegmentProblemCode = "tracking_off"
+)
+
+// Valid indicates whether the value is a known member of the SegmentProblemCode enum.
+func (e SegmentProblemCode) Valid() bool {
+	switch e {
+	case SegmentProblemCodeCampaignDeleted:
+		return true
+	case SegmentProblemCodeReportArchived:
+		return true
+	case SegmentProblemCodeTagDeleted:
+		return true
+	case SegmentProblemCodeTrackingOff:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SegmentProblemCondition.
+const (
+	SegmentProblemConditionClicked    SegmentProblemCondition = "clicked"
+	SegmentProblemConditionNotClicked SegmentProblemCondition = "not_clicked"
+	SegmentProblemConditionNotOpened  SegmentProblemCondition = "not_opened"
+	SegmentProblemConditionOpened     SegmentProblemCondition = "opened"
+	SegmentProblemConditionTagIds     SegmentProblemCondition = "tag_ids"
+)
+
+// Valid indicates whether the value is a known member of the SegmentProblemCondition enum.
+func (e SegmentProblemCondition) Valid() bool {
+	switch e {
+	case SegmentProblemConditionClicked:
+		return true
+	case SegmentProblemConditionNotClicked:
+		return true
+	case SegmentProblemConditionNotOpened:
+		return true
+	case SegmentProblemConditionOpened:
+		return true
+	case SegmentProblemConditionTagIds:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SenderAddressStatus.
 const (
 	SenderAddressStatusConfirmed SenderAddressStatus = "confirmed"
@@ -3096,6 +3147,17 @@ type CreateMailchimpFetchRequest struct {
 	SegmentIds *[]string `json:"segment_ids,omitempty"`
 }
 
+// CreateSegmentRequest defines model for CreateSegmentRequest.
+type CreateSegmentRequest struct {
+	// Conditions What a contact must match to be in the segment: every condition
+	// given. Give at least one. The engagement conditions work as the
+	// contact list's filters of the same names do (`listContacts`).
+	Conditions SegmentConditions `json:"conditions"`
+
+	// Name Unique in the account, ignoring case; one line.
+	Name string `json:"name"`
+}
+
 // CreateTagRequest defines model for CreateTagRequest.
 type CreateTagRequest struct {
 	// Name Unique in the account, ignoring case; one line, no commas.
@@ -4442,6 +4504,97 @@ type RescheduleCampaignRequest struct {
 	SendAt time.Time `json:"send_at"`
 }
 
+// Segment defines model for Segment.
+type Segment struct {
+	// Conditions What a contact must match to be in the segment: every condition
+	// given. Give at least one. The engagement conditions work as the
+	// contact list's filters of the same names do (`listContacts`).
+	Conditions SegmentConditions `json:"conditions"`
+	CreatedAt  time.Time         `json:"created_at"`
+	Id         string            `json:"id"`
+
+	// Name Examples: Engaged subscribers
+	Name      string           `json:"name"`
+	Problems  []SegmentProblem `json:"problems"`
+	UpdatedAt time.Time        `json:"updated_at"`
+
+	// Valid Whether every condition can be used now; false when `problems` lists any.
+	Valid bool `json:"valid"`
+}
+
+// SegmentConditions What a contact must match to be in the segment: every condition
+// given. Give at least one. The engagement conditions work as the
+// contact list's filters of the same names do (`listContacts`).
+type SegmentConditions struct {
+	// Clicked Campaigns the contact clicked a link in, every one.
+	Clicked *[]string `json:"clicked,omitempty"`
+
+	// ClickedWithinDays The contact clicked any campaign in the last this many days.
+	ClickedWithinDays *int `json:"clicked_within_days,omitempty"`
+
+	// NeverClicked The contact was delivered a campaign sent with tracking on and clicked none.
+	NeverClicked *bool `json:"never_clicked,omitempty"`
+
+	// NeverOpened The contact was delivered a campaign sent with tracking on and opened none.
+	NeverOpened *bool `json:"never_opened,omitempty"`
+
+	// NotClicked Campaigns the contact was delivered and didn't click, every one.
+	NotClicked *[]string `json:"not_clicked,omitempty"`
+
+	// NotOpened Campaigns the contact was delivered and didn't open, every one.
+	NotOpened *[]string `json:"not_opened,omitempty"`
+
+	// Opened Campaigns the contact opened, every one.
+	Opened *[]string `json:"opened,omitempty"`
+
+	// OpenedWithinDays The contact opened any campaign in the last this many days.
+	OpenedWithinDays *int `json:"opened_within_days,omitempty"`
+
+	// Statuses Statuses the contact may have; its status must be one of them.
+	Statuses *[]ContactStatus `json:"statuses,omitempty"`
+
+	// TagIds Tags the contact must have, every one.
+	TagIds *[]string `json:"tag_ids,omitempty"`
+}
+
+// SegmentContactList defines model for SegmentContactList.
+type SegmentContactList struct {
+	// Count How many contacts the segment has now, on every page.
+	Count      int       `json:"count"`
+	Data       []Contact `json:"data"`
+	NextCursor *string   `json:"next_cursor"`
+}
+
+// SegmentList defines model for SegmentList.
+type SegmentList struct {
+	Data       []Segment `json:"data"`
+	NextCursor *string   `json:"next_cursor"`
+}
+
+// SegmentProblem A condition the segment can't use now.
+type SegmentProblem struct {
+	// Code `tag_deleted` and `campaign_deleted`: it's gone. `tracking_off`:
+	// the campaign is set to send without open and click tracking.
+	// `report_archived`: the campaign launched more than 12 months
+	// ago and its raw events were deleted.
+	Code SegmentProblemCode `json:"code"`
+
+	// Condition The condition that names it.
+	Condition SegmentProblemCondition `json:"condition"`
+
+	// Id The tag or campaign.
+	Id string `json:"id"`
+}
+
+// SegmentProblemCode `tag_deleted` and `campaign_deleted`: it's gone. `tracking_off`:
+// the campaign is set to send without open and click tracking.
+// `report_archived`: the campaign launched more than 12 months
+// ago and its raw events were deleted.
+type SegmentProblemCode string
+
+// SegmentProblemCondition The condition that names it.
+type SegmentProblemCondition string
+
 // SendLimit How many campaign recipients the account may send to in 24 hours.
 // New accounts start low and double each week of clean sending up to
 // the usual limit. A campaign whose spam complaints or hard bounces
@@ -4922,6 +5075,15 @@ type UpdateFormRequest struct {
 	TagIds         *[]string    `json:"tag_ids,omitempty"`
 }
 
+// UpdateSegmentRequest defines model for UpdateSegmentRequest.
+type UpdateSegmentRequest struct {
+	// Conditions What a contact must match to be in the segment: every condition
+	// given. Give at least one. The engagement conditions work as the
+	// contact list's filters of the same names do (`listContacts`).
+	Conditions *SegmentConditions `json:"conditions,omitempty"`
+	Name       *string            `json:"name,omitempty"`
+}
+
 // UploadImageRequest defines model for UploadImageRequest.
 type UploadImageRequest struct {
 	// Data The file, in standard base64 with padding. Anything else is a 400.
@@ -5034,6 +5196,9 @@ type Limit = int
 // ReportLinkPosition defines model for ReportLinkPosition.
 type ReportLinkPosition = int
 
+// SegmentId defines model for SegmentId.
+type SegmentId = string
+
 // SenderAddressId defines model for SenderAddressId.
 type SenderAddressId = string
 
@@ -5144,6 +5309,15 @@ type ReportArchived = Error
 
 // RequestTooLarge defines model for RequestTooLarge.
 type RequestTooLarge = Error
+
+// SegmentConflict defines model for SegmentConflict.
+type SegmentConflict = Error
+
+// SegmentInvalid defines model for SegmentInvalid.
+type SegmentInvalid = Error
+
+// SegmentRefused defines model for SegmentRefused.
+type SegmentRefused = Error
 
 // SenderAddressConflict defines model for SenderAddressConflict.
 type SenderAddressConflict = Error
@@ -5542,6 +5716,27 @@ type ListImportSkippedRowsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// ListSegmentsParams defines parameters for ListSegments.
+type ListSegmentsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+
+	// Name Only the segment with this name, ignoring case.
+	Name *string `form:"name,omitempty" json:"name,omitempty"`
+}
+
+// ListSegmentContactsParams defines parameters for ListSegmentContacts.
+type ListSegmentContactsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // ListTagsParams defines parameters for ListTags.
 type ListTagsParams struct {
 	// Limit Items per page.
@@ -5688,6 +5883,12 @@ type CreateMailchimpFetchJSONRequestBody = CreateMailchimpFetchRequest
 
 // CreatePlanCheckoutJSONRequestBody defines body for CreatePlanCheckout for application/json ContentType.
 type CreatePlanCheckoutJSONRequestBody = PlanCheckoutRequest
+
+// CreateSegmentJSONRequestBody defines body for CreateSegment for application/json ContentType.
+type CreateSegmentJSONRequestBody = CreateSegmentRequest
+
+// UpdateSegmentJSONRequestBody defines body for UpdateSegment for application/json ContentType.
+type UpdateSegmentJSONRequestBody = UpdateSegmentRequest
 
 // AddSenderAddressJSONRequestBody defines body for AddSenderAddress for application/json ContentType.
 type AddSenderAddressJSONRequestBody = AddSenderAddressRequest
@@ -6741,6 +6942,24 @@ type ServerInterface interface {
 	// CreatePlanPortal Manage the paid plan
 	// (POST /v1/plan/portal)
 	CreatePlanPortal(w http.ResponseWriter, r *http.Request)
+	// ListSegments List segments
+	// (GET /v1/segments)
+	ListSegments(w http.ResponseWriter, r *http.Request, params ListSegmentsParams)
+	// CreateSegment Create a segment
+	// (POST /v1/segments)
+	CreateSegment(w http.ResponseWriter, r *http.Request)
+	// DeleteSegment Delete a segment
+	// (DELETE /v1/segments/{segment_id})
+	DeleteSegment(w http.ResponseWriter, r *http.Request, segmentId SegmentId)
+	// GetSegment Get a segment
+	// (GET /v1/segments/{segment_id})
+	GetSegment(w http.ResponseWriter, r *http.Request, segmentId SegmentId)
+	// UpdateSegment Update a segment
+	// (PATCH /v1/segments/{segment_id})
+	UpdateSegment(w http.ResponseWriter, r *http.Request, segmentId SegmentId)
+	// ListSegmentContacts List a segment's contacts
+	// (GET /v1/segments/{segment_id}/contacts)
+	ListSegmentContacts(w http.ResponseWriter, r *http.Request, segmentId SegmentId, params ListSegmentContactsParams)
 	// ListSenderAddresses List sender addresses
 	// (GET /v1/sender-addresses)
 	ListSenderAddresses(w http.ResponseWriter, r *http.Request)
@@ -10193,6 +10412,212 @@ func (siw *ServerInterfaceWrapper) CreatePlanPortal(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
+// ListSegments operation middleware
+func (siw *ServerInterfaceWrapper) ListSegments(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSegmentsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSegments(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateSegment operation middleware
+func (siw *ServerInterfaceWrapper) CreateSegment(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateSegment(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteSegment operation middleware
+func (siw *ServerInterfaceWrapper) DeleteSegment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "segment_id" -------------
+	var segmentId SegmentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "segment_id", r.PathValue("segment_id"), &segmentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "segment_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteSegment(w, r, segmentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSegment operation middleware
+func (siw *ServerInterfaceWrapper) GetSegment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "segment_id" -------------
+	var segmentId SegmentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "segment_id", r.PathValue("segment_id"), &segmentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "segment_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSegment(w, r, segmentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateSegment operation middleware
+func (siw *ServerInterfaceWrapper) UpdateSegment(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "segment_id" -------------
+	var segmentId SegmentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "segment_id", r.PathValue("segment_id"), &segmentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "segment_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateSegment(w, r, segmentId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSegmentContacts operation middleware
+func (siw *ServerInterfaceWrapper) ListSegmentContacts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "segment_id" -------------
+	var segmentId SegmentId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "segment_id", r.PathValue("segment_id"), &segmentId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "segment_id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListSegmentContactsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSegmentContacts(w, r, segmentId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListSenderAddresses operation middleware
 func (siw *ServerInterfaceWrapper) ListSenderAddresses(w http.ResponseWriter, r *http.Request) {
 
@@ -10834,6 +11259,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/tags/{tag_id}", wrapper.RenameTag)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tags/{tag_id}/contacts", wrapper.TagContacts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tags/{tag_id}/contacts/remove", wrapper.UntagContacts)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/segments", wrapper.ListSegments)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/segments", wrapper.CreateSegment)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/segments/{segment_id}", wrapper.DeleteSegment)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/segments/{segment_id}", wrapper.GetSegment)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/segments/{segment_id}", wrapper.UpdateSegment)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/segments/{segment_id}/contacts", wrapper.ListSegmentContacts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports", wrapper.ListImports)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports", wrapper.CreateImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}", wrapper.GetImport)

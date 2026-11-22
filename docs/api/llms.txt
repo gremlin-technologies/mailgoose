@@ -80,7 +80,7 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 
 ## Tags
 
-- [List tags](reference.md#op-listtags): `GET /v1/tags`, CLI `mailgoose contacts count`, `mailgoose contacts list`, `mailgoose export`, `mailgoose tags add`, `mailgoose tags delete`, `mailgoose tags list`, `mailgoose tags remove`, `mailgoose tags rename`. The account's tags by name, each with how many contacts have it.
+- [List tags](reference.md#op-listtags): `GET /v1/tags`, CLI `mailgoose contacts count`, `mailgoose contacts list`, `mailgoose export`, `mailgoose segment create`, `mailgoose segment update`, `mailgoose tags add`, `mailgoose tags delete`, `mailgoose tags list`, `mailgoose tags remove`, `mailgoose tags rename`. The account's tags by name, each with how many contacts have it.
 - [Create a tag](reference.md#op-createtag): `POST /v1/tags`, CLI `mailgoose tags create`
 - [Rename a tag](reference.md#op-renametag): `PATCH /v1/tags/{tag_id}`, CLI `mailgoose tags rename`. Contacts keep the tag under its new name.
 - [Delete a tag](reference.md#op-deletetag): `DELETE /v1/tags/{tag_id}`, CLI `mailgoose tags delete`. Takes the tag off every contact and off the recipients of draft and scheduled campaigns, then deletes it.
@@ -192,3 +192,12 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 - [Confirm a sender address](reference.md#op-confirmsenderaddress): `POST /v1/sender-addresses/confirm`, CLI `mailgoose sender-addresses confirm`. Uses the token from a sender address's confirm link (MG-85); the web app's page at the link calls it.
 - [Remove a sender address](reference.md#op-removesenderaddress): `DELETE /v1/sender-addresses/{sender_address_id}`, CLI `mailgoose sender-addresses remove`. The address frees its slot, its link stops working, and the account can no longer send as it from the shared domain.
 - [Resend a sender address's confirm link](reference.md#op-resendsenderaddress): `POST /v1/sender-addresses/{sender_address_id}/resend`, CLI `mailgoose sender-addresses resend`. Emails a pending sender address a new confirm link, good for 7 days; the old link stops working.
+
+## segments
+
+- [List segments](reference.md#op-listsegments): `GET /v1/segments`, CLI `mailgoose segment contacts`, `mailgoose segment delete`, `mailgoose segment get`, `mailgoose segment list`, `mailgoose segment update`. The account's saved segments by name, each with its conditions and whether every one can still be used (`valid`, and `problems` for the ones that can't).
+- [Create a segment](reference.md#op-createsegment): `POST /v1/segments`, CLI `mailgoose segment create`. Saves a named set of conditions: tags, statuses, and the engagement filters the contact list takes.
+- [Get a segment](reference.md#op-getsegment): `GET /v1/segments/{segment_id}`, CLI `mailgoose segment get`
+- [Update a segment](reference.md#op-updatesegment): `PATCH /v1/segments/{segment_id}`, CLI `mailgoose segment update`. Renames the segment, replaces its conditions, or both.
+- [Delete a segment](reference.md#op-deletesegment): `DELETE /v1/segments/{segment_id}`, CLI `mailgoose segment delete`. Deletes the saved conditions; no contact changes.
+- [List a segment's contacts](reference.md#op-listsegmentcontacts): `GET /v1/segments/{segment_id}/contacts`, CLI `mailgoose segment contacts`. The contacts in the segment now, newest first as the contact list is, with `count`, how many it has in all.

@@ -474,6 +474,22 @@ mailgoose contacts list --opened <campaign-id> --not-clicked <campaign-id>
 mailgoose export --clicked-within-days 90 --output engaged.csv
 ```
 
+A segment (MG-114) saves a set of those conditions under a name: tags (every
+one), statuses (any of them) and the engagement filters, all of which must
+match. It's worked out each time it's used (`internal/segments`, which builds
+a `contacts.Filter` and lists through the contact list's query). A condition
+naming a tag or campaign that's since been deleted, a campaign set to send
+without tracking, or an archived one makes the segment invalid: it lists its
+`problems`, and listing its contacts answers 422 `segment_invalid` rather
+than quietly matching more people. An account keeps up to 100.
+
+```sh
+mailgoose segment create engaged --status subscribed --opened-within-days 90
+mailgoose segment contacts engaged
+mailgoose segment update engaged --tag vip --status subscribed
+mailgoose segment list
+```
+
 Import a CSV with `mailgoose import`. Columns are detected from common headers
 or named with `--map`; contacts are `unconfirmed` unless you pass
 `--permission-confirmed`. `--list-source` (where the people came from) is

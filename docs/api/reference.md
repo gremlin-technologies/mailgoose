@@ -59,6 +59,7 @@ Servers:
 - [Operator tools (mailgoose staff only)](#tag-admin)
 - [test-addresses](#tag-test-addresses)
 - [sender-addresses](#tag-sender-addresses)
+- [segments](#tag-segments)
 - [Schemas](#schemas)
 
 <a id="tag-health"></a>
@@ -1221,7 +1222,7 @@ Responses:
 `GET /v1/tags`
 
 - Operation: `listTags`
-- CLI: `mailgoose contacts count`, `mailgoose contacts list`, `mailgoose export`, `mailgoose tags add`, `mailgoose tags delete`, `mailgoose tags list`, `mailgoose tags remove`, `mailgoose tags rename`
+- CLI: `mailgoose contacts count`, `mailgoose contacts list`, `mailgoose export`, `mailgoose segment create`, `mailgoose segment update`, `mailgoose tags add`, `mailgoose tags delete`, `mailgoose tags list`, `mailgoose tags remove`, `mailgoose tags rename`
 
 The account's tags by name, each with how many contacts have it.
 
@@ -3974,6 +3975,170 @@ Responses:
 - `502`: `sender_address_email_failed`: the confirm email couldn't be sent. The address is kept, pending; resend its link in a minute. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
+<a id="tag-segments"></a>
+
+## segments
+
+<a id="op-listsegments"></a>
+
+### List segments
+
+`GET /v1/segments`
+
+- Operation: `listSegments`
+- CLI: `mailgoose segment contacts`, `mailgoose segment delete`, `mailgoose segment get`, `mailgoose segment list`, `mailgoose segment update`
+
+The account's saved segments by name, each with its conditions and
+whether every one can still be used (`valid`, and `problems` for the
+ones that can't).
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `limit` | query | integer |  | Items per page. |
+| `cursor` | query | string |  | The `next_cursor` of the previous page. Leave it out for the first page. |
+| `name` | query | string |  | Only the segment with this name, ignoring case. |
+
+Responses:
+
+- `200`: A page of segments. [SegmentList](#schema-segmentlist)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-createsegment"></a>
+
+### Create a segment
+
+`POST /v1/segments`
+
+- Operation: `createSegment`
+- CLI: `mailgoose segment create`
+
+Saves a named set of conditions: tags, statuses, and the engagement
+filters the contact list takes. A contact is in the segment when it
+matches every condition. The segment is worked out each time it's
+used, so it stays current. An account keeps up to 100 segments.
+
+Request body (`application/json`, required): [CreateSegmentRequest](#schema-createsegmentrequest)
+
+Responses:
+
+- `201`: The new segment. [Segment](#schema-segment)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `409`: `segment_exists`: the account already has a segment with that name, ignoring case. `segment_limit`: the account has 100 segments, the most it can keep. [Error](#schema-error)
+- `422`: The segment can't be saved: `invalid_segment_name`, `invalid_conditions` (a malformed condition; `message` says which), `no_conditions`, or a condition naming something it can't use: `unknown_tag`, `unknown_campaign`, `tracking_off` (a campaign sent without open and click tracking) or `report_archived` (a campaign whose raw events were deleted after 12 months). `details` holds the `condition` and the `id`. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-getsegment"></a>
+
+### Get a segment
+
+`GET /v1/segments/{segment_id}`
+
+- Operation: `getSegment`
+- CLI: `mailgoose segment get`
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `segment_id` | path | string (uuid) | yes | The segment's `id`. |
+
+Responses:
+
+- `200`: The segment. [Segment](#schema-segment)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-updatesegment"></a>
+
+### Update a segment
+
+`PATCH /v1/segments/{segment_id}`
+
+- Operation: `updateSegment`
+- CLI: `mailgoose segment update`
+
+Renames the segment, replaces its conditions, or both. New
+`conditions` replace the old ones whole; leave the field out to keep
+them.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `segment_id` | path | string (uuid) | yes | The segment's `id`. |
+
+Request body (`application/json`, required): [UpdateSegmentRequest](#schema-updatesegmentrequest)
+
+Responses:
+
+- `200`: The segment as it now is. [Segment](#schema-segment)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `segment_exists`: the account already has a segment with that name, ignoring case. `segment_limit`: the account has 100 segments, the most it can keep. [Error](#schema-error)
+- `422`: The segment can't be saved: `invalid_segment_name`, `invalid_conditions` (a malformed condition; `message` says which), `no_conditions`, or a condition naming something it can't use: `unknown_tag`, `unknown_campaign`, `tracking_off` (a campaign sent without open and click tracking) or `report_archived` (a campaign whose raw events were deleted after 12 months). `details` holds the `condition` and the `id`. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-deletesegment"></a>
+
+### Delete a segment
+
+`DELETE /v1/segments/{segment_id}`
+
+- Operation: `deleteSegment`
+- CLI: `mailgoose segment delete`
+
+Deletes the saved conditions; no contact changes.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `segment_id` | path | string (uuid) | yes | The segment's `id`. |
+
+Responses:
+
+- `204`: Deleted.
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-listsegmentcontacts"></a>
+
+### List a segment's contacts
+
+`GET /v1/segments/{segment_id}/contacts`
+
+- Operation: `listSegmentContacts`
+- CLI: `mailgoose segment contacts`
+
+The contacts in the segment now, newest first as the contact list
+is, with `count`, how many it has in all. A segment with a condition
+it can't use (`valid: false`) answers 422 `segment_invalid` rather
+than a list that would leave that condition out.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `segment_id` | path | string (uuid) | yes | The segment's `id`. |
+| `limit` | query | integer |  | Items per page. |
+| `cursor` | query | string |  | The `next_cursor` of the previous page. Leave it out for the first page. |
+
+Responses:
+
+- `200`: A page of the segment's contacts. [SegmentContactList](#schema-segmentcontactlist)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `422`: `segment_invalid`: a condition names a tag or campaign that's gone or can't be used now. `details.problems` lists them as the segment's `problems` does; update the segment's conditions to use it again. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
 <a id="schemas"></a>
 
 ## Schemas
@@ -4151,6 +4316,90 @@ Exactly one of `contact_ids` and `filter`.
 | --- | --- | --- | --- |
 | `matched` | integer | yes | How many of the account's contacts were selected. |
 | `changed` | integer | yes | How many gained or lost the tag; the others already had it or didn't. |
+
+<a id="schema-segmentconditions"></a>
+
+### SegmentConditions
+
+What a contact must match to be in the segment: every condition
+given. Give at least one. The engagement conditions work as the
+contact list's filters of the same names do (`listContacts`).
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `tag_ids` | array of string (uuid) |  | Tags the contact must have, every one. |
+| `statuses` | array of [ContactStatus](#schema-contactstatus) |  | Statuses the contact may have; its status must be one of them. |
+| `opened` | array of string (uuid) |  | Campaigns the contact opened, every one. |
+| `not_opened` | array of string (uuid) |  | Campaigns the contact was delivered and didn't open, every one. |
+| `clicked` | array of string (uuid) |  | Campaigns the contact clicked a link in, every one. |
+| `not_clicked` | array of string (uuid) |  | Campaigns the contact was delivered and didn't click, every one. |
+| `never_opened` | boolean |  | The contact was delivered a campaign sent with tracking on and opened none. |
+| `never_clicked` | boolean |  | The contact was delivered a campaign sent with tracking on and clicked none. |
+| `opened_within_days` | integer |  | The contact opened any campaign in the last this many days. |
+| `clicked_within_days` | integer |  | The contact clicked any campaign in the last this many days. |
+
+<a id="schema-segmentproblem"></a>
+
+### SegmentProblem
+
+A condition the segment can't use now.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `condition` | string: one of `tag_ids`, `opened`, `not_opened`, `clicked`, `not_clicked` | yes | The condition that names it. |
+| `id` | string (uuid) | yes | The tag or campaign. |
+| `code` | string: one of `tag_deleted`, `campaign_deleted`, `tracking_off`, `report_archived` | yes | `tag_deleted` and `campaign_deleted`: it's gone. `tracking_off`: the campaign is set to send without open and click tracking. `report_archived`: the campaign launched more than 12 months ago and its raw events were deleted. |
+
+<a id="schema-segment"></a>
+
+### Segment
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | yes |  |
+| `name` | string | yes |  |
+| `conditions` | [SegmentConditions](#schema-segmentconditions) | yes |  |
+| `valid` | boolean | yes | Whether every condition can be used now; false when `problems` lists any. |
+| `problems` | array of [SegmentProblem](#schema-segmentproblem) | yes |  |
+| `created_at` | string (date-time) | yes |  |
+| `updated_at` | string (date-time) | yes |  |
+
+<a id="schema-segmentlist"></a>
+
+### SegmentList
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `data` | array of [Segment](#schema-segment) | yes |  |
+| `next_cursor` | string or null | yes |  |
+
+<a id="schema-createsegmentrequest"></a>
+
+### CreateSegmentRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes | Unique in the account, ignoring case; one line. |
+| `conditions` | [SegmentConditions](#schema-segmentconditions) | yes |  |
+
+<a id="schema-updatesegmentrequest"></a>
+
+### UpdateSegmentRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string |  |  |
+| `conditions` | [SegmentConditions](#schema-segmentconditions) |  |  |
+
+<a id="schema-segmentcontactlist"></a>
+
+### SegmentContactList
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `data` | array of [Contact](#schema-contact) | yes |  |
+| `next_cursor` | string or null | yes |  |
+| `count` | integer | yes | How many contacts the segment has now, on every page. |
 
 <a id="schema-importcolumns"></a>
 

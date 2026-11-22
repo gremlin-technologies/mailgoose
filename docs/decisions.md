@@ -322,6 +322,23 @@ import. The tickets are issues #250 to #255.
   `mailgoose contacts count`), so listing a page doesn't pay for counting
   every match. No new indexes: over 50,000 contacts and 200,000 events each
   filter counts in under 150ms locally.
+- **Saved segments** (MG-114, reversible defaults): a segment's conditions
+  are tags (the contact needs every one), statuses (the contact's status is
+  one of them) and the engagement filters of MG-113; every condition must
+  match. At least one condition is needed (422 `no_conditions`), and an
+  account keeps up to 100 segments (409 `segment_limit`). Names are 1 to
+  100 characters on one line, unique ignoring case. Conditions are stored as
+  given, ids lowercased and repeats dropped. Creating or updating checks each
+  tag and campaign now (422 `unknown_tag`, `unknown_campaign`,
+  `tracking_off`, `report_archived`). Later, a deleted tag or campaign, a
+  campaign switched to send without tracking, or one archived after 12
+  months shows on the segment as a problem (`valid: false`, `problems` with
+  the condition and id), and `GET /v1/segments/{id}/contacts` answers 422
+  `segment_invalid` instead of listing; the segment itself stays until it's
+  updated or deleted. The contact list of a segment is the contact list's
+  order (newest first) and carries `count` on every page. A PATCH with
+  `conditions` replaces them whole. `mailgoose segment delete` needs
+  `--yes`, as every CLI delete does.
 
 ## 2026-11-21: Social icons (MG-109; reversible defaults)
 

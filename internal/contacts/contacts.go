@@ -419,6 +419,12 @@ type Filter struct {
 	Status string
 	// TagID is a tag the contact must have.
 	TagID string
+	// TagIDs are more tags the contact must have, every one (a segment's
+	// tags, MG-114).
+	TagIDs []string
+	// Statuses, when given, are the statuses the contact may have: one of
+	// them must be its status.
+	Statuses []string
 	// Engagement is what the contact did with past campaigns (MG-113).
 	Engagement Engagement
 }
@@ -441,6 +447,12 @@ func (f Filter) where(q string, args []any) (string, []any) {
 	}
 	if f.TagID != "" {
 		add(`EXISTS (SELECT 1 FROM contact_tags ct WHERE ct.contact_id = contacts.id AND ct.tag_id = ?::uuid)`, f.TagID)
+	}
+	for _, id := range f.TagIDs {
+		add(`EXISTS (SELECT 1 FROM contact_tags ct WHERE ct.contact_id = contacts.id AND ct.tag_id = ?::uuid)`, id)
+	}
+	if len(f.Statuses) > 0 {
+		add(`status = ANY(?::text[])`, f.Statuses)
 	}
 	f.Engagement.where(add, func(cond string) { q += " AND " + cond })
 	return q, args
