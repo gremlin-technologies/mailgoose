@@ -38,7 +38,7 @@ function server(plan: Record<string, unknown>, extra: Record<string, (b: unknown
     "GET /v1/plan": () => ({ status: 200, body: plan }),
     "GET /v1/credits": () => ({
       status: 200,
-      body: { balance: 10880, plan: plan.plan, next_grant_at: plan.plan === "free" ? "2026-12-18T10:00:00Z" : null },
+      body: { balance: 10880, plan: plan.plan, next_grant_at: "2026-12-18T10:00:00Z" },
     }),
     "GET /v1/credits/transactions": () => ({ status: 200, body: { data: history, next_cursor: null } }),
     ...extra,
@@ -70,7 +70,7 @@ describe("billing page", () => {
     renderApp("/credits", server(freePlan).fetch);
     const credits = await screen.findByRole("region", { name: "Credits" });
     expect(within(credits).getByText("10,880")).toBeTruthy();
-    expect(within(credits).getByText(/1,000 free credits arrive/)).toBeTruthy();
+    expect(within(credits).getByText(/More free credits arrive/)).toBeTruthy();
     expect(within(credits).queryByRole("group", { name: "Buy credits" })).toBeNull();
     const rows = within(await screen.findByRole("list", { name: "Balance changes" })).getAllByRole("listitem");
     expect(rows.map((r) => r.querySelector(".history-amount")!.textContent)).toEqual(["−120", "+10,000", "+1,000"]);

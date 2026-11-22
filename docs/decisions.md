@@ -39,9 +39,24 @@ and "Yes, agreed" to keeping the monthly free credits on paid accounts.
   with nothing to send. This replaces "a live subscription makes the account
   paid (no free grant ...)" (MG-40), "Paid accounts get no free grant"
   (MG-12) and BIL-5's "it then stops getting the monthly free grant". The
-  code still stops the grant on a paid plan; the change is ticketed as
-  MG-118 and queued with MG-117. Bought credits still last 24 months, and
+  code stopped the grant on a paid plan until MG-118 (built Nov 22: the
+  grant no longer looks at the plan; see the MG-118 entry below). Bought credits still last 24 months, and
   the grant still expires at the next grant.
+
+## 2026-11-22: Paid accounts keep the free monthly grant, as built (MG-118)
+
+`getsGrant` now asks only that the account is active, so the grant follows
+the anniversary of activation whatever the plan. Defaults, each reversible:
+
+- **Existing paid accounts get the current period's grant** the next time
+  their credits are read or changed, since no grant exists for it yet. No
+  migration or backfill of earlier periods.
+- **Upgrade mid-period changes nothing; cancelling mid-period keeps the
+  grant.** One grant a period is still enforced by the existing check.
+- **Help text names no number** ("the free monthly credits"), so MG-120's
+  change to the amount doesn't touch these wordings. Dashboard and Credits
+  page lines read "More free credits arrive <date>" on both plans.
+- **Tester accounts** are untouched: they have their own credits (MG-86).
 
 ## 2026-11-22: Moving from Mailchimp in the agent guide (MG-78; reversible defaults)
 

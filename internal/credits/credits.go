@@ -75,8 +75,8 @@ type Transaction struct {
 type Summary struct {
 	Balance int64
 	Plan    string
-	// NextGrantAt is when the next free grant arrives; nil on a paid plan or
-	// before the account is active.
+	// NextGrantAt is when the next free grant arrives; nil before the account
+	// is active, or once it's closed or deleted.
 	NextGrantAt *time.Time
 }
 
@@ -173,7 +173,7 @@ type account struct {
 }
 
 // CatchUp locks the account's row, expires lots past their expiry, and adds
-// the current period's free grant if a free, active account hasn't had it.
+// the current period's free grant if an active account hasn't had it.
 // Every read and change of credits calls it first, in the same transaction,
 // and the row lock it takes is what keeps concurrent debits from
 // overdrawing.
@@ -182,11 +182,11 @@ func CatchUp(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) er
 	return err
 }
 
-// getsGrant says whether the account gets the free monthly grant: a free
-// account that is active. Not one still pending, and not a deleted one,
-// whose ledger stays only as a billing record.
+// getsGrant says whether the account gets the free monthly grant: an active
+// account, on the free plan or the paid one (MG-118). Not one still pending,
+// and not a deleted one, whose ledger stays only as a billing record.
 func (a *account) getsGrant() bool {
-	return a.plan == "free" && a.status == "active" && a.activatedAt != nil
+	return a.status == "active" && a.activatedAt != nil
 }
 
 func catchUp(ctx context.Context, tx pgx.Tx, accountID string, now time.Time) (*account, error) {

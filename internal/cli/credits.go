@@ -35,10 +35,10 @@ func (a *App) creditsCmd() *cobra.Command {
 		Example: `  mailgoose credits
   mailgoose credits --json`,
 		Short: "Show the credit balance",
-		Long: `One credit sends one email to one recipient. Free accounts get 1,000
-credits a month, on the anniversary of signing up, and unused free credits
-expire when the next ones arrive. Accounts on the paid plan (` + "`mailgoose plan`" + `)
-buy credits in packs instead, which last 24 months. ` + "`mailgoose credits history`" + ` lists every change.`,
+		Long: `One credit sends one email to one recipient. Every account, on the free plan
+or the paid one, gets free credits each month, on the anniversary of signing
+up, and unused free credits expire when the next ones arrive. Accounts on the
+paid plan (` + "`mailgoose plan`" + `) can also buy credits in packs, which last 24 months. ` + "`mailgoose credits history`" + ` lists every change.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var sum creditSummary
@@ -51,7 +51,7 @@ buy credits in packs instead, which last 24 months. ` + "`mailgoose credits hist
 			}
 			fmt.Fprintf(a.Stdout, "%s credits (%s plan)\n", strconv.FormatInt(sum.Balance, 10), sum.Plan)
 			if sum.NextGrantAt != nil {
-				fmt.Fprintf(a.Stdout, "Next 1,000 free credits: %s\n", sum.NextGrantAt.Local().Format("2006-01-02 15:04"))
+				fmt.Fprintf(a.Stdout, "Next free credits: %s\n", sum.NextGrantAt.Local().Format("2006-01-02 15:04"))
 			}
 			return nil
 		},

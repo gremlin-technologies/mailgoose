@@ -220,12 +220,17 @@ function CreditsPanel({ credits: c }: { credits: Credits }) {
       {c.plan === "free" ? (
         <p className="muted">
           {c.next_grant_at
-            ? `1,000 free credits arrive ${formatDate(c.next_grant_at)}, and any free credits left then expire.`
+            ? `More free credits arrive ${formatDate(c.next_grant_at)}, and any free credits left then expire.`
             : "Your free credits arrive once your account is active."}{" "}
           Credit packs come with the paid plan.
         </p>
       ) : (
         <>
+          {c.next_grant_at && (
+            <p className="muted">
+              More free credits arrive {formatDate(c.next_grant_at)}, and any free credits left then expire.
+            </p>
+          )}
           <p className="muted">Bought credits last 24 months and the oldest are used first.</p>
           <div className="packs" role="group" aria-label="Buy credits">
             {packs.map((p) => (

@@ -36,8 +36,8 @@ type planCheckout struct {
 
 const planHelp = `The paid plan is a card subscription: $5 a month, or $50 a year. It
 covers up to 2,500 contacts; each further 10,000 contacts, or part of them,
-adds the same again. Paid accounts buy credits in packs (` + "`mailgoose credits buy`" + `)
-instead of getting 1,000 free credits a month. Contacts count while they're
+adds the same again. Paid accounts keep the free monthly credits and buy more in
+packs (` + "`mailgoose credits buy`" + `). Contacts count while they're
 subscribed or waiting to confirm. Sales tax, if any, is added at checkout.`
 
 func (a *App) planCmd() *cobra.Command {

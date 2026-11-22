@@ -3220,7 +3220,7 @@ type CreditSummary struct {
 	// Balance Credits available now, not counting any reserved for a send in progress.
 	Balance int64 `json:"balance"`
 
-	// NextGrantAt When the next 1,000 free credits arrive; null on the paid plan.
+	// NextGrantAt When the next free monthly credits arrive, on the free or the paid plan; null while the account is pending.
 	NextGrantAt *time.Time        `json:"next_grant_at"`
 	Plan        CreditSummaryPlan `json:"plan"`
 }
