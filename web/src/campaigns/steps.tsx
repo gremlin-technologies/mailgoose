@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { Link, useLocation } from "react-router";
 
 import { useApi } from "../api/context";
+import { webWords } from "../api/hints";
 import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
 import { FailureNotice, formatDate } from "../components";
@@ -51,7 +52,9 @@ export function problemsOf(failure: Failure | undefined): Problem[] {
   return list
     .filter((p): p is Record<string, unknown> => isObject(p) && typeof p.message === "string")
     .map((p) => {
-      const problem: Problem = { code: String(p.code ?? ""), message: p.message as string, hint: typeof p.hint === "string" ? p.hint : "" };
+      const code = String(p.code ?? "");
+      // Each problem's hint is worded for the web app too (MG-121).
+      const problem: Problem = { code, ...webWords(code, p.message as string, typeof p.hint === "string" ? p.hint : "") };
       if (problem.code === "unverified_from" && typeof p.from_email === "string" && typeof p.shared_sending === "boolean") {
         problem.unverified = { from: p.from_email, shared: p.shared_sending };
       }
@@ -143,8 +146,12 @@ export function SharedDomainNudge({ from, replyTo, defaultFrom }: { from: Addres
   );
 }
 
-/** What stops a test or a launch, each with what to do about it. */
-export function Problems({ failure }: { failure: Failure }) {
+/**
+ * What stops a test or a launch, each with what to do about it. With
+ * onSendTest, an untested campaign's problem offers a Send test button beside
+ * it.
+ */
+export function Problems({ failure, onSendTest, testing }: { failure: Failure; onSendTest?: () => void; testing?: boolean }) {
   const problems = problemsOf(failure);
   if (problems.length === 0) return <FailureNotice failure={failure} />;
   return (
@@ -159,6 +166,14 @@ export function Problems({ failure }: { failure: Failure }) {
               <>
                 {p.message}
                 {p.hint && <span className="hint"> {p.hint}</span>}
+                {p.code === "untested" && onSendTest && (
+                  <>
+                    {" "}
+                    <button type="button" className="button" onClick={onSendTest} disabled={testing}>
+                      {testing ? "Sending…" : "Send test"}
+                    </button>
+                  </>
+                )}
               </>
             )}
           </li>
@@ -316,11 +331,37 @@ export function TestStep({ campaign, onSent }: { campaign: Campaign; onSent: (c:
  * launches only when the person presses confirm, sending the summary's code
  * back, the same flow the CLI and agents use.
  */
-export function LaunchStep({ campaign, onLaunched }: { campaign: Campaign; onLaunched: (c: Campaign) => void }) {
+export function LaunchStep({
+  campaign,
+  onLaunched,
+  onTested,
+}: {
+  campaign: Campaign;
+  onLaunched: (c: Campaign) => void;
+  /** Called with the campaign after the Send test button beside an untested campaign's notice sends one. */
+  onTested?: (c: Campaign) => void;
+}) {
   const api = useApi();
   const [confirming, setConfirming] = useState<Confirmation>();
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [tested, setTested] = useState<string>();
   const [failure, setFailure] = useState<Failure>();
+
+  /** Sends a test to the account owner, as the untested notice's button does. */
+  async function sendTest() {
+    setTesting(true);
+    setTested(undefined);
+    const res = await attempt(() =>
+      api.POST("/v1/campaigns/{campaign_id}/test", { params: { path: { campaign_id: campaign.id } }, body: {} }),
+    );
+    setTesting(false);
+    if (!res.ok) return setFailure(res.failure);
+    if (!res.data) return;
+    setFailure(undefined);
+    setTested(`Test sent to ${res.data.to.join(", ")}. Check it looks right, then launch.`);
+    onTested?.(res.data.campaign);
+  }
 
   async function launch(code?: string) {
     setBusy(true);
@@ -364,7 +405,12 @@ export function LaunchStep({ campaign, onLaunched }: { campaign: Campaign; onLau
           onCancel={() => setConfirming(undefined)}
         />
       )}
-      {failure && <Problems failure={failure} />}
+      {tested && (
+        <p className="notice notice-good" role="status">
+          {tested}
+        </p>
+      )}
+      {failure && <Problems failure={failure} onSendTest={() => void sendTest()} testing={testing} />}
     </li>
   );
 }

@@ -78,6 +78,26 @@ Nov 22, to the four picks it put to him: "Go with all four picks".
   next one is 2,500. No top-up.
 - **Tester accounts are untouched**: 500 contacts, 100 copies a day.
 
+## 2026-11-22: The web app's own words, as built (MG-121; reversible defaults)
+
+Every API error the web app shows goes through `webWords` (`web/src/api/hints.ts`),
+in `failureFrom` and for each launch problem and form problem. Defaults:
+
+- **One map from code to wording**, as the ticket suggested; where the
+  API's message alone says enough the wording is empty (no hint shown).
+- **Unmapped hints are dropped when they name the CLI** (a `mailgoose` command,
+  a flag or an API route), and kept otherwise. A message naming one has the
+  sentence dropped; the few API messages that did are reworded for both.
+- **`untested` reads "Send a test and check it looks right before you
+  launch."** for both of its messages, with a Send test button beside it that
+  sends a test to the account owner, the same as the Send a test step with its
+  address left empty.
+- **The public signup errors** no longer name commands (`test_mode`,
+  `form_code_incomplete`, `form_not_ready`), since anyone filling in a form
+  can see them.
+- **The test of the API's code list** reads the server's Go sources for the
+  codes it builds errors with, since the spec has no list of codes.
+
 ## 2026-11-22: The web app speaks in its own words, never CLI commands (owner decision, confirmed)
 
 Asked about the untested-campaign error in the web app, which tells people to

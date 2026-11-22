@@ -319,7 +319,7 @@ function Draft({
       <ol className="steps">
         <CheckStep emailId={c.email_id} />
         <TestStep campaign={c} onSent={changed} />
-        <LaunchStep campaign={c} onLaunched={launched} />
+        <LaunchStep campaign={c} onLaunched={launched} onTested={changed} />
       </ol>
       <DeleteDraft campaign={c} />
     </>

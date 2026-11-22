@@ -1,3 +1,5 @@
+import { webWords } from "./hints";
+
 /** Why a request failed, in words a person can act on. */
 export type Failure = {
   /** The API's error code, or network_error when it couldn't be reached. */
@@ -46,7 +48,10 @@ function failureFrom(body: unknown, status: number): Failure {
     const e = (body as { error: Partial<Failure> & { details?: unknown } }).error;
     if (typeof e?.message === "string") {
       const details = typeof e.details === "object" && e.details !== null ? (e.details as Record<string, unknown>) : undefined;
-      return { code: e.code ?? "error", message: e.message, hint: e.hint ?? "", status, ...(details ? { details } : {}) };
+      const code = e.code ?? "error";
+      // The API's hints are written for the CLI; the web app words its own (MG-121).
+      const words = webWords(code, e.message, e.hint ?? "");
+      return { code, ...words, status, ...(details ? { details } : {}) };
     }
   }
   return {

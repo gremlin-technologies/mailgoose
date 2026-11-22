@@ -107,8 +107,10 @@ describe("campaign helpers", () => {
     expect(confirmationOf({ ...f, details: { summary, code: "ABCD-1234", expires_at: "2026-11-19T10:15:00Z" } })?.summary.credits).toBe(120);
     expect(confirmationOf({ ...f, details: { summary: { subject: 1 }, code: "x", expires_at: "y" } })).toBeUndefined();
     expect(confirmationOf({ ...f, code: "not_ready" })).toBeUndefined();
-    const problems = [{ code: "untested", message: "No test yet.", hint: "Send a test." }, { code: 3 }, null];
-    expect(problemsOf({ ...f, code: "not_ready", details: { problems } })).toEqual([problems[0]]);
+    const problems = [{ code: "no_recipients", message: "Nobody to send to.", hint: "Pick some." }, { code: 3 }, null];
+    expect(problemsOf({ ...f, code: "not_ready", details: { problems } })).toEqual([
+      { code: "no_recipients", message: "Nobody to send to.", hint: "Choose who the campaign goes to: everyone, a tag or a segment." },
+    ]);
   });
 });
 
@@ -522,8 +524,8 @@ describe("draft campaign", () => {
     await user.click(await screen.findByRole("button", { name: "Review and launch" }));
     const alert = await screen.findByRole("alert");
     expect(within(alert).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "No test since the last change. Send a test first.",
-      "You need 20 more credits. Buy credits.",
+      "Send a test and check it looks right before you launch. Send test",
+      "You need 20 more credits. Buy credits on the Billing page, or send to fewer contacts.",
     ]);
 
     answer = "summary";
@@ -533,6 +535,74 @@ describe("draft campaign", () => {
     expect(await screen.findByText("The campaign changed since that summary.")).toBeTruthy();
     expect(screen.queryByRole("region", { name: "Launch summary" })).toBeNull();
     expect(screen.getByRole("button", { name: "Review and launch" })).toBeTruthy();
+  });
+
+  // One wording per launch problem the API words for the CLI (MG-121): the
+  // web app shows its own, pointing to a page or control, never the command.
+  const launchWordings: [string, string, string][] = [
+    ["check_failed", "Run `mailgoose email check e1` for the details, and fix it.", "Open the email, fix what the check lists, then try again."],
+    ["send_at_passed", "Set a new one with `mailgoose campaign update c1 --send-at <time>`, or `--send-at now`.", "Choose a new send time for the campaign, or send it now."],
+    ["subscription_past_due", "Update the card with `mailgoose plan manage`; sending resumes as soon as the payment goes through.", "Update your card on the Billing page. Sending resumes as soon as the payment goes through."],
+    ["no_recipients", "Pick recipients with `mailgoose campaign update c1 --all`, `--tag` or `--segment`.", "Choose who the campaign goes to: everyone, a tag or a segment."],
+    ["credits_short", "Buy credits with `mailgoose credits buy`, or send to fewer contacts.", "Buy credits on the Billing page, or send to fewer contacts."],
+    ["segment_invalid", "Update the segment's conditions with `mailgoose segment update s1`, or pick other recipients.", "Fix the segment's conditions on its page, or pick other recipients for the campaign."],
+    ["test_mode", "Send to a tag that holds only test addresses (see `mailgoose test-addresses list`).", "Send to a tag or segment that holds only your confirmed test addresses (see Test addresses), or ask mailgoose to allow full sending."],
+    ["no_email", "Pick one with `mailgoose campaign update c1 --email <email-id>`.", "Pick an email for the campaign."],
+    ["missing_from", "Set one for the account with `mailgoose account update --from-email you@yourdomain.com`.", "Set a From address in Settings, or on the email."],
+    ["missing_postal_address", "Add it with `mailgoose account update --postal-address \"...\"`.", "Add your postal address in Settings."],
+    ["missing_subject", "Set one with `mailgoose email update e1 --subject \"...\"`.", "Add a subject to the email."],
+    ["empty_email", "Add it with `mailgoose email import-html e1 <file.html>`.", "Add the email's markup in the editor."],
+    ["invalid_html", "Fix them and import the markup again with `mailgoose email import-html e1 <file.html>`.", "Fix the markup in the editor and save it again."],
+    ["merge_tag", "Run `mailgoose email check e1` for the list, and fix them.", "Run the email check to see which merge tags or links to fix."],
+    ["new_terms_not_accepted", "Accept with `mailgoose account accept-terms --version v2`, or in the web app.", "Read what changed on the Policies page, then accept the new terms."],
+  ];
+  it.each(launchWordings)("words the %s launch problem for the web, not the CLI", async (code, apiHint, webHint) => {
+    const api = server(campaign(), {
+      [`POST ${base}/launch`]: () => fail(422, "not_ready", "This campaign can't launch yet.", { problems: [{ code, message: "It can't launch.", hint: apiHint }] }),
+    });
+    const user = userEvent.setup();
+    renderApp(`/campaigns/${campaignId}`, api.fetch);
+    await user.click(await screen.findByRole("button", { name: "Review and launch" }));
+    const item = within(await screen.findByRole("alert")).getByRole("listitem");
+    expect(item.textContent).toBe(`It can't launch. ${webHint}`);
+    expect(item.textContent).not.toMatch(/`mailgoose|--/);
+  });
+
+  it("drops a launch problem's hint that names the CLI when the web app has no wording for it", async () => {
+    const api = server(campaign(), {
+      [`POST ${base}/launch`]: () => fail(422, "not_ready", "This campaign can't launch yet.", { problems: [{ code: "brand_new", message: "A new problem.", hint: "Run `mailgoose thing fix --now`." }] }),
+    });
+    const user = userEvent.setup();
+    renderApp(`/campaigns/${campaignId}`, api.fetch);
+    await user.click(await screen.findByRole("button", { name: "Review and launch" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("A new problem.");
+    expect(screen.getByRole("alert").textContent).not.toContain("mailgoose thing");
+  });
+
+  it("offers Send test beside an untested campaign's notice, and sends one", async () => {
+    const tested = campaign({ version: 1, last_test: { at: "2026-11-19T10:00:00Z", version: 1, email_version: 4 } });
+    const api = server(campaign(), {
+      [`POST ${base}/launch`]: () =>
+        fail(422, "not_ready", "This campaign can't launch yet.", {
+          problems: [{ code: "untested", message: "The campaign hasn't been tested yet.", hint: "Send one with `mailgoose campaign test c1` and check it looks right." }],
+        }),
+      [`POST ${base}/test`]: () => {
+        api.state.campaign = tested;
+        return {
+          status: 200,
+          body: { campaign: tested, to: ["pat@example.com"], sent_today: 1, daily_limit: 20, from: { name: "Pat", email: "hello@patsbakery.com" }, reply_to: [], shared_domain: false, sender: null, default_from: false },
+        };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp(`/campaigns/${campaignId}`, api.fetch);
+    await user.click(await screen.findByRole("button", { name: "Review and launch" }));
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByRole("listitem").textContent).toBe("Send a test and check it looks right before you launch. Send test");
+    await user.click(within(alert).getByRole("button", { name: "Send test" }));
+    expect(await screen.findByText(/Test sent to pat@example.com\. Check it looks right, then launch\./)).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(api.calls.find((c) => c.path === `${base}/test`)?.body).toEqual({});
   });
 
   it("edits the draft with the version read, and reloads when someone else changed it", async () => {

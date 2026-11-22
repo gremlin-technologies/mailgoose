@@ -182,7 +182,7 @@ func (j *FetchJob) RunNext(ctx context.Context) (bool, error) {
 	client, err := j.Connections.Client(ctx, accountID)
 	switch {
 	case errors.Is(err, ErrNotConnected), errors.Is(err, ErrNotConfigured):
-		return true, fail(FetchErrNotConnected, "The Mailchimp connection ended before the fetch. Connect again: `mailgoose import mailchimp connect`.")
+		return true, fail(FetchErrNotConnected, "The Mailchimp connection ended before the fetch. Connect Mailchimp again.")
 	case err != nil:
 		return true, err
 	}
@@ -219,7 +219,7 @@ func (j *FetchJob) RunNext(ctx context.Context) (bool, error) {
 		if ferr := j.Connections.Forget(done, accountID); ferr != nil {
 			return true, ferr
 		}
-		return true, fail(FetchErrRevoked, "Mailchimp no longer allows mailgoose to read this account. Connect again: `mailgoose import mailchimp connect`.")
+		return true, fail(FetchErrRevoked, "Mailchimp no longer allows mailgoose to read this account. Connect Mailchimp again.")
 	case ctx.Err() != nil:
 		return true, ctx.Err()
 	case err != nil:

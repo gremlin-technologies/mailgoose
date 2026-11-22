@@ -115,6 +115,14 @@ the app; the mascot keeps them.
 - Light by default. Dark mode is a switch in Settings, not the system setting
   (owner, Nov 21), with the same structure: hairlines and shadows are re-tuned
   rather than inverted. The public site is light only.
+- **UI text names the UI, not CLI commands** (owner, Nov 22, MG-121). No error,
+  help text or empty state in the web app, and no public page, names a
+  `mailgoose ...` command or a `--flag`; each points to the page or control
+  that fixes the problem ("Update your card on the Billing page"). The API's
+  hints are written for the CLI and agents, so the web app words its own in one
+  map from error code to wording (`web/src/api/hints.ts`), and anything the map
+  doesn't cover has its hint dropped when it names the CLI, never shown raw.
+  A message that names a command is reworded in the API to suit both.
 
 ## The email editor
 
