@@ -123,6 +123,10 @@ export function ImportContacts() {
         <Link to="/contacts">Contacts</Link>
       </p>
       <PageHeader title="Import contacts" about="Add contacts from a CSV file with a header row. Addresses you already have are left as they are." />
+      <p>
+        Moving from Mailchimp? <Link to="/contacts/import/mailchimp">Import from Mailchimp</Link> to bring your audiences,
+        tags and emails over together.
+      </p>
       <form onSubmit={start} className="stack">
         <div className="panel stack">
           <label className="field">
@@ -462,6 +466,11 @@ function SkippedRows({ importID }: { importID: string }) {
   return (
     <>
       <h2>Skipped rows</h2>
+      <p>
+        <a className="button" href={`/v1/imports/${encodeURIComponent(importID)}/skipped-rows/export`} download>
+          Download skipped rows (CSV)
+        </a>
+      </p>
       {rows.length > 0 && (
         <table className="table">
           <thead>

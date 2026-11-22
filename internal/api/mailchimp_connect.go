@@ -65,7 +65,7 @@ func (s *Server) GetMailchimpConnection(w http.ResponseWriter, r *http.Request) 
 		WriteError(w, Internal())
 		return
 	}
-	writeJSON(w, http.StatusOK, connectionJSON(conn))
+	writeJSON(w, http.StatusOK, connectionJSON(conn, s.MailchimpConnections.Configured()))
 }
 
 // DisconnectMailchimp (POST /v1/imports/mailchimp/disconnect).
@@ -79,14 +79,16 @@ func (s *Server) DisconnectMailchimp(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, Internal())
 		return
 	}
-	writeJSON(w, http.StatusOK, connectionJSON(nil))
+	writeJSON(w, http.StatusOK, connectionJSON(nil, s.MailchimpConnections.Configured()))
 }
 
-func connectionJSON(c *mailchimp.Connection) apigen.MailchimpConnection {
+// connectionJSON is the account's connection; canConnect says whether
+// connecting is set up here at all.
+func connectionJSON(c *mailchimp.Connection, canConnect bool) apigen.MailchimpConnection {
 	if c == nil {
-		return apigen.MailchimpConnection{}
+		return apigen.MailchimpConnection{CanConnect: canConnect}
 	}
-	out := apigen.MailchimpConnection{Connected: true, DataCenter: &c.DataCenter}
+	out := apigen.MailchimpConnection{Connected: true, CanConnect: canConnect, DataCenter: &c.DataCenter}
 	if c.AccountName != "" {
 		out.AccountName = &c.AccountName
 	}
@@ -94,6 +96,10 @@ func connectionJSON(c *mailchimp.Connection) apigen.MailchimpConnection {
 	out.ConnectedAt, out.ExpiresAt = &at, &until
 	return out
 }
+
+// mailchimpWebPage is the web app's Mailchimp page, which the callback's
+// pages link back to.
+const mailchimpWebPage = "/contacts/import/mailchimp"
 
 var (
 	mailchimpConnectedPage = func(name string) page {
@@ -105,13 +111,15 @@ var (
 			Title: "Mailchimp is connected",
 			Body: []string{
 				"mailgoose can now read " + what + " to import it. It only reads, and forgets the access once the import is done, after 24 hours at the latest, or when you disconnect.",
-				"You can close this tab and carry on where you started.",
+				"Carry on where you started: in the web app, follow the link below to pick the audiences to bring; in the CLI, run mailgoose import mailchimp audiences.",
 			},
+			Back: mailchimpWebPage,
 		}
 	}
 	mailchimpDeniedPage = page{
 		Title: "Mailchimp wasn't connected",
 		Body:  []string{"Access wasn't allowed on Mailchimp's page, so nothing was connected.", "To try again, start connecting again."},
+		Back:  mailchimpWebPage,
 	}
 	mailchimpExpiredPage = page{
 		Title: "This link has expired",

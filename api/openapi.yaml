@@ -2411,6 +2411,49 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
+  /v1/imports/{import_id}/skipped-rows/export:
+    get:
+      operationId: exportImportSkippedRows
+      summary: Download an import's skipped rows as CSV
+      description: |
+        Every row the import didn't add, as a CSV file in file order, with a
+        header row. Columns: `row` (the line in the file, where the header is
+        1), `source` (for a Mailchimp import, the export file and row as
+        `file:row`; empty for a CSV), `email` (as written), `reason` (a
+        `SkipReason`) and `why` (the reason in a sentence). A cell that
+        starts with `=`, `+`, `-` or `@` gets a `'` in front so a
+        spreadsheet doesn't run it as a formula.
+      tags: [imports]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/ImportId"
+      responses:
+        "200":
+          description: The skipped rows, as CSV with a header row.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+            Content-Disposition:
+              description: Names the file `skipped-rows.csv`.
+              schema:
+                type: string
+          content:
+            text/csv:
+              schema:
+                type: string
+                examples: ["row,source,email,reason,why\n3,,pat@,invalid_email,Not an email address.\n"]
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
   /v1/imports/mailchimp/bundles:
     post:
       operationId: createMailchimpBundle
@@ -5717,10 +5760,16 @@ components:
     MailchimpConnection:
       type: object
       additionalProperties: false
-      required: [connected, account_name, data_center, connected_at, expires_at]
+      required: [connected, can_connect, account_name, data_center, connected_at, expires_at]
       properties:
         connected:
           type: boolean
+        can_connect:
+          type: boolean
+          description: |
+            Whether connecting a Mailchimp account is set up here. When
+            false, `connectMailchimp` answers `mailchimp_not_configured`;
+            upload the export instead.
         account_name:
           type: [string, "null"]
           description: The Mailchimp account's name, as Mailchimp gives it.
@@ -5736,6 +5785,7 @@ components:
           description: When mailgoose forgets the access, if the import hasn't already.
       examples:
         - connected: true
+          can_connect: true
           account_name: "Riverside Bakery"
           data_center: us21
           connected_at: "2026-11-21T12:02:00Z"

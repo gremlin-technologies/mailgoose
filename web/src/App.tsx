@@ -17,6 +17,7 @@ import { Emails } from "./pages/Emails";
 import { FormEditor } from "./forms/FormEditor";
 import { Forms } from "./pages/Forms";
 import { ImportContacts, ImportDetail } from "./pages/Imports";
+import { MailchimpBundlePage, MailchimpFetchProgress, MailchimpImport } from "./pages/Mailchimp";
 import { navPages } from "./pages/nav";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { PolicyChangesPage, PolicyPage, policies } from "./pages/Policies";
@@ -91,6 +92,9 @@ export function AppRoutes() {
           ),
         )}
         <Route path="/contacts/import" element={<ImportContacts />} />
+        <Route path="/contacts/import/mailchimp" element={<MailchimpImport />} />
+        <Route path="/contacts/import/mailchimp/fetch/:id" element={<MailchimpFetchProgress />} />
+        <Route path="/contacts/import/mailchimp/:id" element={<MailchimpBundlePage />} />
         <Route path="/contacts/imports/:id" element={<ImportDetail />} />
         <Route path="/contacts/:id" element={<ContactDetail />} />
         <Route path="/domains/:id" element={<DomainDetail />} />

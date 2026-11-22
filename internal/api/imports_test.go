@@ -159,6 +159,17 @@ func TestImportThroughTheAPI(t *testing.T) {
 		t.Errorf("skipped rows = %s", got)
 	}
 
+	// And as one CSV file.
+	rec = do(t, h, bearer(request(http.MethodGet, "/v1/imports/"+queued.ID+"/skipped-rows/export"))(t))
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "text/csv; charset=utf-8" ||
+		rec.Header().Get("Content-Disposition") != `attachment; filename="skipped-rows.csv"` {
+		t.Errorf("export = %d %v", rec.Code, rec.Header())
+	}
+	if want := "row,source,email,reason,why\n3,,pat@example.com,exists,Already a contact; left as it was.\n" +
+		"4,,broken,invalid_email,Not an email address.\n5,,ana@example.com,duplicate,The same address is on an earlier row.\n"; rec.Body.String() != want {
+		t.Errorf("export =\n%s", rec.Body)
+	}
+
 	rec = do(t, h, bearer(request(http.MethodGet, "/v1/contacts?email=ana"))(t))
 	if !strings.Contains(rec.Body.String(), `"status":"subscribed"`) || !strings.Contains(rec.Body.String(), `"source":"import"`) ||
 		!strings.Contains(rec.Body.String(), `"name":"vip"`) {
@@ -296,7 +307,7 @@ func TestImportsAreKeptPerAccount(t *testing.T) {
 	rec := as(theirs, jsonRequest(http.MethodPost, "/v1/imports", importBody)(t))
 	var im importBodyJSON
 	decodeInto(t, rec, &im)
-	for _, path := range []string{"/v1/imports/" + im.ID, "/v1/imports/" + im.ID + "/skipped-rows"} {
+	for _, path := range []string{"/v1/imports/" + im.ID, "/v1/imports/" + im.ID + "/skipped-rows", "/v1/imports/" + im.ID + "/skipped-rows/export"} {
 		if rec := as(mine, httptest.NewRequest(http.MethodGet, path, nil)); rec.Code != http.StatusNotFound {
 			t.Errorf("%s from another account: %d", path, rec.Code)
 		}

@@ -54,6 +54,9 @@ func importsStub(t *testing.T) (*harness, *[]seenRequest) {
 				return
 			}
 			_, _ = w.Write([]byte(testImport("done", 4, 2, 2)))
+		case r.URL.Path == one+"/skipped-rows/export":
+			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+			_, _ = w.Write([]byte("row,source,email,reason,why\n3,,nope,invalid_email,Not an email address.\n5,,pat@example.com,exists,Already a contact; left as it was.\n"))
 		case r.URL.Path == one+"/skipped-rows" && r.URL.Query().Get("cursor") == "":
 			_, _ = w.Write([]byte(`{"data":[{"row":3,"email":"nope","reason":"invalid_email"}],"next_cursor":"p2"}`))
 		case r.URL.Path == one+"/skipped-rows":
@@ -178,5 +181,35 @@ func TestImportErrors(t *testing.T) {
 	}
 	if code := h.run("import", "status", "nope"); code != ExitNotFound {
 		t.Errorf("unknown import: exit %d", code)
+	}
+}
+
+func TestImportSkippedDownloadsTheCSV(t *testing.T) {
+	h, _ := importsStub(t)
+	if code := h.run("import", "skipped", testImportID); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if out := h.out.String(); !strings.HasPrefix(out, "row,source,email,reason,why\n3,,nope") {
+		t.Errorf("stdout:\n%s", out)
+	}
+
+	h.out.Reset()
+	path := filepath.Join(t.TempDir(), "skipped.csv")
+	if code := h.run("import", "skipped", testImportID, "--output", path, "--json"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if out := h.out.String(); !strings.Contains(out, `"rows": 2`) {
+		t.Errorf("json:\n%s", out)
+	}
+	if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("file = %v %v", fi, err)
+	}
+
+	missing := filepath.Join(t.TempDir(), "none.csv")
+	if code := h.run("import", "skipped", "nope", "--output", missing); code == ExitOK {
+		t.Error("an unknown import succeeded")
+	}
+	if _, err := os.Stat(missing); !os.IsNotExist(err) {
+		t.Errorf("a failed download left %s", missing)
 	}
 }

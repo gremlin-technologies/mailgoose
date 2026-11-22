@@ -35,8 +35,7 @@ export function fakeApi(routes: Record<string, Route>) {
   const calls: Call[] = [];
   const fetch = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
-    const text = await req.text();
-    const body: unknown = text ? JSON.parse(text) : undefined;
+    const body = await requestBody(req);
     const key = `${req.method} ${url.pathname}`;
     calls.push({ method: req.method, path: url.pathname, body });
     const route = routes[key];
@@ -50,6 +49,23 @@ export function fakeApi(routes: Record<string, Route>) {
     });
   };
   return { fetch, calls };
+}
+
+/**
+ * A request's body: parsed JSON, or for a multipart upload an object of its
+ * parts, where a file part is the File itself.
+ */
+async function requestBody(req: Request): Promise<unknown> {
+  if (req.headers.get("Content-Type")?.startsWith("multipart/form-data")) {
+    const parts: Record<string, FormDataEntryValue | FormDataEntryValue[]> = {};
+    for (const [name, value] of (await req.formData()).entries()) {
+      const had = parts[name];
+      parts[name] = had === undefined ? value : [...(Array.isArray(had) ? had : [had]), value];
+    }
+    return parts;
+  }
+  const text = await req.text();
+  return text ? JSON.parse(text) : undefined;
 }
 
 export function apiError(status: number, code: string, message: string, hint = ""): Reply {

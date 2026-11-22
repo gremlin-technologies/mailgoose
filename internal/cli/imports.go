@@ -461,6 +461,39 @@ until mailgoose approves it, and "mailgoose import status" says why it's held.`,
 		},
 	})
 
-	cmd.AddCommand(status, list, cancel, a.importMailchimpCmd())
+	var skippedOutput string
+	skipped := calls("exportImportSkippedRows", &cobra.Command{
+		Use:   "skipped <id>",
+		Short: "Download every row an import skipped, as CSV",
+		Long: `Writes every row the import didn't add as CSV, in file order: row (the line
+in the file, where the header is 1), source (for a Mailchimp import, the
+export file and row), email, reason and why (the reason in a sentence). The
+CSV goes to standard output, or to the file --output names.`,
+		Example: `  mailgoose import skipped 3f1c... --output skipped.csv`,
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			path := "/v1/imports/" + url.PathEscape(args[0]) + "/skipped-rows/export"
+			if skippedOutput == "" {
+				return a.download(cmd.Context(), path, a.Stdout)
+			}
+			n, err := a.saveCSV(cmd.Context(), path, skippedOutput)
+			if err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(map[string]any{"file": skippedOutput, "rows": n})
+				return nil
+			}
+			noun := "rows"
+			if n == 1 {
+				noun = "row"
+			}
+			fmt.Fprintf(a.Stdout, "Wrote %d skipped %s to %s.\n", n, noun, skippedOutput)
+			return nil
+		},
+	})
+	skipped.Flags().StringVarP(&skippedOutput, "output", "o", "", "write the CSV to this file instead of standard output")
+
+	cmd.AddCommand(status, skipped, list, cancel, a.importMailchimpCmd())
 	return cmd
 }
