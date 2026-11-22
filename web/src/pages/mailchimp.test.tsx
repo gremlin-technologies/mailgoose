@@ -164,7 +164,7 @@ describe("Mailchimp import", () => {
     await user.click(screen.getByRole("button", { name: "Upload and preview" }));
 
     await waitFor(() => expect(location()).toBe(`/contacts/import/mailchimp/${bundleID}`), { timeout: 3000 });
-    // jsdom's File loses its name crossing into Node's FormData; a browser sends it.
+    expect((posted.file as File).name).toBe("audience.csv");
     expect(await (posted.file as Blob).text()).toBe("Email Address,First Name\npat@example.com,Pat\n");
     expect(posted.audience_name).toBe("Bakery news");
   });
