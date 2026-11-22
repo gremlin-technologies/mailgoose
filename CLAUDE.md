@@ -124,6 +124,10 @@ scope; they only show where an idea came from.
   deliverability` shows the last day's copies a second against
   `SEND_RATE_PER_SECOND`. Staging measured 9.41 a second against 10 (94%),
   so the pool for a batch's rows isn't built (MG-91 part 2, Nov 21).
+- UI wording (Nov 22, MG-121): the web app and public pages never name CLI
+  commands or flags, in errors or help; they point to the page or control
+  instead. The CLI keeps its command hints, and the web app words the API's
+  shared hints for itself.
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API
