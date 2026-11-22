@@ -6678,10 +6678,16 @@ export interface components {
         ContactEmailFilter: string;
         /** @description Only contacts whose first, last or full name contains this, ignoring case. */
         ContactNameFilter: string;
-        /** @description Only contacts with this status. */
-        ContactStatusFilter: components["schemas"]["ContactStatus"];
-        /** @description Only contacts with this tag. */
-        ContactTagFilter: string;
+        /**
+         * @description Only contacts with this status. Repeat it for more statuses; a contact with any one of them
+         *     matches, as a segment's `statuses` do.
+         */
+        ContactStatusFilter: components["schemas"]["ContactStatus"][];
+        /**
+         * @description Only contacts with this tag. Repeat it for more tags; the contact must have every one, as a
+         *     segment's `tag_ids` must.
+         */
+        ContactTagFilter: string[];
         /**
          * @description Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
          *     campaigns across the engagement filters.
@@ -8063,9 +8069,15 @@ export interface operations {
                 email?: components["parameters"]["ContactEmailFilter"];
                 /** @description Only contacts whose first, last or full name contains this, ignoring case. */
                 name?: components["parameters"]["ContactNameFilter"];
-                /** @description Only contacts with this status. */
+                /**
+                 * @description Only contacts with this status. Repeat it for more statuses; a contact with any one of them
+                 *     matches, as a segment's `statuses` do.
+                 */
                 status?: components["parameters"]["ContactStatusFilter"];
-                /** @description Only contacts with this tag. */
+                /**
+                 * @description Only contacts with this tag. Repeat it for more tags; the contact must have every one, as a
+                 *     segment's `tag_ids` must.
+                 */
                 tag_id?: components["parameters"]["ContactTagFilter"];
                 /**
                  * @description Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
@@ -8168,9 +8180,15 @@ export interface operations {
                 email?: components["parameters"]["ContactEmailFilter"];
                 /** @description Only contacts whose first, last or full name contains this, ignoring case. */
                 name?: components["parameters"]["ContactNameFilter"];
-                /** @description Only contacts with this status. */
+                /**
+                 * @description Only contacts with this status. Repeat it for more statuses; a contact with any one of them
+                 *     matches, as a segment's `statuses` do.
+                 */
                 status?: components["parameters"]["ContactStatusFilter"];
-                /** @description Only contacts with this tag. */
+                /**
+                 * @description Only contacts with this tag. Repeat it for more tags; the contact must have every one, as a
+                 *     segment's `tag_ids` must.
+                 */
                 tag_id?: components["parameters"]["ContactTagFilter"];
                 /**
                  * @description Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
@@ -8240,9 +8258,15 @@ export interface operations {
                 email?: components["parameters"]["ContactEmailFilter"];
                 /** @description Only contacts whose first, last or full name contains this, ignoring case. */
                 name?: components["parameters"]["ContactNameFilter"];
-                /** @description Only contacts with this status. */
+                /**
+                 * @description Only contacts with this status. Repeat it for more statuses; a contact with any one of them
+                 *     matches, as a segment's `statuses` do.
+                 */
                 status?: components["parameters"]["ContactStatusFilter"];
-                /** @description Only contacts with this tag. */
+                /**
+                 * @description Only contacts with this tag. Repeat it for more tags; the contact must have every one, as a
+                 *     segment's `tag_ids` must.
+                 */
                 tag_id?: components["parameters"]["ContactTagFilter"];
                 /**
                  * @description Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20

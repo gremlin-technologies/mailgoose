@@ -472,7 +472,13 @@ each filter over 50,000 contacts and 200,000 events.
 mailgoose contacts count --never-opened --status subscribed
 mailgoose contacts list --opened <campaign-id> --not-clicked <campaign-id>
 mailgoose export --clicked-within-days 90 --output engaged.csv
+mailgoose contacts count --tag vip --tag gold --status subscribed --status unconfirmed
 ```
+
+`--tag` and `--status` repeat (MG-116): a contact needs every tag and any one
+of the statuses, as in a segment. The web app's contacts page builds the same
+filters in its Filters panel (`web/src/segments/`), with a live count and
+"Save as segment".
 
 A segment (MG-114) saves a set of those conditions under a name: tags (every
 one), statuses (any of them) and the engagement filters, all of which must

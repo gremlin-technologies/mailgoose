@@ -55,8 +55,9 @@ describe("contacts list", () => {
 
     await user.type(screen.getByLabelText("Search"), "pat");
     await user.selectOptions(screen.getByLabelText("In"), "name");
-    await user.selectOptions(screen.getByLabelText("Status"), "unconfirmed");
-    await user.selectOptions(screen.getByLabelText("Tag"), tagNews.id);
+    await user.click(screen.getByText("Filters"));
+    await user.click(screen.getByRole("checkbox", { name: "Unconfirmed" }));
+    await user.click(screen.getByRole("checkbox", { name: "Newsletter" }));
     await user.click(screen.getByRole("button", { name: "Search" }));
 
     await waitFor(() => expect(location()).toBe(`/contacts?q=pat&by=name&status=unconfirmed&tag=${tagNews.id}`));

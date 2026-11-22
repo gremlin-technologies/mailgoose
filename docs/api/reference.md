@@ -963,8 +963,8 @@ on count. A filter naming a campaign that isn't the account's answers
 | `cursor` | query | string |  | The `next_cursor` of the previous page. Leave it out for the first page. |
 | `email` | query | string |  | Only contacts whose address contains this, ignoring case. |
 | `name` | query | string |  | Only contacts whose first, last or full name contains this, ignoring case. |
-| `status` | query | [ContactStatus](#schema-contactstatus) |  | Only contacts with this status. |
-| `tag_id` | query | string (uuid) |  | Only contacts with this tag. |
+| `status` | query | array of [ContactStatus](#schema-contactstatus) |  | Only contacts with this status. Repeat it for more statuses; a contact with any one of them matches, as a segment's `statuses` do. |
+| `tag_id` | query | array of string (uuid) |  | Only contacts with this tag. Repeat it for more tags; the contact must have every one, as a segment's `tag_ids` must. |
 | `opened` | query | array of string (uuid) |  | Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
 | `not_opened` | query | array of string (uuid) |  | Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
 | `clicked` | query | array of string (uuid) |  | Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
@@ -1030,8 +1030,8 @@ How many of the account's contacts match the same filters as listing them; with 
 | --- | --- | --- | --- | --- |
 | `email` | query | string |  | Only contacts whose address contains this, ignoring case. |
 | `name` | query | string |  | Only contacts whose first, last or full name contains this, ignoring case. |
-| `status` | query | [ContactStatus](#schema-contactstatus) |  | Only contacts with this status. |
-| `tag_id` | query | string (uuid) |  | Only contacts with this tag. |
+| `status` | query | array of [ContactStatus](#schema-contactstatus) |  | Only contacts with this status. Repeat it for more statuses; a contact with any one of them matches, as a segment's `statuses` do. |
+| `tag_id` | query | array of string (uuid) |  | Only contacts with this tag. Repeat it for more tags; the contact must have every one, as a segment's `tag_ids` must. |
 | `opened` | query | array of string (uuid) |  | Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
 | `not_opened` | query | array of string (uuid) |  | Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
 | `clicked` | query | array of string (uuid) |  | Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
@@ -1074,8 +1074,8 @@ spreadsheet doesn't run it as a formula; imports take it off again.
 | --- | --- | --- | --- | --- |
 | `email` | query | string |  | Only contacts whose address contains this, ignoring case. |
 | `name` | query | string |  | Only contacts whose first, last or full name contains this, ignoring case. |
-| `status` | query | [ContactStatus](#schema-contactstatus) |  | Only contacts with this status. |
-| `tag_id` | query | string (uuid) |  | Only contacts with this tag. |
+| `status` | query | array of [ContactStatus](#schema-contactstatus) |  | Only contacts with this status. Repeat it for more statuses; a contact with any one of them matches, as a segment's `statuses` do. |
+| `tag_id` | query | array of string (uuid) |  | Only contacts with this tag. Repeat it for more tags; the contact must have every one, as a segment's `tag_ids` must. |
 | `opened` | query | array of string (uuid) |  | Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
 | `not_opened` | query | array of string (uuid) |  | Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
 | `clicked` | query | array of string (uuid) |  | Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |

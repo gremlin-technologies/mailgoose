@@ -5,6 +5,19 @@ import { useApi } from "../api/context";
 import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
 import { Badge, FailureNotice, formatDate, LoadFailed, Loading, PageHeader, useLoad, type Tone } from "../components";
+import { ContactCount, FilterBuilder, useTrackedCampaigns } from "../segments/FilterBuilder";
+import { SaveSegment } from "../segments/SaveSegment";
+import {
+  conditionsFromParams,
+  conditionsOf,
+  conditionsToParams,
+  contactQuery,
+  contactSearch,
+  draftFrom,
+  isEmpty,
+  type Conditions,
+  type Draft,
+} from "../segments/conditions";
 import { useTags, type Tag } from "./Tags";
 
 type Contact = components["schemas"]["Contact"];
@@ -19,8 +32,6 @@ export const contactStatus: Record<ContactStatus, { label: string; tone: Tone }>
   complained: { label: "Complained", tone: "bad" },
 };
 
-const statuses = Object.keys(contactStatus) as ContactStatus[];
-
 export function ContactBadge({ status }: { status: ContactStatus }) {
   const s = contactStatus[status];
   return <Badge tone={s.tone}>{s.label}</Badge>;
@@ -29,32 +40,31 @@ export function ContactBadge({ status }: { status: ContactStatus }) {
 /** Contacts a page lists. */
 export const contactsPageSize = 50;
 
-type Filters = { q: string; by: "email" | "name"; status: ContactStatus | ""; tag: string };
+type Filters = { q: string; by: "email" | "name"; conditions: Conditions };
 
 function filtersFrom(params: URLSearchParams): Filters {
-  const status = params.get("status") ?? "";
   return {
     q: params.get("q") ?? "",
     by: params.get("by") === "name" ? "name" : "email",
-    status: statuses.includes(status as ContactStatus) ? (status as ContactStatus) : "",
-    tag: params.get("tag") ?? "",
+    conditions: conditionsFromParams(params),
   };
+}
+
+/** The search box as API query parameters; empty, it's left out. */
+function searchQuery(q: string, by: Filters["by"]) {
+  const t = q.trim();
+  return { email: by === "email" && t ? t : undefined, name: by === "name" && t ? t : undefined };
 }
 
 /** The filters as API query parameters; empty ones are left out. */
 function filterQuery(f: Filters) {
-  const q = f.q.trim();
-  return {
-    email: f.by === "email" && q ? q : undefined,
-    name: f.by === "name" && q ? q : undefined,
-    status: f.status || undefined,
-    tag_id: f.tag || undefined,
-  };
+  return { ...searchQuery(f.q, f.by), ...contactQuery(f.conditions) };
 }
 
 function exportHref(f: Filters): string {
   const params = new URLSearchParams();
-  for (const [k, v] of Object.entries(filterQuery(f))) if (v) params.set(k, v);
+  for (const [k, v] of Object.entries(searchQuery(f.q, f.by))) if (v) params.set(k, v);
+  contactSearch(f.conditions, params);
   const qs = params.toString();
   return `/v1/contacts/export${qs ? `?${qs}` : ""}`;
 }
@@ -86,16 +96,21 @@ function ContactList({ filters }: { filters: Filters }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState("");
+  const [q, setQ] = useState(filters.q);
+  const [by, setBy] = useState(filters.by);
+  const [draft, setDraft] = useState<Draft>(() => draftFrom(filters.conditions));
+  const campaigns = useTrackedCampaigns();
+  const campaignList = campaigns.state.status === "ok" ? campaigns.state.data : [];
+  const drafted = conditionsOf(draft);
 
   function search(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const form = new FormData(e.currentTarget);
     const next = new URLSearchParams();
-    for (const k of ["q", "by", "status", "tag"]) {
-      const v = String(form.get(k) ?? "").trim();
-      if (v && !(k === "by" && v === "email")) next.set(k, v);
+    if (q.trim()) {
+      next.set("q", q.trim());
+      if (by === "name") next.set("by", "name");
     }
-    if (!next.get("q")) next.delete("by");
+    conditionsToParams(conditionsOf(draft), next);
     setParams(next);
   }
 
@@ -107,7 +122,8 @@ function ContactList({ filters }: { filters: Filters }) {
   }
 
   const contacts = state.status === "ok" ? state.data.data : [];
-  const filtered = Boolean(filters.q.trim() || filters.status || filters.tag);
+  const filtered = Boolean(filters.q.trim()) || !isEmpty(filters.conditions);
+  const conditionCount = Object.keys(filters.conditions).length;
   const allSelected = contacts.length > 0 && contacts.every((c) => selected.has(c.id));
 
   function toggle(id: string) {
@@ -145,48 +161,36 @@ function ContactList({ filters }: { filters: Filters }) {
         />
       )}
 
-      <form onSubmit={search} className="panel row-form" role="search">
-        <label className="field grow">
-          <span>Search</span>
-          <input name="q" type="search" defaultValue={filters.q} placeholder="pat@example.com" maxLength={254} />
-        </label>
-        <label className="field">
-          <span>In</span>
-          <select name="by" defaultValue={filters.by}>
-            <option value="email">Email</option>
-            <option value="name">Name</option>
-          </select>
-        </label>
-        <label className="field">
-          <span>Status</span>
-          <select name="status" defaultValue={filters.status}>
-            <option value="">Any</option>
-            {statuses.map((s) => (
-              <option key={s} value={s}>
-                {contactStatus[s].label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Tag</span>
-          <select name="tag" defaultValue={filters.tag} key={tagList.length}>
-            <option value="">Any</option>
-            {tagList.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button type="submit" className="button">
-          Search
-        </button>
-        {filtered && (
-          <button type="button" className="button" onClick={() => setParams(new URLSearchParams())}>
-            Clear
+      <form onSubmit={search} className="panel stack" role="search" aria-label="Find contacts">
+        <div className="row-form">
+          <label className="field grow">
+            <span>Search</span>
+            <input name="q" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="pat@example.com" maxLength={254} />
+          </label>
+          <label className="field">
+            <span>In</span>
+            <select name="by" value={by} onChange={(e) => setBy(e.target.value === "name" ? "name" : "email")}>
+              <option value="email">Email</option>
+              <option value="name">Name</option>
+            </select>
+          </label>
+        </div>
+        <details className="filters" open={conditionCount > 0}>
+          <summary>Filters{conditionCount > 0 ? ` (${conditionCount} set)` : ""}</summary>
+          <FilterBuilder draft={draft} onChange={setDraft} tags={tagList} campaigns={campaignList} />
+        </details>
+        <ContactCount conditions={drafted} extra={searchQuery(q, by)} />
+        <div className="row">
+          <button type="submit" className="button">
+            Search
           </button>
-        )}
+          {filtered && (
+            <button type="button" className="button" onClick={() => setParams(new URLSearchParams())}>
+              Clear
+            </button>
+          )}
+          <SaveSegment conditions={drafted} searched={Boolean(q.trim())} />
+        </div>
       </form>
 
       {notice && (

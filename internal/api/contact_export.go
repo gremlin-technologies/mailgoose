@@ -17,7 +17,7 @@ func (s *Server) ExportContacts(w http.ResponseWriter, r *http.Request, params a
 		return
 	}
 	f, ok := contactFilter(w, contactFilterParams{
-		Email: params.Email, Name: params.Name, Status: params.Status, TagID: params.TagId,
+		Email: params.Email, Name: params.Name, Statuses: params.Status, TagIDs: params.TagId,
 		Opened: params.Opened, NotOpened: params.NotOpened, Clicked: params.Clicked, NotClicked: params.NotClicked,
 		NeverOpened: params.NeverOpened, NeverClicked: params.NeverClicked,
 		OpenedWithinDays: params.OpenedWithinDays, ClickedWithinDays: params.ClickedWithinDays,

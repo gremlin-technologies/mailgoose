@@ -206,6 +206,76 @@ describe("new campaign", () => {
   });
 });
 
+describe("segment recipients (MG-116)", () => {
+  const clickers = {
+    id: "77777777-7777-4777-8777-777777777777",
+    name: "Clickers",
+    conditions: { clicked: [campaignId] },
+    valid: true,
+    problems: [],
+    created_at: "2026-11-20T10:00:00Z",
+    updated_at: "2026-11-20T10:00:00Z",
+  };
+  const stale = { ...clickers, id: "88888888-8888-4888-8888-888888888888", name: "Old VIPs", valid: false };
+  const segmentRoutes: Record<string, Route> = {
+    "GET /v1/segments": () => ({ status: 200, body: { data: [clickers, stale], next_cursor: null } }),
+    "POST /v1/campaigns/recipient-count": (b) => {
+      const r = (b as { recipients: { all?: boolean; segment_id?: string } }).recipients;
+      if (r.segment_id === stale.id) {
+        return fail(422, "segment_invalid", 'The segment "Old VIPs" has a condition it can\'t use now: its tag was deleted.');
+      }
+      return { status: 200, body: { recipient_count: r.segment_id ? 9 : 120 } };
+    },
+  };
+
+  it("offers saved segments with the count, says when one can't be used, and saves the pick", async () => {
+    const api = server(campaign(), segmentRoutes);
+    const user = userEvent.setup();
+    renderApp("/campaigns/new", api.fetch);
+    const form = await screen.findByRole("form", { name: "Campaign" });
+    const count = () => within(form).getByRole("status", { name: "Recipient count" }).textContent;
+    await user.type(within(form).getByLabelText("Campaign name"), "Thanks");
+    await user.selectOptions(within(form).getByLabelText("Email"), emailId);
+
+    await user.click(within(form).getByLabelText("Contacts in a saved segment"));
+    expect(count()).toBe("Pick a segment.");
+    const pick = within(form).getByLabelText("Segment");
+    expect(within(pick).getAllByRole("option").map((o) => o.textContent)).toEqual(["Pick a segment", "Clickers", "Old VIPs (needs fixing)"]);
+    await user.selectOptions(pick, stale.id);
+    await waitFor(() => expect(count()).toBe('The segment "Old VIPs" has a condition it can\'t use now: its tag was deleted.'));
+    await user.selectOptions(pick, clickers.id);
+    await waitFor(() => expect(count()).toBe("Reaches 9 subscribed contacts now."));
+
+    await user.click(within(form).getByRole("button", { name: "Save draft" }));
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe(`/campaigns/${campaignId}`));
+    expect(api.calls.find((c) => c.method === "POST" && c.path === "/v1/campaigns")?.body).toMatchObject({
+      recipients: { segment_id: clickers.id },
+    });
+  });
+
+  it("opens a draft's form on its segment", async () => {
+    const api = server(campaign({ recipients: { all: false, tags: [], segment: { id: clickers.id, name: "Clickers" } } }), segmentRoutes);
+    const user = userEvent.setup();
+    renderApp(`/campaigns/${campaignId}`, api.fetch);
+    await user.click(await screen.findByRole("button", { name: "Edit campaign" }));
+    const form = await screen.findByRole("form", { name: "Campaign" });
+    expect((within(form).getByLabelText("Contacts in a saved segment") as HTMLInputElement).checked).toBe(true);
+    expect((within(form).getByLabelText("Segment") as HTMLSelectElement).value).toBe(clickers.id);
+    await waitFor(() => expect(within(form).getByRole("status", { name: "Recipient count" }).textContent).toBe("Reaches 9 subscribed contacts now."));
+  });
+
+  it("keeps the other choices working when segments won't load", async () => {
+    const api = server(campaign());
+    const user = userEvent.setup();
+    renderApp("/campaigns/new", api.fetch);
+    const form = await screen.findByRole("form", { name: "Campaign" });
+    await user.click(within(form).getByLabelText("Contacts in a saved segment"));
+    expect(within(form).getByText(/Couldn't load your segments/)).toBeTruthy();
+    await user.click(within(form).getByLabelText("All subscribed contacts"));
+    await waitFor(() => expect(within(form).getByRole("status", { name: "Recipient count" }).textContent).toBe("Reaches 120 subscribed contacts now."));
+  });
+});
+
 describe("draft campaign", () => {
   it("runs the email check and lists its errors and warnings", async () => {
     const api = server(campaign(), {

@@ -14,7 +14,8 @@ import (
 // `export` share: the contact's own fields, and what it did with past
 // campaigns (MG-113).
 type contactFilterFlags struct {
-	email, name, status, tag               string
+	email, name                            string
+	statuses, tags                         []string
 	opened, notOpened, clicked, notClicked []string
 	neverOpened, neverClicked              bool
 	openedWithin, clickedWithin            int
@@ -24,8 +25,8 @@ func (f *contactFilterFlags) register(cmd *cobra.Command) {
 	fl := cmd.Flags()
 	fl.StringVar(&f.email, "email", "", "only addresses containing this")
 	fl.StringVar(&f.name, "name", "", "only names containing this")
-	fl.StringVar(&f.status, "status", "", "only this status: "+contactStatuses)
-	fl.StringVar(&f.tag, "tag", "", "only contacts with this tag (name or id)")
+	fl.StringArrayVar(&f.statuses, "status", nil, "only this status ("+contactStatuses+"); repeat for any of several")
+	fl.StringArrayVar(&f.tags, "tag", nil, "only contacts with this tag (name or id); repeat for contacts with every one")
 	fl.StringArrayVar(&f.opened, "opened", nil, "only contacts who opened this campaign (id; repeat for more)")
 	fl.StringArrayVar(&f.notOpened, "not-opened", nil, "only contacts delivered this campaign who didn't open it (id; repeat for more)")
 	fl.StringArrayVar(&f.clicked, "clicked", nil, "only contacts who clicked in this campaign (id; repeat for more)")
@@ -40,17 +41,20 @@ func (f *contactFilterFlags) register(cmd *cobra.Command) {
 // up as its id.
 func (f *contactFilterFlags) query(ctx context.Context, a *App) (url.Values, error) {
 	q := url.Values{}
-	for k, v := range map[string]string{"email": f.email, "name": f.name, "status": f.status} {
+	for k, v := range map[string]string{"email": f.email, "name": f.name} {
 		if v != "" {
 			q.Set(k, v)
 		}
 	}
-	if f.tag != "" {
-		id, err := a.tagID(ctx, f.tag)
+	for _, st := range f.statuses {
+		q.Add("status", st)
+	}
+	for _, tag := range f.tags {
+		id, err := a.tagID(ctx, tag)
 		if err != nil {
 			return nil, err
 		}
-		q.Set("tag_id", id)
+		q.Add("tag_id", id)
 	}
 	for k, ids := range map[string][]string{"opened": f.opened, "not_opened": f.notOpened, "clicked": f.clicked, "not_clicked": f.notClicked} {
 		for _, id := range ids {

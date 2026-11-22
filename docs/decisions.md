@@ -360,6 +360,28 @@ import. The tickets are issues #250 to #255.
   only launching refuses it. A campaign whose segment is invalid shows no
   `recipient_count`. The web app shows a segment campaign's recipients, and
   its recipient picker waits for MG-116.
+- **Web segment builder** (MG-116, reversible defaults): the contacts page
+  has a Filters panel with every segment condition (statuses ticked as
+  "any of", tags as "all of", and a list of engagement conditions, each
+  with its campaign or number of days). The count of matching contacts
+  updates a moment after each change; the list itself changes on Search, so
+  it doesn't jump while the filters are set. The filters live in the page
+  address (`status`, `tag`, `opened` ... repeated), so a filtered list can
+  be linked to, and "Save as segment" keeps them; the search box isn't part
+  of a segment and the page says so. A condition on one campaign offers
+  the account's newest 100 campaigns that launched with tracking on. The
+  "in the last N days" and "never" conditions can each be used once, the
+  campaign ones many times. A deleted tag or campaign a segment still names
+  stays listed so it can be taken off. The Segments page (Marketing, after
+  Tags) lists each segment with its count now, read from its contacts with
+  `limit=1`, and marks one with a problem "Needs fixing"; a segment's own
+  page edits it with the same builder. The campaign form's recipients gain
+  "Contacts in a saved segment", with the count and the API's
+  `segment_invalid` message. To carry several tags and statuses, the
+  contact list, count and export now take `tag_id` and `status` more than
+  once (the contact needs every tag and any one of the statuses, as a
+  segment's do), and `mailgoose contacts list|count|export` take `--tag` and
+  `--status` more than once. One value works as before.
 
 ## 2026-11-21: Social icons (MG-109; reversible defaults)
 

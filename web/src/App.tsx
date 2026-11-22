@@ -22,6 +22,7 @@ import { MailchimpBundlePage, MailchimpFetchProgress, MailchimpImport } from "./
 import { navPages } from "./pages/nav";
 import { NotFound, Placeholder } from "./pages/Placeholder";
 import { PolicyChangesPage, PolicyPage, policies } from "./pages/Policies";
+import { SegmentEditor, Segments } from "./pages/Segments";
 import { Settings } from "./pages/Settings";
 import { SignIn } from "./pages/SignIn";
 import { SignUp } from "./pages/SignUp";
@@ -39,6 +40,7 @@ const built: Record<string, ReactNode> = {
   "/credits": <Billing />,
   "/contacts": <Contacts />,
   "/tags": <Tags />,
+  "/segments": <Segments />,
   "/domains": <Domains />,
   "/api-keys": <ApiKeys />,
   "/settings": <Settings />,
@@ -98,6 +100,7 @@ export function AppRoutes() {
         <Route path="/contacts/import/mailchimp/:id" element={<MailchimpBundlePage />} />
         <Route path="/contacts/imports/:id" element={<ImportDetail />} />
         <Route path="/contacts/:id" element={<ContactDetail />} />
+        <Route path="/segments/:id" element={<SegmentEditor />} />
         <Route path="/domains/:id" element={<DomainDetail />} />
         <Route path="/emails/:id" element={<Designer />} />
         <Route path="/campaigns/new" element={<NewCampaign />} />
