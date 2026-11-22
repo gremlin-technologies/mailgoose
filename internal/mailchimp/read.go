@@ -692,7 +692,7 @@ func (rd *reader) readMembers(r io.Reader, file string, status Status, aud *Audi
 		}
 		rd.members++
 		if rd.members > rd.opts.MaxMembers {
-			return refuse(ErrTooManyMembers, "That export has more than %s contacts, more than one import takes during the beta. Export one audience at a time from Mailchimp, or ask us to raise the limit.", commas(rd.opts.MaxMembers))
+			return refuse(ErrTooManyMembers, "That export has more than %s contacts, more than one import takes during the beta. Export one audience at a time from Mailchimp, or contact support to have the limit raised.", commas(rd.opts.MaxMembers))
 		}
 		m := &Member{
 			Email: email, FirstName: cell(col.first), LastName: cell(col.last), Status: st,

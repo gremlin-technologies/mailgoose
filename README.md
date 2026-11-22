@@ -155,7 +155,7 @@ The server reads the environment variables Terraform sets on the ECS tasks
 | `ACCOUNT_DAILY_SEND_LIMIT`, `NEW_ACCOUNT_DAILY_SEND_LIMIT` | The most campaign emails an account may send in any 24 hours (10,000 by default), and its limit in its first 7 days (1,000). In between the limit grows on a schedule (see [Account health](#account-health-and-send-limits)). An account's own `daily_send_limit` overrides both. |
 | `PLATFORM_DAILY_SEND_LIMIT` | The most campaign emails sent in any 24 hours across every account together, kept under the SES account's daily quota (50,000). Default 45,000; `0` means no cap. Copies past it wait, as they do for an account's limit. |
 | `FORM_DAILY_SIGNUP_LIMIT` | The most new contacts one signup form adds in any 24 hours, counted in Postgres so it holds across API tasks. Default 1,000; `0` means no cap. Past it the form answers 429 `form_signup_limit`, and the owner and `OPS_ALERT_EMAIL` are told once a day per form (see [Submissions and double opt-in](#submissions-and-double-opt-in)). |
-| `MAILCHIMP_IMPORT_MAX_CONTACTS` | The most contacts one Mailchimp import takes, across every audience in the export. Default 250,000 during the beta; a larger export is refused with `too_many_members` and needs a manual check. |
+| `MAILCHIMP_IMPORT_MAX_CONTACTS` | The most contacts one Mailchimp import takes, across every audience in the export. Default 250,000 during the beta; a larger export or fetch is refused with `too_many_members` and a message to contact support. |
 | `IMPORT_HOLD_RISKY_PERCENT`, `IMPORT_HOLD_INVALID_PERCENT`, `IMPORT_HOLD_SHARED_PERCENT`, `IMPORT_HOLD_SHARED_MIN` | When an import is held for review: role plus disposable addresses over 10% of its valid rows, invalid rows over 5% of all rows, or at least 50% of its addresses, and at least 200, in other accounts' imports. Percentages are 1 to 100. |
 | `OPS_ALERT_EMAIL` | Where to email an alert when an account is paused, throttled or suspended automatically, a sign-up waits for review, or a payment needs refunding or cancelling by hand in Stripe, and the daily abuse digest. Unset, these are only logged (as errors) and no digest is sent. Terraform sets it from `alert_email` (see `infra/README.md`). |
 | `ABUSE_DIGEST_HOUR` | The hour, UTC (0 to 23), the worker emails the daily abuse digest to `OPS_ALERT_EMAIL`. Default 13 (8 AM US Eastern in winter). |
@@ -975,7 +975,10 @@ local sign-ups can launch at once.
 the worker emails `OPS_ALERT_EMAIL` one digest: the throttles, pauses and
 suspensions of the last 24 hours (automatic or by an admin, and whether each
 still holds), imports held for review and sign-ups waiting for review
-(however old), the accounts whose own campaign email over the last 7 days
+(however old), every Mailchimp import confirmed in the last 24 hours, held or
+not, with what its preview showed (where it came from, its audiences, its
+members by Mailchimp status, the cleaned and unsubscribed shares, and how many
+subscribed members have a Mailchimp opt-in time, MG-77), the accounts whose own campaign email over the last 7 days
 is over the early warning (worst first, at most 20; the section is left out
 when none are), and the platform's campaign complaint and hard-bounce rates
 over 24 hours and 30 days. Each item names the account and the `mailgoose

@@ -10,6 +10,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/gremlin-technologies/mailgoose/internal/mailchimp"
 )
 
 // The daily abuse digest (MG-67). Once a day, at DigestJob.Hour UTC, the
@@ -20,6 +22,8 @@ import (
 //     same), from admin_actions;
 //   - imports held for review, and sign-ups waiting for review, whenever
 //     they were made;
+//   - Mailchimp imports confirmed in the last 24 hours, held or not, with
+//     what their previews showed (MG-77);
 //   - the platform's complaint and hard-bounce rates over 24 hours and 30
 //     days;
 //   - the accounts whose own rates over the last 7 days are over the early
@@ -58,6 +62,9 @@ type DigestItem struct {
 	At time.Time
 	// What is the line about it: who did it, why, and how it stands.
 	What string
+	// Details are more lines about it, such as a Mailchimp import's
+	// signals.
+	Details []string
 	// Commands are the `mailgoose admin` commands to act on it.
 	Commands []string
 }
@@ -70,7 +77,9 @@ type Digest struct {
 	Pauses      []DigestItem
 	Suspensions []DigestItem
 	HeldImports []DigestItem
-	Signups     []DigestItem
+	// MailchimpImports are the Mailchimp imports confirmed in the window.
+	MailchimpImports []DigestItem
+	Signups          []DigestItem
 	// Day and Month are the platform's rates over DigestWindow and
 	// HealthWindow.
 	Day, Month Rates
@@ -86,7 +95,7 @@ type Digest struct {
 
 // Items is how many items the digest lists, rates aside.
 func (d Digest) Items() int {
-	return len(d.Throttles) + len(d.Pauses) + len(d.Suspensions) + len(d.HeldImports) + len(d.Signups)
+	return len(d.Throttles) + len(d.Pauses) + len(d.Suspensions) + len(d.HeldImports) + len(d.MailchimpImports) + len(d.Signups)
 }
 
 // RatesHigh says whether the platform's rates over either window are over
@@ -131,6 +140,7 @@ func (d Digest) Text() string {
 		{"Paused in the last 24 hours", d.Pauses},
 		{"Suspended in the last 24 hours", d.Suspensions},
 		{"Imports held for review", d.HeldImports},
+		{"Mailchimp imports in the last 24 hours", d.MailchimpImports},
 		{"Sign-ups waiting for review", d.Signups},
 	} {
 		if len(s.items) == 0 {
@@ -140,6 +150,9 @@ func (d Digest) Text() string {
 		for _, it := range s.items {
 			fmt.Fprintf(&b, "\n- %s (account %s), %s: %s\n", it.AccountName, it.AccountID,
 				it.At.UTC().Format("2006-01-02 15:04 UTC"), it.What)
+			for _, l := range it.Details {
+				fmt.Fprintf(&b, "  %s\n", l)
+			}
 			for _, c := range it.Commands {
 				fmt.Fprintf(&b, "    %s\n", c)
 			}
@@ -196,6 +209,57 @@ func ratesText(r Rates) string {
 	}
 	return fmt.Sprintf("%s sent, %s hard bounces (%s), %s complaints (%s).", thousands(r.Sent),
 		thousands(r.HardBounces), percent(r.HardBounces, r.Sent), thousands(r.Complaints), percent(r.Complaints, r.Sent))
+}
+
+// mailchimpImports are the Mailchimp imports with contacts confirmed in
+// (since, now], each with its signals: every one during the beta, held or
+// not, so a person sees them all. They add no hold of their own.
+func mailchimpImports(ctx context.Context, q digestQuerier, since, now time.Time) ([]DigestItem, error) {
+	rows, err := q.Query(ctx, `
+		SELECT i.id::text, b.account_id::text, coalesce(a.name, ''), b.file_name, b.signals, b.confirmed_at,
+			i.total_rows, i.review, coalesce(i.hold_reason, '')
+		FROM mailchimp_bundles b JOIN imports i ON i.id = b.import_id LEFT JOIN accounts a ON a.id = b.account_id
+		WHERE b.confirmed_at > $1 AND b.confirmed_at <= $2
+		ORDER BY b.confirmed_at, b.id`, since, now)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DigestItem
+	for rows.Next() {
+		var importID, id, name, review, hold string
+		var file *string
+		var raw []byte
+		var at time.Time
+		var total int
+		if err := rows.Scan(&importID, &id, &name, &file, &raw, &at, &total, &review, &hold); err != nil {
+			return nil, err
+		}
+		it := DigestItem{AccountID: id, AccountName: orDeleted(name), At: at,
+			Commands: []string{"mailgoose admin account " + id}}
+		switch review {
+		case "held":
+			why, ok := holdReasons[hold]
+			if !ok {
+				why = hold
+			}
+			it.What = fmt.Sprintf("import %s (%s rows) held: %s.", importID, thousands(total), why)
+			it.Commands = append(it.Commands, "mailgoose admin approve-import "+importID+` --reason "..."`)
+		case "approved":
+			it.What = fmt.Sprintf("import %s (%s rows) was held and has been approved.", importID, thousands(total))
+		default:
+			it.What = fmt.Sprintf("import %s (%s rows), not held.", importID, thousands(total))
+		}
+		sig, err := mailchimp.ParseSignals(file, raw)
+		if err != nil {
+			return nil, err
+		}
+		if sig != nil {
+			it.Details = sig.Lines()
+		}
+		out = append(out, it)
+	}
+	return out, rows.Err()
 }
 
 // holdReasons say why an import is held, by imports.hold_reason.
@@ -323,6 +387,10 @@ func BuildDigest(ctx context.Context, q digestQuerier, now time.Time, w Warning)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
+		return d, err
+	}
+
+	if d.MailchimpImports, err = mailchimpImports(ctx, q, since, now); err != nil {
 		return d, err
 	}
 
