@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -15,5 +16,18 @@ func contactsByCampaign(path, filter, rest string) func(*testing.T) *http.Reques
 			id = v.(string)
 		}
 		return httptest.NewRequest(http.MethodGet, path+"?"+filter+"="+id+rest, nil)
+	}
+}
+
+// A campaign id in capitals is the same campaign: ids are stored lower case.
+func TestContactFiltersTakeUpperCaseIDs(t *testing.T) {
+	s := draftKey(authServer)(t)
+	h := s.Handler()
+	addedCampaign(t, h)
+	id, _ := addedCampaigns.Load(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(request(http.MethodGet, "/v1/contacts/count?opened="+strings.ToUpper(id.(string))))(t))
+	if rec.Code != http.StatusOK {
+		t.Errorf("count: %d %s", rec.Code, rec.Body)
 	}
 }
