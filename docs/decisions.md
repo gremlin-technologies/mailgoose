@@ -4,6 +4,23 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-22: The web app speaks in its own words, never CLI commands (owner decision, confirmed)
+
+Asked about the untested-campaign error in the web app, which tells people to
+run `mailgoose campaign test <id>`. The owner, Nov 22: "Let's just push them to
+send a test, without specifying the CLI. this makes it seem the CLI is the only
+way to do it, and i think CLI-specific errors in general are bad practice for
+the UI, because the customer profile who uses the UI may get confused by it or
+even see it as a bug".
+
+The rule: no text the web app shows, errors and help included, names a CLI
+command or flag; it points to the page or control that does the job. The same
+goes for public pages (signup forms, confirm and unsubscribe pages). The CLI and
+agents keep their command hints. Where the API returns one shared hint, each
+surface words it for itself: the API's hints stay as the CLI's, and the web app
+maps error codes to its own wording, dropping any CLI hint it has no wording
+for. Built in MG-121 (#278), queued.
+
 ## 2026-11-22: Free accounts need no domain, and paid accounts keep the free 1,000 credits a month (owner decisions, confirmed)
 
 Asked while ticketing the pricing page (MG-117, #272). The owner, Nov 22:
