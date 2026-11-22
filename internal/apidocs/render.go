@@ -230,6 +230,7 @@ func LLMsTxt(s *Spec, cmds Commands) (string, error) {
 
 	w("\n## Guides\n\n")
 	w("- [Agent guide](agent-guide.md): signing in with an API key, building an email from blocks, checks, test sends, and the launch confirmation. Also printed by `mailgoose docs`.\n")
+	w("- [Moving from Mailchimp](agent-guide.md#moving-from-mailchimp): bringing contacts, tags, emails and signup forms over from a Mailchimp export or a connected Mailchimp account, the preview the person says yes to, and what doesn't come over.\n")
 	w("- [API reference](reference.md): every operation, its parameters, responses and schemas.\n")
 
 	for _, sec := range secs {

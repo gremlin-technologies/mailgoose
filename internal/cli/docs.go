@@ -18,9 +18,9 @@ func (a *App) docsCmd() *cobra.Command {
 		Use:   "docs",
 		Short: "Print the guide for AI agents, in Markdown",
 		Long: `Prints a Markdown guide for AI agents driving mailgoose: signing in with an
-API key, building an email from blocks, checking it, sending a test, and the
-launch confirmation the person has to say yes to. It needs no API key and
-makes no request.
+API key, building an email from blocks, checking it, sending a test, the
+launch confirmation the person has to say yes to, and moving a person over
+from Mailchimp. It needs no API key and makes no request.
 
 With --json it prints {"format": "markdown", "guide": "..."}.`,
 		Example: `  mailgoose docs
