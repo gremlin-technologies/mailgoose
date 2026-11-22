@@ -4,6 +4,27 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-22: Tickets are built in Claude Code on the owner's machine; the reviewer stays in Claude Duet (owner decision, confirmed)
+
+The owner, Nov 22: "Sonnet is perfectly good for all these development tasks,
+so it feels a bit overkill and expensive running them all in Duet with opus. I
+like the autonomous nature of this, and want to keep a similar flow. Maybe we
+remove the "builder" piece, but keep the automated reviewer/merger in duet."
+Then, to labelling the queue in GitHub and having the reviewer watch for a
+label: "Make both changes".
+
+- The queue lives in GitHub: open issues labelled `queued`, built in MG order,
+  each after any issue named in its "Build after" line. `owner` and `blocked`
+  issues are skipped.
+- A Claude Code session on the owner's machine, on Sonnet, builds them, one PR
+  per ticket, and labels each `ready-for-review` once CI is green. It never
+  merges.
+- The reviewer in Claude Duet checks `ready-for-review` PRs on a schedule and
+  merges them, or labels them `changes-requested`, which the builder fixes
+  before new work. PRs touching the owner-merge paths are labelled
+  `owner-merge` and left for the owner, as before.
+- The merge rules in this repository are unchanged.
+
 ## 2026-11-22: The web app speaks in its own words, never CLI commands (owner decision, confirmed)
 
 Asked about the untested-campaign error in the web app, which tells people to
