@@ -24,6 +24,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/policy"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
+	"github.com/gremlin-technologies/mailgoose/internal/segments"
 	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
@@ -73,6 +74,7 @@ func liveAPIShared(t *testing.T, shared string) *harness {
 		srv.Senders, srv.Sending.Senders, srv.Signups.Senders = r, r, r
 	}
 	srv.Reports = &reports.Service{DB: db}
+	srv.Segments = &segments.Service{DB: db, Contacts: srv.Contacts}
 	var accountID, userID string
 	if err := db.QueryRow(ctx, `INSERT INTO accounts (name, status, terms_version) VALUES ('Test', 'active', $1) RETURNING id`,
 		policy.Current().ID).Scan(&accountID); err != nil {

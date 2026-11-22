@@ -25,6 +25,7 @@ func TestDeleteAccount(t *testing.T) {
 			`INSERT INTO forms (account_id, name, fields, button_text, success_message, confirm_subject, confirm_text, signing_key)
 				VALUES ($1, 'Footer', '[]', 'Go', 'Thanks', 'Confirm', 'Please', '\x00')`,
 			`INSERT INTO campaigns (account_id, name, all_contacts) VALUES ($1, 'Spring', true)`,
+			`INSERT INTO segments (account_id, name, conditions, created_at, updated_at) VALUES ($1, 'VIPs', '{"statuses":["subscribed"]}', now(), now())`,
 			`INSERT INTO unsubscribe_keys (account_id, key) VALUES ($1, decode(repeat('ab', 32), 'hex'))`,
 			`INSERT INTO unsubscribes (account_id, source) VALUES ($1, 'link')`,
 			`INSERT INTO test_sends (account_id) VALUES ($1)`,

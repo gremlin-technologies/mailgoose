@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
@@ -57,13 +58,16 @@ func contactFilter(w http.ResponseWriter, p contactFilterParams) (contacts.Filte
 		if l.in == nil {
 			continue
 		}
-		for _, id := range *l.in {
+		// Ids are stored lower case, and the filters compare them as text.
+		ids := make([]string, len(*l.in))
+		for i, id := range *l.in {
 			if !uuidPattern.MatchString(id) {
 				WriteError(w, BadRequest("invalid_parameter", l.name+" must be a campaign's id."))
 				return f, false
 			}
+			ids[i] = strings.ToLower(id)
 		}
-		*l.out = *l.in
+		*l.out = ids
 	}
 	if n := len(e.Campaigns()); n > contacts.MaxFilterCampaigns {
 		WriteError(w, BadRequest("invalid_parameter",

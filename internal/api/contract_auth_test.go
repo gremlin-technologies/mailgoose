@@ -23,6 +23,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/mailchimp"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
+	"github.com/gremlin-technologies/mailgoose/internal/segments"
 	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
@@ -87,6 +88,7 @@ func authServerTB(t testing.TB) *Server {
 	s.Admin = &admin.Service{DB: db, Sending: s.Sending, Limits: testLimits}
 	s.Tracking = &tracking.Service{DB: db, Unsubscribe: s.Unsubscribe}
 	s.Reports = &reports.Service{DB: db}
+	s.Segments = &segments.Service{DB: db, Contacts: s.Contacts}
 	s.Images = &images.Service{DB: db, Store: &images.Memory{}, BaseURL: testImagesURL}
 	s.Mailchimp = &mailchimp.Store{DB: db}
 	s.MailchimpConnections = &mailchimp.Connections{DB: db}

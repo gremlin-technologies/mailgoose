@@ -32,6 +32,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
 	"github.com/gremlin-technologies/mailgoose/internal/mailchimp"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
+	"github.com/gremlin-technologies/mailgoose/internal/segments"
 	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/signups"
@@ -110,6 +111,8 @@ type Server struct {
 	ImageFiles http.Handler
 	// Reports counts campaign results; nil answers 503.
 	Reports *reports.Service
+	// Segments keeps saved segments (MG-114); nil without a database.
+	Segments *segments.Service
 	// Admin backs the mailgoose staff tools (OPS-6); nil without a
 	// database, which makes them answer 503.
 	Admin *admin.Service

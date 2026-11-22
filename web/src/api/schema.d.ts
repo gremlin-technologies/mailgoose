@@ -1141,6 +1141,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/segments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List segments
+         * @description The account's saved segments by name, each with its conditions and
+         *     whether every one can still be used (`valid`, and `problems` for the
+         *     ones that can't).
+         */
+        get: operations["listSegments"];
+        put?: never;
+        /**
+         * Create a segment
+         * @description Saves a named set of conditions: tags, statuses, and the engagement
+         *     filters the contact list takes. A contact is in the segment when it
+         *     matches every condition. The segment is worked out each time it's
+         *     used, so it stays current. An account keeps up to 100 segments.
+         */
+        post: operations["createSegment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/segments/{segment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a segment */
+        get: operations["getSegment"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a segment
+         * @description Deletes the saved conditions; no contact changes.
+         */
+        delete: operations["deleteSegment"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a segment
+         * @description Renames the segment, replaces its conditions, or both. New
+         *     `conditions` replace the old ones whole; leave the field out to keep
+         *     them.
+         */
+        patch: operations["updateSegment"];
+        trace?: never;
+    };
+    "/v1/segments/{segment_id}/contacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a segment's contacts
+         * @description The contacts in the segment now, newest first as the contact list
+         *     is, with `count`, how many it has in all. A segment with a condition
+         *     it can't use (`valid: false`) answers 422 `segment_invalid` rather
+         *     than a list that would leave that condition out.
+         */
+        get: operations["listSegmentContacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/imports": {
         parameters: {
             query?: never;
@@ -2926,6 +3005,87 @@ export interface components {
             matched: number;
             /** @description How many gained or lost the tag; the others already had it or didn't. */
             changed: number;
+        };
+        /**
+         * @description What a contact must match to be in the segment: every condition
+         *     given. Give at least one. The engagement conditions work as the
+         *     contact list's filters of the same names do (`listContacts`).
+         */
+        SegmentConditions: {
+            /** @description Tags the contact must have, every one. */
+            tag_ids?: string[];
+            /** @description Statuses the contact may have; its status must be one of them. */
+            statuses?: components["schemas"]["ContactStatus"][];
+            /** @description Campaigns the contact opened, every one. */
+            opened?: string[];
+            /** @description Campaigns the contact was delivered and didn't open, every one. */
+            not_opened?: string[];
+            /** @description Campaigns the contact clicked a link in, every one. */
+            clicked?: string[];
+            /** @description Campaigns the contact was delivered and didn't click, every one. */
+            not_clicked?: string[];
+            /** @description The contact was delivered a campaign sent with tracking on and opened none. */
+            never_opened?: boolean;
+            /** @description The contact was delivered a campaign sent with tracking on and clicked none. */
+            never_clicked?: boolean;
+            /** @description The contact opened any campaign in the last this many days. */
+            opened_within_days?: number;
+            /** @description The contact clicked any campaign in the last this many days. */
+            clicked_within_days?: number;
+        };
+        /** @description A condition the segment can't use now. */
+        SegmentProblem: {
+            /**
+             * @description The condition that names it.
+             * @enum {string}
+             */
+            condition: "tag_ids" | "opened" | "not_opened" | "clicked" | "not_clicked";
+            /**
+             * Format: uuid
+             * @description The tag or campaign.
+             */
+            id: string;
+            /**
+             * @description `tag_deleted` and `campaign_deleted`: it's gone. `tracking_off`:
+             *     the campaign is set to send without open and click tracking.
+             *     `report_archived`: the campaign launched more than 12 months
+             *     ago and its raw events were deleted.
+             * @enum {string}
+             */
+            code: "tag_deleted" | "campaign_deleted" | "tracking_off" | "report_archived";
+        };
+        Segment: {
+            /** Format: uuid */
+            id: string;
+            /** @example Engaged subscribers */
+            name: string;
+            conditions: components["schemas"]["SegmentConditions"];
+            /** @description Whether every condition can be used now; false when `problems` lists any. */
+            valid: boolean;
+            problems: components["schemas"]["SegmentProblem"][];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        SegmentList: {
+            data: components["schemas"]["Segment"][];
+            next_cursor: string | null;
+        };
+        CreateSegmentRequest: {
+            /** @description Unique in the account, ignoring case; one line. */
+            name: string;
+            conditions: components["schemas"]["SegmentConditions"];
+        };
+        UpdateSegmentRequest: {
+            name?: string;
+            conditions?: components["schemas"]["SegmentConditions"];
+        };
+        SegmentContactList: {
+            data: components["schemas"]["Contact"][];
+            next_cursor: string | null;
+            /** @description How many contacts the segment has now, on every page. */
+            count: number;
         };
         /** @description The header of the column each field comes from. Leave a field out to have it found from common headers. */
         ImportColumns: {
@@ -5710,6 +5870,52 @@ export interface components {
             };
         };
         /**
+         * @description `segment_exists`: the account already has a segment with that name,
+         *     ignoring case. `segment_limit`: the account has 100 segments, the
+         *     most it can keep.
+         */
+        SegmentConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description The segment can't be saved: `invalid_segment_name`,
+         *     `invalid_conditions` (a malformed condition; `message` says which),
+         *     `no_conditions`, or a condition naming something it can't use:
+         *     `unknown_tag`, `unknown_campaign`, `tracking_off` (a campaign sent
+         *     without open and click tracking) or `report_archived` (a campaign
+         *     whose raw events were deleted after 12 months). `details` holds the
+         *     `condition` and the `id`.
+         */
+        SegmentRefused: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `segment_invalid`: a condition names a tag or campaign that's gone or
+         *     can't be used now. `details.problems` lists them as the segment's
+         *     `problems` does; update the segment's conditions to use it again.
+         */
+        SegmentInvalid: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `contact_limit`: a free account, or a tester account (MG-86) on any
          *     plan, holds at most 500 counted contacts (unconfirmed and
          *     subscribed). `details.limit` is the limit and `details.count` the
@@ -6483,6 +6689,8 @@ export interface components {
         ContactId: string;
         /** @description The tag's `id`. */
         TagId: string;
+        /** @description The segment's `id`. */
+        SegmentId: string;
         /** @description The account's `id`. */
         AccountId: string;
         /** @description The test address's `id`. */
@@ -8380,6 +8588,196 @@ export interface operations {
             403: components["responses"]["CrossOrigin"];
             404: components["responses"]["NotFound"];
             422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listSegments: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Only the segment with this name, ignoring case. */
+                name?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of segments. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createSegment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateSegmentRequest"];
+            };
+        };
+        responses: {
+            /** @description The new segment. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Segment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            409: components["responses"]["SegmentConflict"];
+            422: components["responses"]["SegmentRefused"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getSegment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The segment's `id`. */
+                segment_id: components["parameters"]["SegmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The segment. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Segment"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteSegment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The segment's `id`. */
+                segment_id: components["parameters"]["SegmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    updateSegment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The segment's `id`. */
+                segment_id: components["parameters"]["SegmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateSegmentRequest"];
+            };
+        };
+        responses: {
+            /** @description The segment as it now is. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Segment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["SegmentConflict"];
+            422: components["responses"]["SegmentRefused"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listSegmentContacts: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path: {
+                /** @description The segment's `id`. */
+                segment_id: components["parameters"]["SegmentId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of the segment's contacts. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentContactList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["SegmentInvalid"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };
