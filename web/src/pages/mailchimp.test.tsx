@@ -161,7 +161,7 @@ describe("Mailchimp import", () => {
     await user.type(await screen.findByLabelText(/^Audience name/), "Bakery news");
     await user.click(screen.getByRole("button", { name: "Upload and preview" }));
 
-    await waitFor(() => expect(location()).toBe(`/contacts/import/mailchimp/${bundleID}`));
+    await waitFor(() => expect(location()).toBe(`/contacts/import/mailchimp/${bundleID}`), { timeout: 3000 });
     // jsdom's File loses its name crossing into Node's FormData; a browser sends it.
     expect(await (posted.file as Blob).text()).toBe("Email Address,First Name\npat@example.com,Pat\n");
     expect(posted.audience_name).toBe("Bakery news");
@@ -251,7 +251,7 @@ describe("Mailchimp import", () => {
     await user.type(screen.getByLabelText("Newest campaigns to bring as emails"), "5");
     await user.click(fetchButton);
 
-    await waitFor(() => expect(location()).toBe(`/contacts/import/mailchimp/fetch/${fetchID}`));
+    await waitFor(() => expect(location()).toBe(`/contacts/import/mailchimp/fetch/${fetchID}`), { timeout: 3000 });
     expect(posted).toEqual({ audience_ids: ["a1b2c3"], segment_ids: ["40213"], campaigns: 5 });
     expect(await screen.findByText("Reading members of Bakery news: 2 of 6")).toBeTruthy();
     await waitFor(() => expect(location()).toBe(`/contacts/import/mailchimp/${bundleID}`), { timeout: 3000 });

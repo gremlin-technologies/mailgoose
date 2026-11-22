@@ -15,7 +15,9 @@ async function noViolations(page: Page, where: string) {
 }
 
 test("upload a Mailchimp audience export, preview it and import it", async ({ page }, testInfo) => {
-  const n = names(`mailchimp-${testInfo.project.name}`);
+  // Sign-up refuses account names with well-known brands in them, Mailchimp
+  // among them (MG-98), so the run isn't named for it.
+  const n = names(`import-${testInfo.project.name}`);
   await test.step("sign up with the emailed code", () => signUp(page, n));
 
   const csv = [
