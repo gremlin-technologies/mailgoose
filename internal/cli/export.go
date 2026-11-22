@@ -16,7 +16,8 @@ import (
 
 // exportCmd is `mailgoose export`: the account's contacts as CSV.
 func (a *App) exportCmd() *cobra.Command {
-	var output, tag, status, email, name string
+	var output string
+	var filters contactFilterFlags
 	cmd := callsAll([]string{"exportContacts", "listTags"}, &cobra.Command{
 		Use:   "export",
 		Short: "Export contacts to a CSV file",
@@ -25,33 +26,23 @@ matching the filters. Columns: email, first_name, last_name, status, tags,
 source, created_at, status_changed_at and permission_confirmed (true or false
 for imported contacts: whether the import confirmed permission to email
 them). "mailgoose import" reads the file back as the same contacts and tags.
+The filters are those of "mailgoose contacts list", engagement ones included.
 
 The CSV goes to standard output, or to the file --output names. A cell
 starting with =, +, - or @ gets a ' in front, so a spreadsheet doesn't run it
 as a formula; import takes it off again.`,
 		Example: `  mailgoose export --output contacts.csv
   mailgoose export --tag vip > vip.csv
-  mailgoose export --status subscribed --output subscribed.csv --json`,
+  mailgoose export --status subscribed --output subscribed.csv --json
+  mailgoose export --never-opened --output never-opened.csv`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			q := url.Values{}
-			if tag != "" {
-				id, err := a.tagID(ctx, tag)
-				if err != nil {
-					return err
-				}
-				q.Set("tag_id", id)
+			q, err := filters.query(ctx, a)
+			if err != nil {
+				return err
 			}
-			for k, v := range map[string]string{"status": status, "email": email, "name": name} {
-				if v != "" {
-					q.Set(k, v)
-				}
-			}
-			path := "/v1/contacts/export"
-			if len(q) > 0 {
-				path += "?" + q.Encode()
-			}
+			path := withQuery("/v1/contacts/export", q)
 			if output == "" {
 				return a.download(ctx, path, a.Stdout)
 			}
@@ -73,10 +64,7 @@ as a formula; import takes it off again.`,
 		},
 	})
 	cmd.Flags().StringVarP(&output, "output", "o", "", "write the CSV to this file instead of standard output")
-	cmd.Flags().StringVar(&tag, "tag", "", "only contacts with this tag (name or id)")
-	cmd.Flags().StringVar(&status, "status", "", "only contacts with this status: "+contactStatuses)
-	cmd.Flags().StringVar(&email, "email", "", "only contacts whose address contains this")
-	cmd.Flags().StringVar(&name, "name", "", "only contacts whose name contains this")
+	filters.register(cmd)
 	return cmd
 }
 

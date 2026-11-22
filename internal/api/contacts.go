@@ -111,8 +111,13 @@ func (s *Server) ListContacts(w http.ResponseWriter, r *http.Request, params api
 			return
 		}
 	}
-	f, ok := contactFilter(w, params.Email, params.Name, params.Status, params.TagId)
-	if !ok {
+	f, ok := contactFilter(w, contactFilterParams{
+		Email: params.Email, Name: params.Name, Status: params.Status, TagID: params.TagId,
+		Opened: params.Opened, NotOpened: params.NotOpened, Clicked: params.Clicked, NotClicked: params.NotClicked,
+		NeverOpened: params.NeverOpened, NeverClicked: params.NeverClicked,
+		OpenedWithinDays: params.OpenedWithinDays, ClickedWithinDays: params.ClickedWithinDays,
+	})
+	if !ok || !s.checkContactFilter(w, r, c.AccountID, f) {
 		return
 	}
 	cs, err := s.Contacts.List(r.Context(), c.AccountID, f, after, pr.Limit+1)
@@ -125,33 +130,6 @@ func (s *Server) ListContacts(w http.ResponseWriter, r *http.Request, params api
 		out.Data[i] = contactJSON(ct)
 	}
 	writeJSON(w, http.StatusOK, out)
-}
-
-// contactFilter checks list and export filters and turns them into a
-// contacts.Filter, writing the error when one is bad.
-func contactFilter(w http.ResponseWriter, email, name *string, status *apigen.ContactStatus, tagID *string) (contacts.Filter, bool) {
-	var f contacts.Filter
-	if email != nil {
-		f.Email = *email
-	}
-	if name != nil {
-		f.Name = *name
-	}
-	if status != nil {
-		if !status.Valid() {
-			WriteError(w, BadRequest("invalid_parameter", "status must be unconfirmed, subscribed, unsubscribed, bounced or complained."))
-			return f, false
-		}
-		f.Status = string(*status)
-	}
-	if tagID != nil {
-		if !uuidPattern.MatchString(*tagID) {
-			WriteError(w, BadRequest("invalid_parameter", "tag_id must be a tag's id."))
-			return f, false
-		}
-		f.TagID = *tagID
-	}
-	return f, true
 }
 
 // CreateContact is POST /v1/contacts.

@@ -309,6 +309,19 @@ import. The tickets are issues #250 to #255.
   campaign answer 422 `tracking_off`; once a campaign's raw events are
   archived (12 months), every list answers 410 `report_archived`. The CLI's
   `--who` prints the whole list; `--csv` writes it as the export does.
+- **Engagement filters on the contact list** (MG-113, reversible defaults):
+  `opened`, `not_opened`, `clicked` and `not_clicked` take campaign ids
+  and repeat, at most 20 campaigns in all; the within-days filters take 1
+  to 365. "Got" a campaign means SES reported the copy delivered, so a
+  bounced copy is neither opened nor not opened. A contact deleted and
+  added again is a new contact with no history, since the old copies lost
+  their link to it. A filter naming a campaign that isn't the account's
+  answers 422 `unknown_campaign`, one sent with tracking off 422
+  `tracking_off`, and one whose events are archived 410 `report_archived`.
+  The count is its own endpoint, `GET /v1/contacts/count` (and
+  `mailgoose contacts count`), so listing a page doesn't pay for counting
+  every match. No new indexes: over 50,000 contacts and 200,000 events each
+  filter counts in under 150ms locally.
 
 ## 2026-11-21: Social icons (MG-109; reversible defaults)
 

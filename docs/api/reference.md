@@ -947,7 +947,14 @@ Responses:
 - Operation: `listContacts`
 - CLI: `mailgoose contacts delete`, `mailgoose contacts export-data`, `mailgoose contacts get`, `mailgoose contacts list`, `mailgoose contacts update`, `mailgoose tags add`, `mailgoose tags remove`
 
-The account's contacts, newest first. Filters combine; empty ones are ignored.
+The account's contacts, newest first. Filters combine, every one must
+match, and empty ones are ignored. The engagement filters (MG-113) are
+what contacts did with past campaigns, from the same events as the
+campaign reports, kept 12 months; only campaigns sent with tracking
+on count. A filter naming a campaign that isn't the account's answers
+422 `unknown_campaign`, one sent with tracking off 422
+`tracking_off`, and one whose events are archived 410
+`report_archived`. `GET /v1/contacts/count` counts the matches.
 
 | Parameter | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
@@ -957,12 +964,22 @@ The account's contacts, newest first. Filters combine; empty ones are ignored.
 | `name` | query | string |  | Only contacts whose first, last or full name contains this, ignoring case. |
 | `status` | query | [ContactStatus](#schema-contactstatus) |  | Only contacts with this status. |
 | `tag_id` | query | string (uuid) |  | Only contacts with this tag. |
+| `opened` | query | array of string (uuid) |  | Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `not_opened` | query | array of string (uuid) |  | Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `clicked` | query | array of string (uuid) |  | Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `not_clicked` | query | array of string (uuid) |  | Only contacts who were delivered this campaign and didn't click it. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `never_opened` | query | boolean |  | With `true`, only contacts who were delivered at least one campaign sent with tracking on, in the last 12 months of events, and opened none. A contact who got no such campaign isn't one. |
+| `never_clicked` | query | boolean |  | With `true`, only contacts who were delivered at least one campaign sent with tracking on, in the last 12 months of events, and clicked none. |
+| `opened_within_days` | query | integer |  | Only contacts who opened any campaign in the last this many days. |
+| `clicked_within_days` | query | integer |  | Only contacts who clicked any campaign in the last this many days. |
 
 Responses:
 
 - `200`: A page of contacts. [ContactList](#schema-contactlist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `410`: `report_archived`: the campaign launched more than 12 months ago, and its raw events were deleted; only the report's saved numbers are left. [Error](#schema-error)
+- `422`: An engagement filter names a campaign it can't use: `unknown_campaign` (not one of the account's campaigns) or `tracking_off` (sent with open and click tracking off, so it has no opens or clicks). [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -997,6 +1014,42 @@ Responses:
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
+<a id="op-countcontacts"></a>
+
+### Count contacts
+
+`GET /v1/contacts/count`
+
+- Operation: `countContacts`
+- CLI: `mailgoose contacts count`
+
+How many of the account's contacts match the same filters as listing them; with none, every contact.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `email` | query | string |  | Only contacts whose address contains this, ignoring case. |
+| `name` | query | string |  | Only contacts whose first, last or full name contains this, ignoring case. |
+| `status` | query | [ContactStatus](#schema-contactstatus) |  | Only contacts with this status. |
+| `tag_id` | query | string (uuid) |  | Only contacts with this tag. |
+| `opened` | query | array of string (uuid) |  | Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `not_opened` | query | array of string (uuid) |  | Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `clicked` | query | array of string (uuid) |  | Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `not_clicked` | query | array of string (uuid) |  | Only contacts who were delivered this campaign and didn't click it. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `never_opened` | query | boolean |  | With `true`, only contacts who were delivered at least one campaign sent with tracking on, in the last 12 months of events, and opened none. A contact who got no such campaign isn't one. |
+| `never_clicked` | query | boolean |  | With `true`, only contacts who were delivered at least one campaign sent with tracking on, in the last 12 months of events, and clicked none. |
+| `opened_within_days` | query | integer |  | Only contacts who opened any campaign in the last this many days. |
+| `clicked_within_days` | query | integer |  | Only contacts who clicked any campaign in the last this many days. |
+
+Responses:
+
+- `200`: The number of matching contacts. [ContactCount](#schema-contactcount)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `410`: `report_archived`: the campaign launched more than 12 months ago, and its raw events were deleted; only the report's saved numbers are left. [Error](#schema-error)
+- `422`: An engagement filter names a campaign it can't use: `unknown_campaign` (not one of the account's campaigns) or `tracking_off` (sent with open and click tracking off, so it has no opens or clicks). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
 <a id="op-exportcontacts"></a>
 
 ### Export contacts as CSV
@@ -1022,12 +1075,22 @@ spreadsheet doesn't run it as a formula; imports take it off again.
 | `name` | query | string |  | Only contacts whose first, last or full name contains this, ignoring case. |
 | `status` | query | [ContactStatus](#schema-contactstatus) |  | Only contacts with this status. |
 | `tag_id` | query | string (uuid) |  | Only contacts with this tag. |
+| `opened` | query | array of string (uuid) |  | Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `not_opened` | query | array of string (uuid) |  | Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `clicked` | query | array of string (uuid) |  | Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `not_clicked` | query | array of string (uuid) |  | Only contacts who were delivered this campaign and didn't click it. Repeat it for more campaigns; each must match. At most 20 campaigns across the engagement filters. |
+| `never_opened` | query | boolean |  | With `true`, only contacts who were delivered at least one campaign sent with tracking on, in the last 12 months of events, and opened none. A contact who got no such campaign isn't one. |
+| `never_clicked` | query | boolean |  | With `true`, only contacts who were delivered at least one campaign sent with tracking on, in the last 12 months of events, and clicked none. |
+| `opened_within_days` | query | integer |  | Only contacts who opened any campaign in the last this many days. |
+| `clicked_within_days` | query | integer |  | Only contacts who clicked any campaign in the last this many days. |
 
 Responses:
 
 - `200`: The contacts, as CSV with a header row.
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `410`: `report_archived`: the campaign launched more than 12 months ago, and its raw events were deleted; only the report's saved numbers are left. [Error](#schema-error)
+- `422`: An engagement filter names a campaign it can't use: `unknown_campaign` (not one of the account's campaigns) or `tracking_off` (sent with open and click tracking off, so it has no opens or clicks). [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -1158,7 +1221,7 @@ Responses:
 `GET /v1/tags`
 
 - Operation: `listTags`
-- CLI: `mailgoose contacts list`, `mailgoose export`, `mailgoose tags add`, `mailgoose tags delete`, `mailgoose tags list`, `mailgoose tags remove`, `mailgoose tags rename`
+- CLI: `mailgoose contacts count`, `mailgoose contacts list`, `mailgoose export`, `mailgoose tags add`, `mailgoose tags delete`, `mailgoose tags list`, `mailgoose tags remove`, `mailgoose tags rename`
 
 The account's tags by name, each with how many contacts have it.
 
@@ -3949,6 +4012,14 @@ Type: string: one of `form`, `import`, `api`, `manual`
 | `created_at` | string (date-time) | yes |  |
 | `updated_at` | string (date-time) | yes |  |
 | `status_changed_at` | string (date-time) | yes |  |
+
+<a id="schema-contactcount"></a>
+
+### ContactCount
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `count` | integer | yes | How many contacts match. |
 
 <a id="schema-contactlist"></a>
 

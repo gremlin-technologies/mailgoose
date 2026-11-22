@@ -2839,6 +2839,12 @@ type Contact struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+// ContactCount defines model for ContactCount.
+type ContactCount struct {
+	// Count How many contacts match.
+	Count int `json:"count"`
+}
+
 // ContactData defines model for ContactData.
 type ContactData struct {
 	// Consents The contact's consent records, oldest first: each signup through
@@ -4960,8 +4966,46 @@ type BundleId = string
 // CampaignId defines model for CampaignId.
 type CampaignId = string
 
+// ContactClickedFilter defines model for ContactClickedFilter.
+type ContactClickedFilter = []string
+
+// ContactClickedWithinDaysFilter defines model for ContactClickedWithinDaysFilter.
+type ContactClickedWithinDaysFilter = int
+
+// ContactEmailFilter defines model for ContactEmailFilter.
+type ContactEmailFilter = string
+
 // ContactId defines model for ContactId.
 type ContactId = string
+
+// ContactNameFilter defines model for ContactNameFilter.
+type ContactNameFilter = string
+
+// ContactNeverClickedFilter defines model for ContactNeverClickedFilter.
+type ContactNeverClickedFilter = bool
+
+// ContactNeverOpenedFilter defines model for ContactNeverOpenedFilter.
+type ContactNeverOpenedFilter = bool
+
+// ContactNotClickedFilter defines model for ContactNotClickedFilter.
+type ContactNotClickedFilter = []string
+
+// ContactNotOpenedFilter defines model for ContactNotOpenedFilter.
+type ContactNotOpenedFilter = []string
+
+// ContactOpenedFilter defines model for ContactOpenedFilter.
+type ContactOpenedFilter = []string
+
+// ContactOpenedWithinDaysFilter defines model for ContactOpenedWithinDaysFilter.
+type ContactOpenedWithinDaysFilter = int
+
+// ContactStatusFilter Only `subscribed` contacts receive campaigns. `unconfirmed` is waiting
+// for double opt-in or permission; `bounced` and `complained` come from
+// Amazon SES.
+type ContactStatusFilter = ContactStatus
+
+// ContactTagFilter defines model for ContactTagFilter.
+type ContactTagFilter = string
 
 // Cursor defines model for Cursor.
 type Cursor = string
@@ -5010,6 +5054,9 @@ type CampaignConflict = Error
 
 // ContactConflict defines model for ContactConflict.
 type ContactConflict = Error
+
+// ContactFilterUnusable defines model for ContactFilterUnusable.
+type ContactFilterUnusable = Error
 
 // ContactLimit defines model for ContactLimit.
 type ContactLimit = Error
@@ -5270,31 +5317,142 @@ type ListContactsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 
 	// Email Only contacts whose address contains this, ignoring case.
-	Email *string `form:"email,omitempty" json:"email,omitempty"`
+	Email *ContactEmailFilter `form:"email,omitempty" json:"email,omitempty"`
 
 	// Name Only contacts whose first, last or full name contains this, ignoring case.
-	Name *string `form:"name,omitempty" json:"name,omitempty"`
+	Name *ContactNameFilter `form:"name,omitempty" json:"name,omitempty"`
 
 	// Status Only contacts with this status.
-	Status *ContactStatus `form:"status,omitempty" json:"status,omitempty"`
+	Status *ContactStatusFilter `form:"status,omitempty" json:"status,omitempty"`
 
 	// TagId Only contacts with this tag.
-	TagId *string `form:"tag_id,omitempty" json:"tag_id,omitempty"`
+	TagId *ContactTagFilter `form:"tag_id,omitempty" json:"tag_id,omitempty"`
+
+	// Opened Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	Opened *ContactOpenedFilter `form:"opened,omitempty" json:"opened,omitempty"`
+
+	// NotOpened Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	NotOpened *ContactNotOpenedFilter `form:"not_opened,omitempty" json:"not_opened,omitempty"`
+
+	// Clicked Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	Clicked *ContactClickedFilter `form:"clicked,omitempty" json:"clicked,omitempty"`
+
+	// NotClicked Only contacts who were delivered this campaign and didn't click it. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	NotClicked *ContactNotClickedFilter `form:"not_clicked,omitempty" json:"not_clicked,omitempty"`
+
+	// NeverOpened With `true`, only contacts who were delivered at least one campaign
+	// sent with tracking on, in the last 12 months of events, and opened
+	// none. A contact who got no such campaign isn't one.
+	NeverOpened *ContactNeverOpenedFilter `form:"never_opened,omitempty" json:"never_opened,omitempty"`
+
+	// NeverClicked With `true`, only contacts who were delivered at least one campaign
+	// sent with tracking on, in the last 12 months of events, and clicked
+	// none.
+	NeverClicked *ContactNeverClickedFilter `form:"never_clicked,omitempty" json:"never_clicked,omitempty"`
+
+	// OpenedWithinDays Only contacts who opened any campaign in the last this many days.
+	OpenedWithinDays *ContactOpenedWithinDaysFilter `form:"opened_within_days,omitempty" json:"opened_within_days,omitempty"`
+
+	// ClickedWithinDays Only contacts who clicked any campaign in the last this many days.
+	ClickedWithinDays *ContactClickedWithinDaysFilter `form:"clicked_within_days,omitempty" json:"clicked_within_days,omitempty"`
+}
+
+// CountContactsParams defines parameters for CountContacts.
+type CountContactsParams struct {
+	// Email Only contacts whose address contains this, ignoring case.
+	Email *ContactEmailFilter `form:"email,omitempty" json:"email,omitempty"`
+
+	// Name Only contacts whose first, last or full name contains this, ignoring case.
+	Name *ContactNameFilter `form:"name,omitempty" json:"name,omitempty"`
+
+	// Status Only contacts with this status.
+	Status *ContactStatusFilter `form:"status,omitempty" json:"status,omitempty"`
+
+	// TagId Only contacts with this tag.
+	TagId *ContactTagFilter `form:"tag_id,omitempty" json:"tag_id,omitempty"`
+
+	// Opened Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	Opened *ContactOpenedFilter `form:"opened,omitempty" json:"opened,omitempty"`
+
+	// NotOpened Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	NotOpened *ContactNotOpenedFilter `form:"not_opened,omitempty" json:"not_opened,omitempty"`
+
+	// Clicked Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	Clicked *ContactClickedFilter `form:"clicked,omitempty" json:"clicked,omitempty"`
+
+	// NotClicked Only contacts who were delivered this campaign and didn't click it. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	NotClicked *ContactNotClickedFilter `form:"not_clicked,omitempty" json:"not_clicked,omitempty"`
+
+	// NeverOpened With `true`, only contacts who were delivered at least one campaign
+	// sent with tracking on, in the last 12 months of events, and opened
+	// none. A contact who got no such campaign isn't one.
+	NeverOpened *ContactNeverOpenedFilter `form:"never_opened,omitempty" json:"never_opened,omitempty"`
+
+	// NeverClicked With `true`, only contacts who were delivered at least one campaign
+	// sent with tracking on, in the last 12 months of events, and clicked
+	// none.
+	NeverClicked *ContactNeverClickedFilter `form:"never_clicked,omitempty" json:"never_clicked,omitempty"`
+
+	// OpenedWithinDays Only contacts who opened any campaign in the last this many days.
+	OpenedWithinDays *ContactOpenedWithinDaysFilter `form:"opened_within_days,omitempty" json:"opened_within_days,omitempty"`
+
+	// ClickedWithinDays Only contacts who clicked any campaign in the last this many days.
+	ClickedWithinDays *ContactClickedWithinDaysFilter `form:"clicked_within_days,omitempty" json:"clicked_within_days,omitempty"`
 }
 
 // ExportContactsParams defines parameters for ExportContacts.
 type ExportContactsParams struct {
 	// Email Only contacts whose address contains this, ignoring case.
-	Email *string `form:"email,omitempty" json:"email,omitempty"`
+	Email *ContactEmailFilter `form:"email,omitempty" json:"email,omitempty"`
 
 	// Name Only contacts whose first, last or full name contains this, ignoring case.
-	Name *string `form:"name,omitempty" json:"name,omitempty"`
+	Name *ContactNameFilter `form:"name,omitempty" json:"name,omitempty"`
 
 	// Status Only contacts with this status.
-	Status *ContactStatus `form:"status,omitempty" json:"status,omitempty"`
+	Status *ContactStatusFilter `form:"status,omitempty" json:"status,omitempty"`
 
 	// TagId Only contacts with this tag.
-	TagId *string `form:"tag_id,omitempty" json:"tag_id,omitempty"`
+	TagId *ContactTagFilter `form:"tag_id,omitempty" json:"tag_id,omitempty"`
+
+	// Opened Only contacts who opened this campaign. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	Opened *ContactOpenedFilter `form:"opened,omitempty" json:"opened,omitempty"`
+
+	// NotOpened Only contacts who were delivered this campaign and didn't open it. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	NotOpened *ContactNotOpenedFilter `form:"not_opened,omitempty" json:"not_opened,omitempty"`
+
+	// Clicked Only contacts who clicked a link in this campaign. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	Clicked *ContactClickedFilter `form:"clicked,omitempty" json:"clicked,omitempty"`
+
+	// NotClicked Only contacts who were delivered this campaign and didn't click it. Repeat it for more campaigns; each must match. At most 20
+	// campaigns across the engagement filters.
+	NotClicked *ContactNotClickedFilter `form:"not_clicked,omitempty" json:"not_clicked,omitempty"`
+
+	// NeverOpened With `true`, only contacts who were delivered at least one campaign
+	// sent with tracking on, in the last 12 months of events, and opened
+	// none. A contact who got no such campaign isn't one.
+	NeverOpened *ContactNeverOpenedFilter `form:"never_opened,omitempty" json:"never_opened,omitempty"`
+
+	// NeverClicked With `true`, only contacts who were delivered at least one campaign
+	// sent with tracking on, in the last 12 months of events, and clicked
+	// none.
+	NeverClicked *ContactNeverClickedFilter `form:"never_clicked,omitempty" json:"never_clicked,omitempty"`
+
+	// OpenedWithinDays Only contacts who opened any campaign in the last this many days.
+	OpenedWithinDays *ContactOpenedWithinDaysFilter `form:"opened_within_days,omitempty" json:"opened_within_days,omitempty"`
+
+	// ClickedWithinDays Only contacts who clicked any campaign in the last this many days.
+	ClickedWithinDays *ContactClickedWithinDaysFilter `form:"clicked_within_days,omitempty" json:"clicked_within_days,omitempty"`
 }
 
 // DeleteContactParams defines parameters for DeleteContact.
@@ -6400,6 +6558,9 @@ type ServerInterface interface {
 	// CreateContact Add a contact
 	// (POST /v1/contacts)
 	CreateContact(w http.ResponseWriter, r *http.Request)
+	// CountContacts Count contacts
+	// (GET /v1/contacts/count)
+	CountContacts(w http.ResponseWriter, r *http.Request, params CountContactsParams)
 	// ExportContacts Export contacts as CSV
 	// (GET /v1/contacts/export)
 	ExportContacts(w http.ResponseWriter, r *http.Request, params ExportContactsParams)
@@ -7996,6 +8157,110 @@ func (siw *ServerInterfaceWrapper) ListContacts(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// ------------- Optional query parameter "opened" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "opened", r.URL.Query(), &params.Opened, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "opened"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "opened", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "not_opened" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "not_opened", r.URL.Query(), &params.NotOpened, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "not_opened"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "not_opened", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "clicked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "clicked", r.URL.Query(), &params.Clicked, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "clicked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "clicked", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "not_clicked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "not_clicked", r.URL.Query(), &params.NotClicked, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "not_clicked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "not_clicked", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "never_opened" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "never_opened", r.URL.Query(), &params.NeverOpened, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "never_opened"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "never_opened", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "never_clicked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "never_clicked", r.URL.Query(), &params.NeverClicked, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "never_clicked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "never_clicked", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "opened_within_days" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "opened_within_days", r.URL.Query(), &params.OpenedWithinDays, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "opened_within_days"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "opened_within_days", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "clicked_within_days" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "clicked_within_days", r.URL.Query(), &params.ClickedWithinDays, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "clicked_within_days"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "clicked_within_days", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListContacts(w, r, params)
 	}))
@@ -8012,6 +8277,182 @@ func (siw *ServerInterfaceWrapper) CreateContact(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CreateContact(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CountContacts operation middleware
+func (siw *ServerInterfaceWrapper) CountContacts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CountContactsParams
+
+	// ------------- Optional query parameter "email" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "email", r.URL.Query(), &params.Email, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "email"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "email", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "name" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "tag_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "tag_id", r.URL.Query(), &params.TagId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tag_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "opened" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "opened", r.URL.Query(), &params.Opened, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "opened"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "opened", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "not_opened" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "not_opened", r.URL.Query(), &params.NotOpened, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "not_opened"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "not_opened", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "clicked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "clicked", r.URL.Query(), &params.Clicked, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "clicked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "clicked", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "not_clicked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "not_clicked", r.URL.Query(), &params.NotClicked, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "not_clicked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "not_clicked", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "never_opened" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "never_opened", r.URL.Query(), &params.NeverOpened, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "never_opened"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "never_opened", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "never_clicked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "never_clicked", r.URL.Query(), &params.NeverClicked, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "never_clicked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "never_clicked", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "opened_within_days" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "opened_within_days", r.URL.Query(), &params.OpenedWithinDays, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "opened_within_days"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "opened_within_days", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "clicked_within_days" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "clicked_within_days", r.URL.Query(), &params.ClickedWithinDays, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "clicked_within_days"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "clicked_within_days", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CountContacts(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8078,6 +8519,110 @@ func (siw *ServerInterfaceWrapper) ExportContacts(w http.ResponseWriter, r *http
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tag_id"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tag_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "opened" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "opened", r.URL.Query(), &params.Opened, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "opened"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "opened", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "not_opened" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "not_opened", r.URL.Query(), &params.NotOpened, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "not_opened"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "not_opened", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "clicked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "clicked", r.URL.Query(), &params.Clicked, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "clicked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "clicked", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "not_clicked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "not_clicked", r.URL.Query(), &params.NotClicked, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "not_clicked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "not_clicked", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "never_opened" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "never_opened", r.URL.Query(), &params.NeverOpened, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "never_opened"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "never_opened", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "never_clicked" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "never_clicked", r.URL.Query(), &params.NeverClicked, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "never_clicked"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "never_clicked", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "opened_within_days" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "opened_within_days", r.URL.Query(), &params.OpenedWithinDays, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "opened_within_days"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "opened_within_days", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "clicked_within_days" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "clicked_within_days", r.URL.Query(), &params.ClickedWithinDays, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "clicked_within_days"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "clicked_within_days", Err: err})
 		}
 		return
 	}
@@ -10277,6 +10822,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/domains/{domain_id}/verify", wrapper.VerifyDomain)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contacts", wrapper.ListContacts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/contacts", wrapper.CreateContact)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contacts/count", wrapper.CountContacts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contacts/export", wrapper.ExportContacts)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/contacts/{contact_id}", wrapper.DeleteContact)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contacts/{contact_id}", wrapper.GetContact)

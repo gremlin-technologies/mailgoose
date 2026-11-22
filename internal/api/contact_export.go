@@ -16,8 +16,13 @@ func (s *Server) ExportContacts(w http.ResponseWriter, r *http.Request, params a
 	if c == nil {
 		return
 	}
-	f, ok := contactFilter(w, params.Email, params.Name, params.Status, params.TagId)
-	if !ok {
+	f, ok := contactFilter(w, contactFilterParams{
+		Email: params.Email, Name: params.Name, Status: params.Status, TagID: params.TagId,
+		Opened: params.Opened, NotOpened: params.NotOpened, Clicked: params.Clicked, NotClicked: params.NotClicked,
+		NeverOpened: params.NeverOpened, NeverClicked: params.NeverClicked,
+		OpenedWithinDays: params.OpenedWithinDays, ClickedWithinDays: params.ClickedWithinDays,
+	})
+	if !ok || !s.checkContactFilter(w, r, c.AccountID, f) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")

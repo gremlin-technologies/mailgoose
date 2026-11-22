@@ -152,38 +152,40 @@ hash of its address, so adding it again keeps its status.`,
 	add.Flags().StringVar(&last, "last-name", "", "last name")
 	add.Flags().StringVar(&status, "status", "", "subscribed (default), unconfirmed or unsubscribed")
 
-	var fEmail, fName, fStatus, fTag, cursor string
+	var filters contactFilterFlags
+	var cursor string
 	var limit int
 	list := callsAll([]string{"listContacts", "listTags"}, &cobra.Command{
 		Use:   "list",
 		Short: "List contacts, newest first",
+		Long: `Lists contacts, newest first, a page at a time. Every filter given must match.
+
+The engagement filters are what contacts did with past campaigns, from the
+same opens, clicks and deliveries as the campaign reports, which are kept 12
+months. Only campaigns sent with tracking on count. --not-opened and
+--not-clicked mean the contact was delivered that campaign; --never-opened and
+--never-clicked mean the contact was delivered at least one tracked campaign
+and opened or clicked none, so a contact who got nothing isn't one.
+"mailgoose contacts count" counts the same matches.`,
 		Example: `  mailgoose contacts list --status subscribed
   mailgoose contacts list --email example.org --name smith
-  mailgoose contacts list --tag vip`,
+  mailgoose contacts list --tag vip
+  mailgoose contacts list --opened <campaign-id> --not-clicked <campaign-id>
+  mailgoose contacts list --never-clicked --status subscribed --json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			q := url.Values{}
-			for k, v := range map[string]string{"email": fEmail, "name": fName, "status": fStatus, "cursor": cursor} {
-				if v != "" {
-					q.Set(k, v)
-				}
+			q, err := filters.query(cmd.Context(), a)
+			if err != nil {
+				return err
+			}
+			if cursor != "" {
+				q.Set("cursor", cursor)
 			}
 			if limit > 0 {
 				q.Set("limit", strconv.Itoa(limit))
 			}
-			if fTag != "" {
-				id, err := a.tagID(cmd.Context(), fTag)
-				if err != nil {
-					return err
-				}
-				q.Set("tag_id", id)
-			}
-			path := "/v1/contacts"
-			if len(q) > 0 {
-				path += "?" + q.Encode()
-			}
 			var page contactPage
-			if err := a.call(cmd.Context(), http.MethodGet, path, nil, &page, true); err != nil {
+			if err := a.call(cmd.Context(), http.MethodGet, withQuery("/v1/contacts", q), nil, &page, true); err != nil {
 				return err
 			}
 			if a.jsonOut {
@@ -206,10 +208,7 @@ hash of its address, so adding it again keeps its status.`,
 			return nil
 		},
 	})
-	list.Flags().StringVar(&fEmail, "email", "", "only addresses containing this")
-	list.Flags().StringVar(&fName, "name", "", "only names containing this")
-	list.Flags().StringVar(&fStatus, "status", "", "only this status: "+contactStatuses)
-	list.Flags().StringVar(&fTag, "tag", "", "only contacts with this tag (name or id)")
+	filters.register(list)
 	list.Flags().IntVar(&limit, "limit", 0, "contacts per page (1 to 100, default 50)")
 	list.Flags().StringVar(&cursor, "cursor", "", "next_cursor from the previous page")
 
@@ -333,6 +332,6 @@ stored first.`,
 	del.Flags().BoolVar(&yes, "yes", false, "confirm; deleting can't be undone")
 	del.Flags().BoolVar(&erase, "erase", false, "erase every trace of the address for a data request, keeping only a hash on the suppression list")
 
-	cmd.AddCommand(add, list, get, update, del, a.contactDataCmd())
+	cmd.AddCommand(add, list, a.contactsCountCmd(), get, update, del, a.contactDataCmd())
 	return cmd
 }

@@ -71,6 +71,7 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 
 - [List contacts](reference.md#op-listcontacts): `GET /v1/contacts`, CLI `mailgoose contacts delete`, `mailgoose contacts export-data`, `mailgoose contacts get`, `mailgoose contacts list`, `mailgoose contacts update`, `mailgoose tags add`, `mailgoose tags remove`. The account's contacts, newest first.
 - [Add a contact](reference.md#op-createcontact): `POST /v1/contacts`, CLI `mailgoose contacts add`. Adds one contact.
+- [Count contacts](reference.md#op-countcontacts): `GET /v1/contacts/count`, CLI `mailgoose contacts count`. How many of the account's contacts match the same filters as listing them; with none, every contact.
 - [Export contacts as CSV](reference.md#op-exportcontacts): `GET /v1/contacts/export`, CLI `mailgoose export`. The account's contacts as a CSV file, oldest first, with the same filters as listing them; with none, every contact.
 - [Show a contact](reference.md#op-getcontact): `GET /v1/contacts/{contact_id}`, CLI `mailgoose contacts get`
 - [Change a contact](reference.md#op-updatecontact): `PATCH /v1/contacts/{contact_id}`, CLI `mailgoose contacts update`. Changes only the fields sent; `null` removes a first or last name.
@@ -79,7 +80,7 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 
 ## Tags
 
-- [List tags](reference.md#op-listtags): `GET /v1/tags`, CLI `mailgoose contacts list`, `mailgoose export`, `mailgoose tags add`, `mailgoose tags delete`, `mailgoose tags list`, `mailgoose tags remove`, `mailgoose tags rename`. The account's tags by name, each with how many contacts have it.
+- [List tags](reference.md#op-listtags): `GET /v1/tags`, CLI `mailgoose contacts count`, `mailgoose contacts list`, `mailgoose export`, `mailgoose tags add`, `mailgoose tags delete`, `mailgoose tags list`, `mailgoose tags remove`, `mailgoose tags rename`. The account's tags by name, each with how many contacts have it.
 - [Create a tag](reference.md#op-createtag): `POST /v1/tags`, CLI `mailgoose tags create`
 - [Rename a tag](reference.md#op-renametag): `PATCH /v1/tags/{tag_id}`, CLI `mailgoose tags rename`. Contacts keep the tag under its new name.
 - [Delete a tag](reference.md#op-deletetag): `DELETE /v1/tags/{tag_id}`, CLI `mailgoose tags delete`. Takes the tag off every contact and off the recipients of draft and scheduled campaigns, then deletes it.
