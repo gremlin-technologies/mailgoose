@@ -136,3 +136,75 @@ func TestContactLimitHoldsUnderConcurrentCreates(t *testing.T) {
 		t.Errorf("%d created and %d limited; want 1 and %d", ok, limited, len(errs)-1)
 	}
 }
+
+// A free account's signup forms keep taking signups up to FreeFormOverflow
+// past the limit, for new signups and for double opt-in confirms; imports
+// and the API stop at the limit (MG-120).
+func TestFormsTakeSignupsPastTheFreeLimit(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.fill(t, h.acc, FreeContactLimit)
+	signUp := func(email string, optIn bool) (*SignUpResult, error) {
+		tx, err := h.svc.DB.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		res, err := SignUp(ctx, tx, h.acc, SignUpInput{Email: email, DoubleOptIn: optIn, Now: h.now})
+		if err != nil {
+			return nil, err
+		}
+		return res, tx.Commit(ctx)
+	}
+	confirm := func(id string) error {
+		tx, err := h.svc.DB.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+		if _, err := Confirm(ctx, tx, h.acc, id, h.now); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}
+
+	// The API still refuses at the limit.
+	if _, err := h.svc.Create(ctx, h.acc, CreateInput{Email: "api@example.com"}); err == nil {
+		t.Error("the API took a contact past the limit")
+	}
+	// A form takes signups up to the overflow, then refuses with the cap.
+	for i := range FreeFormOverflow - 1 {
+		if _, err := signUp("form"+string(rune('a'+i%26))+string(rune('a'+i/26))+"@example.com", false); err != nil {
+			t.Fatalf("signup %d: %v", i, err)
+		}
+	}
+	res, err := signUp("pending@example.com", true)
+	if err != nil {
+		t.Fatalf("the last signup: %v", err)
+	}
+	var le *LimitError
+	if _, err := signUp("toomany@example.com", false); !errors.As(err, &le) || le.Limit != FreeContactLimit+FreeFormOverflow {
+		t.Errorf("past the overflow: err = %v", err)
+	}
+	// The unconfirmed one is already counted, so confirming it fits.
+	if err := confirm(res.ContactID); err != nil {
+		t.Errorf("confirm: %v", err)
+	}
+	// An unsubscribed contact confirming again would count: the overflow is full.
+	old := h.add(t, "back@example.com", StatusUnsubscribed)
+	if err := confirm(old.ID); !errors.As(err, &le) {
+		t.Errorf("confirm past the overflow: err = %v", err)
+	}
+	// A tester account has no overflow.
+	h2 := newHarness(t)
+	h2.makeTester(t, h2.acc)
+	h2.fill(t, h2.acc, 500)
+	tx, err := h2.svc.DB.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, err := SignUp(ctx, tx, h2.acc, SignUpInput{Email: "t@example.com", Now: h2.now}); !errors.As(err, &le) || le.Limit != 500 {
+		t.Errorf("tester signup at its limit: err = %v", err)
+	}
+}

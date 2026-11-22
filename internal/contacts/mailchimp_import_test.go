@@ -214,7 +214,7 @@ func TestMailchimpImportWaitsForAPlanThatCoversIt(t *testing.T) {
 	ctx := context.Background()
 	if _, err := h.svc.DB.Exec(ctx, `
 		INSERT INTO contacts (account_id, email, status, source)
-		SELECT $1, 'c' || n || '@example.com', 'subscribed', 'api' FROM generate_series(1, 497) AS n`, h.acc); err != nil {
+		SELECT $1, 'c' || n || '@example.com', 'subscribed', 'api' FROM generate_series(1, $2) AS n`, h.acc, FreeContactLimit-3); err != nil {
 		t.Fatal(err)
 	}
 	b := mcBundle(mcAudience("List", "a@example.com subscribed", "b@example.com subscribed", "c@example.com pending",
@@ -223,8 +223,8 @@ func TestMailchimpImportWaitsForAPlanThatCoversIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 497 - 1 cleaned + 4 new = 500 is the free plan's limit, not over it.
-	if p.Waits || p.Plan.Contacts != 500 {
+	// 997 - 1 cleaned + 4 new = 1,000 is the free plan's limit, not over it.
+	if p.Waits || p.Plan.Contacts != FreeContactLimit {
 		t.Fatalf("waits %v, plan %+v", p.Waits, p.Plan)
 	}
 	b.Audiences[0].Members = append(b.Audiences[0].Members, &mailchimp.Member{Email: "e@example.com", Status: mailchimp.Subscribed, File: "List/members.csv", Row: 8})
@@ -232,7 +232,7 @@ func TestMailchimpImportWaitsForAPlanThatCoversIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !p.Waits || !slices.Equal(p.Holds, []string{HoldOverContactLimit}) || !p.Plan.Upgrade || p.Plan.Contacts != 501 ||
+	if !p.Waits || !slices.Equal(p.Holds, []string{HoldOverContactLimit}) || !p.Plan.Upgrade || p.Plan.Contacts != FreeContactLimit+1 ||
 		p.Plan.Units != 1 || p.Plan.MonthCents != 500 || p.Plan.YearCents != 5000 {
 		t.Fatalf("waits %v, holds %v, plan %+v", p.Waits, p.Holds, p.Plan)
 	}
@@ -398,7 +398,7 @@ func TestMailchimpImportCanBeCancelledWhileItWaits(t *testing.T) {
 	ctx := context.Background()
 	if _, err := h.svc.DB.Exec(ctx, `
 		INSERT INTO contacts (account_id, email, status, source)
-		SELECT $1, 'c' || n || '@example.com', 'subscribed', 'api' FROM generate_series(1, 499) AS n`, h.acc); err != nil {
+		SELECT $1, 'c' || n || '@example.com', 'subscribed', 'api' FROM generate_series(1, $2) AS n`, h.acc, FreeContactLimit-1); err != nil {
 		t.Fatal(err)
 	}
 	im := h.mailchimpImport(t, mcBundle(mcAudience("List", "a@example.com subscribed", "b@example.com subscribed",

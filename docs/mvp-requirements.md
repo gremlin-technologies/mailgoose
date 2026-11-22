@@ -93,7 +93,7 @@ One audience per account, with tags doing the work that lists do elsewhere. [D7]
 Acceptance:
 
 - Importing a 10,000-row CSV with 3% bad rows finishes in under a minute and reports every skipped row and why.
-- A free account can't go past 500 counted contacts by any route: UI, CLI, API, form or import.
+- A free account can't go past 1,000 counted contacts by the UI, CLI, API or an import; its signup forms take up to 1,100 (Nov 22, MG-120), and its sends are held while it holds more than 1,000.
 - Exported CSV re-imports cleanly.
 
 ## 4. Email designer

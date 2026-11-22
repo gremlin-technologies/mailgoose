@@ -91,7 +91,7 @@ var skipReasons = []struct{ code, text string }{
 	{"duplicate", "repeats an earlier row"},
 	{"exists", "already a contact (left as it is)"},
 	{"suppressed", "unsubscribed, bounced or complained before"},
-	{"over_limit", "over the free plan's 500 contacts"},
+	{"over_limit", "over the free plan's 1,000 contacts"},
 	{"not_subscribed", "never subscribed in Mailchimp (transactional)"},
 	{"archived", "archived in Mailchimp"},
 }
@@ -297,7 +297,7 @@ separated by commas, on each row's contact, creating tags the account lacks.
 
 Rows with a bad address, a repeat of an earlier row, an address already in the
 account, an address that unsubscribed, bounced or complained before, or one
-past the free plan's 500 contacts are skipped and listed by
+past the free plan's 1,000 contacts are skipped and listed by
 "mailgoose import status". Existing contacts aren't changed.
 
 The file is checked as it's imported: rows that aren't addresses, role

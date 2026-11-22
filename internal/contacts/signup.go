@@ -54,7 +54,7 @@ func SignUp(ctx context.Context, tx pgx.Tx, accountID string, in SignUpInput) (*
 	// a circle. While the account is at its limit every signup is refused
 	// alike, new address or not, so the answer doesn't tell a stranger
 	// who's on the list.
-	if err := ensureRoom(ctx, tx, accountID, 1); err != nil {
+	if err := ensureFormRoom(ctx, tx, accountID, 1); err != nil {
 		return nil, err
 	}
 	res := &SignUpResult{}
@@ -155,7 +155,7 @@ func Confirm(ctx context.Context, tx pgx.Tx, accountID, contactID string, now ti
 		return status, nil
 	}
 	if !Counted(status) {
-		if err := ensureRoom(ctx, tx, accountID, 1); err != nil {
+		if err := ensureFormRoom(ctx, tx, accountID, 1); err != nil {
 			return "", err
 		}
 	}

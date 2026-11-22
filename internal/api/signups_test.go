@@ -447,7 +447,7 @@ func TestFormSignupContactLimit(t *testing.T) {
 	if _, err := f.db.Exec(t.Context(), `
 		INSERT INTO contacts (account_id, email, status, source)
 		SELECT $1, 'c' || n || '@example.com', 'subscribed', 'api' FROM generate_series(1, $2::int) n`,
-		f.acc, contacts.FreeContactLimit); err != nil {
+		f.acc, contacts.FreeContactLimit+contacts.FreeFormOverflow); err != nil {
 		t.Fatal(err)
 	}
 

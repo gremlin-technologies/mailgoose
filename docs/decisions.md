@@ -54,6 +54,30 @@ Nov 22, to the four picks it put to him: "Go with all four picks".
   been 36%). The estimates (30% of the allowance used, 4% converting) should
   be checked against beta numbers; raising the allowance later is easy.
 
+## 2026-11-22: The free tier's limits, as built (MG-120; reversible defaults)
+
+`FreeContactLimit` 1,000, `FreeMonthlyGrant` 2,500, `FREE_DAILY_SEND_LIMIT`
+1,000, and the form overflow, as decided above. Defaults, each easy to change:
+
+- **The overflow is a flat 100** (`contacts.FreeFormOverflow`), for signups
+  and double opt-in confirms alike. Imports, the Mailchimp import and the
+  API stop at 1,000.
+- **The hold is computed, not stored.** A free, non-tester account with more
+  than 1,000 counted contacts is "halted" for the dispatcher, a batch and each
+  copy's claim (the pause path), so a campaign already sending or scheduled
+  waits and goes on by itself once the account is at 1,000 or paid. It isn't
+  `sending_paused_at`, so no admin has anything to lift, and test sends still
+  work. Launch and confirm refuse with `over_contact_limit`.
+- **Not built: the once-only email to the owner when a form takes the account
+  over 1,000, and the digest line.** The launch refusal and the account page
+  already say it; both need a stored flag and mail, so they're left to a
+  follow-up if the owner wants them.
+- **The daily cap is applied last in `Limits.ForAccount`** and takes the plan
+  from the account row; zero (unset in tests) means no cap.
+- **Accounts already holding a grant keep it** to the end of its period; the
+  next one is 2,500. No top-up.
+- **Tester accounts are untouched**: 500 contacts, 100 copies a day.
+
 ## 2026-11-22: The web app speaks in its own words, never CLI commands (owner decision, confirmed)
 
 Asked about the untested-campaign error in the web app, which tells people to

@@ -190,6 +190,30 @@ type SendLimit struct {
 // domain, if that's later, so a new domain starts at the new-account limit
 // too.
 func (l Limits) ForAccount(ctx context.Context, q querier, accountID string, own *int, since, now time.Time) (SendLimit, error) {
+	out, err := l.forAccount(ctx, q, accountID, own, since, now)
+	if err != nil || l.FreeDaily <= 0 || out.Daily <= l.FreeDaily && out.Usual <= l.FreeDaily {
+		return out, err
+	}
+	var plan string
+	if err := q.QueryRow(ctx, `SELECT plan FROM accounts WHERE id = $1`, accountID).Scan(&plan); err != nil {
+		return out, err
+	}
+	if plan != "free" {
+		return out, nil
+	}
+	// The free plan's cap comes after every other rule (MG-120): it lowers
+	// the limit and the usual one, and says why only when nothing else has.
+	out.Daily = min(out.Daily, l.FreeDaily)
+	out.Usual = min(out.Usual, l.FreeDaily)
+	if out.Reason == nil {
+		r := fmt.Sprintf("The free plan sends at most %s a day. The paid plan raises it, up to %s a day.",
+			thousands(l.FreeDaily), thousands(l.Daily))
+		out.Reason = &r
+	}
+	return out, nil
+}
+
+func (l Limits) forAccount(ctx context.Context, q querier, accountID string, own *int, since, now time.Time) (SendLimit, error) {
 	out := SendLimit{Usual: l.Daily}
 	reason := func(s string) { out.Reason = &s }
 	var until *time.Time
