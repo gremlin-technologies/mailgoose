@@ -232,6 +232,24 @@ func (e AdminActionAction) Valid() bool {
 	}
 }
 
+// Defines values for AdminMailchimpSignalsSource.
+const (
+	AdminMailchimpSignalsSourceFile  AdminMailchimpSignalsSource = "file"
+	AdminMailchimpSignalsSourceOauth AdminMailchimpSignalsSource = "oauth"
+)
+
+// Valid indicates whether the value is a known member of the AdminMailchimpSignalsSource enum.
+func (e AdminMailchimpSignalsSource) Valid() bool {
+	switch e {
+	case AdminMailchimpSignalsSourceFile:
+		return true
+	case AdminMailchimpSignalsSourceOauth:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Align.
 const (
 	AlignCenter Align = "center"
@@ -2166,8 +2184,13 @@ type AdminHeldImport struct {
 	Id               string    `json:"id"`
 	ListSource       *string   `json:"list_source"`
 	ListSourceDetail *string   `json:"list_source_detail"`
-	Status           string    `json:"status"`
-	TotalRows        int       `json:"total_rows"`
+
+	// Mailchimp For a Mailchimp import, what its preview showed, to judge it by;
+	// null for any other import, and for a Mailchimp import confirmed
+	// before these were kept. They add no hold of their own.
+	Mailchimp *AdminMailchimpSignals `json:"mailchimp"`
+	Status    string                 `json:"status"`
+	TotalRows int                    `json:"total_rows"`
 }
 
 // AdminLiveCampaign defines model for AdminLiveCampaign.
@@ -2181,6 +2204,40 @@ type AdminLiveCampaign struct {
 	SendAt     *time.Time `json:"send_at"`
 	Status     string     `json:"status"`
 }
+
+// AdminMailchimpSignals defines model for AdminMailchimpSignals.
+type AdminMailchimpSignals struct {
+	Audiences []struct {
+		Members int    `json:"members"`
+		Name    string `json:"name"`
+	} `json:"audiences"`
+
+	// ByStatus Member rows by their Mailchimp status.
+	ByStatus MailchimpStatusCounts `json:"by_status"`
+
+	// CleanedShare Cleaned members as a share of `members`, from 0 to 1.
+	CleanedShare float32 `json:"cleaned_share"`
+	FileName     *string `json:"file_name"`
+
+	// Members Every audience's members, of every status.
+	Members     int        `json:"members"`
+	NewestOptin *time.Time `json:"newest_optin"`
+
+	// OptinShare `with_optin_time` as a share of the subscribed members, from 0 to 1.
+	OptinShare float32 `json:"optin_share"`
+
+	// Source `file` for an uploaded export, `oauth` for one fetched from a connected Mailchimp account.
+	Source AdminMailchimpSignalsSource `json:"source"`
+
+	// UnsubscribedShare Unsubscribed members as a share of `members`, from 0 to 1.
+	UnsubscribedShare float32 `json:"unsubscribed_share"`
+
+	// WithOptinTime Subscribed members with a Mailchimp opt-in time.
+	WithOptinTime int `json:"with_optin_time"`
+}
+
+// AdminMailchimpSignalsSource `file` for an uploaded export, `oauth` for one fetched from a connected Mailchimp account.
+type AdminMailchimpSignalsSource string
 
 // AdminRates Copies sent, and the recipients who hard bounced or complained.
 type AdminRates struct {

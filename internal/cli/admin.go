@@ -97,7 +97,8 @@ type adminAccount struct {
 			SharedAddresses     int     `json:"shared_addresses"`
 			SharedAccountID     *string `json:"shared_account_id"`
 		} `json:"checks"`
-		CreatedAt time.Time `json:"created_at"`
+		CreatedAt time.Time         `json:"created_at"`
+		Mailchimp *mailchimpSignals `json:"mailchimp"`
 	} `json:"held_imports"`
 	LiveCampaigns []struct {
 		ID     string     `json:"id"`
@@ -105,6 +106,69 @@ type adminAccount struct {
 		Status string     `json:"status"`
 		Rates  adminRates `json:"rates"`
 	} `json:"live_campaigns"`
+}
+
+// mailchimpSignals are what a held Mailchimp import's preview showed
+// (MG-77), as the API's AdminMailchimpSignals.
+type mailchimpSignals struct {
+	Source    string  `json:"source"`
+	FileName  *string `json:"file_name"`
+	Audiences []struct {
+		Name    string `json:"name"`
+		Members int    `json:"members"`
+	} `json:"audiences"`
+	ByStatus struct {
+		Subscribed    int `json:"subscribed"`
+		Unsubscribed  int `json:"unsubscribed"`
+		Cleaned       int `json:"cleaned"`
+		Pending       int `json:"pending"`
+		Transactional int `json:"transactional"`
+		Archived      int `json:"archived"`
+	} `json:"by_status"`
+	Members           int        `json:"members"`
+	CleanedShare      float64    `json:"cleaned_share"`
+	UnsubscribedShare float64    `json:"unsubscribed_share"`
+	WithOptinTime     int        `json:"with_optin_time"`
+	OptinShare        float64    `json:"optin_share"`
+	NewestOptin       *time.Time `json:"newest_optin"`
+}
+
+// lines are the signals under a held import in `admin account`:
+//
+//	Mailchimp, from file export.zip: Newsletter (1200), Wholesale (40)
+//	1100 subscribed, 100 unsubscribed (8.1%), 40 cleaned (3.2%), 0 pending
+//	opt-in time on 95.0% of subscribed, newest 2026-11-01
+func (m mailchimpSignals) lines() []string {
+	from := "from a connected account"
+	if m.Source == "file" {
+		from = "from an uploaded file"
+		if m.FileName != nil && *m.FileName != "" {
+			from = "from file " + *m.FileName
+		}
+	}
+	var auds []string
+	for _, a := range m.Audiences {
+		auds = append(auds, fmt.Sprintf("%s (%d)", a.Name, a.Members))
+	}
+	if len(auds) == 0 {
+		auds = []string{"no audiences"}
+	}
+	b := m.ByStatus
+	counts := fmt.Sprintf("%d subscribed, %d unsubscribed (%.1f%%), %d cleaned (%.1f%%), %d pending",
+		b.Subscribed, b.Unsubscribed, m.UnsubscribedShare*100, b.Cleaned, m.CleanedShare*100, b.Pending)
+	if b.Transactional > 0 {
+		counts += fmt.Sprintf(", %d transactional", b.Transactional)
+	}
+	if b.Archived > 0 {
+		counts += fmt.Sprintf(", %d archived", b.Archived)
+	}
+	optin := fmt.Sprintf("opt-in time on %.1f%% of subscribed", m.OptinShare*100)
+	if m.NewestOptin != nil {
+		optin += ", newest " + m.NewestOptin.Local().Format("2006-01-02")
+	} else {
+		optin += ", none dated"
+	}
+	return []string{"Mailchimp, " + from + ": " + strings.Join(auds, ", "), counts, optin}
 }
 
 // adminAction is the API's AdminAction.
@@ -272,6 +336,11 @@ func (a *App) printAdminAccount(acc adminAccount) {
 			fmt.Fprintf(w, "; %d in other accounts' imports, most in account %s", c.SharedAddresses, *c.SharedAccountID)
 		}
 		fmt.Fprintln(w)
+		if i.Mailchimp != nil {
+			for _, l := range i.Mailchimp.lines() {
+				fmt.Fprintf(w, "              %s\n", l)
+			}
+		}
 	}
 	for _, c := range acc.LiveCampaigns {
 		fmt.Fprintf(w, "Campaign:     %s %q, %s: %s\n", c.ID, c.Name, c.Status, c.Rates)

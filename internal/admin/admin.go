@@ -26,6 +26,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/billing"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
 	"github.com/gremlin-technologies/mailgoose/internal/credits"
+	"github.com/gremlin-technologies/mailgoose/internal/mailchimp"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
 	"github.com/gremlin-technologies/mailgoose/internal/tester"
 )
@@ -318,6 +319,9 @@ type HeldImport struct {
 	ListSourceDetail *string     `json:"list_source_detail"`
 	Checks           ImportCheck `json:"checks"`
 	CreatedAt        time.Time   `json:"created_at"`
+	// Mailchimp is what a Mailchimp import's preview showed (MG-77); nil
+	// for any other import.
+	Mailchimp *mailchimp.Signals `json:"mailchimp"`
 }
 
 // ImportCheck is what a held import's checks found.
@@ -422,17 +426,27 @@ func (s *Service) GetAccount(ctx context.Context, id string) (*Account, error) {
 	}
 
 	rows, err = s.DB.Query(ctx, `
-		SELECT id, file_name, total_rows, coalesce(hold_reason, ''), status, list_source, list_source_detail,
-			invalid_rows, role_addresses, disposable_addresses, shared_addresses, shared_account_id::text, created_at FROM imports
-		WHERE account_id = $1 AND review = 'held' ORDER BY created_at`, id)
+		SELECT i.id, i.file_name, i.total_rows, coalesce(i.hold_reason, ''), i.status, i.list_source, i.list_source_detail,
+			i.invalid_rows, i.role_addresses, i.disposable_addresses, i.shared_addresses, i.shared_account_id::text, i.created_at,
+			b.id IS NOT NULL, b.file_name, b.signals
+		FROM imports i LEFT JOIN mailchimp_bundles b ON b.import_id = i.id
+		WHERE i.account_id = $1 AND i.review = 'held' ORDER BY i.created_at`, id)
 	if err != nil {
 		return nil, err
 	}
 	if a.HeldImports, err = pgx.CollectRows(rows, func(row pgx.CollectableRow) (HeldImport, error) {
 		var h HeldImport
 		c := &h.Checks
+		var fromMailchimp bool
+		var bundleFile *string
+		var signals []byte
 		err := row.Scan(&h.ID, &h.FileName, &h.TotalRows, &h.HoldReason, &h.Status, &h.ListSource, &h.ListSourceDetail,
-			&c.InvalidRows, &c.RoleAddresses, &c.DisposableAddresses, &c.SharedAddresses, &c.SharedAccountID, &h.CreatedAt)
+			&c.InvalidRows, &c.RoleAddresses, &c.DisposableAddresses, &c.SharedAddresses, &c.SharedAccountID, &h.CreatedAt,
+			&fromMailchimp, &bundleFile, &signals)
+		if err != nil || !fromMailchimp {
+			return h, err
+		}
+		h.Mailchimp, err = mailchimp.ParseSignals(bundleFile, signals)
 		return h, err
 	}); err != nil {
 		return nil, err

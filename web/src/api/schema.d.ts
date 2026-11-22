@@ -5309,6 +5309,37 @@ export interface components {
             status: string;
             /** Format: date-time */
             created_at: string;
+            /**
+             * @description For a Mailchimp import, what its preview showed, to judge it by;
+             *     null for any other import, and for a Mailchimp import confirmed
+             *     before these were kept. They add no hold of their own.
+             */
+            mailchimp: components["schemas"]["AdminMailchimpSignals"] | null;
+        };
+        AdminMailchimpSignals: {
+            /**
+             * @description `file` for an uploaded export, `oauth` for one fetched from a connected Mailchimp account.
+             * @enum {string}
+             */
+            source: "file" | "oauth";
+            file_name: string | null;
+            audiences: {
+                name: string;
+                members: number;
+            }[];
+            by_status: components["schemas"]["MailchimpStatusCounts"];
+            /** @description Every audience's members, of every status. */
+            members: number;
+            /** @description Cleaned members as a share of `members`, from 0 to 1. */
+            cleaned_share: number;
+            /** @description Unsubscribed members as a share of `members`, from 0 to 1. */
+            unsubscribed_share: number;
+            /** @description Subscribed members with a Mailchimp opt-in time. */
+            with_optin_time: number;
+            /** @description `with_optin_time` as a share of the subscribed members, from 0 to 1. */
+            optin_share: number;
+            /** Format: date-time */
+            newest_optin: string | null;
         };
         AdminLiveCampaign: {
             /** Format: uuid */

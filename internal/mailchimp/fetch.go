@@ -287,7 +287,7 @@ func (f *fetcher) audiences(ctx context.Context) ([]*fetchAudience, error) {
 			f.at.MembersTotal += page.TotalItems
 		}
 		if f.at.MembersTotal > f.req.MaxMembers {
-			return nil, refuse(ErrTooManyMembers, "Those audiences have more than %s contacts, more than one import takes during the beta. Fetch one audience at a time, or ask us to raise the limit.", commas(f.req.MaxMembers))
+			return nil, refuse(ErrTooManyMembers, "Those audiences have more than %s contacts, more than one import takes during the beta. Fetch one audience at a time, or contact support to have the limit raised.", commas(f.req.MaxMembers))
 		}
 		if err := f.mergeFields(ctx, a); err != nil {
 			return nil, err
@@ -543,7 +543,7 @@ func (f *fetcher) members(ctx context.Context, a *fetchAudience) error {
 			}
 			f.at.MembersRead += len(page.Members)
 			if f.at.MembersRead > f.req.MaxMembers {
-				return refuse(ErrTooManyMembers, "Those audiences have more than %s contacts, more than one import takes during the beta. Fetch one audience at a time, or ask us to raise the limit.", commas(f.req.MaxMembers))
+				return refuse(ErrTooManyMembers, "Those audiences have more than %s contacts, more than one import takes during the beta. Fetch one audience at a time, or contact support to have the limit raised.", commas(f.req.MaxMembers))
 			}
 			cw.Flush()
 			if err := cw.Error(); err != nil {

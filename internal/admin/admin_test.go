@@ -477,3 +477,46 @@ func TestListActions(t *testing.T) {
 		t.Errorf("all = %d", len(all))
 	}
 }
+
+func TestHeldMailchimpImportShowsItsSignals(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	var csvImport, mcImport string
+	for _, id := range []*string{&csvImport, &mcImport} {
+		if err := h.db.QueryRow(ctx, `
+			INSERT INTO imports (account_id, permission_confirmed, email_column, csv, total_rows, review, hold_reason, status)
+			VALUES ($1, true, 'email', 'email', 3000, 'held', 'large_first_import', 'done') RETURNING id`, h.acc).Scan(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := h.db.Exec(ctx, `
+		INSERT INTO mailchimp_bundles (account_id, file_name, bytes, expires_at, confirmed_at, import_id, signals)
+		VALUES ($1, 'export.zip', 100, now() + interval '7 days', now(), $2,
+			'{"source": "account_export", "audiences": [{"name": "Newsletter", "members": 3000,
+			  "by_status": {"subscribed": 2500, "unsubscribed": 300, "cleaned": 150, "pending": 50}}],
+			  "with_optin_time": 2000, "newest_optin": "2026-11-01T10:00:00Z"}')`, h.acc, mcImport); err != nil {
+		t.Fatal(err)
+	}
+	a, err := h.svc.GetAccount(ctx, h.acc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a.HeldImports) != 2 {
+		t.Fatalf("held = %+v", a.HeldImports)
+	}
+	for _, hi := range a.HeldImports {
+		switch hi.ID {
+		case csvImport:
+			if hi.Mailchimp != nil {
+				t.Errorf("csv import has signals: %+v", hi.Mailchimp)
+			}
+		case mcImport:
+			m := hi.Mailchimp
+			if m == nil || m.Source != "file" || m.FileName == nil || *m.FileName != "export.zip" || m.Members != 3000 ||
+				m.ByStatus.Cleaned != 150 || m.CleanedShare != 0.05 || m.UnsubscribedShare != 0.1 || m.OptinShare != 0.8 ||
+				m.NewestOptin == nil || len(m.Audiences) != 1 || m.Audiences[0].Name != "Newsletter" {
+				t.Errorf("signals = %+v", m)
+			}
+		}
+	}
+}

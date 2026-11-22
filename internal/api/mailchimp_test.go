@@ -456,3 +456,22 @@ func TestMailchimpUploadsOneAtATime(t *testing.T) {
 		t.Fatalf("after delete: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// MG-77: one import takes at most MAILCHIMP_IMPORT_MAX_CONTACTS members,
+// and a bigger upload is refused with a word to contact support.
+func TestMailchimpUploadOverTheCeiling(t *testing.T) {
+	s := fullKey(authServer)(t)
+	s.MailchimpMaxMembers = 2
+	h := s.Handler()
+	csv := "Email Address\na@example.com\nb@example.com\nc@example.com\n"
+	rec := do(t, h, bearer(mailchimpUpload("subscribed_members_export_x.csv", func(*testing.T) []byte { return []byte(csv) }))(t))
+	if rec.Code != http.StatusUnprocessableEntity || errorCode(t, rec) != "too_many_members" ||
+		!strings.Contains(rec.Body.String(), "more than 2 contacts") || !strings.Contains(rec.Body.String(), "contact support") {
+		t.Fatalf("over the ceiling: %d %s", rec.Code, rec.Body)
+	}
+	// At the ceiling it's taken.
+	csv = "Email Address\na@example.com\nb@example.com\n"
+	if rec := do(t, h, bearer(mailchimpUpload("subscribed_members_export_x.csv", func(*testing.T) []byte { return []byte(csv) }))(t)); rec.Code != http.StatusCreated {
+		t.Fatalf("at the ceiling: %d %s", rec.Code, rec.Body)
+	}
+}

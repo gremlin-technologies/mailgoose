@@ -23,7 +23,12 @@ func adminStub(t *testing.T, bodies map[string]map[string]any) *harness {
 		`"throttles":[{"id":3,"campaign_id":"camp-1","reason":"Lowered automatically: 0.2% marked it as spam.","created_at":"2026-11-18T10:00:00Z","until":"2026-11-25T10:00:00Z"}],` +
 		`"contacts":1200,"credit_balance":9000,"tester":{"started_at":"2026-11-18T12:00:00Z","until":"2026-12-18T12:00:00Z","credits":500,"used":120,"left":380,"ended":false},"last_30_days":{"sent":1000,"hard_bounces":12,"complaints":4},` +
 		`"held_imports":[{"id":"imp-1","file_name":null,"total_rows":3000,"hold_reason":"shared_list","status":"done",` +
-		`"list_source":"export","list_source_detail":null,"checks":{"invalid_rows":2,"role_addresses":3,"disposable_addresses":1,"shared_addresses":1800,"shared_account_id":"acc-2"},"created_at":"2026-11-17T09:00:00Z"}],` +
+		`"list_source":"export","list_source_detail":null,"checks":{"invalid_rows":2,"role_addresses":3,"disposable_addresses":1,"shared_addresses":1800,"shared_account_id":"acc-2"},"created_at":"2026-11-17T09:00:00Z","mailchimp":null},` +
+		`{"id":"imp-2","file_name":"export.zip","total_rows":3000,"hold_reason":"large_first_import","status":"done",` +
+		`"list_source":null,"list_source_detail":null,"checks":{"invalid_rows":0,"role_addresses":0,"disposable_addresses":0,"shared_addresses":0,"shared_account_id":null},"created_at":"2026-11-18T09:00:00Z",` +
+		`"mailchimp":{"source":"file","file_name":"export.zip","audiences":[{"name":"Newsletter","members":2960},{"name":"Wholesale","members":40}],` +
+		`"by_status":{"subscribed":2500,"unsubscribed":300,"cleaned":150,"pending":50,"transactional":0,"archived":0},"members":3000,` +
+		`"cleaned_share":0.05,"unsubscribed_share":0.1,"with_optin_time":2000,"optin_share":0.8,"newest_optin":"2026-11-01T10:00:00Z"}}],` +
 		`"live_campaigns":[{"id":"camp-1","name":"Bread week","status":"sending","send_at":null,"recipients":1000,"rates":{"sent":1000,"hard_bounces":12,"complaints":4}}],` +
 		`"terms_version":"2026-11-19","terms_accepted_at":"2026-11-01T09:00:00Z"}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +72,10 @@ func TestAdminCommands(t *testing.T) {
 		want []string
 	}{
 		{[]string{"admin", "find", "pat"}, []string{testAccountID, "Pat's Bakery", "pat@example.com", "suspended"}},
-		{[]string{"admin", "account", testAccountID}, []string{"Suspended:", "by staff@example.com: Bought list", "PAUSED", "Phishing reports", "Daily limit:  1000 (THROTTLED until 2026-11-25", "Throttled:    2026-11-18", "0.2% marked it as spam", "1000 sent, 12 hard bounces (1.20%), 4 complaints (0.40%)", "imp-1", "list source export; 2 invalid, 3 role, 1 disposable; 1800 in other accounts' imports, most in account acc-2", "Bread week", "Terms:        version 2026-11-19, accepted 2026-11-0", "120 of 500 credits used, 380 left, until 2026-12-18"}},
+		{[]string{"admin", "account", testAccountID}, []string{"Suspended:", "by staff@example.com: Bought list", "PAUSED", "Phishing reports", "Daily limit:  1000 (THROTTLED until 2026-11-25", "Throttled:    2026-11-18", "0.2% marked it as spam", "1000 sent, 12 hard bounces (1.20%), 4 complaints (0.40%)", "imp-1", "list source export; 2 invalid, 3 role, 1 disposable; 1800 in other accounts' imports, most in account acc-2",
+			"Held import:  imp-2, 3000 rows (large_first_import)", "              Mailchimp, from file export.zip: Newsletter (2960), Wholesale (40)\n",
+			"              2500 subscribed, 300 unsubscribed (10.0%), 150 cleaned (5.0%), 50 pending\n",
+			"              opt-in time on 80.0% of subscribed, newest 2026-11-0", "Bread week", "Terms:        version 2026-11-19, accepted 2026-11-0", "120 of 500 credits used, 380 left, until 2026-12-18"}},
 		{[]string{"admin", "pause", testAccountID, "--reason", "Phishing reports"}, []string{"Paused sending for Pat's Bakery"}},
 		{[]string{"admin", "unpause", testAccountID, "--reason", "Owner fixed the list"}, []string{"can send again"}},
 		{[]string{"admin", "suspend", testAccountID, "--reason", "Bought list"}, []string{"Suspended Pat's Bakery", "owner has been emailed"}},

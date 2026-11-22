@@ -363,3 +363,75 @@ func TestDigestRun(t *testing.T) {
 		t.Fatalf("%d emails", len(h.fake.Sent()))
 	}
 }
+
+func TestDigestListsMailchimpImports(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	now := time.Date(2026, 11, 19, 13, 0, 0, 0, time.UTC)
+	mcImport := func(review, hold string, total int, file, signals string, confirmed time.Time) string {
+		t.Helper()
+		var id string
+		if err := h.db.QueryRow(ctx, `
+			INSERT INTO imports (account_id, file_name, permission_confirmed, email_column, csv, total_rows, review, hold_reason, status, created_at)
+			VALUES ($1, $2, true, 'email', 'email', $3, $4, nullif($5, ''), 'done', $6) RETURNING id`,
+			h.acc, file, total, review, hold, confirmed).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := h.db.Exec(ctx, `
+			INSERT INTO mailchimp_bundles (account_id, file_name, bytes, expires_at, confirmed_at, import_id, signals)
+			VALUES ($1, $2, 100, $3::timestamptz + interval '7 days', $3, $4, $5)`, h.acc, file, confirmed, id, signals); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	held := mcImport("held", "large_first_import", 3000, "export.zip", `{"source": "account_export",
+		"audiences": [{"name": "Newsletter", "members": 3000, "by_status": {"subscribed": 2500, "unsubscribed": 300, "cleaned": 150, "pending": 50}}],
+		"with_optin_time": 2000, "newest_optin": "2026-11-01T10:00:00Z"}`, now.Add(-2*time.Hour))
+	fetched := mcImport("none", "", 40, "mailchimp-account.zip", `{"source": "connected_account",
+		"audiences": [{"name": "Wholesale", "members": 40, "by_status": {"subscribed": 40}}],
+		"with_optin_time": 40, "newest_optin": "2026-10-12T08:00:00Z"}`, now.Add(-5*time.Hour))
+	old := mcImport("none", "", 10, "old.zip", `{"source": "audience_csv", "audiences": []}`, now.Add(-30*time.Hour))
+	// An upload with no contacts makes no import, and isn't listed.
+	if _, err := h.db.Exec(ctx, `
+		INSERT INTO mailchimp_bundles (account_id, file_name, bytes, expires_at, confirmed_at)
+		VALUES ($1, 'templates.zip', 100, $2, $3)`, h.acc, now.Add(7*24*time.Hour), now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	d, err := BuildDigest(ctx, h.db, now, Warning{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.MailchimpImports) != 2 || len(d.HeldImports) != 1 || d.Items() != 3 {
+		t.Fatalf("mailchimp %d, held %d, items %d", len(d.MailchimpImports), len(d.HeldImports), d.Items())
+	}
+	text := d.Text()
+	for _, want := range []string{
+		"Mailchimp imports in the last 24 hours (2)",
+		"- Pat's Bakery (account " + h.acc + "), 2026-11-19 08:00 UTC: import " + fetched + " (40 rows), not held.\n" +
+			"  From a connected Mailchimp account: Wholesale (40).\n" +
+			"  Members: 40 subscribed.\n" +
+			"  Cleaned 0.0%, unsubscribed 0.0%; 100.0% of subscribed have a Mailchimp opt-in time, the newest 2026-10-12.\n" +
+			"    mailgoose admin account " + h.acc + "\n",
+		"- Pat's Bakery (account " + h.acc + "), 2026-11-19 11:00 UTC: import " + held + " (3,000 rows) held: a large first import.\n" +
+			"  From file export.zip: Newsletter (3,000).\n" +
+			"  Members: 2,500 subscribed, 300 unsubscribed, 150 cleaned, 50 pending.\n" +
+			"  Cleaned 5.0%, unsubscribed 10.0%; 80.0% of subscribed have a Mailchimp opt-in time, the newest 2026-11-01.\n" +
+			"    mailgoose admin account " + h.acc + "\n" +
+			"    mailgoose admin approve-import " + held + ` --reason "..."`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, old) || strings.Contains(text, "templates.zip") {
+		t.Errorf("listed an old import or one with no contacts:\n%s", text)
+	}
+	// The digest goes on a day with only a Mailchimp import that isn't held.
+	if _, err := h.db.Exec(ctx, `DELETE FROM imports WHERE id = $1`, held); err != nil {
+		t.Fatal(err)
+	}
+	if d, err := BuildDigest(ctx, h.db, now, Warning{}); err != nil || d.Empty() || d.Items() != 1 {
+		t.Errorf("one unheld import: items %d, empty %v, %v", d.Items(), d.Empty(), err)
+	}
+}

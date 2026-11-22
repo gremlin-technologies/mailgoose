@@ -9068,7 +9068,7 @@ components:
           description: The UTC day, 7 days before today, whose recorded sizes the change is against.
     AdminHeldImport:
       type: object
-      required: [id, file_name, total_rows, hold_reason, status, list_source, list_source_detail, checks, created_at]
+      required: [id, file_name, total_rows, hold_reason, status, list_source, list_source_detail, checks, created_at, mailchimp]
       properties:
         id:
           type: string
@@ -9107,6 +9107,54 @@ components:
           type: string
         created_at:
           type: string
+          format: date-time
+        mailchimp:
+          description: |
+            For a Mailchimp import, what its preview showed, to judge it by;
+            null for any other import, and for a Mailchimp import confirmed
+            before these were kept. They add no hold of their own.
+          oneOf:
+            - $ref: "#/components/schemas/AdminMailchimpSignals"
+            - type: "null"
+    AdminMailchimpSignals:
+      type: object
+      required: [source, file_name, audiences, by_status, members, cleaned_share, unsubscribed_share, with_optin_time, optin_share, newest_optin]
+      properties:
+        source:
+          type: string
+          enum: [file, oauth]
+          description: "`file` for an uploaded export, `oauth` for one fetched from a connected Mailchimp account."
+        file_name:
+          type: [string, "null"]
+        audiences:
+          type: array
+          items:
+            type: object
+            required: [name, members]
+            properties:
+              name:
+                type: string
+              members:
+                type: integer
+        by_status:
+          $ref: "#/components/schemas/MailchimpStatusCounts"
+        members:
+          type: integer
+          description: Every audience's members, of every status.
+        cleaned_share:
+          type: number
+          description: Cleaned members as a share of `members`, from 0 to 1.
+        unsubscribed_share:
+          type: number
+          description: Unsubscribed members as a share of `members`, from 0 to 1.
+        with_optin_time:
+          type: integer
+          description: Subscribed members with a Mailchimp opt-in time.
+        optin_share:
+          type: number
+          description: "`with_optin_time` as a share of the subscribed members, from 0 to 1."
+        newest_optin:
+          type: [string, "null"]
           format: date-time
     AdminLiveCampaign:
       type: object

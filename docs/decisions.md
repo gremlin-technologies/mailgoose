@@ -4,6 +4,29 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-22: Judging Mailchimp imports in the admin tools and the digest (MG-77; reversible defaults)
+
+Builder's picks for MG-77, open for the owner to change:
+
+- **No new hold rules.** A Mailchimp import is held, or not, by the same
+  rules as any import (CON-6, MG-63); its signals only help a person judge
+  it.
+- **What's kept.** On confirm, the preview's source, audiences with their
+  members by Mailchimp status, opt-in count and newest opt-in are kept on the
+  upload's row (`mailchimp_bundles.signals`), since the preview itself is
+  cleared. An import confirmed before this shows no signals.
+- **`mailgoose admin account`** shows them under each held Mailchimp import:
+  file or connected account, audiences, members by status, the cleaned and
+  unsubscribed shares (of all members), and the share of subscribed members
+  with a Mailchimp opt-in time (of subscribed members), with the newest date.
+- **The digest lists every Mailchimp import** confirmed in its 24 hours,
+  held or not, so a day with one is never quiet during the beta. An upload
+  with no contacts (only emails) isn't listed. A held one is listed under
+  held imports too.
+- **The ceiling** stays `MAILCHIMP_IMPORT_MAX_CONTACTS` (250,000), refused
+  at upload or fetch with `too_many_members`; the message now says to
+  contact support to have it raised.
+
 ## 2026-11-22: Draft signup forms from a Mailchimp import (MG-76; reversible defaults)
 
 Mailchimp's embedded form code posts to Mailchimp, so confirming an import now

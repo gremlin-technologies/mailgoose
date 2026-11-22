@@ -5995,6 +5995,24 @@ null when no time was spent sending.
 | `checks` | object | yes | What the import's checks found. `shared_addresses` is how many of its distinct addresses other accounts imported, and `shared_account_id` the account with most of them; no addresses are shown. |
 | `status` | string | yes |  |
 | `created_at` | string (date-time) | yes |  |
+| `mailchimp` | [AdminMailchimpSignals](#schema-adminmailchimpsignals) or null | yes | For a Mailchimp import, what its preview showed, to judge it by; null for any other import, and for a Mailchimp import confirmed before these were kept. They add no hold of their own. |
+
+<a id="schema-adminmailchimpsignals"></a>
+
+### AdminMailchimpSignals
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `source` | string: one of `file`, `oauth` | yes | `file` for an uploaded export, `oauth` for one fetched from a connected Mailchimp account. |
+| `file_name` | string or null | yes |  |
+| `audiences` | array of object | yes |  |
+| `by_status` | [MailchimpStatusCounts](#schema-mailchimpstatuscounts) | yes |  |
+| `members` | integer | yes | Every audience's members, of every status. |
+| `cleaned_share` | number | yes | Cleaned members as a share of `members`, from 0 to 1. |
+| `unsubscribed_share` | number | yes | Unsubscribed members as a share of `members`, from 0 to 1. |
+| `with_optin_time` | integer | yes | Subscribed members with a Mailchimp opt-in time. |
+| `optin_share` | number | yes | `with_optin_time` as a share of the subscribed members, from 0 to 1. |
+| `newest_optin` | string (date-time) or null | yes |  |
 
 <a id="schema-adminlivecampaign"></a>
 

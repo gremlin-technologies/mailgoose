@@ -309,7 +309,12 @@ func (s *Store) Confirm(ctx context.Context, accountID, id string, importID *str
 	}
 	_, err = s.DB.Exec(ctx, `
 		UPDATE mailchimp_bundles SET confirmed_at = $3, import_id = $4, campaigns = $5, emails_total = $6, emails_status = $7,
-			data = CASE WHEN $6 = 0 THEN NULL ELSE data END, preview = NULL, forms = $8
+			data = CASE WHEN $6 = 0 THEN NULL ELSE data END, forms = $8,
+			signals = CASE WHEN preview IS NULL THEN NULL ELSE jsonb_build_object(
+				'source', preview->'source', 'audiences', preview->'audiences',
+				'with_optin_time', preview->'contacts'->'with_optin_time',
+				'newest_optin', preview->'contacts'->'newest_optin') END,
+			preview = NULL
 		WHERE id = $1 AND account_id = $2 AND confirmed_at IS NULL`, id, accountID, s.now().UTC(), importID, campaigns, emails, status, formsJSON)
 	if err != nil {
 		return nil, err
