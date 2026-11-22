@@ -83,9 +83,13 @@ func Role(local string) bool {
 	if _, ok := role[l]; ok {
 		return true
 	}
-	_, ok := role[strings.NewReplacer(".", "", "_", "", "-", "").Replace(l)]
+	_, ok := role[roleSeparators.Replace(l)]
 	return ok
 }
+
+// roleSeparators drops the separators role addresses are written with. A
+// Replacer is costly to build, so it's built once.
+var roleSeparators = strings.NewReplacer(".", "", "_", "", "-", "")
 
 // Address splits a normalized address into its local part and domain; ok is
 // false when there's no @.

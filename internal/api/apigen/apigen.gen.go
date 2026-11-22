@@ -1030,6 +1030,24 @@ func (e ImportContactStatus) Valid() bool {
 	}
 }
 
+// Defines values for ImportKind.
+const (
+	ImportKindCsv       ImportKind = "csv"
+	ImportKindMailchimp ImportKind = "mailchimp"
+)
+
+// Valid indicates whether the value is a known member of the ImportKind enum.
+func (e ImportKind) Valid() bool {
+	switch e {
+	case ImportKindCsv:
+		return true
+	case ImportKindMailchimp:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ImportReview.
 const (
 	ImportReviewApproved ImportReview = "approved"
@@ -1053,15 +1071,19 @@ func (e ImportReview) Valid() bool {
 
 // Defines values for ImportStatus.
 const (
-	ImportStatusDone    ImportStatus = "done"
-	ImportStatusFailed  ImportStatus = "failed"
-	ImportStatusQueued  ImportStatus = "queued"
-	ImportStatusRunning ImportStatus = "running"
+	ImportStatusCancelled ImportStatus = "cancelled"
+	ImportStatusDone      ImportStatus = "done"
+	ImportStatusFailed    ImportStatus = "failed"
+	ImportStatusQueued    ImportStatus = "queued"
+	ImportStatusRunning   ImportStatus = "running"
+	ImportStatusWaiting   ImportStatus = "waiting"
 )
 
 // Valid indicates whether the value is a known member of the ImportStatus enum.
 func (e ImportStatus) Valid() bool {
 	switch e {
+	case ImportStatusCancelled:
+		return true
 	case ImportStatusDone:
 		return true
 	case ImportStatusFailed:
@@ -1069,6 +1091,8 @@ func (e ImportStatus) Valid() bool {
 	case ImportStatusQueued:
 		return true
 	case ImportStatusRunning:
+		return true
+	case ImportStatusWaiting:
 		return true
 	default:
 		return false
@@ -1096,6 +1120,162 @@ func (e ListSource) Valid() bool {
 	case ListSourceOther:
 		return true
 	case ListSourcePersonal:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MailchimpBundleStatus.
+const (
+	MailchimpBundleStatusConfirmed   MailchimpBundleStatus = "confirmed"
+	MailchimpBundleStatusUnconfirmed MailchimpBundleStatus = "unconfirmed"
+)
+
+// Valid indicates whether the value is a known member of the MailchimpBundleStatus enum.
+func (e MailchimpBundleStatus) Valid() bool {
+	switch e {
+	case MailchimpBundleStatusConfirmed:
+		return true
+	case MailchimpBundleStatusUnconfirmed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MailchimpContactsPreviewPlanPlan.
+const (
+	MailchimpContactsPreviewPlanPlanFree MailchimpContactsPreviewPlanPlan = "free"
+	MailchimpContactsPreviewPlanPlanPaid MailchimpContactsPreviewPlanPlan = "paid"
+)
+
+// Valid indicates whether the value is a known member of the MailchimpContactsPreviewPlanPlan enum.
+func (e MailchimpContactsPreviewPlanPlan) Valid() bool {
+	switch e {
+	case MailchimpContactsPreviewPlanPlanFree:
+		return true
+	case MailchimpContactsPreviewPlanPlanPaid:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MailchimpEmailFrom.
+const (
+	MailchimpEmailFromCampaign MailchimpEmailFrom = "campaign"
+	MailchimpEmailFromTemplate MailchimpEmailFrom = "template"
+)
+
+// Valid indicates whether the value is a known member of the MailchimpEmailFrom enum.
+func (e MailchimpEmailFrom) Valid() bool {
+	switch e {
+	case MailchimpEmailFromCampaign:
+		return true
+	case MailchimpEmailFromTemplate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MailchimpEmailNoteCode.
+const (
+	MailchimpEmailNoteCodeHtmlWarning           MailchimpEmailNoteCode = "html_warning"
+	MailchimpEmailNoteCodeImageNotCopied        MailchimpEmailNoteCode = "image_not_copied"
+	MailchimpEmailNoteCodeInvalidHtml           MailchimpEmailNoteCode = "invalid_html"
+	MailchimpEmailNoteCodeMailchimpConditional  MailchimpEmailNoteCode = "mailchimp_conditional"
+	MailchimpEmailNoteCodeMailchimpTagRemoved   MailchimpEmailNoteCode = "mailchimp_tag_removed"
+	MailchimpEmailNoteCodeMailchimpTrackingLink MailchimpEmailNoteCode = "mailchimp_tracking_link"
+	MailchimpEmailNoteCodeTooLarge              MailchimpEmailNoteCode = "too_large"
+)
+
+// Valid indicates whether the value is a known member of the MailchimpEmailNoteCode enum.
+func (e MailchimpEmailNoteCode) Valid() bool {
+	switch e {
+	case MailchimpEmailNoteCodeHtmlWarning:
+		return true
+	case MailchimpEmailNoteCodeImageNotCopied:
+		return true
+	case MailchimpEmailNoteCodeInvalidHtml:
+		return true
+	case MailchimpEmailNoteCodeMailchimpConditional:
+		return true
+	case MailchimpEmailNoteCodeMailchimpTagRemoved:
+		return true
+	case MailchimpEmailNoteCodeMailchimpTrackingLink:
+		return true
+	case MailchimpEmailNoteCodeTooLarge:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MailchimpEmailProgressStatus.
+const (
+	MailchimpEmailProgressStatusDone    MailchimpEmailProgressStatus = "done"
+	MailchimpEmailProgressStatusFailed  MailchimpEmailProgressStatus = "failed"
+	MailchimpEmailProgressStatusNone    MailchimpEmailProgressStatus = "none"
+	MailchimpEmailProgressStatusQueued  MailchimpEmailProgressStatus = "queued"
+	MailchimpEmailProgressStatusRunning MailchimpEmailProgressStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the MailchimpEmailProgressStatus enum.
+func (e MailchimpEmailProgressStatus) Valid() bool {
+	switch e {
+	case MailchimpEmailProgressStatusDone:
+		return true
+	case MailchimpEmailProgressStatusFailed:
+		return true
+	case MailchimpEmailProgressStatusNone:
+		return true
+	case MailchimpEmailProgressStatusQueued:
+		return true
+	case MailchimpEmailProgressStatusRunning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MailchimpPreviewIgnoredFilesReason.
+const (
+	MailchimpPreviewIgnoredFilesReasonTooLarge         MailchimpPreviewIgnoredFilesReason = "too_large"
+	MailchimpPreviewIgnoredFilesReasonTooManyTemplates MailchimpPreviewIgnoredFilesReason = "too_many_templates"
+	MailchimpPreviewIgnoredFilesReasonUnknownFile      MailchimpPreviewIgnoredFilesReason = "unknown_file"
+)
+
+// Valid indicates whether the value is a known member of the MailchimpPreviewIgnoredFilesReason enum.
+func (e MailchimpPreviewIgnoredFilesReason) Valid() bool {
+	switch e {
+	case MailchimpPreviewIgnoredFilesReasonTooLarge:
+		return true
+	case MailchimpPreviewIgnoredFilesReasonTooManyTemplates:
+		return true
+	case MailchimpPreviewIgnoredFilesReasonUnknownFile:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MailchimpPreviewSource.
+const (
+	MailchimpPreviewSourceAccountExport  MailchimpPreviewSource = "account_export"
+	MailchimpPreviewSourceAudienceCsv    MailchimpPreviewSource = "audience_csv"
+	MailchimpPreviewSourceAudienceExport MailchimpPreviewSource = "audience_export"
+)
+
+// Valid indicates whether the value is a known member of the MailchimpPreviewSource enum.
+func (e MailchimpPreviewSource) Valid() bool {
+	switch e {
+	case MailchimpPreviewSourceAccountExport:
+		return true
+	case MailchimpPreviewSourceAudienceCsv:
+		return true
+	case MailchimpPreviewSourceAudienceExport:
 		return true
 	default:
 		return false
@@ -1224,17 +1404,21 @@ func (e SendingMode) Valid() bool {
 
 // Defines values for SkipReason.
 const (
-	SkipReasonDuplicate    SkipReason = "duplicate"
-	SkipReasonExists       SkipReason = "exists"
-	SkipReasonInvalidEmail SkipReason = "invalid_email"
-	SkipReasonInvalidRow   SkipReason = "invalid_row"
-	SkipReasonOverLimit    SkipReason = "over_limit"
-	SkipReasonSuppressed   SkipReason = "suppressed"
+	SkipReasonArchived      SkipReason = "archived"
+	SkipReasonDuplicate     SkipReason = "duplicate"
+	SkipReasonExists        SkipReason = "exists"
+	SkipReasonInvalidEmail  SkipReason = "invalid_email"
+	SkipReasonInvalidRow    SkipReason = "invalid_row"
+	SkipReasonNotSubscribed SkipReason = "not_subscribed"
+	SkipReasonOverLimit     SkipReason = "over_limit"
+	SkipReasonSuppressed    SkipReason = "suppressed"
 )
 
 // Valid indicates whether the value is a known member of the SkipReason enum.
 func (e SkipReason) Valid() bool {
 	switch e {
+	case SkipReasonArchived:
+		return true
 	case SkipReasonDuplicate:
 		return true
 	case SkipReasonExists:
@@ -1242,6 +1426,8 @@ func (e SkipReason) Valid() bool {
 	case SkipReasonInvalidEmail:
 		return true
 	case SkipReasonInvalidRow:
+		return true
+	case SkipReasonNotSubscribed:
 		return true
 	case SkipReasonOverLimit:
 		return true
@@ -2385,6 +2571,18 @@ type ColumnsBlockLayout string
 // ColumnsBlockType defines model for ColumnsBlock.Type.
 type ColumnsBlockType string
 
+// ConfirmMailchimpBundleRequest Examples: {"campaigns":10,"permission_confirmed":true}
+type ConfirmMailchimpBundleRequest struct {
+	// Campaigns How many of the newest campaigns become HTML emails.
+	Campaigns *int `json:"campaigns,omitempty"`
+
+	// IdempotencyKey Confirming the same export again with this key returns the import already made.
+	IdempotencyKey *string `json:"idempotency_key,omitempty"`
+
+	// PermissionConfirmed True says these people agreed to get your email. Required.
+	PermissionConfirmed bool `json:"permission_confirmed"`
+}
+
 // ConfirmSenderAddressRequest defines model for ConfirmSenderAddressRequest.
 type ConfirmSenderAddressRequest struct {
 	// Token The `token` in the confirm link's query.
@@ -2487,7 +2685,9 @@ type ContactData struct {
 		FileName *string `json:"file_name"`
 		ImportId string  `json:"import_id"`
 
-		// Reason `invalid_email`: not an email address. `invalid_row`: the row
+		// Reason `not_subscribed` and `archived` are Mailchimp imports' only: a
+		// non-subscribed (transactional) or archived member.
+		// `invalid_email`: not an email address. `invalid_row`: the row
 		// couldn't be read as CSV (a stray quote, say). `duplicate`: the same
 		// address is on an earlier row. `exists`: the account already has the
 		// contact, which is left as it is. `suppressed`: the address
@@ -2657,6 +2857,22 @@ type CreateImportRequest struct {
 
 	// Tags Tags, by name or id, put on every contact the import adds. They must exist.
 	Tags *[]string `json:"tags,omitempty"`
+}
+
+// CreateMailchimpBundleRequest defines model for CreateMailchimpBundleRequest.
+type CreateMailchimpBundleRequest struct {
+	// AudienceName The audience's name when the export doesn't say (an audience export or a CSV). Default "Mailchimp".
+	//
+	// Examples: Newsletter
+	AudienceName *string `json:"audience_name,omitempty"`
+
+	// File The export, as Mailchimp gave it, at most 25 MB.
+	File openapi_types.File `json:"file"`
+
+	// GroupColumns Member-file columns that are Mailchimp groups; each group becomes a tag `Category: Group`.
+	//
+	// Examples: ["Interests"]
+	GroupColumns *[]string `json:"group_columns,omitempty"`
 }
 
 // CreateTagRequest defines model for CreateTagRequest.
@@ -3314,9 +3530,15 @@ type Import struct {
 	CreatedAt     time.Time           `json:"created_at"`
 
 	// Error Why a `failed` import stopped.
-	Error      *string    `json:"error"`
-	FileName   *string    `json:"file_name"`
-	FinishedAt *time.Time `json:"finished_at"`
+	Error *string `json:"error"`
+
+	// ExistingSuppressed Of those, how many Mailchimp's unsubscribe or clean took off the mailing list.
+	ExistingSuppressed int `json:"existing_suppressed"`
+
+	// ExistingTagged A Mailchimp import's addresses that were already contacts and only gained tags; 0 for a CSV.
+	ExistingTagged int        `json:"existing_tagged"`
+	FileName       *string    `json:"file_name"`
+	FinishedAt     *time.Time `json:"finished_at"`
 
 	// HoldMessage Why the import is held, in plain words, for showing to the account; null when it isn't held.
 	HoldMessage *string `json:"hold_message"`
@@ -3331,34 +3553,59 @@ type Import struct {
 	// Imported Contacts added.
 	Imported int `json:"imported"`
 
+	// Kind A CSV file (`createImport`) or a Mailchimp export (`confirmMailchimpBundle`).
+	Kind ImportKind `json:"kind"`
+
 	// ListSource Where the account said the people came from; null for imports made before it was asked.
 	ListSource       *ListSource `json:"list_source"`
 	ListSourceDetail *string     `json:"list_source_detail"`
-	ProcessedRows    int         `json:"processed_rows"`
+
+	// Mailchimp For a Mailchimp import, the upload it came from and how far its emails have got; null for a CSV.
+	Mailchimp *struct {
+		BundleId string                 `json:"bundle_id"`
+		Emails   MailchimpEmailProgress `json:"emails"`
+	} `json:"mailchimp"`
+	ProcessedRows int `json:"processed_rows"`
 
 	// Review A `held` import's contacts aren't mailed until mailgoose approves it.
 	Review          ImportReview `json:"review"`
 	Skipped         int          `json:"skipped"`
 	SkippedByReason struct {
-		Duplicate    int `json:"duplicate"`
-		Exists       int `json:"exists"`
-		InvalidEmail int `json:"invalid_email"`
-		InvalidRow   int `json:"invalid_row"`
-		OverLimit    int `json:"over_limit"`
-		Suppressed   int `json:"suppressed"`
+		Archived      int `json:"archived"`
+		Duplicate     int `json:"duplicate"`
+		Exists        int `json:"exists"`
+		InvalidEmail  int `json:"invalid_email"`
+		InvalidRow    int `json:"invalid_row"`
+		NotSubscribed int `json:"not_subscribed"`
+		OverLimit     int `json:"over_limit"`
+		Suppressed    int `json:"suppressed"`
 	} `json:"skipped_by_reason"`
-	StartedAt *time.Time   `json:"started_at"`
-	Status    ImportStatus `json:"status"`
+	StartedAt *time.Time `json:"started_at"`
+
+	// Status `waiting`: a Mailchimp import whose subscribed contacts would take
+	// the account past its contact limit. Its unsubscribed and bounced
+	// contacts are in; the rest follow by themselves once the account is on
+	// the paid plan, and `waiting_note` says when that won't happen.
+	// `cancelled`: a waiting import cancelled with `cancelImport`.
+	Status ImportStatus `json:"status"`
 
 	// Tags Tags put on the added contacts. A tag deleted since is left out.
 	Tags []TagRef `json:"tags"`
 
 	// TotalRows Contact rows in the file, not counting the header and blank rows.
 	TotalRows int `json:"total_rows"`
+
+	// WaitingNote For a `waiting` import, what it waits for. A tester account's
+	// wait never ends, and deleting contacts doesn't restart one, so the
+	// note says to cancel it (`cancelImport`). Null otherwise.
+	WaitingNote *string `json:"waiting_note"`
 }
 
 // ImportContactStatus The status added contacts get; `subscribed` only when permission was confirmed.
 type ImportContactStatus string
+
+// ImportKind A CSV file (`createImport`) or a Mailchimp export (`confirmMailchimpBundle`).
+type ImportKind string
 
 // ImportReview A `held` import's contacts aren't mailed until mailgoose approves it.
 type ImportReview string
@@ -3417,7 +3664,11 @@ type ImportList struct {
 	NextCursor *string  `json:"next_cursor"`
 }
 
-// ImportStatus defines model for ImportStatus.
+// ImportStatus `waiting`: a Mailchimp import whose subscribed contacts would take
+// the account past its contact limit. Its unsubscribed and bounced
+// contacts are in; the rest follow by themselves once the account is on
+// the paid plan, and `waiting_note` says when that won't happen.
+// `cancelled`: a waiting import cancelled with `cancelImport`.
 type ImportStatus string
 
 // LaunchCampaignRequest defines model for LaunchCampaignRequest.
@@ -3448,6 +3699,194 @@ type ListSource string
 type MailAddress struct {
 	Email string `json:"email"`
 	Name  string `json:"name"`
+}
+
+// MailchimpAudience defines model for MailchimpAudience.
+type MailchimpAudience struct {
+	// ByStatus Member rows by their Mailchimp status.
+	ByStatus MailchimpStatusCounts `json:"by_status"`
+	Members  int                   `json:"members"`
+	Name     string                `json:"name"`
+}
+
+// MailchimpBundle Examples: {"bytes":482113,"campaigns":10,"confirmed_at":null,"created_at":"2026-11-21T12:00:00Z","emails":{"error":null,"made":[],"status":"none","total":0},"expires_at":"2026-11-28T12:00:00Z","file_name":"mailchimp-export.zip","id":"7c1e5a52-3d1f-4c55-9a0e-2f9b8b6f4a10","import_id":null,"preview":{"audiences":[{"by_status":{"archived":0,"cleaned":20,"pending":14,"subscribed":1100,"transactional":10,"unsubscribed":60},"members":1204,"name":"Newsletter"}],"campaigns_available":24,"contacts":{"dropped_fields":["Birthday","Phone Number"],"existing_suppressed":0,"existing_tagged":20,"holds":["over_contact_limit"],"merge_suppressed":0,"merge_suppressed_examples":[],"names_cut":0,"new":{"bounced":20,"subscribed":1080,"unconfirmed":14,"unsubscribed":60},"newest_optin":"2026-10-30T09:12:00Z","plan":{"contacts":1100,"limit":500,"month_cents":500,"plan":"paid","tester":false,"units":1,"upgrade":true,"year_cents":5000},"renamed_tags":[],"skipped":{"archived":0,"invalid_email":0,"invalid_row":0,"not_subscribed":10,"suppressed":0},"tags_to_create":["vip","Interests: Baking"],"waits":true,"with_optin_time":1000},"emails":[{"email_id":null,"errors":[],"file":"templates/Monthly_newsletter.html","from":"template","images":2,"name":"Monthly newsletter","preview_text":"","subject":"","warnings":[]}],"ignored_files":[{"path":"reports/opens.csv","reason":"unknown_file"}],"source":"account_export"},"status":"unconfirmed"}
+type MailchimpBundle struct {
+	// Bytes The uploaded file's size.
+	Bytes int `json:"bytes"`
+
+	// Campaigns How many of the newest campaigns become emails.
+	Campaigns   int                    `json:"campaigns"`
+	ConfirmedAt *time.Time             `json:"confirmed_at"`
+	CreatedAt   time.Time              `json:"created_at"`
+	Emails      MailchimpEmailProgress `json:"emails"`
+
+	// ExpiresAt When an unconfirmed upload is deleted.
+	ExpiresAt time.Time `json:"expires_at"`
+	FileName  *string   `json:"file_name"`
+	Id        string    `json:"id"`
+
+	// ImportId The contacts import, once confirmed; null when the export had no contacts.
+	ImportId *string `json:"import_id"`
+
+	// Preview What importing would do; null once the file has been used and removed.
+	Preview *MailchimpPreview     `json:"preview"`
+	Status  MailchimpBundleStatus `json:"status"`
+}
+
+// MailchimpBundleStatus defines model for MailchimpBundle.Status.
+type MailchimpBundleStatus string
+
+// MailchimpContactsPreview defines model for MailchimpContactsPreview.
+type MailchimpContactsPreview struct {
+	// DroppedFields Columns that aren't imported.
+	DroppedFields []string `json:"dropped_fields"`
+
+	// ExistingSuppressed Of those, how many Mailchimp's unsubscribe or clean would take off the mailing list.
+	ExistingSuppressed int `json:"existing_suppressed"`
+
+	// ExistingTagged Addresses already contacts here, which would only gain tags.
+	ExistingTagged int `json:"existing_tagged"`
+
+	// Holds Why the import would be held for review, as `hold_reason` codes, the first being the one recorded.
+	Holds []string `json:"holds"`
+
+	// MergeSuppressed Addresses subscribed in one audience but unsubscribed or cleaned in another, so suppressed.
+	MergeSuppressed int `json:"merge_suppressed"`
+
+	// MergeSuppressedExamples Up to 100 of them.
+	MergeSuppressedExamples []string `json:"merge_suppressed_examples"`
+
+	// NamesCut Members with a tags, group or permission cell too long to read whole.
+	NamesCut int `json:"names_cut"`
+
+	// New Addresses that would become new contacts, by the status they'd have.
+	New struct {
+		Bounced      int `json:"bounced"`
+		Subscribed   int `json:"subscribed"`
+		Unconfirmed  int `json:"unconfirmed"`
+		Unsubscribed int `json:"unsubscribed"`
+	} `json:"new"`
+	NewestOptin *time.Time `json:"newest_optin"`
+
+	// Plan The plan the account would need after the import, and its price.
+	Plan struct {
+		Contacts int `json:"contacts"`
+
+		// Limit The account's contact limit now; 0 for none.
+		Limit      int                              `json:"limit"`
+		MonthCents int                              `json:"month_cents"`
+		Plan       MailchimpContactsPreviewPlanPlan `json:"plan"`
+		Tester     bool                             `json:"tester"`
+		Units      int                              `json:"units"`
+		Upgrade    bool                             `json:"upgrade"`
+		YearCents  int                              `json:"year_cents"`
+	} `json:"plan"`
+	RenamedTags []struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	} `json:"renamed_tags"`
+	Skipped struct {
+		Archived      int `json:"archived"`
+		InvalidEmail  int `json:"invalid_email"`
+		InvalidRow    int `json:"invalid_row"`
+		NotSubscribed int `json:"not_subscribed"`
+		Suppressed    int `json:"suppressed"`
+	} `json:"skipped"`
+	TagsToCreate []string `json:"tags_to_create"`
+
+	// Waits True when the subscribed contacts would take the account past its limit, so they wait until the plan covers them.
+	Waits bool `json:"waits"`
+
+	// WithOptinTime Subscribed addresses with a Mailchimp opt-in time.
+	WithOptinTime int `json:"with_optin_time"`
+}
+
+// MailchimpContactsPreviewPlanPlan defines model for MailchimpContactsPreview.Plan.Plan.
+type MailchimpContactsPreviewPlanPlan string
+
+// MailchimpEmail defines model for MailchimpEmail.
+type MailchimpEmail struct {
+	// EmailId The email made; null in a preview.
+	EmailId *string `json:"email_id"`
+
+	// Errors What stops it being sent until it's fixed; the email is made anyway.
+	Errors []MailchimpEmailNote `json:"errors"`
+
+	// File The export file it came from.
+	File string             `json:"file"`
+	From MailchimpEmailFrom `json:"from"`
+
+	// Images Mailchimp-hosted images copied into mailgoose.
+	Images      int                  `json:"images"`
+	Name        string               `json:"name"`
+	PreviewText string               `json:"preview_text"`
+	Subject     string               `json:"subject"`
+	Warnings    []MailchimpEmailNote `json:"warnings"`
+}
+
+// MailchimpEmailFrom defines model for MailchimpEmail.From.
+type MailchimpEmailFrom string
+
+// MailchimpEmailNote defines model for MailchimpEmailNote.
+type MailchimpEmailNote struct {
+	Code    MailchimpEmailNoteCode `json:"code"`
+	Line    *int                   `json:"line,omitempty"`
+	Message string                 `json:"message"`
+}
+
+// MailchimpEmailNoteCode defines model for MailchimpEmailNote.Code.
+type MailchimpEmailNoteCode string
+
+// MailchimpEmailProgress defines model for MailchimpEmailProgress.
+type MailchimpEmailProgress struct {
+	Error *string          `json:"error"`
+	Made  []MailchimpEmail `json:"made"`
+
+	// Status `none` until confirmed.
+	Status MailchimpEmailProgressStatus `json:"status"`
+	Total  int                          `json:"total"`
+}
+
+// MailchimpEmailProgressStatus `none` until confirmed.
+type MailchimpEmailProgressStatus string
+
+// MailchimpPreview defines model for MailchimpPreview.
+type MailchimpPreview struct {
+	Audiences []MailchimpAudience `json:"audiences"`
+
+	// CampaignsAvailable Campaigns in the export with HTML, of which `campaigns` come over.
+	CampaignsAvailable int `json:"campaigns_available"`
+
+	// Contacts What importing the contacts would do; null when the export has none.
+	Contacts *MailchimpContactsPreview `json:"contacts"`
+
+	// Emails The emails confirming with the default `campaigns` would make, templates first, then campaigns newest first.
+	Emails       []MailchimpEmail `json:"emails"`
+	IgnoredFiles []struct {
+		Path string `json:"path"`
+
+		// Reason `too_many_templates`: a template past the first 100 (in
+		// file order), which doesn't come over as an email.
+		Reason MailchimpPreviewIgnoredFilesReason `json:"reason"`
+	} `json:"ignored_files"`
+	Source MailchimpPreviewSource `json:"source"`
+}
+
+// MailchimpPreviewIgnoredFilesReason `too_many_templates`: a template past the first 100 (in
+// file order), which doesn't come over as an email.
+type MailchimpPreviewIgnoredFilesReason string
+
+// MailchimpPreviewSource defines model for MailchimpPreview.Source.
+type MailchimpPreviewSource string
+
+// MailchimpStatusCounts Member rows by their Mailchimp status.
+type MailchimpStatusCounts struct {
+	Archived      int `json:"archived"`
+	Cleaned       int `json:"cleaned"`
+	Pending       int `json:"pending"`
+	Subscribed    int `json:"subscribed"`
+	Transactional int `json:"transactional"`
+	Unsubscribed  int `json:"unsubscribed"`
 }
 
 // MoveEmailBlockRequest The new place, as in BlockPlace.
@@ -3737,7 +4176,9 @@ type SignupRequest struct {
 	Email string `json:"email"`
 }
 
-// SkipReason `invalid_email`: not an email address. `invalid_row`: the row
+// SkipReason `not_subscribed` and `archived` are Mailchimp imports' only: a
+// non-subscribed (transactional) or archived member.
+// `invalid_email`: not an email address. `invalid_row`: the row
 // couldn't be read as CSV (a stray quote, say). `duplicate`: the same
 // address is on an earlier row. `exists`: the account already has the
 // contact, which is left as it is. `suppressed`: the address
@@ -3750,7 +4191,9 @@ type SkippedRow struct {
 	// Email The email cell as written; empty when the row couldn't be read.
 	Email string `json:"email"`
 
-	// Reason `invalid_email`: not an email address. `invalid_row`: the row
+	// Reason `not_subscribed` and `archived` are Mailchimp imports' only: a
+	// non-subscribed (transactional) or archived member.
+	// `invalid_email`: not an email address. `invalid_row`: the row
 	// couldn't be read as CSV (a stray quote, say). `duplicate`: the same
 	// address is on an earlier row. `exists`: the account already has the
 	// contact, which is left as it is. `suppressed`: the address
@@ -3760,6 +4203,9 @@ type SkippedRow struct {
 
 	// Row The row's line in the file, where the header is 1.
 	Row int `json:"row"`
+
+	// Source For a Mailchimp import, the export file and row it came from, as `file:row`; null for a CSV.
+	Source *string `json:"source"`
 }
 
 // SkippedRowList defines model for SkippedRowList.
@@ -4139,6 +4585,9 @@ type WhoamiAuthMethod string
 // AccountId defines model for AccountId.
 type AccountId = string
 
+// BundleId defines model for BundleId.
+type BundleId = string
+
 // CampaignId defines model for CampaignId.
 type CampaignId = string
 
@@ -4205,6 +4654,9 @@ type Forbidden = Error
 // IdempotencyConflict defines model for IdempotencyConflict.
 type IdempotencyConflict = Error
 
+// ImportConflict defines model for ImportConflict.
+type ImportConflict = Error
+
 // ImportRefused defines model for ImportRefused.
 type ImportRefused = Error
 
@@ -4240,6 +4692,12 @@ type LaunchConfirmation = Error
 
 // LaunchRefused defines model for LaunchRefused.
 type LaunchRefused = Error
+
+// MailchimpRefused defines model for MailchimpRefused.
+type MailchimpRefused = Error
+
+// MailchimpUploadConflict defines model for MailchimpUploadConflict.
+type MailchimpUploadConflict = Error
 
 // NotFound defines model for NotFound.
 type NotFound = Error
@@ -4644,6 +5102,12 @@ type UploadImageJSONRequestBody = UploadImageRequest
 
 // CreateImportJSONRequestBody defines body for CreateImport for application/json ContentType.
 type CreateImportJSONRequestBody = CreateImportRequest
+
+// CreateMailchimpBundleMultipartRequestBody defines body for CreateMailchimpBundle for multipart/form-data ContentType.
+type CreateMailchimpBundleMultipartRequestBody = CreateMailchimpBundleRequest
+
+// ConfirmMailchimpBundleJSONRequestBody defines body for ConfirmMailchimpBundle for application/json ContentType.
+type ConfirmMailchimpBundleJSONRequestBody = ConfirmMailchimpBundleRequest
 
 // CreatePlanCheckoutJSONRequestBody defines body for CreatePlanCheckout for application/json ContentType.
 type CreatePlanCheckoutJSONRequestBody = PlanCheckoutRequest
@@ -5640,9 +6104,24 @@ type ServerInterface interface {
 	// CreateImport Import contacts from a CSV file
 	// (POST /v1/imports)
 	CreateImport(w http.ResponseWriter, r *http.Request)
+	// CreateMailchimpBundle Upload a Mailchimp export
+	// (POST /v1/imports/mailchimp/bundles)
+	CreateMailchimpBundle(w http.ResponseWriter, r *http.Request)
+	// DeleteMailchimpBundle Delete an unconfirmed Mailchimp export
+	// (DELETE /v1/imports/mailchimp/bundles/{bundle_id})
+	DeleteMailchimpBundle(w http.ResponseWriter, r *http.Request, bundleId BundleId)
+	// GetMailchimpBundle Get an uploaded Mailchimp export
+	// (GET /v1/imports/mailchimp/bundles/{bundle_id})
+	GetMailchimpBundle(w http.ResponseWriter, r *http.Request, bundleId BundleId)
+	// ConfirmMailchimpBundle Import an uploaded Mailchimp export
+	// (POST /v1/imports/mailchimp/bundles/{bundle_id}/confirm)
+	ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request, bundleId BundleId)
 	// GetImport Get an import
 	// (GET /v1/imports/{import_id})
 	GetImport(w http.ResponseWriter, r *http.Request, importId ImportId)
+	// CancelImport Cancel a waiting import
+	// (POST /v1/imports/{import_id}/cancel)
+	CancelImport(w http.ResponseWriter, r *http.Request, importId ImportId)
 	// ListImportSkippedRows List an import's skipped rows
 	// (GET /v1/imports/{import_id}/skipped-rows)
 	ListImportSkippedRows(w http.ResponseWriter, r *http.Request, importId ImportId, params ListImportSkippedRowsParams)
@@ -8224,6 +8703,98 @@ func (siw *ServerInterfaceWrapper) CreateImport(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// CreateMailchimpBundle operation middleware
+func (siw *ServerInterfaceWrapper) CreateMailchimpBundle(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateMailchimpBundle(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMailchimpBundle operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMailchimpBundle(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "bundle_id" -------------
+	var bundleId BundleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bundle_id", r.PathValue("bundle_id"), &bundleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bundle_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMailchimpBundle(w, r, bundleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMailchimpBundle operation middleware
+func (siw *ServerInterfaceWrapper) GetMailchimpBundle(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "bundle_id" -------------
+	var bundleId BundleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bundle_id", r.PathValue("bundle_id"), &bundleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bundle_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMailchimpBundle(w, r, bundleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmMailchimpBundle operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "bundle_id" -------------
+	var bundleId BundleId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "bundle_id", r.PathValue("bundle_id"), &bundleId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "bundle_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmMailchimpBundle(w, r, bundleId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetImport operation middleware
 func (siw *ServerInterfaceWrapper) GetImport(w http.ResponseWriter, r *http.Request) {
 
@@ -8241,6 +8812,32 @@ func (siw *ServerInterfaceWrapper) GetImport(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetImport(w, r, importId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CancelImport operation middleware
+func (siw *ServerInterfaceWrapper) CancelImport(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "import_id" -------------
+	var importId ImportId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "import_id", r.PathValue("import_id"), &importId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "import_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CancelImport(w, r, importId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8990,7 +9587,12 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports", wrapper.ListImports)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports", wrapper.CreateImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}", wrapper.GetImport)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/{import_id}/cancel", wrapper.CancelImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}/skipped-rows", wrapper.ListImportSkippedRows)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/mailchimp/bundles", wrapper.CreateMailchimpBundle)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/imports/mailchimp/bundles/{bundle_id}", wrapper.DeleteMailchimpBundle)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/mailchimp/bundles/{bundle_id}", wrapper.GetMailchimpBundle)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/mailchimp/bundles/{bundle_id}/confirm", wrapper.ConfirmMailchimpBundle)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/forms", wrapper.ListForms)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/forms", wrapper.CreateForm)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/forms/{form_id}", wrapper.DeleteForm)

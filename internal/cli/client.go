@@ -45,27 +45,33 @@ func (a *App) call(ctx context.Context, method, path string, body, out any, auth
 // status of a 2xx response.
 func (a *App) send(ctx context.Context, apiURL, method, path string, body, out any, token string) (int, error) {
 	var rd io.Reader
+	ctype := ""
 	if body != nil {
 		b, err := json.Marshal(body)
 		if err != nil {
 			return 0, err
 		}
-		rd = bytes.NewReader(b)
+		rd, ctype = bytes.NewReader(b), "application/json"
 	}
+	return a.sendBody(ctx, a.HTTP, apiURL, method, path, ctype, rd, out, token)
+}
+
+// sendBody is send with a body already encoded as ctype, through client.
+func (a *App) sendBody(ctx context.Context, client *http.Client, apiURL, method, path, ctype string, rd io.Reader, out any, token string) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, method, apiURL+path, rd)
 	if err != nil {
 		return 0, err
 	}
 	req.Header.Set("User-Agent", "mailgoose-cli/"+version.Get().Version)
 	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if ctype != "" {
+		req.Header.Set("Content-Type", ctype)
 	}
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := a.HTTP.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, &Error{Exit: ExitError, Code: "unreachable", Message: fmt.Sprintf("Cannot reach %s: %v", apiURL, err),
 			Hint: "Check --api-url or " + EnvAPIURL + ", and your network."}

@@ -328,6 +328,29 @@ describe("imports", () => {
     expect(await screen.findByText("The import stopped: The file isn't UTF-8 text.")).toBeTruthy();
   });
 
+  it("explains a waiting import and cancels it", async () => {
+    let im = anImport("waiting", 2, {
+      waiting_note: "A tester account keeps at most 500 contacts, so this import won't carry on.",
+    });
+    let cancelled = 0;
+    const api = fakeApi({
+      ...signedIn,
+      [`GET /v1/imports/${importID}`]: () => ({ status: 200, body: im }),
+      [`POST /v1/imports/${importID}/cancel`]: () => {
+        cancelled++;
+        im = anImport("cancelled", 2);
+        return { status: 200, body: im };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp(`/contacts/imports/${importID}`, api.fetch);
+    expect(await screen.findByText(/won't carry on/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Cancel import" }));
+    expect(await screen.findByText("This import was cancelled while it waited for the paid plan.")).toBeTruthy();
+    expect(cancelled).toBe(1);
+    expect(screen.queryByRole("button", { name: "Cancel import" })).toBeNull();
+  });
+
   it("refuses a file with no header before uploading anything", async () => {
     const api = fakeApi({ ...signedIn, "GET /v1/tags": tagsRoute([]) });
     const user = userEvent.setup();

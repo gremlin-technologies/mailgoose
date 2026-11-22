@@ -22,6 +22,7 @@ const maxImportFile = 10 << 20
 // importJob is the API's Import.
 type importJob struct {
 	ID            string   `json:"id"`
+	Kind          string   `json:"kind"`
 	FileName      *string  `json:"file_name"`
 	Status        string   `json:"status"`
 	ContactStatus string   `json:"contact_status"`
@@ -48,10 +49,18 @@ type importJob struct {
 		RoleAddresses       int `json:"role_addresses"`
 		DisposableAddresses int `json:"disposable_addresses"`
 	} `json:"checks"`
-	Error      *string    `json:"error"`
-	CreatedAt  time.Time  `json:"created_at"`
-	StartedAt  *time.Time `json:"started_at"`
-	FinishedAt *time.Time `json:"finished_at"`
+	ExistingTagged     int `json:"existing_tagged"`
+	ExistingSuppressed int `json:"existing_suppressed"`
+	// Mailchimp is a Mailchimp import's upload and emails.
+	Mailchimp *struct {
+		BundleID string            `json:"bundle_id"`
+		Emails   mailchimpProgress `json:"emails"`
+	} `json:"mailchimp"`
+	WaitingNote *string    `json:"waiting_note"`
+	Error       *string    `json:"error"`
+	CreatedAt   time.Time  `json:"created_at"`
+	StartedAt   *time.Time `json:"started_at"`
+	FinishedAt  *time.Time `json:"finished_at"`
 }
 
 type importPage struct {
@@ -63,6 +72,8 @@ type skippedRow struct {
 	Row    int    `json:"row"`
 	Email  string `json:"email"`
 	Reason string `json:"reason"`
+	// Source is where a Mailchimp import's row came from.
+	Source *string `json:"source"`
 }
 
 // importResult is `import status --json`: the import and every skipped row.
@@ -81,6 +92,8 @@ var skipReasons = []struct{ code, text string }{
 	{"exists", "already a contact (left as it is)"},
 	{"suppressed", "unsubscribed, bounced or complained before"},
 	{"over_limit", "over the free plan's 500 contacts"},
+	{"not_subscribed", "never subscribed in Mailchimp (transactional)"},
+	{"archived", "archived in Mailchimp"},
 }
 
 // listSources are the API's list sources, in the order the CLI shows them.
@@ -155,6 +168,15 @@ func (a *App) printImport(ctx context.Context, j importJob) error {
 	switch j.Status {
 	case "queued":
 		fmt.Fprintf(a.Stdout, "Import %s%s is waiting to start: %d rows.\n", j.ID, name, j.TotalRows)
+	case "waiting":
+		fmt.Fprintf(a.Stdout, "Import %s%s is waiting for the paid plan: %d of %d rows so far, %d added.\n", j.ID, name, j.ProcessedRows, j.TotalRows, j.Imported)
+		if j.WaitingNote != nil {
+			fmt.Fprintln(a.Stdout, *j.WaitingNote)
+		}
+		fmt.Fprintf(a.Stdout, "To cancel it: mailgoose import cancel %s\n", j.ID)
+	case "cancelled":
+		fmt.Fprintf(a.Stdout, "Import %s%s was cancelled while it waited: %d of %d rows were done, %d added. The contacts it took off the list stay off.\n",
+			j.ID, name, j.ProcessedRows, j.TotalRows, j.Imported)
 	case "running":
 		fmt.Fprintf(a.Stdout, "Import %s%s is running: %d of %d rows so far, %d added.\n", j.ID, name, j.ProcessedRows, j.TotalRows, j.Imported)
 	case "failed":
@@ -184,7 +206,13 @@ func (a *App) printImport(ctx context.Context, j importJob) error {
 		}
 		fmt.Fprintf(a.Stdout, "Held for review. %s Its contacts won't receive campaigns until mailgoose approves it.\n", msg)
 	}
-	if j.Status == "queued" || j.Status == "running" {
+	if j.ExistingTagged+j.ExistingSuppressed > 0 {
+		fmt.Fprintf(a.Stdout, "Existing contacts: %d gained tags, %d came off the list.\n", j.ExistingTagged, j.ExistingSuppressed)
+	}
+	if j.Mailchimp != nil {
+		a.printMailchimpEmails(j.Mailchimp.Emails)
+	}
+	if j.Status == "queued" || j.Status == "running" || j.Status == "waiting" {
 		fmt.Fprintf(a.Stdout, "Check again with: mailgoose import status %s\n", j.ID)
 		return nil
 	}
@@ -205,7 +233,11 @@ func (a *App) printImport(ctx context.Context, j importJob) error {
 		if email == "" {
 			email = "-"
 		}
-		fmt.Fprintf(tw, "%d\t%s\t%s\n", r.Row, email, r.Reason)
+		reason := r.Reason
+		if r.Source != nil {
+			reason += " (" + strings.ReplaceAll(*r.Source, "\t", " ") + ")"
+		}
+		fmt.Fprintf(tw, "%d\t%s\t%s\n", r.Row, email, reason)
 	}
 	return tw.Flush()
 }
@@ -413,6 +445,22 @@ until mailgoose approves it, and "mailgoose import status" says why it's held.`,
 	list.Flags().StringVar(&cursor, "cursor", "", "next_cursor from the previous page")
 	list.Flags().IntVar(&limit, "limit", 0, "imports per page, 1 to 100")
 
-	cmd.AddCommand(status, list)
+	cancel := calls("cancelImport", &cobra.Command{
+		Use:     "cancel <id>",
+		Example: `  mailgoose import cancel 3f1c...`,
+		Short:   "Cancel an import that's waiting for the paid plan",
+		Long: "Cancels a Mailchimp import that's waiting for the paid plan. The contacts it already took off the list stay off; " +
+			"the rest never come in. Only a waiting import can be cancelled.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var j importJob
+			if err := a.call(cmd.Context(), http.MethodPost, "/v1/imports/"+url.PathEscape(args[0])+"/cancel", nil, &j, true); err != nil {
+				return err
+			}
+			return a.printImport(cmd.Context(), j)
+		},
+	})
+
+	cmd.AddCommand(status, list, cancel, a.importMailchimpCmd())
 	return cmd
 }

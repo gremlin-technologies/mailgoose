@@ -155,7 +155,7 @@ func TestImportThroughTheAPI(t *testing.T) {
 			path = "/v1/imports/" + queued.ID + "/skipped-rows?limit=2&cursor=" + *page.NextCursor
 		}
 	}
-	if got := fmt.Sprint(rows); got != "[map[email:pat@example.com reason:exists row:3] map[email:broken reason:invalid_email row:4] map[email:ana@example.com reason:duplicate row:5]]" {
+	if got := fmt.Sprint(rows); got != "[map[email:pat@example.com reason:exists row:3 source:<nil>] map[email:broken reason:invalid_email row:4 source:<nil>] map[email:ana@example.com reason:duplicate row:5 source:<nil>]]" {
 		t.Errorf("skipped rows = %s", got)
 	}
 

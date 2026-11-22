@@ -41,8 +41,12 @@ const (
 )
 
 // ImportWaiting is a Mailchimp import whose subscribed part waits for a plan
-// that covers it.
-const ImportWaiting = "waiting"
+// that covers it, and ImportCancelled one the customer cancelled while it
+// waited.
+const (
+	ImportWaiting   = "waiting"
+	ImportCancelled = "cancelled"
+)
 
 // Why a Mailchimp row was skipped, beyond the CSV import's reasons.
 const (
@@ -226,8 +230,9 @@ func planMailchimp(b *mailchimp.Bundle) (*mcPlan, error) {
 		// memberAud is each member's audience; audiences the distinct ones.
 		memberAud, audiences []string
 	}
-	byEmail := map[string]*address{}
-	var order []string
+	n := b.Members()
+	byEmail := make(map[string]*address, n)
+	order := make([]string, 0, n)
 	var skips []mcRow
 	renamed := map[string]bool{}
 	multi := len(b.Audiences) > 1
@@ -274,7 +279,9 @@ func planMailchimp(b *mailchimp.Bundle) (*mcPlan, error) {
 	}
 
 	tagSeen := map[string]bool{}
-	var suppressing, counted []mcRow
+	// Sized up front: growing a slice of rows this size holds two copies.
+	var suppressing []mcRow
+	counted := make([]mcRow, 0, len(order))
 	for _, e := range order {
 		ad := byEmail[e]
 		best, status := -1, ""
@@ -386,7 +393,8 @@ func planMailchimp(b *mailchimp.Bundle) (*mcPlan, error) {
 			suppressing = append(suppressing, row)
 		}
 	}
-	p.rows = append(append(skips, suppressing...), counted...)
+	p.rows = make([]mcRow, 0, len(skips)+len(suppressing)+len(counted))
+	p.rows = append(append(append(p.rows, skips...), suppressing...), counted...)
 	p.countedFrom = len(skips) + len(suppressing)
 	return p, nil
 }

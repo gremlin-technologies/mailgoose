@@ -90,7 +90,12 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 - [List CSV imports](reference.md#op-listimports): `GET /v1/imports`, CLI `mailgoose import list`. The account's imports, newest first.
 - [Import contacts from a CSV file](reference.md#op-createimport): `POST /v1/imports`, CLI `mailgoose import`. Checks the file and queues it; the import runs in the background, so poll `getImport` until `status` is `done` or `failed`.
 - [Get an import](reference.md#op-getimport): `GET /v1/imports/{import_id}`, CLI `mailgoose import`, `mailgoose import status`. How far the import got, what it added and how many rows it skipped, by reason.
+- [Cancel a waiting import](reference.md#op-cancelimport): `POST /v1/imports/{import_id}/cancel`, CLI `mailgoose import cancel`. Cancels a Mailchimp import that is `waiting` for the paid plan.
 - [List an import's skipped rows](reference.md#op-listimportskippedrows): `GET /v1/imports/{import_id}/skipped-rows`, CLI `mailgoose import`, `mailgoose import status`. Every row the import didn't add and why, in file order.
+- [Upload a Mailchimp export](reference.md#op-createmailchimpbundle): `POST /v1/imports/mailchimp/bundles`, CLI `mailgoose import mailchimp upload`. Reads a Mailchimp export and keeps it for 7 days, unconfirmed: the account export ZIP (Account > Settings > Manage my data > Export data), an audience export ZIP, or one audience CSV.
+- [Get an uploaded Mailchimp export](reference.md#op-getmailchimpbundle): `GET /v1/imports/mailchimp/bundles/{bundle_id}`, CLI `mailgoose import mailchimp confirm`, `mailgoose import mailchimp preview`. The upload with its preview as it was worked out on upload.
+- [Delete an unconfirmed Mailchimp export](reference.md#op-deletemailchimpbundle): `DELETE /v1/imports/mailchimp/bundles/{bundle_id}`, CLI `mailgoose import mailchimp delete`. Deletes an upload that hasn't been confirmed, with its file, freeing one of the account's 3 unconfirmed uploads.
+- [Import an uploaded Mailchimp export](reference.md#op-confirmmailchimpbundle): `POST /v1/imports/mailchimp/bundles/{bundle_id}/confirm`, CLI `mailgoose import mailchimp confirm`. Starts the import: the contacts as a Mailchimp import (follow it with `getImport` and `import_id`), and the HTML emails, which this upload reports in `emails`.
 
 ## Images
 

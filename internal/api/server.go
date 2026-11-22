@@ -30,6 +30,7 @@ import (
 	"github.com/gremlin-technologies/mailgoose/internal/forms"
 	"github.com/gremlin-technologies/mailgoose/internal/images"
 	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
+	"github.com/gremlin-technologies/mailgoose/internal/mailchimp"
 	"github.com/gremlin-technologies/mailgoose/internal/reports"
 	"github.com/gremlin-technologies/mailgoose/internal/senders"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
@@ -69,6 +70,11 @@ type Server struct {
 	Domains *domains.Service
 	// Contacts is the account audience; nil without a database.
 	Contacts *contacts.Service
+	// Mailchimp keeps uploaded Mailchimp exports (MG-72); nil without a
+	// database.
+	Mailchimp *mailchimp.Store
+	// MailchimpMaxMembers caps the members one Mailchimp export may hold.
+	MailchimpMaxMembers int
 	// Emails stores the account's emails; nil without a database.
 	Emails *emails.Service
 	// Forms stores the account's signup forms; nil without a database.

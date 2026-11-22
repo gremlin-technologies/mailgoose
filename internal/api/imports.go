@@ -19,6 +19,9 @@ func bodyLimit(r *http.Request) int64 {
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/imports" {
 		return MaxImportBodyBytes
 	}
+	if r.Method == http.MethodPost && r.URL.Path == mailchimpUploadPath {
+		return MaxMailchimpBodyBytes
+	}
 	if r.Method == http.MethodPost && r.URL.Path == "/v1/images" {
 		return MaxImageBodyBytes
 	}
@@ -56,6 +59,7 @@ func (s *Server) importError(w http.ResponseWriter, r *http.Request, err error) 
 func importJSON(im *contacts.Import) apigen.Import {
 	out := apigen.Import{
 		Id:            im.ID,
+		Kind:          apigen.ImportKind(im.Kind),
 		FileName:      im.FileName,
 		Status:        apigen.ImportStatus(im.Status),
 		ContactStatus: apigen.ImportContactStatus(im.ContactStatus()),
@@ -92,6 +96,12 @@ func importJSON(im *contacts.Import) apigen.Import {
 	out.SkippedByReason.Exists = by[contacts.SkipExists]
 	out.SkippedByReason.Suppressed = by[contacts.SkipSuppressed]
 	out.SkippedByReason.OverLimit = by[contacts.SkipOverLimit]
+	out.SkippedByReason.NotSubscribed = by[contacts.SkipNotSubscribed]
+	out.SkippedByReason.Archived = by[contacts.SkipArchived]
+	out.ExistingTagged, out.ExistingSuppressed = im.ExistingTagged, im.ExistingSuppressed
+	if out.Kind == "" {
+		out.Kind = apigen.ImportKindCsv
+	}
 	return out
 }
 
@@ -172,6 +182,9 @@ func (s *Server) ListImports(w http.ResponseWriter, r *http.Request, _ apigen.Li
 	out := apigen.ImportList{Data: make([]apigen.Import, len(page.Data)), NextCursor: page.NextCursor}
 	for i, im := range page.Data {
 		out.Data[i] = importJSON(im)
+		if err := s.importMailchimpJSON(r.Context(), c.AccountID, im, &out.Data[i]); s.importError(w, r, err) {
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -186,7 +199,33 @@ func (s *Server) GetImport(w http.ResponseWriter, r *http.Request, id string) {
 	if s.importError(w, r, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, importJSON(im))
+	out := importJSON(im)
+	if err := s.importMailchimpJSON(r.Context(), c.AccountID, im, &out); s.importError(w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// CancelImport is POST /v1/imports/{import_id}/cancel.
+func (s *Server) CancelImport(w http.ResponseWriter, r *http.Request, id string) {
+	c := s.contactsCaller(w, r)
+	if c == nil || !validImportID(w, id) {
+		return
+	}
+	im, err := s.Contacts.CancelImport(r.Context(), c.AccountID, id)
+	if errors.Is(err, contacts.ErrImportNotWaiting) {
+		WriteError(w, Conflict("import_not_waiting", "Only an import that's waiting for the paid plan can be cancelled.").
+			WithHint("`mailgoose import status <id>` shows where it is."))
+		return
+	}
+	if s.importError(w, r, err) {
+		return
+	}
+	out := importJSON(im)
+	if err := s.importMailchimpJSON(r.Context(), c.AccountID, im, &out); s.importError(w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // ListImportSkippedRows is GET /v1/imports/{import_id}/skipped-rows.
@@ -215,6 +254,10 @@ func (s *Server) ListImportSkippedRows(w http.ResponseWriter, r *http.Request, i
 	out := apigen.SkippedRowList{Data: make([]apigen.SkippedRow, len(page.Data)), NextCursor: page.NextCursor}
 	for i, sr := range page.Data {
 		out.Data[i] = apigen.SkippedRow{Row: sr.Row, Email: sr.Email, Reason: apigen.SkipReason(sr.Reason)}
+		if sr.Source != "" {
+			src := sr.Source
+			out.Data[i].Source = &src
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

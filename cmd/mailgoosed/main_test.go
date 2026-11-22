@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -43,5 +45,31 @@ func TestImagesServedByTheAPIWithACDN(t *testing.T) {
 				t.Errorf("%d %q", rec.Code, loc)
 			}
 		})
+	}
+}
+
+func TestContainerMemory(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, v string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(v), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	missing := filepath.Join(dir, "missing")
+	for _, c := range []struct {
+		files []string
+		want  int64
+	}{
+		{[]string{write("v2", "536870912\n")}, 512 << 20},
+		{[]string{missing, write("v1", "1073741824")}, 1 << 30},
+		{[]string{write("max", "max\n")}, 0},
+		{[]string{write("huge", "9223372036854771712")}, 0},
+		{[]string{missing}, 0},
+	} {
+		if got := containerMemory(c.files); got != c.want {
+			t.Errorf("containerMemory(%v) = %d, want %d", c.files, got, c.want)
+		}
 	}
 }

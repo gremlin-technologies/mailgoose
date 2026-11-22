@@ -1188,6 +1188,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/imports/{import_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel a waiting import
+         * @description Cancels a Mailchimp import that is `waiting` for the paid plan. The
+         *     contacts it already took off the list (unsubscribed and bounced) stay
+         *     as they are; the rest never come in. Its `waiting_note` says when a
+         *     wait won't end by itself. Cancelling a cancelled import changes
+         *     nothing. Any other import can't be cancelled (409
+         *     `import_not_waiting`).
+         */
+        post: operations["cancelImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/imports/{import_id}/skipped-rows": {
         parameters: {
             query?: never;
@@ -1202,6 +1227,102 @@ export interface paths {
         get: operations["listImportSkippedRows"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/imports/mailchimp/bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a Mailchimp export
+         * @description Reads a Mailchimp export and keeps it for 7 days, unconfirmed: the
+         *     account export ZIP (Account > Settings > Manage my data > Export
+         *     data), an audience export ZIP, or one audience CSV. Nothing is
+         *     imported yet. The response holds the preview: the audiences found,
+         *     what importing the contacts would do, and the HTML emails the
+         *     templates and the newest campaigns would become.
+         *     `confirmMailchimpBundle` starts the import.
+         *
+         *     Send the file as `multipart/form-data`, in the part `file`, at most
+         *     25 MB; a larger account exports one audience at a time. An account
+         *     keeps at most 3 unconfirmed uploads and sends one at a time. A CSV doesn't say which columns are Mailchimp groups, so name
+         *     them in `group_columns` (one part each) to bring them in as tags;
+         *     `audience_name` names the audience of an export that doesn't say
+         *     (default "Mailchimp"). Other columns, beyond email, names, tags,
+         *     status, opt-in data and GDPR permissions, aren't imported and are
+         *     listed in `preview.contacts.dropped_fields`.
+         */
+        post: operations["createMailchimpBundle"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/imports/mailchimp/bundles/{bundle_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an uploaded Mailchimp export
+         * @description The upload with its preview as it was worked out on upload. Once
+         *     confirmed, it says how far its emails have got, and `preview` is
+         *     null.
+         */
+        get: operations["getMailchimpBundle"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an unconfirmed Mailchimp export
+         * @description Deletes an upload that hasn't been confirmed, with its file, freeing
+         *     one of the account's 3 unconfirmed uploads. A confirmed upload stays
+         *     with its import.
+         */
+        delete: operations["deleteMailchimpBundle"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/imports/mailchimp/bundles/{bundle_id}/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import an uploaded Mailchimp export
+         * @description Starts the import: the contacts as a Mailchimp import (follow it with
+         *     `getImport` and `import_id`), and the HTML emails, which this upload
+         *     reports in `emails`. Both run in the background.
+         *
+         *     `permission_confirmed` must be true: it says these people agreed to
+         *     get your email. Mailchimp's subscribed contacts come in subscribed,
+         *     with no confirmation email; pending ones come in unconfirmed,
+         *     unsubscribed ones unsubscribed and cleaned ones bounced. `campaigns`
+         *     is how many of the newest campaigns become emails (default 10, at
+         *     most 100); every template does.
+         *
+         *     Confirming again returns the upload as it is. `idempotency_key`
+         *     (default: the hash of the contacts) makes a second upload of the same
+         *     export return the import already made.
+         */
+        post: operations["confirmMailchimpBundle"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2581,10 +2702,19 @@ export interface components {
             /** @description Valid rows with an address at a disposable (throwaway) mail domain. */
             disposable_addresses: number;
         };
-        /** @enum {string} */
-        ImportStatus: "queued" | "running" | "done" | "failed";
         /**
-         * @description `invalid_email`: not an email address. `invalid_row`: the row
+         * @description `waiting`: a Mailchimp import whose subscribed contacts would take
+         *     the account past its contact limit. Its unsubscribed and bounced
+         *     contacts are in; the rest follow by themselves once the account is on
+         *     the paid plan, and `waiting_note` says when that won't happen.
+         *     `cancelled`: a waiting import cancelled with `cancelImport`.
+         * @enum {string}
+         */
+        ImportStatus: "queued" | "running" | "waiting" | "done" | "failed" | "cancelled";
+        /**
+         * @description `not_subscribed` and `archived` are Mailchimp imports' only: a
+         *     non-subscribed (transactional) or archived member.
+         *     `invalid_email`: not an email address. `invalid_row`: the row
          *     couldn't be read as CSV (a stray quote, say). `duplicate`: the same
          *     address is on an earlier row. `exists`: the account already has the
          *     contact, which is left as it is. `suppressed`: the address
@@ -2592,10 +2722,15 @@ export interface components {
          *     account, or a tester account (MG-86), was full.
          * @enum {string}
          */
-        SkipReason: "invalid_email" | "invalid_row" | "duplicate" | "exists" | "suppressed" | "over_limit";
+        SkipReason: "invalid_email" | "invalid_row" | "duplicate" | "exists" | "suppressed" | "over_limit" | "not_subscribed" | "archived";
         Import: {
             /** Format: uuid */
             id: string;
+            /**
+             * @description A CSV file (`createImport`) or a Mailchimp export (`confirmMailchimpBundle`).
+             * @enum {string}
+             */
+            kind: "csv" | "mailchimp";
             file_name: string | null;
             status: components["schemas"]["ImportStatus"];
             /**
@@ -2626,7 +2761,13 @@ export interface components {
                 exists: number;
                 suppressed: number;
                 over_limit: number;
+                not_subscribed: number;
+                archived: number;
             };
+            /** @description A Mailchimp import's addresses that were already contacts and only gained tags; 0 for a CSV. */
+            existing_tagged: number;
+            /** @description Of those, how many Mailchimp's unsubscribe or clean took off the mailing list. */
+            existing_suppressed: number;
             /**
              * @description A `held` import's contacts aren't mailed until mailgoose approves it.
              * @enum {string}
@@ -2645,6 +2786,18 @@ export interface components {
             list_source: null | components["schemas"]["ListSource"];
             list_source_detail: string | null;
             checks: components["schemas"]["ImportChecks"];
+            /** @description For a Mailchimp import, the upload it came from and how far its emails have got; null for a CSV. */
+            mailchimp: null | {
+                /** Format: uuid */
+                bundle_id: string;
+                emails: components["schemas"]["MailchimpEmailProgress"];
+            };
+            /**
+             * @description For a `waiting` import, what it waits for. A tester account's
+             *     wait never ends, and deleting contacts doesn't restart one, so the
+             *     note says to cancel it (`cancelImport`). Null otherwise.
+             */
+            waiting_note: string | null;
             /** @description Why a `failed` import stopped. */
             error: string | null;
             /** Format: date-time */
@@ -2654,6 +2807,294 @@ export interface components {
             /** Format: date-time */
             finished_at: string | null;
         };
+        CreateMailchimpBundleRequest: {
+            /**
+             * Format: binary
+             * @description The export, as Mailchimp gave it, at most 25 MB.
+             */
+            file: string;
+            /**
+             * @description The audience's name when the export doesn't say (an audience export or a CSV). Default "Mailchimp".
+             * @example Newsletter
+             */
+            audience_name?: string;
+            /**
+             * @description Member-file columns that are Mailchimp groups; each group becomes a tag `Category: Group`.
+             * @example [
+             *       "Interests"
+             *     ]
+             */
+            group_columns?: string[];
+        };
+        /**
+         * @example {
+         *       "permission_confirmed": true,
+         *       "campaigns": 10
+         *     }
+         */
+        ConfirmMailchimpBundleRequest: {
+            /** @description True says these people agreed to get your email. Required. */
+            permission_confirmed: boolean;
+            /**
+             * @description How many of the newest campaigns become HTML emails.
+             * @default 10
+             */
+            campaigns: number;
+            /** @description Confirming the same export again with this key returns the import already made. */
+            idempotency_key?: string;
+        };
+        /**
+         * @example {
+         *       "id": "7c1e5a52-3d1f-4c55-9a0e-2f9b8b6f4a10",
+         *       "file_name": "mailchimp-export.zip",
+         *       "bytes": 482113,
+         *       "status": "unconfirmed",
+         *       "created_at": "2026-11-21T12:00:00Z",
+         *       "expires_at": "2026-11-28T12:00:00Z",
+         *       "confirmed_at": null,
+         *       "import_id": null,
+         *       "campaigns": 10,
+         *       "preview": {
+         *         "source": "account_export",
+         *         "audiences": [
+         *           {
+         *             "name": "Newsletter",
+         *             "members": 1204,
+         *             "by_status": {
+         *               "subscribed": 1100,
+         *               "unsubscribed": 60,
+         *               "cleaned": 20,
+         *               "pending": 14,
+         *               "transactional": 10,
+         *               "archived": 0
+         *             }
+         *           }
+         *         ],
+         *         "contacts": {
+         *           "new": {
+         *             "subscribed": 1080,
+         *             "unconfirmed": 14,
+         *             "unsubscribed": 60,
+         *             "bounced": 20
+         *           },
+         *           "existing_tagged": 20,
+         *           "existing_suppressed": 0,
+         *           "skipped": {
+         *             "invalid_email": 0,
+         *             "invalid_row": 0,
+         *             "suppressed": 0,
+         *             "not_subscribed": 10,
+         *             "archived": 0
+         *           },
+         *           "tags_to_create": [
+         *             "vip",
+         *             "Interests: Baking"
+         *           ],
+         *           "merge_suppressed": 0,
+         *           "merge_suppressed_examples": [],
+         *           "dropped_fields": [
+         *             "Birthday",
+         *             "Phone Number"
+         *           ],
+         *           "renamed_tags": [],
+         *           "names_cut": 0,
+         *           "with_optin_time": 1000,
+         *           "newest_optin": "2026-10-30T09:12:00Z",
+         *           "plan": {
+         *             "plan": "paid",
+         *             "upgrade": true,
+         *             "contacts": 1100,
+         *             "limit": 500,
+         *             "tester": false,
+         *             "units": 1,
+         *             "month_cents": 500,
+         *             "year_cents": 5000
+         *           },
+         *           "holds": [
+         *             "over_contact_limit"
+         *           ],
+         *           "waits": true
+         *         },
+         *         "emails": [
+         *           {
+         *             "from": "template",
+         *             "file": "templates/Monthly_newsletter.html",
+         *             "name": "Monthly newsletter",
+         *             "subject": "",
+         *             "preview_text": "",
+         *             "images": 2,
+         *             "errors": [],
+         *             "warnings": [],
+         *             "email_id": null
+         *           }
+         *         ],
+         *         "campaigns_available": 24,
+         *         "ignored_files": [
+         *           {
+         *             "path": "reports/opens.csv",
+         *             "reason": "unknown_file"
+         *           }
+         *         ]
+         *       },
+         *       "emails": {
+         *         "status": "none",
+         *         "total": 0,
+         *         "made": [],
+         *         "error": null
+         *       }
+         *     }
+         */
+        MailchimpBundle: {
+            /** Format: uuid */
+            id: string;
+            file_name: string | null;
+            /** @description The uploaded file's size. */
+            bytes: number;
+            /** @enum {string} */
+            status: "unconfirmed" | "confirmed";
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description When an unconfirmed upload is deleted.
+             */
+            expires_at: string;
+            /** Format: date-time */
+            confirmed_at: string | null;
+            /**
+             * Format: uuid
+             * @description The contacts import, once confirmed; null when the export had no contacts.
+             */
+            import_id: string | null;
+            /** @description How many of the newest campaigns become emails. */
+            campaigns: number;
+            /** @description What importing would do; null once the file has been used and removed. */
+            preview: null | components["schemas"]["MailchimpPreview"];
+            emails: components["schemas"]["MailchimpEmailProgress"];
+        };
+        MailchimpPreview: {
+            /** @enum {string} */
+            source: "account_export" | "audience_export" | "audience_csv";
+            audiences: components["schemas"]["MailchimpAudience"][];
+            /** @description What importing the contacts would do; null when the export has none. */
+            contacts: null | components["schemas"]["MailchimpContactsPreview"];
+            /** @description The emails confirming with the default `campaigns` would make, templates first, then campaigns newest first. */
+            emails: components["schemas"]["MailchimpEmail"][];
+            /** @description Campaigns in the export with HTML, of which `campaigns` come over. */
+            campaigns_available: number;
+            ignored_files: {
+                path: string;
+                /**
+                 * @description `too_many_templates`: a template past the first 100 (in
+                 *     file order), which doesn't come over as an email.
+                 * @enum {string}
+                 */
+                reason: "unknown_file" | "too_large" | "too_many_templates";
+            }[];
+        };
+        MailchimpAudience: {
+            name: string;
+            members: number;
+            by_status: components["schemas"]["MailchimpStatusCounts"];
+        };
+        /** @description Member rows by their Mailchimp status. */
+        MailchimpStatusCounts: {
+            subscribed: number;
+            unsubscribed: number;
+            cleaned: number;
+            pending: number;
+            transactional: number;
+            archived: number;
+        };
+        MailchimpContactsPreview: {
+            /** @description Addresses that would become new contacts, by the status they'd have. */
+            new: {
+                subscribed: number;
+                unconfirmed: number;
+                unsubscribed: number;
+                bounced: number;
+            };
+            /** @description Addresses already contacts here, which would only gain tags. */
+            existing_tagged: number;
+            /** @description Of those, how many Mailchimp's unsubscribe or clean would take off the mailing list. */
+            existing_suppressed: number;
+            skipped: {
+                invalid_email: number;
+                invalid_row: number;
+                suppressed: number;
+                not_subscribed: number;
+                archived: number;
+            };
+            tags_to_create: string[];
+            /** @description Addresses subscribed in one audience but unsubscribed or cleaned in another, so suppressed. */
+            merge_suppressed: number;
+            /** @description Up to 100 of them. */
+            merge_suppressed_examples: string[];
+            /** @description Columns that aren't imported. */
+            dropped_fields: string[];
+            renamed_tags: {
+                from: string;
+                to: string;
+            }[];
+            /** @description Members with a tags, group or permission cell too long to read whole. */
+            names_cut: number;
+            /** @description Subscribed addresses with a Mailchimp opt-in time. */
+            with_optin_time: number;
+            /** Format: date-time */
+            newest_optin: string | null;
+            /** @description The plan the account would need after the import, and its price. */
+            plan: {
+                /** @enum {string} */
+                plan: "free" | "paid";
+                upgrade: boolean;
+                contacts: number;
+                /** @description The account's contact limit now; 0 for none. */
+                limit: number;
+                tester: boolean;
+                units: number;
+                month_cents: number;
+                year_cents: number;
+            };
+            /** @description Why the import would be held for review, as `hold_reason` codes, the first being the one recorded. */
+            holds: string[];
+            /** @description True when the subscribed contacts would take the account past its limit, so they wait until the plan covers them. */
+            waits: boolean;
+        };
+        MailchimpEmail: {
+            /** @enum {string} */
+            from: "template" | "campaign";
+            /** @description The export file it came from. */
+            file: string;
+            name: string;
+            subject: string;
+            preview_text: string;
+            /** @description Mailchimp-hosted images copied into mailgoose. */
+            images: number;
+            /** @description What stops it being sent until it's fixed; the email is made anyway. */
+            errors: components["schemas"]["MailchimpEmailNote"][];
+            warnings: components["schemas"]["MailchimpEmailNote"][];
+            /**
+             * Format: uuid
+             * @description The email made; null in a preview.
+             */
+            email_id: string | null;
+        };
+        MailchimpEmailNote: {
+            /** @enum {string} */
+            code: "mailchimp_tag_removed" | "mailchimp_conditional" | "mailchimp_tracking_link" | "image_not_copied" | "invalid_html" | "html_warning" | "too_large";
+            message: string;
+            line?: number;
+        };
+        MailchimpEmailProgress: {
+            /**
+             * @description `none` until confirmed.
+             * @enum {string}
+             */
+            status: "none" | "queued" | "running" | "done" | "failed";
+            total: number;
+            made: components["schemas"]["MailchimpEmail"][];
+            error: string | null;
+        };
         ImportList: {
             data: components["schemas"]["Import"][];
             next_cursor: string | null;
@@ -2661,6 +3102,8 @@ export interface components {
         SkippedRow: {
             /** @description The row's line in the file, where the header is 1. */
             row: number;
+            /** @description For a Mailchimp import, the export file and row it came from, as `file:row`; null for a CSV. */
+            source: string | null;
             /** @description The email cell as written; empty when the row couldn't be read. */
             email: string;
             reason: components["schemas"]["SkipReason"];
@@ -4601,6 +5044,21 @@ export interface components {
             };
         };
         /**
+         * @description `too_many_uploads`: the account already has 3 unconfirmed uploads;
+         *     confirm or delete one (`deleteMailchimpBundle`), or wait for one to
+         *     expire. `upload_in_progress`: another upload for the account is still
+         *     arriving. `upload_confirmed`: a confirmed upload can't be deleted.
+         */
+        MailchimpUploadConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `plan_required`: credit packs are for the paid plan; start it with
          *     createPlanCheckout. `already_subscribed`: the account is already on
          *     the paid plan. `not_subscribed`: the account has no subscription to
@@ -4682,8 +5140,39 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /**
+         * @description The export can't be read or imported, and nothing was kept or
+         *     queued. `code` says why: `not_zip_or_csv`, `bad_zip`, `unsafe_path`,
+         *     `too_large` (over 1 GB unpacked), `too_many_members` (over the
+         *     import's limit), `too_many_columns`, `no_email_column`,
+         *     `unknown_status`, `nothing_to_read`, `file_required`,
+         *     `invalid_audience_name`, `invalid_group_column`,
+         *     `too_many_group_columns`, `permission_required`, `too_many_tags`,
+         *     `invalid_campaigns`, `invalid_idempotency_key`,
+         *     `idempotency_key_reused` or `upload_used` (the file was already
+         *     imported and removed).
+         */
+        MailchimpRefused: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description `request_too_large`: the request body is over the operation's limit. */
         RequestTooLarge: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description `import_not_waiting`: only an import that's waiting for the paid plan can be cancelled. */
+        ImportConflict: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -5306,6 +5795,8 @@ export interface components {
         SenderAddressId: string;
         /** @description The import's `id`. */
         ImportId: string;
+        /** @description The uploaded export's `id`, from `createMailchimpBundle`. */
+        BundleId: string;
         /** @description The block's `id`. */
         BlockId: components["schemas"]["BlockId"];
         /** @description The form's `id`. */
@@ -7138,6 +7629,36 @@ export interface operations {
             503: components["responses"]["ServiceUnavailable"];
         };
     };
+    cancelImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The import's `id`. */
+                import_id: components["parameters"]["ImportId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled, now or before. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Import"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["ImportConflict"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
     listImportSkippedRows: {
         parameters: {
             query?: {
@@ -7168,6 +7689,132 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createMailchimpBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["CreateMailchimpBundleRequest"];
+            };
+        };
+        responses: {
+            /** @description The upload, unconfirmed, with its preview. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailchimpBundle"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            409: components["responses"]["MailchimpUploadConflict"];
+            413: components["responses"]["RequestTooLarge"];
+            422: components["responses"]["MailchimpRefused"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    getMailchimpBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The uploaded export's `id`, from `createMailchimpBundle`. */
+                bundle_id: components["parameters"]["BundleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The upload. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailchimpBundle"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteMailchimpBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The uploaded export's `id`, from `createMailchimpBundle`. */
+                bundle_id: components["parameters"]["BundleId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["MailchimpUploadConflict"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    confirmMailchimpBundle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The uploaded export's `id`, from `createMailchimpBundle`. */
+                bundle_id: components["parameters"]["BundleId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfirmMailchimpBundleRequest"];
+            };
+        };
+        responses: {
+            /** @description The upload, confirmed; its import and emails are queued. */
+            202: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MailchimpBundle"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["MailchimpRefused"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };

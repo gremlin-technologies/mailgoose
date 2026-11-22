@@ -4,6 +4,73 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-21: Uploading and confirming a Mailchimp export (MG-72; reversible defaults)
+
+`POST /v1/imports/mailchimp/bundles` takes Mailchimp's export as a
+multipart upload (part `file`, with `audience_name` and repeated
+`group_columns`), reads it (MG-69) and answers with an upload id and its
+preview: audiences by status, the contacts and tags it would make (MG-70),
+the emails it would make (MG-71) and the plan it needs. Nothing is imported
+until `POST .../{id}/confirm` with `permission_confirmed: true`, which queues
+the contacts import (kind `mailchimp`) and the emails. The CLI has
+`mailgoose import mailchimp upload|preview|confirm|delete`. These defaults
+are each easy to change:
+
+- **Size and memory.** An upload is at most 25 MB; a larger account exports
+  each audience on its own. An API task takes in at most two uploads at
+  once (a third waits 20 seconds, then gets 503 `uploads_busy`), and reads,
+  previews or stores one export at a time, a slot the email job and confirm
+  take too; the job keeps only the emails once it has read the file. An
+  upload may take 5 minutes to arrive, past the API's usual 30-second read
+  timeout. Measured: a 24 MB audience CSV of 222,000 contacts (near the
+  250,000 cap) holds about 235 MB live while it's read and previewed, and
+  the heap peaked at about 310 MB. The server now sets Go's soft memory
+  limit to 80% of the container's (unless `GOMEMLIMIT` is set), so the heap
+  stays near what's live; on a 512 MB API task that's about 410 MB.
+- **Per account.** An account sends one upload at a time on a task (409
+  `upload_in_progress`) and keeps at most 3 unconfirmed uploads (409
+  `too_many_uploads`); `DELETE /v1/imports/mailchimp/bundles/{id}`
+  (`mailgoose import mailchimp delete`) frees one, and so does confirming.
+  So an account holds at most 75 MB of unconfirmed files.
+- **Storage.** The file is kept in Postgres (`mailchimp_bundles`), like a CSV
+  import's file, with the preview worked out once on upload; `GET` returns
+  that stored preview, against the account as it was then. An unconfirmed
+  upload is deleted after 7 days; a confirmed one keeps its file until its
+  emails are made.
+- **Where the emails are made.** A job in the API, not the worker, since only
+  the API's task may store images. It carries on where it stopped after a
+  restart, and gives up after three tries with an error on the upload.
+  Without image storage the emails are still made, keeping their Mailchimp
+  image links with a warning each. The job renews its claim every minute
+  while it works, and stops if another task has taken it. `MaxImportImages`
+  counts per run, so an import that's retried fetches at most three times
+  that.
+- **An export with no contacts** (only templates or campaigns) can be
+  confirmed; it makes emails and no contacts import.
+- **Confirming again** answers with the same upload and import. The import's
+  idempotency key is the export's own hash unless the request gives one.
+- **Import status.** `GET /v1/imports/{id}` gives a Mailchimp import's
+  `kind`, its existing-contact counts and `mailchimp` (the upload id and the
+  emails made). The status `waiting` and the skip reasons `not_subscribed` and
+  `archived` are new in the API, CLI and web app.
+- **Stored rows.** A confirm whose contacts would take over 256 MB to store
+  is refused (`export_too_large`), well under Postgres's 1 GB for one value;
+  a 25 MB zip can unpack to much more. The customer exports the audiences
+  one at a time.
+- **Templates past the first 100** (MG-71's cap) are listed in the preview's
+  `ignored_files` with the reason `too_many_templates`.
+- **Waits that won't end.** A waiting import goes on only once the account is
+  on the paid plan and isn't a tester, so a tester's never does, and deleting
+  contacts on the free plan doesn't restart one. `waiting_note` on the
+  import says so, and `POST /v1/imports/{id}/cancel` (`mailgoose import
+  cancel`, and a button on the import's page) cancels a waiting import, to
+  the new status `cancelled`. Only a waiting import can be cancelled (409
+  `import_not_waiting`). What it already imported (its unsubscribed and
+  bounced contacts) stays. A cancelled import, like a failed one, doesn't
+  count toward the large-first-import check, and its idempotency key can be
+  used again.
+- **Closing an account** deletes its uploads with the rest of its data.
+
 ## 2026-11-21: Reports and segments (M12, MG-111 to MG-116): opens are a normal number (owner, confirmed); three defaults (recommended)
 
 The owner asked for per-campaign reports of opens, clicks and bounces, and
