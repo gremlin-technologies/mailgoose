@@ -53,7 +53,8 @@ scope; they only show where an idea came from.
 - Signup forms: generated embed code, double opt-in on by default.
 - Sending: test send, then an explicit confirm to launch, in UI and CLI. An agent
   may launch only after a quick confirmation from the person in its chat window.
-- Pricing: free tier 500 contacts and 1,000 credits/month; paid plan a card
+- Pricing: free tier 500 contacts and 1,000 credits/month, no domain needed;
+  paid accounts keep the 1,000 a month too (Nov 22, MG-118); paid plan a card
   subscription, $5/month or $50/year (first 2,500 contacts, then the same again
   per further 10,000), plus $20 per 10,000 credits; credits last 24 months
   (changed Nov 18: the fee no longer comes out of credits).

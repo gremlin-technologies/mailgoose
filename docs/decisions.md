@@ -4,6 +4,28 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-22: Free accounts need no domain, and paid accounts keep the free 1,000 credits a month (owner decisions, confirmed)
+
+Asked while ticketing the pricing page (MG-117, #272). The owner, Nov 22:
+"Free accounts should not need to verify a domain. We can leave that out",
+and "Yes, agreed" to keeping the monthly free credits on paid accounts.
+
+- **No domain needed on the free tier.** The free tier is 500 contacts and
+  1,000 credits a month, with no domain requirement. This replaces "sending
+  only from a verified domain" (`docs/pricing.md`, and the Nov 18 pricing
+  decision below). Where `SHARED_SENDING_DOMAIN` is set, an account without
+  a domain sends from the shared domain (MG-85, MG-98, MG-108); it's off in
+  prod for now, so the pricing page leaves the domain out rather than promise
+  either way.
+- **Paid accounts keep the 1,000 free credits a month.** Starting the plan no
+  longer ends the monthly free grant, so upgrading never leaves an account
+  with nothing to send. This replaces "a live subscription makes the account
+  paid (no free grant ...)" (MG-40), "Paid accounts get no free grant"
+  (MG-12) and BIL-5's "it then stops getting the monthly free grant". The
+  code still stops the grant on a paid plan; the change is ticketed as
+  MG-118 and queued with MG-117. Bought credits still last 24 months, and
+  the grant still expires at the next grant.
+
 ## 2026-11-22: Moving from Mailchimp in the agent guide (MG-78; reversible defaults)
 
 The agent guide (`mailgoose docs`, `docs/api/agent-guide.md`) gains a

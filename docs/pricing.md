@@ -12,7 +12,7 @@ $15 per 10,000 emails works as a price per email; the plan around it didn't. Del
 
 As first proposed, fully loaded margin is about 37% at 1,000 paying customers. With three changes it reaches about 56%, or 62% without Amazon's paid deliverability dashboard:
 
-- **Free tier:** 500 contacts and 1,000 credits a month (down from 1,000 and 2,000), sending only from a verified domain.
+- **Free tier:** 500 contacts and 1,000 credits a month (down from 1,000 and 2,000). No domain needed (changed Nov 22; it first said "sending only from a verified domain"). Paid accounts keep the 1,000 free credits a month too (decided Nov 22).
 - **Paid account fee:** $5 a month, including the first 2,500 contacts; then $5 per extra 10,000. Billed by card as a subscription, monthly or yearly at $50 (changed Nov 18; it first came out of credits).
 - **Credits:** $20 for 10,000, $75 for 50,000, $240 for 200,000, $900 for 1,000,000 ($2.00 down to $0.90 per 1,000), valid 24 months.
 
@@ -151,6 +151,11 @@ Also decided on Nov 18, 2026:
 - **Credit expiry:** credits last 24 months from purchase.
 - **How the account fee is paid:** a card subscription, $5 a month or $50 a year, chosen at sign-up to the paid plan. This replaced taking the fee from the credit balance (with yearly card billing at $60 for accounts without credits), which the owner found confusing. Credit packs are unchanged.
 - **What the change costs:** Stripe now takes its card fee on every renewal, about $0.48 of each $5 monthly payment (2.9% + $0.30, plus 0.7% for Stripe Billing) and about $2.10 of each $50 yearly one. The margins above weren't re-modelled for this; they come down slightly for accounts that pay monthly.
+
+Decided on Nov 22, 2026 (see `docs/decisions.md`):
+
+- **No domain requirement on the free tier.**
+- **Paid accounts keep the free 1,000 credits a month**, so starting the plan never leaves an account with nothing to send. Each paying account now carries up to 1,000 free sends a month, about $0.27 to $0.70 at the costs above; the margins weren't re-modelled for this.
 
 The cost assumptions marked as estimates are worth checking against real numbers once there's a beta: tickets per account, emails per free account and conversion move the margin most.
 
