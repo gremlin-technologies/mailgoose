@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
@@ -16,7 +17,7 @@ const MaxImportBodyBytes = contacts.MaxImportBytes + contacts.MaxImportBytes/4
 
 // bodyLimit is the largest request body r may have.
 func bodyLimit(r *http.Request) int64 {
-	if r.Method == http.MethodPost && r.URL.Path == "/v1/imports" {
+	if r.Method == http.MethodPost && (r.URL.Path == "/v1/imports" || r.URL.Path == "/v1/imports/preview") {
 		return MaxImportBodyBytes
 	}
 	if r.Method == http.MethodPost && r.URL.Path == mailchimpUploadPath {
@@ -113,6 +114,65 @@ func validImportID(w http.ResponseWriter, id string) bool {
 	return true
 }
 
+// setImportColumns puts a request's columns on in. A field sent as an empty
+// string isn't imported; one left out is found from common headers.
+func setImportColumns(in *contacts.ImportInput, cols *apigen.ImportColumns) {
+	if cols == nil {
+		return
+	}
+	for _, c := range []struct {
+		field string
+		value *string
+		to    *string
+	}{
+		{"email", cols.Email, &in.EmailColumn},
+		{"first_name", cols.FirstName, &in.FirstNameColumn},
+		{"last_name", cols.LastName, &in.LastNameColumn},
+		{"status", cols.Status, &in.StatusColumn},
+		{"tags", cols.Tags, &in.TagsColumn},
+	} {
+		switch {
+		case c.value == nil:
+		case strings.TrimSpace(*c.value) == "":
+			in.SkipFields = append(in.SkipFields, c.field)
+		default:
+			*c.to = *c.value
+		}
+	}
+}
+
+// PreviewImport is POST /v1/imports/preview.
+func (s *Server) PreviewImport(w http.ResponseWriter, r *http.Request) {
+	c := s.contactsCaller(w, r)
+	if c == nil {
+		return
+	}
+	var req apigen.PreviewImportRequest
+	if err := decodeJSON(w, r, &req, MaxImportBodyBytes); err != nil {
+		WriteError(w, err)
+		return
+	}
+	in := contacts.ImportInput{CSV: []byte(req.Csv)}
+	setImportColumns(&in, req.Columns)
+	p, err := contacts.PreviewImport(in)
+	if s.importError(w, r, err) {
+		return
+	}
+	out := apigen.ImportPreview{Separator: apigen.ImportPreviewSeparator(p.Separator), Rows: p.Rows,
+		Columns: make([]apigen.ImportPreviewColumn, len(p.Columns))}
+	for i, col := range p.Columns {
+		out.Columns[i] = apigen.ImportPreviewColumn{Position: col.Position, Header: col.Header, Name: col.Name, Samples: col.Samples}
+		if col.Field != "" {
+			f := apigen.ImportField(col.Field)
+			out.Columns[i].Field = &f
+		}
+	}
+	if p.Problem != nil {
+		out.Problem = &apigen.ImportPreviewProblem{Code: p.Problem.Code, Message: p.Problem.Message}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 // CreateImport is POST /v1/imports.
 func (s *Server) CreateImport(w http.ResponseWriter, r *http.Request) {
 	c := s.contactsCaller(w, r)
@@ -128,13 +188,7 @@ func (s *Server) CreateImport(w http.ResponseWriter, r *http.Request) {
 	if req.FileName != nil {
 		in.FileName = *req.FileName
 	}
-	if req.Columns != nil {
-		in.EmailColumn = deref(req.Columns.Email)
-		in.FirstNameColumn = deref(req.Columns.FirstName)
-		in.LastNameColumn = deref(req.Columns.LastName)
-		in.StatusColumn = deref(req.Columns.Status)
-		in.TagsColumn = deref(req.Columns.Tags)
-	}
+	setImportColumns(&in, req.Columns)
 	if req.Tags != nil {
 		if len(*req.Tags) > contacts.MaxImportTags {
 			WriteError(w, Unprocessable("too_many_tags", "An import puts at most "+strconv.Itoa(contacts.MaxImportTags)+" tags on its contacts."))

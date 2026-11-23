@@ -1423,13 +1423,14 @@ poll `getImport` until `status` is `done` or `failed`. The first row
 is the header. Columns for email, first name and last name are found
 from common headers ("Email", "Email Address", "First Name",
 "Surname" and so on), or named in `columns`. Commas, semicolons and
-tabs all work as separators.
+tabs all work as separators. `previewImport` shows how a file would
+be read, with each column's first values, before it's imported.
 
 Imported contacts are `unconfirmed` unless `permission_confirmed` says
 the account has these people's permission to mail them; then they're
 `subscribed`. Rows with a bad address, a repeat of an earlier row, an
 address already in the account, a suppressed address, or one past a
-free account's 500-contact limit are skipped and listed by
+free account's 1,000-contact limit are skipped and listed by
 `listImportSkippedRows`. Existing contacts aren't changed.
 
 Every import says where its people came from in `list_source`; an
@@ -1455,6 +1456,40 @@ Request body (`application/json`, required): [CreateImportRequest](#schema-creat
 Responses:
 
 - `202`: The import, queued. [Import](#schema-import)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `413`: `request_too_large`: the request body is over the operation's limit. [Error](#schema-error)
+- `422`: The file can't be imported, and nothing was queued. `code` says why: `no_rows`, `no_email_column` (name the column in `columns.email`), `invalid_mapping` (a named column isn't in the header), `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes), `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found`, `too_many_tags`, `list_source_required` (say where the list came from), `list_source_detail_required` (describe an `other` source) or `invalid_list_source`. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-previewimport"></a>
+
+### Preview how a CSV file would be imported
+
+`POST /v1/imports/preview`
+
+- Operation: `previewImport`
+- CLI: `mailgoose import preview`
+
+Reads a file the way `createImport` would with the same `columns`,
+and changes nothing. It shows the separator, how many contact rows
+there are, and each column with its first few values and the field it
+would become, so the person can check the columns before importing.
+A problem `createImport` would refuse the file for, such as no email
+column or a named column that isn't there, is in `problem` instead of
+an error, so the columns can still be shown. Only a file whose header
+row can't be read (`no_rows` for an empty file, `invalid_encoding`,
+`invalid_csv`) or that's over 10 MB (`file_too_large`) is an error.
+
+The request body can be up to 10 MB.
+
+Request body (`application/json`, required): [PreviewImportRequest](#schema-previewimportrequest)
+
+Responses:
+
+- `200`: How the file would be imported. [ImportPreview](#schema-importpreview)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
@@ -4419,7 +4454,11 @@ A condition the segment can't use now.
 
 ### ImportColumns
 
-The header of the column each field comes from. Leave a field out to have it found from common headers.
+The column each field comes from: its header, or its position as
+`#3` (counting from 1) for a column whose header is blank or
+repeated. Leave a field out to have it found from common headers, or
+send an empty string to not import that field at all, even when a
+column's header looks like it. Email can't be left empty.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -4428,6 +4467,53 @@ The header of the column each field comes from. Leave a field out to have it fou
 | `last_name` | string |  |  |
 | `status` | string |  | A status column can only hold contacts back: `unsubscribed`, `bounced` and `complained` rows are added with that status, and `unconfirmed` rows stay unconfirmed. Other values are ignored. Found under the header `status`. |
 | `tags` | string |  | A column of tag names separated by commas, put on each row's contact. Tags the account doesn't have are created; a file may name at most 200 different tags. Found under the header `tags`. |
+
+<a id="schema-previewimportrequest"></a>
+
+### PreviewImportRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `csv` | string | yes | The whole CSV file as UTF-8 text, header row first. |
+| `columns` | [ImportColumns](#schema-importcolumns) |  |  |
+
+<a id="schema-importpreview"></a>
+
+### ImportPreview
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `separator` | string: one of `comma`, `semicolon`, `tab` | yes | The separator found in the header row. |
+| `rows` | integer | yes | Contact rows, not counting the header or blank rows. Counting stops past 100,000. |
+| `columns` | array of [ImportPreviewColumn](#schema-importpreviewcolumn) | yes | The file's columns, in order. |
+| `problem` | [ImportPreviewProblem](#schema-importpreviewproblem) or null | yes | Why `createImport` would refuse this file with these columns; null when it would take it. |
+
+<a id="schema-importpreviewcolumn"></a>
+
+### ImportPreviewColumn
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `position` | integer | yes | The column's place in the file, counting from 1. |
+| `header` | string | yes | The column's header as written; may be empty. |
+| `name` | string | yes | What to send in `columns` to pick this column. Its header, or `#3` for a column whose header is blank or repeated. |
+| `field` | [ImportField](#schema-importfield) or null | yes | The field this column would become; null when it isn't imported. |
+| `samples` | array of string | yes | The column's values in the first rows, an empty string where a row has none. |
+
+<a id="schema-importfield"></a>
+
+### ImportField
+
+Type: string: one of `email`, `first_name`, `last_name`, `status`, `tags`
+
+<a id="schema-importpreviewproblem"></a>
+
+### ImportPreviewProblem
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `code` | string | yes | The code `createImport` would refuse the file with, such as `no_email_column`, `invalid_mapping`, `too_many_rows`, `invalid_tag_name`, `too_many_tags`, `invalid_csv` (a quote that never closes) or `no_rows` (a header with no contacts). |
+| `message` | string | yes |  |
 
 <a id="schema-createimportrequest"></a>
 

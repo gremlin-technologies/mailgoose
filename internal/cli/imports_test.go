@@ -44,6 +44,14 @@ func importsStub(t *testing.T) (*harness, *[]seenRequest) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/imports" && strings.HasPrefix(req.body["csv"].(string), "name"):
 			w.WriteHeader(http.StatusUnprocessableEntity)
 			_, _ = w.Write([]byte(`{"error":{"code":"no_email_column","message":"No column looks like email addresses.","hint":"Name the columns."}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/imports/preview" && strings.HasPrefix(req.body["csv"].(string), "name"):
+			_, _ = w.Write([]byte(`{"separator":"comma","rows":1,"columns":[{"position":1,"header":"name","name":"name","field":null,"samples":["Pat"]}],` +
+				`"problem":{"code":"no_email_column","message":"No column looks like email addresses."}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/imports/preview":
+			_, _ = w.Write([]byte(`{"separator":"tab","rows":2,"columns":[` +
+				`{"position":1,"header":"E-mail","name":"E-mail","field":"email","samples":["pat@example.com","ana@example.com"]},` +
+				`{"position":2,"header":"","name":"#2","field":"first_name","samples":["Pat",""]},` +
+				`{"position":3,"header":"status","name":"status","field":null,"samples":["unsubscribed","line\nbreak"]}],"problem":null}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/imports":
 			w.WriteHeader(http.StatusAccepted)
 			_, _ = w.Write([]byte(testImport("queued", 0, 0, 0)))
@@ -181,6 +189,59 @@ func TestImportErrors(t *testing.T) {
 	}
 	if code := h.run("import", "status", "nope"); code != ExitNotFound {
 		t.Errorf("unknown import: exit %d", code)
+	}
+}
+
+func TestImportPreview(t *testing.T) {
+	h, seen := importsStub(t)
+	path := writeCSV(t, "E-mail\t\tstatus\npat@example.com\tPat\tunsubscribed\n")
+	if code := h.run("import", "preview", path, "--map", "first_name=#2", "--map", "status="); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	post := (*seen)[0]
+	cols, _ := post.body["columns"].(map[string]any)
+	if post.path != "/v1/imports/preview" || post.body["csv"] != "E-mail\t\tstatus\npat@example.com\tPat\tunsubscribed\n" ||
+		cols["first_name"] != "#2" || cols["status"] != "" || len(cols) != 2 || post.body["list_source"] != nil {
+		t.Errorf("request = %+v", post)
+	}
+	out := h.out.String()
+	for _, want := range []string{"Separated by tabs, with 2 contact rows.", "COLUMN  FIELD", "E-mail  email         pat@example.com, ana@example.com",
+		"#2      first_name    Pat, -", "status  not imported  unsubscribed, line break", "run \"mailgoose import\" with the same file"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+
+	h.out.Reset()
+	if code := h.run("import", "preview", writeCSV(t, "name\nPat\n"), "--json"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	var p importPreview
+	if err := json.Unmarshal(h.out.Bytes(), &p); err != nil || p.Problem == nil || p.Problem.Code != "no_email_column" || len(p.Columns) != 1 {
+		t.Errorf("json = %s (%v)", h.out, err)
+	}
+	h.out.Reset()
+	h.run("import", "preview", writeCSV(t, "name\nPat\n"))
+	if !strings.Contains(h.out.String(), "can't be imported as it is: No column looks like email addresses.") || !strings.Contains(h.out.String(), "--map email=") {
+		t.Errorf("problem output:\n%s", h.out)
+	}
+
+	// Email can't be left out.
+	n := len(*seen)
+	if code := h.run("import", "preview", path, "--map", "email="); code != ExitUsage || len(*seen) != n {
+		t.Errorf("--map email=: exit %d", code)
+	}
+}
+
+// --map field= sends an empty column, so the import leaves the field out.
+func TestImportLeavesAFieldOut(t *testing.T) {
+	h, seen := importsStub(t)
+	if code := h.run("import", writeCSV(t, "email,tags\na@example.com,vip\n"), "--list-source", "form", "--map", "tags= "); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	cols, _ := (*seen)[0].body["columns"].(map[string]any)
+	if v, ok := cols["tags"]; !ok || v != "" {
+		t.Errorf("columns = %+v", cols)
 	}
 }
 

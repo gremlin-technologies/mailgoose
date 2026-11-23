@@ -265,6 +265,127 @@ func (a *App) readImportFile(path string) ([]byte, error) {
 	return data, nil
 }
 
+// importColumns turns --map flags into an import's columns. field= with
+// nothing after it leaves that field out of the import.
+func importColumns(maps []string) (map[string]string, error) {
+	columns := map[string]string{}
+	for _, m := range maps {
+		field, header, ok := strings.Cut(m, "=")
+		api, known := importFields[strings.ToLower(strings.TrimSpace(field))]
+		if !ok || !known || (api == "email" && strings.TrimSpace(header) == "") {
+			return nil, usageError(fmt.Sprintf("--map %q isn't field=header.", m),
+				"The fields are email, first_name, last_name, status and tags, as in --map email=\"Email Address\". Leave the header empty, as in --map status=, to not import a field; email can't be left out.")
+		}
+		if strings.TrimSpace(header) == "" {
+			header = ""
+		}
+		columns[api] = header
+	}
+	return columns, nil
+}
+
+// importPreview is the API's ImportPreview.
+type importPreview struct {
+	Separator string `json:"separator"`
+	Rows      int    `json:"rows"`
+	Columns   []struct {
+		Position int      `json:"position"`
+		Header   string   `json:"header"`
+		Name     string   `json:"name"`
+		Field    *string  `json:"field"`
+		Samples  []string `json:"samples"`
+	} `json:"columns"`
+	Problem *struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"problem"`
+}
+
+// importPreviewCmd is "mailgoose import preview".
+func (a *App) importPreviewCmd() *cobra.Command {
+	var maps []string
+	cmd := calls("previewImport", &cobra.Command{
+		Use:   "preview <file.csv>",
+		Short: "Show how a CSV file would be imported, without importing it",
+		Long: `Reads a CSV file the way "mailgoose import" would, with the same --map
+flags, and changes nothing. It shows the separator, how many contact rows
+there are, and each column with its first values and the field it becomes.
+Columns that aren't matched to a field aren't imported.
+
+Name a column whose header is blank or repeated by its position, as in
+--map first_name=#3. --map status= (with nothing after =) leaves a field out,
+even when a column's header looks like it.
+
+An agent importing for someone should show them this before importing, and
+let them confirm or change which column becomes which field.`,
+		Example: `  mailgoose import preview contacts.csv
+  mailgoose import preview export.csv --map email="E-mail" --map first_name=#3 --map status=
+  pbpaste | mailgoose import preview - --json`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			columns, err := importColumns(maps)
+			if err != nil {
+				return err
+			}
+			data, err := a.readImportFile(args[0])
+			if err != nil {
+				return err
+			}
+			body := map[string]any{"csv": string(data)}
+			if len(columns) > 0 {
+				body["columns"] = columns
+			}
+			var p importPreview
+			if err := a.call(cmd.Context(), http.MethodPost, "/v1/imports/preview", body, &p, true); err != nil {
+				return err
+			}
+			if a.jsonOut {
+				a.printJSON(p)
+				return nil
+			}
+			return a.printImportPreview(p)
+		},
+	})
+	cmd.Flags().StringArrayVar(&maps, "map", nil, "field=header or field=#position, naming the column a field comes from; field= leaves it out; repeatable")
+	return cmd
+}
+
+func (a *App) printImportPreview(p importPreview) error {
+	rows := "rows"
+	if p.Rows == 1 {
+		rows = "row"
+	}
+	fmt.Fprintf(a.Stdout, "Separated by %ss, with %d contact %s.\n\n", p.Separator, p.Rows, rows)
+	tw := tabwriter.NewWriter(a.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "COLUMN\tFIELD\tFIRST VALUES")
+	clean := func(v string) string { return strings.Join(strings.Fields(v), " ") }
+	for _, c := range p.Columns {
+		field := "not imported"
+		if c.Field != nil {
+			field = *c.Field
+		}
+		samples := make([]string, len(c.Samples))
+		for i, v := range c.Samples {
+			if samples[i] = clean(v); samples[i] == "" {
+				samples[i] = "-"
+			}
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", clean(c.Name), field, strings.Join(samples, ", "))
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if p.Problem != nil {
+		fmt.Fprintf(a.Stdout, "\nThis file can't be imported as it is: %s\n", p.Problem.Message)
+		if p.Problem.Code == "no_email_column" || p.Problem.Code == "invalid_mapping" {
+			fmt.Fprintln(a.Stdout, "Name the columns with --map, as in --map email=\"Email Address\".")
+		}
+		return nil
+	}
+	fmt.Fprintln(a.Stdout, "\nTo import it this way, run \"mailgoose import\" with the same file and --map flags.")
+	return nil
+}
+
 // importFields are what --map can name, with the API's names.
 var importFields = map[string]string{
 	"email": "email", "first_name": "first_name", "first-name": "first_name", "last_name": "last_name", "last-name": "last_name",
@@ -280,9 +401,15 @@ func (a *App) importCmd() *cobra.Command {
 		Short: "Import contacts from a CSV file",
 		Long: `Imports contacts from a CSV file. The first row is the header. The email,
 first name and last name columns are found from common headers ("Email",
-"Email Address", "First Name", "Surname" ...); name any others with --map.
-Commas, semicolons and tabs all work. Pass - to read the file from standard
-input. A file from "mailgoose export" imports as the same contacts and tags.
+"Email Address", "First Name", "Surname" ...); name any others with --map,
+by header or by position (--map first_name=#3), and leave a field out with
+--map status= (nothing after =). Commas, semicolons and tabs all work. Pass -
+to read the file from standard input. A file from "mailgoose export" imports
+as the same contacts and tags.
+
+Run "mailgoose import preview" first to see which column becomes which field,
+with each column's first values. An agent importing for someone should show
+them that and let them confirm it before importing.
 
 --list-source is required: say where these people came from.` + listSourceHelp() + `
 With other, describe it in --list-source-detail. The source and the time are
@@ -323,15 +450,9 @@ until mailgoose approves it, and "mailgoose import status" says why it's held.`,
 			if strings.TrimSpace(listSourceDetail) != "" {
 				body["list_source_detail"] = listSourceDetail
 			}
-			columns := map[string]string{}
-			for _, m := range maps {
-				field, header, ok := strings.Cut(m, "=")
-				api, known := importFields[strings.ToLower(strings.TrimSpace(field))]
-				if !ok || !known || strings.TrimSpace(header) == "" {
-					return usageError(fmt.Sprintf("--map %q isn't field=header.", m),
-						"The fields are email, first_name, last_name, status and tags, as in --map email=\"Email Address\".")
-				}
-				columns[api] = header
+			columns, err := importColumns(maps)
+			if err != nil {
+				return err
 			}
 			data, err := a.readImportFile(args[0])
 			if err != nil {
@@ -371,7 +492,7 @@ until mailgoose approves it, and "mailgoose import status" says why it's held.`,
 			return nil
 		},
 	})
-	cmd.Flags().StringArrayVar(&maps, "map", nil, "field=header, naming the column a field comes from (email, first_name, last_name, status, tags); repeatable")
+	cmd.Flags().StringArrayVar(&maps, "map", nil, "field=header or field=#position, naming the column a field comes from (email, first_name, last_name, status, tags); field= leaves it out; repeatable")
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "tag (name or id) to put on every added contact; repeatable; it must exist")
 	cmd.Flags().BoolVar(&permission, "permission-confirmed", false, "you have these people's permission to email them: add them subscribed, not unconfirmed")
 	cmd.Flags().BoolVar(&wait, "wait", false, "wait for the import to finish and show the result")
@@ -494,6 +615,6 @@ CSV goes to standard output, or to the file --output names.`,
 	})
 	skipped.Flags().StringVarP(&skippedOutput, "output", "o", "", "write the CSV to this file instead of standard output")
 
-	cmd.AddCommand(status, skipped, list, cancel, a.importMailchimpCmd())
+	cmd.AddCommand(a.importPreviewCmd(), status, skipped, list, cancel, a.importMailchimpCmd())
 	return cmd
 }

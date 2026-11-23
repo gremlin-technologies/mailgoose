@@ -91,6 +91,7 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 
 - [List CSV imports](reference.md#op-listimports): `GET /v1/imports`, CLI `mailgoose import list`. The account's imports, newest first.
 - [Import contacts from a CSV file](reference.md#op-createimport): `POST /v1/imports`, CLI `mailgoose import`. Checks the file and queues it; the import runs in the background, so poll `getImport` until `status` is `done` or `failed`.
+- [Preview how a CSV file would be imported](reference.md#op-previewimport): `POST /v1/imports/preview`, CLI `mailgoose import preview`. Reads a file the way `createImport` would with the same `columns`, and changes nothing.
 - [Get an import](reference.md#op-getimport): `GET /v1/imports/{import_id}`, CLI `mailgoose import`, `mailgoose import status`. How far the import got, what it added and how many rows it skipped, by reason.
 - [Cancel a waiting import](reference.md#op-cancelimport): `POST /v1/imports/{import_id}/cancel`, CLI `mailgoose import cancel`. Cancels a Mailchimp import that is `waiting` for the paid plan.
 - [List an import's skipped rows](reference.md#op-listimportskippedrows): `GET /v1/imports/{import_id}/skipped-rows`, CLI `mailgoose import`, `mailgoose import status`. Every row the import didn't add and why, in file order.

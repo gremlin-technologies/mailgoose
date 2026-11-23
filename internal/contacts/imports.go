@@ -167,11 +167,18 @@ type ImportInput struct {
 	// unsubscribed, bounced or complained row is added with that status, and
 	// an unconfirmed one stays unconfirmed. A tags cell lists tags separated
 	// by commas; tags the account doesn't have yet are created.
+	//
+	// A column is named by its header, or by its position as "#3" (counting
+	// from 1) when no header is exactly "#3"; a blank or repeated header can
+	// only be named by position.
 	EmailColumn     string
 	FirstNameColumn string
 	LastNameColumn  string
 	StatusColumn    string
 	TagsColumn      string
+	// SkipFields are fields not to import, even when a column's header
+	// looks like one (MG-124). Email can't be skipped.
+	SkipFields []string
 	// Tags are tag names or ids, put on every contact the import adds.
 	Tags []string
 	// PermissionConfirmed says the account has the people's permission to
@@ -183,9 +190,31 @@ type ImportInput struct {
 	ListSourceDetail string
 }
 
-func (in ImportInput) named() map[string]string {
-	return map[string]string{fieldEmail: in.EmailColumn, fieldFirstName: in.FirstNameColumn, fieldLastName: in.LastNameColumn,
-		fieldStatus: in.StatusColumn, fieldTags: in.TagsColumn}
+// choice is how the import picks its columns: the ones named, none for a
+// skipped field, and common headers for the rest.
+func (in ImportInput) choice() columnChoice {
+	skip := map[string]bool{}
+	for _, f := range in.SkipFields {
+		skip[f] = true
+	}
+	return columnChoice{
+		named: map[string]string{fieldEmail: in.EmailColumn, fieldFirstName: in.FirstNameColumn, fieldLastName: in.LastNameColumn,
+			fieldStatus: in.StatusColumn, fieldTags: in.TagsColumn},
+		skip:  skip,
+		guess: true,
+	}
+}
+
+// columnChoice is how to pick each field's column.
+type columnChoice struct {
+	// named maps a field to the column it comes from; empty when not named.
+	named map[string]string
+	// skip are fields not imported at all.
+	skip map[string]bool
+	// guess finds fields that aren't named or skipped from common headers.
+	// A queued import's columns were all picked when it was created, so the
+	// worker doesn't guess again.
+	guess bool
 }
 
 func invalidImport(code, field, msg string) error {
@@ -218,15 +247,25 @@ type csvLayout struct {
 	col map[string]int
 }
 
-// column is the header of field's column as stored on the import, nil when
-// the file has none.
+// column is how field's column is stored on the import, nil when the file
+// has none.
 func (l *csvLayout) column(field string) *string {
 	i := l.col[field]
 	if i < 0 {
 		return nil
 	}
-	n := strings.TrimSpace(l.header[i])
+	n := l.name(i)
 	return &n
+}
+
+// name is how column i is named so findColumn finds it again: its header,
+// or its position ("#3") when the header is blank or an earlier column has
+// the same one.
+func (l *csvLayout) name(i int) string {
+	if h := strings.TrimSpace(l.header[i]); h != "" && findColumn(l.header, h) == i {
+		return h
+	}
+	return "#" + strconv.Itoa(i+1)
 }
 
 // sniffComma picks the delimiter that appears most in the header line:
@@ -278,11 +317,17 @@ var commonHeaders = map[string][]string{
 }
 
 // findColumn returns the column headed name: an exact match first, then a
-// loose one. It returns -1 when there's none.
+// position such as "#3" (counting from 1), then a loose match. It returns -1
+// when there's none.
 func findColumn(header []string, name string) int {
 	for i, h := range header {
 		if strings.TrimSpace(h) == strings.TrimSpace(name) {
 			return i
+		}
+	}
+	if pos, ok := strings.CutPrefix(strings.TrimSpace(name), "#"); ok {
+		if n, err := strconv.Atoi(pos); err == nil && n >= 1 && n <= len(header) && strconv.Itoa(n) == pos {
+			return n - 1
 		}
 	}
 	for i, h := range header {
@@ -293,10 +338,21 @@ func findColumn(header []string, name string) int {
 	return -1
 }
 
-// readLayout reads the header row and finds each field's column. named maps
-// a field to the header of its column; a named column must exist, and email
-// must be found.
-func readLayout(data []byte, named map[string]string) (*csvLayout, error) {
+// readLayout reads the header row and finds each field's column. A named
+// column must exist, and email must be found.
+func readLayout(data []byte, c columnChoice) (*csvLayout, error) {
+	l, err := readHeader(data)
+	if err != nil {
+		return nil, err
+	}
+	if err := l.choose(c); err != nil {
+		return nil, err
+	}
+	return l, nil
+}
+
+// readHeader reads a file's separator and header row.
+func readHeader(data []byte) (*csvLayout, error) {
 	if len(bytes.TrimSpace(bytes.TrimPrefix(data, utf8BOM))) == 0 {
 		return nil, invalidImport("no_rows", "csv", "The file is empty.")
 	}
@@ -309,28 +365,57 @@ func readLayout(data []byte, named map[string]string) (*csvLayout, error) {
 		return nil, invalidImport("invalid_csv", "csv", "The header row can't be read as CSV: "+err.Error())
 	}
 	l.header = slices.Clone(header)
+	for _, field := range importFields {
+		l.col[field] = -1
+	}
+	return l, nil
+}
 
+// headerList is the headers for an error message, with blank ones by
+// position.
+func (l *csvLayout) headerList() string {
+	names := make([]string, len(l.header))
+	for i := range l.header {
+		names[i] = l.name(i)
+	}
+	return strings.Join(names, ", ")
+}
+
+// choose picks each field's column. It picks all it can and returns the
+// first problem, so a preview can still show the rest.
+func (l *csvLayout) choose(c columnChoice) error {
+	var first error
+	fail := func(err error) {
+		if first == nil {
+			first = err
+		}
+	}
+	if c.skip[fieldEmail] {
+		fail(invalidImport("invalid_mapping", "columns.email", "Email can't be left out: every contact needs an address."))
+	}
 	// Named columns first, so a column someone named is never taken by
 	// another field's guess; then common headers for the rest.
 	used := map[int]bool{}
 	for _, field := range importFields {
 		l.col[field] = -1
-		name := named[field]
-		if name == "" {
+		name := c.named[field]
+		if name == "" || c.skip[field] {
 			continue
 		}
 		i := findColumn(l.header, name)
 		if i < 0 {
-			return nil, invalidImport("invalid_mapping", "columns."+field,
-				fmt.Sprintf("No column is headed %q. The headers are: %s.", name, strings.Join(l.header, ", ")))
+			fail(invalidImport("invalid_mapping", "columns."+field,
+				fmt.Sprintf("No column is headed %q. The headers are: %s.", name, l.headerList())))
+			continue
 		}
 		if used[i] {
-			return nil, invalidImport("invalid_mapping", "columns", "Each field needs its own column.")
+			fail(invalidImport("invalid_mapping", "columns", "Each field needs its own column."))
+			continue
 		}
 		used[i], l.col[field] = true, i
 	}
 	for _, field := range importFields {
-		if named[field] != "" {
+		if !c.guess || c.named[field] != "" || c.skip[field] {
 			continue
 		}
 	find:
@@ -343,11 +428,11 @@ func readLayout(data []byte, named map[string]string) (*csvLayout, error) {
 			}
 		}
 	}
-	if l.col[fieldEmail] < 0 {
-		return nil, invalidImport("no_email_column", "columns.email",
-			fmt.Sprintf("No column looks like email addresses. The headers are: %s. Name the email column, or add a header row if the file has none.", strings.Join(l.header, ", ")))
+	if l.col[fieldEmail] < 0 && !c.skip[fieldEmail] && c.named[fieldEmail] == "" {
+		fail(invalidImport("no_email_column", "columns.email",
+			fmt.Sprintf("No column looks like email addresses. The headers are: %s. Name the email column, or add a header row if the file has none.", l.headerList())))
 	}
-	return l, nil
+	return first
 }
 
 // csvRow is one contact row of a file.
@@ -576,39 +661,15 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 	if len(in.CSV) > MaxImportBytes {
 		return nil, invalidImport("file_too_large", "csv", fmt.Sprintf("The file is over %d MB. Split it into smaller files.", MaxImportBytes>>20))
 	}
-	l, err := readLayout(in.CSV, in.named())
+	l, err := readLayout(in.CSV, in.choice())
 	if err != nil {
 		return nil, err
 	}
-	total := 0
-	fileTags := map[string]bool{}
 	scan := &fileScan{}
 	seen := map[string]struct{}{}
-	err = l.eachRow(in.CSV, func(r csvRow) error {
-		total++
-		if total > MaxImportRows {
-			return invalidImport("too_many_rows", "csv", fmt.Sprintf("The file has more than %d contacts. Split it into smaller files.", MaxImportRows))
-		}
-		names, ok := rowTags(r.tags)
-		if !ok {
-			return invalidImport("invalid_tag_name", "csv",
-				fmt.Sprintf("Row %d has a tag that isn't 1 to %d characters. Fix that row's tags and try again.", r.line, MaxTagNameLen))
-		}
-		for _, n := range names {
-			fileTags[strings.ToLower(n)] = true
-		}
-		if len(fileTags) > MaxImportFileTags {
-			return invalidImport("too_many_tags", "csv",
-				fmt.Sprintf("The tags column names more than %d different tags. Import the file in parts, or tag the contacts afterwards.", MaxImportFileTags))
-		}
-		scan.add(r, seen)
-		return nil
-	})
+	total, err := checkRows(in.CSV, l, func(r csvRow) { scan.add(r, seen) })
 	if err != nil {
 		return nil, err
-	}
-	if total == 0 {
-		return nil, invalidImport("no_rows", "csv", "The file has a header row but no contacts.")
 	}
 	tagIDs, err := s.resolveTags(ctx, accountID, in.Tags)
 	if err != nil {
@@ -664,6 +725,43 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 		return nil, err
 	}
 	return im, tx.Commit(ctx)
+}
+
+// checkRows reads every contact row the way CreateImport checks a file,
+// passing each to fn, and returns how many there are. It stops at the first
+// problem.
+func checkRows(data []byte, l *csvLayout, fn func(csvRow)) (int, error) {
+	total := 0
+	fileTags := map[string]bool{}
+	err := l.eachRow(data, func(r csvRow) error {
+		total++
+		if total > MaxImportRows {
+			return invalidImport("too_many_rows", "csv", fmt.Sprintf("The file has more than %d contacts. Split it into smaller files.", MaxImportRows))
+		}
+		names, ok := rowTags(r.tags)
+		if !ok {
+			return invalidImport("invalid_tag_name", "csv",
+				fmt.Sprintf("Row %d has a tag that isn't 1 to %d characters. Fix that row's tags and try again.", r.line, MaxTagNameLen))
+		}
+		for _, n := range names {
+			fileTags[strings.ToLower(n)] = true
+		}
+		if len(fileTags) > MaxImportFileTags {
+			return invalidImport("too_many_tags", "csv",
+				fmt.Sprintf("The tags column names more than %d different tags. Import the file in parts, or tag the contacts afterwards.", MaxImportFileTags))
+		}
+		if fn != nil {
+			fn(r)
+		}
+		return nil
+	})
+	if err != nil {
+		return total, err
+	}
+	if total == 0 {
+		return 0, invalidImport("no_rows", "csv", "The file has a header row but no contacts.")
+	}
+	return total, nil
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -824,7 +922,7 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 }
 
 func (s *Service) runImport(ctx context.Context, j *importJob) error {
-	l, err := readLayout(j.data, j.named)
+	l, err := readLayout(j.data, columnChoice{named: j.named})
 	if err != nil {
 		return err
 	}

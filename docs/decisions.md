@@ -4,6 +4,40 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-23: Checking an import's columns before it runs (MG-124; reversible defaults)
+
+The owner asked for "a matching step to the import where they can confirm
+which columns from their CSV data map to which columns in mailgoose". What
+changed:
+
+- **`POST /v1/imports/preview` (`mailgoose import preview`)** reads a file the
+  way an import would and changes nothing. It returns the separator, the row
+  count, each column with its first 3 values and the field it becomes, and the
+  problem the import would refuse the file for. A mapping problem, such as no
+  email column, is a `problem`, not an error, so the columns can still be
+  shown.
+- **An empty string in `columns` leaves a field out** (`--map status=` in the
+  CLI). Before, the web app's "Not mapped" left the field out of the request,
+  and the import then guessed it from common headers anyway. A field that
+  isn't sent is still guessed, as before. The ticket said `null`; the
+  generated API types can't tell `null` from a missing field, so an empty
+  string it is. Email can't be left out.
+- **Columns can be named by position, as `#3`** (counting from 1), when no
+  header is exactly `#3`. An import stores a column whose header is blank, or
+  repeated, by position, so the worker reads the same column the person
+  picked. Before, a repeated header always meant its first column.
+- **The worker no longer guesses columns.** It reads exactly the columns
+  stored when the import was created. That's the same result as before for
+  every import, but a skipped field can't come back.
+- **The web app's matching step comes from the preview.** It shows one row
+  per column of the file, with its first values and a choice of Email, First
+  name, Last name, Status, Tags or "Don't import". A field can be on only one
+  column, and each change checks the file again. It sends every field, empty
+  when not imported, so the import does exactly what was shown. It reads
+  semicolon and tab files the way the import does, which the old
+  comma-only header reader didn't. Its own header reader (`web/src/csv.ts`) is
+  gone.
+
 ## 2026-11-23: Tickets are built in Claude Duet again (owner decision, confirmed)
 
 The owner, Nov 23: "ok, i'm kinda missing the autonomy of this old workflow.

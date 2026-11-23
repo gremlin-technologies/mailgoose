@@ -247,7 +247,8 @@ names the campaign); give the campaign other recipients first.
 
 ```sh
 mailgoose contacts add pat@example.com --first-name Pat --json
-mailgoose import contacts.csv --list-source form --wait --json
+mailgoose import preview contacts.csv --json
+mailgoose import contacts.csv --list-source form --map status= --wait --json
 mailgoose tags add VIP pat@example.com --json
 mailgoose form create --name "Footer" --json
 mailgoose form embed <form-id> > signup.html
@@ -261,6 +262,14 @@ start unconfirmed and get a confirmation email first. An import with many bad,
 role or throwaway addresses, or one that looks like a shared list, is held for
 review; `hold_message` says why. Signup forms ask people to confirm by email unless
 the person turns that off.
+
+Before importing a file, run `mailgoose import preview` and show the person
+which column becomes which field, with the first values, and let them confirm
+it or change it. Columns that become no field aren't imported. Name a column
+with `--map field=header`, or `--map field=#3` by position for a blank or
+repeated header; `--map status=` leaves a field out even when a column looks
+like it. Pass the same `--map` flags to `mailgoose import`. Pasted text works
+too: comma- or tab-separated lines with a header row, piped in with `-`.
 
 ## Moving from Mailchimp
 

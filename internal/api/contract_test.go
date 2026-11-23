@@ -362,6 +362,16 @@ var contractCases = map[string][]contractCase{
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/imports"))), req: bearer(jsonRequest(http.MethodPost, "/v1/imports", importBody)), status: http.StatusTooManyRequests},
 		{name: "no database", server: serverWith(nil), req: bearer(jsonRequest(http.MethodPost, "/v1/imports", importBody)), status: http.StatusServiceUnavailable},
 	},
+	"previewImport": {
+		{name: "previewed", server: draftKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/imports/preview", previewBody)), status: http.StatusOK},
+		{name: "malformed", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/imports/preview", `{"csv":1}`)), status: http.StatusBadRequest},
+		{name: "empty file", server: fullKey(authServer), req: bearer(jsonRequest(http.MethodPost, "/v1/imports/preview", `{"csv":""}`)), status: http.StatusUnprocessableEntity},
+		{name: "too large", server: fullKey(authServer), req: bearer(tooLargePreview), status: http.StatusRequestEntityTooLarge},
+		{name: "no credentials", server: authServer, req: jsonRequest(http.MethodPost, "/v1/imports/preview", previewBody), status: http.StatusUnauthorized},
+		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(jsonRequest(http.MethodPost, "/v1/imports/preview", previewBody))), status: http.StatusForbidden},
+		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/imports"))), req: bearer(jsonRequest(http.MethodPost, "/v1/imports/preview", previewBody)), status: http.StatusTooManyRequests},
+		{name: "no database", server: serverWith(nil), req: bearer(jsonRequest(http.MethodPost, "/v1/imports/preview", previewBody)), status: http.StatusServiceUnavailable},
+	},
 	"listCampaigns": {
 		{name: "listed", server: draftKey(authServer), before: addedCampaign, req: bearer(request(http.MethodGet, "/v1/campaigns?status=draft")), status: http.StatusOK},
 		{name: "bad status", server: fullKey(authServer), req: bearer(request(http.MethodGet, "/v1/campaigns?status=done")), status: http.StatusBadRequest},
