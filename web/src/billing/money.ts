@@ -1,4 +1,5 @@
 // Prices and the Stripe hand-off for the billing page.
+import type { Failure, Result } from "../api/result";
 
 /** Cents as dollars: 500 is "$5", 1250 is "$12.50". */
 export function dollars(cents: number): string {
@@ -29,4 +30,20 @@ export function isStripeUrl(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+const notStripe: Failure = {
+  code: "unexpected_response",
+  message: "mailgoose answered with a payment page that isn't Stripe's, so it wasn't opened.",
+  hint: "Try again in a moment, or contact support.",
+  status: 200,
+};
+
+/** Asks the API for a Stripe page, then goes there. Returns why it couldn't. */
+export async function openStripe(get: () => Promise<Result<{ url: string } | undefined>>): Promise<Failure | undefined> {
+  const res = await get();
+  if (!res.ok) return res.failure;
+  if (!res.data || !isStripeUrl(res.data.url)) return notStripe;
+  browser.open(res.data.url);
+  return undefined;
 }

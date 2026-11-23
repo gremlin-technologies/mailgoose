@@ -653,6 +653,11 @@ further 10,000, or part of one, is another. `units_needed` is what
 the contacts make now; the subscription moves to it at its next
 renewal.
 
+It also gives the plan's terms from the server's own settings, so a
+client words prices and allowances from them rather than its own
+copies (MG-126): the contacts a unit covers, the free plan's limits,
+the daily sending limits, and the cheapest credit pack.
+
 Responses:
 
 - `200`: The plan. [Plan](#schema-plan)
@@ -5258,6 +5263,11 @@ Type: string: one of `full`, `draft`
 | `contacts` | integer | yes | Counted contacts now (subscribed and unconfirmed). |
 | `units_needed` | integer | yes | The plan units those contacts make. |
 | `prices` | object | yes |  |
+| `included_contacts` | integer | yes | The counted contacts the first unit covers (2,500). |
+| `contacts_per_unit` | integer | yes | The counted contacts each further unit covers (10,000). |
+| `free_plan` | object | yes | The free plan's limits. |
+| `paid_sending` | object | yes | A paid account's daily sending limit. It starts at `starting_daily` and doubles each week of clean sending up to `most_daily`. With `needs_domain` true, this account sends from mailgoose's shared domain and stays at `starting_daily` until it verifies a domain of its own. |
+| `credit_packs` | object | yes | Credit packs, which the paid plan can buy. |
 
 <a id="schema-creditcheckoutrequest"></a>
 

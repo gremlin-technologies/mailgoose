@@ -39,7 +39,7 @@ export const WEB_HINTS: Record<string, string> = {
   test_mode:
     "Send to a tag or segment that holds only your confirmed test addresses (see Test addresses), or ask mailgoose to allow full sending.",
   tester_limit: "",
-  over_contact_limit: "Upgrade to the paid plan on the Billing page, or delete or unsubscribe contacts you no longer mail.",
+  over_contact_limit: "Upgrade to Pay as you go on the Billing page, or delete or unsubscribe contacts you no longer mail.",
   new_terms_not_accepted: "Read what changed on the Policies page, then accept the new terms.",
   no_email: "Pick an email for the campaign.",
   missing_from: "Set a From address in Settings, or on the email.",
@@ -56,9 +56,9 @@ export const WEB_HINTS: Record<string, string> = {
   invalid_code: "Send a new code and use the one in the newest email.",
 
   // Plan and billing.
-  plan_required: "Upgrade to the paid plan on the Billing page.",
+  plan_required: "Upgrade to Pay as you go on the Billing page.",
   already_subscribed: "Change or cancel it from the Billing page.",
-  not_subscribed: "Start the paid plan on the Billing page.",
+  not_subscribed: "Upgrade to Pay as you go on the Billing page.",
 
   // Domains, sender addresses and test addresses.
   domain_exists: "Finish verifying it on the Domains page.",

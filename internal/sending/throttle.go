@@ -290,6 +290,18 @@ func (l Limits) forAccount(ctx context.Context, q querier, accountID string, own
 	return out, nil
 }
 
+// NeedsDomain reports whether an account stays at the new-account limit
+// because it has no verified domain of its own while shared sending is on
+// (MG-98).
+func (l Limits) NeedsDomain(ctx context.Context, q querier, accountID string) (bool, error) {
+	if !l.SharedDomain {
+		return false, nil
+	}
+	var has bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM domains WHERE account_id = $1 AND status = 'verified')`, accountID).Scan(&has)
+	return !has, err
+}
+
 // ownLimitSQL is an account's own daily limit, from a row of accounts a: the
 // limit staff set, held to tester.Daily for a tester account (MG-86).
 var ownLimitSQL = fmt.Sprintf(`CASE WHEN a.tester_started_at IS NOT NULL

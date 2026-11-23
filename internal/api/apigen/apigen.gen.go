@@ -4466,13 +4466,54 @@ type Plan struct {
 	// Contacts Counted contacts now (subscribed and unconfirmed).
 	Contacts int `json:"contacts"`
 
+	// ContactsPerUnit The counted contacts each further unit covers (10,000).
+	ContactsPerUnit int `json:"contacts_per_unit"`
+
+	// CreditPacks Credit packs, which the paid plan can buy.
+	CreditPacks struct {
+		Cheapest struct {
+			Credits    int    `json:"credits"`
+			Name       string `json:"name"`
+			PriceCents int    `json:"price_cents"`
+		} `json:"cheapest"`
+
+		// Months How many months bought credits last.
+		Months int `json:"months"`
+	} `json:"credit_packs"`
+
 	// CurrentPeriodEnd When the paid period ends and the subscription renews, or ends if it's cancelled.
 	CurrentPeriodEnd *time.Time `json:"current_period_end"`
 
+	// FreePlan The free plan's limits.
+	FreePlan struct {
+		// Contacts The most counted contacts a free account sends to.
+		Contacts int `json:"contacts"`
+
+		// DailySends The most emails a free account sends a day; 0 means no cap of its own.
+		DailySends int `json:"daily_sends"`
+
+		// MonthlyCredits The credits every account gets each month, free or paid.
+		MonthlyCredits int `json:"monthly_credits"`
+	} `json:"free_plan"`
+
+	// IncludedContacts The counted contacts the first unit covers (2,500).
+	IncludedContacts int `json:"included_contacts"`
+
 	// Interval `month` or `year`; null without a subscription.
-	Interval *string  `json:"interval"`
-	Plan     PlanPlan `json:"plan"`
-	Prices   struct {
+	Interval *string `json:"interval"`
+
+	// PaidSending A paid account's daily sending limit. It starts at `starting_daily`
+	// and doubles each week of clean sending up to `most_daily`. With
+	// `needs_domain` true, this account sends from mailgoose's shared
+	// domain and stays at `starting_daily` until it verifies a domain of
+	// its own.
+	PaidSending struct {
+		MostDaily     int  `json:"most_daily"`
+		NeedsDomain   bool `json:"needs_domain"`
+		StartingDaily int  `json:"starting_daily"`
+	} `json:"paid_sending"`
+	Plan   PlanPlan `json:"plan"`
+	Prices struct {
 		Currency PlanPricesCurrency `json:"currency"`
 
 		// MonthCents One unit for a month, in cents.

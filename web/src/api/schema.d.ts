@@ -459,6 +459,11 @@ export interface paths {
          *     further 10,000, or part of one, is another. `units_needed` is what
          *     the contacts make now; the subscription moves to it at its next
          *     renewal.
+         *
+         *     It also gives the plan's terms from the server's own settings, so a
+         *     client words prices and allowances from them rather than its own
+         *     copies (MG-126): the contacts a unit covers, the free plan's limits,
+         *     the daily sending limits, and the cheapest credit pack.
          */
         get: operations["getPlan"];
         put?: never;
@@ -4343,6 +4348,41 @@ export interface components {
                 year_cents: number;
                 /** @enum {string} */
                 currency: "usd";
+            };
+            /** @description The counted contacts the first unit covers (2,500). */
+            included_contacts: number;
+            /** @description The counted contacts each further unit covers (10,000). */
+            contacts_per_unit: number;
+            /** @description The free plan's limits. */
+            free_plan: {
+                /** @description The most counted contacts a free account sends to. */
+                contacts: number;
+                /** @description The credits every account gets each month, free or paid. */
+                monthly_credits: number;
+                /** @description The most emails a free account sends a day; 0 means no cap of its own. */
+                daily_sends: number;
+            };
+            /**
+             * @description A paid account's daily sending limit. It starts at `starting_daily`
+             *     and doubles each week of clean sending up to `most_daily`. With
+             *     `needs_domain` true, this account sends from mailgoose's shared
+             *     domain and stays at `starting_daily` until it verifies a domain of
+             *     its own.
+             */
+            paid_sending: {
+                starting_daily: number;
+                most_daily: number;
+                needs_domain: boolean;
+            };
+            /** @description Credit packs, which the paid plan can buy. */
+            credit_packs: {
+                cheapest: {
+                    name: string;
+                    credits: number;
+                    price_cents: number;
+                };
+                /** @description How many months bought credits last. */
+                months: number;
             };
         };
         CreditCheckoutRequest: {

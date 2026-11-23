@@ -7,6 +7,7 @@ import { useApi } from "../api/context";
 import { webWords } from "../api/hints";
 import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
+import { UpgradeButton } from "../billing/upgrade";
 import { FailureNotice, formatDate } from "../components";
 import type { EditorFrom } from "../designer/exit";
 import { useSession } from "../session";
@@ -166,6 +167,12 @@ export function Problems({ failure, onSendTest, testing }: { failure: Failure; o
               <>
                 {p.message}
                 {p.hint && <span className="hint"> {p.hint}</span>}
+                {p.code === "over_contact_limit" && (
+                  <>
+                    {" "}
+                    <UpgradeButton reason="You have more contacts than the free plan sends to, so this campaign can't launch yet." />
+                  </>
+                )}
                 {p.code === "untested" && onSendTest && (
                   <>
                     {" "}

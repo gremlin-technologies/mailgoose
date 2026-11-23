@@ -22,6 +22,61 @@ type plan struct {
 		MonthCents int64 `json:"month_cents"`
 		YearCents  int64 `json:"year_cents"`
 	} `json:"prices"`
+	// The plan's terms, from the server's settings (MG-126).
+	IncludedContacts int64 `json:"included_contacts"`
+	ContactsPerUnit  int64 `json:"contacts_per_unit"`
+	FreePlan         struct {
+		Contacts       int64 `json:"contacts"`
+		MonthlyCredits int64 `json:"monthly_credits"`
+		DailySends     int64 `json:"daily_sends"`
+	} `json:"free_plan"`
+	PaidSending struct {
+		StartingDaily int64 `json:"starting_daily"`
+		MostDaily     int64 `json:"most_daily"`
+		NeedsDomain   bool  `json:"needs_domain"`
+	} `json:"paid_sending"`
+	CreditPacks struct {
+		Cheapest struct {
+			Name       string `json:"name"`
+			Credits    int64  `json:"credits"`
+			PriceCents int64  `json:"price_cents"`
+		} `json:"cheapest"`
+		Months int `json:"months"`
+	} `json:"credit_packs"`
+}
+
+// printFreeTerms says what the free plan allows and what the paid plan adds,
+// from the plan's terms; an older server that sends none gets nothing.
+func (a *App) printFreeTerms(p plan) {
+	if p.IncludedContacts == 0 {
+		return
+	}
+	n := groupThousands
+	free := fmt.Sprintf("The free plan sends to up to %s contacts, with %s credits a month", n(p.FreePlan.Contacts), n(p.FreePlan.MonthlyCredits))
+	if p.FreePlan.DailySends > 0 {
+		free += fmt.Sprintf(" and at most %s emails a day", n(p.FreePlan.DailySends))
+	}
+	fmt.Fprintln(a.Stdout, free+`, and every email carries a "Sent by mailgoose" line.`)
+	daily := fmt.Sprintf("starts at %s emails a day and grows each week of clean sending, up to %s",
+		n(p.PaidSending.StartingDaily), n(p.PaidSending.MostDaily))
+	if p.PaidSending.NeedsDomain {
+		daily = fmt.Sprintf("stays at %s emails a day until you add your own domain, then grows each week of clean sending, up to %s",
+			n(p.PaidSending.StartingDaily), n(p.PaidSending.MostDaily))
+	}
+	fmt.Fprintf(a.Stdout, "The paid plan has no \"Sent by mailgoose\" line, keeps the %s monthly credits, buys credit packs "+
+		"(from %s for %s credits, which last %d months), and %s.\n",
+		n(p.FreePlan.MonthlyCredits), dollars(p.CreditPacks.Cheapest.PriceCents), n(p.CreditPacks.Cheapest.Credits),
+		p.CreditPacks.Months, daily)
+	a.printContactPricing(p)
+}
+
+// printContactPricing says what the paid plan costs by contacts.
+func (a *App) printContactPricing(p plan) {
+	if p.IncludedContacts == 0 {
+		return
+	}
+	fmt.Fprintf(a.Stdout, "It's %s a month or %s a year for up to %s contacts, and each further %s contacts adds the same again.\n",
+		dollars(p.Prices.MonthCents), dollars(p.Prices.YearCents), groupThousands(p.IncludedContacts), groupThousands(p.ContactsPerUnit))
 }
 
 // planCheckout is the API's PlanCheckout.
@@ -59,6 +114,7 @@ func (a *App) planCmd() *cobra.Command {
 			}
 			if p.Plan != "paid" {
 				fmt.Fprintf(a.Stdout, "Free plan, %s counted contacts.\n", groupThousands(int64(p.Contacts)))
+				a.printFreeTerms(p)
 				fmt.Fprintf(a.Stdout, "The paid plan would be %s a month or %s a year for them: `mailgoose plan upgrade`.\n",
 					dollars(p.Prices.MonthCents*int64(p.UnitsNeeded)), dollars(p.Prices.YearCents*int64(p.UnitsNeeded)))
 				return nil
@@ -88,6 +144,7 @@ func (a *App) planCmd() *cobra.Command {
 				fmt.Fprintf(a.Stdout, "The contacts now make it %s a %s from the next renewal.\n",
 					dollars(each*int64(p.UnitsNeeded)), interval)
 			}
+			a.printContactPricing(p)
 			if status == "past_due" || status == "unpaid" {
 				fmt.Fprintln(a.Stdout, "The last payment didn't go through, so sending is paused. Update the card: `mailgoose plan manage`.")
 			}

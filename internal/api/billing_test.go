@@ -284,6 +284,31 @@ func TestPlan(t *testing.T) {
 		prices["year_cents"] != float64(5000) || p["status"] != nil {
 		t.Errorf("free plan %v", p)
 	}
+	// The plan's terms come from the server's settings (MG-126).
+	terms := func(p map[string]any) string {
+		b, _ := json.Marshal(map[string]any{"included": p["included_contacts"], "step": p["contacts_per_unit"],
+			"free": p["free_plan"], "paid": p["paid_sending"], "packs": p["credit_packs"]})
+		return string(b)
+	}
+	if got, want := terms(p), `{"free":{"contacts":1000,"daily_sends":0,"monthly_credits":2500},"included":2500,`+
+		`"packs":{"cheapest":{"credits":10000,"name":"10k","price_cents":2000},"months":24},`+
+		`"paid":{"most_daily":10000,"needs_domain":false,"starting_daily":1000},"step":10000}`; got != want {
+		t.Errorf("terms = %s\nwant    %s", got, want)
+	}
+	// With shared sending on, an account without a verified domain stays at
+	// the starting limit; other settings change the terms with them.
+	s.Sending.Limits.SharedDomain, s.Sending.Limits.FreeDaily, s.Sending.Limits.Daily = true, 500, 20000
+	s.Billing.Packs = []billing.Pack{{Name: "big", Credits: 50_000, PriceCents: 9_000}, {Name: "small", Credits: 5_000, PriceCents: 1_500}}
+	p = get()
+	free, _ := p["free_plan"].(map[string]any)
+	paid, _ := p["paid_sending"].(map[string]any)
+	packs, _ := p["credit_packs"].(map[string]any)
+	if free["daily_sends"] != float64(500) || paid["needs_domain"] != true || paid["most_daily"] != float64(20000) ||
+		packs["cheapest"].(map[string]any)["name"] != "small" {
+		t.Errorf("changed terms = %s", terms(p))
+	}
+	s.Sending.Limits = testLimits
+	s.Billing.Packs = billing.DefaultPacks
 
 	// Nothing to manage yet.
 	rec := httptest.NewRecorder()
