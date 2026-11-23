@@ -33,6 +33,16 @@ type RateLimitError struct {
 
 func (e *RateLimitError) Error() string { return "too many code requests" }
 
+// WrongCodesError says an address has entered MaxWrongCodesPerEmail wrong
+// codes within CodeRequestWindow, so even the right code is refused until
+// RetryAfter (MG-123). It's apart from RateLimitError so the answer can say
+// why.
+type WrongCodesError struct {
+	RetryAfter time.Duration
+}
+
+func (e *WrongCodesError) Error() string { return "too many wrong codes" }
+
 // limitCodeRequests records a code request and refuses it when the address
 // or the IP has made too many in the last CodeRequestWindow. It counts the
 // address whether or not it has an account, so the answer reveals nothing.
@@ -116,11 +126,11 @@ func (s *Service) RequestSignIn(ctx context.Context, rawEmail, ip string) error 
 	if lastCode != nil && now.Sub(*lastCode) < ResendInterval {
 		return nil
 	}
-	purpose := PurposeSignin
+	purpose, intro := PurposeSignin, introSignin
 	if status != "active" {
-		purpose = PurposeSignup
+		purpose, intro = PurposeSignup, introSignup
 	}
-	return s.issueCode(ctx, tx, userID, accountID, storedEmail, purpose, now)
+	return s.issueCode(ctx, tx, userID, accountID, storedEmail, purpose, intro, now)
 }
 
 // Current is the signed-in person behind a session.
@@ -193,7 +203,7 @@ func (s *Service) revoke(ctx context.Context, sql, id string) error {
 }
 
 // lockWrongCodes takes the address's lock for counting wrong codes, and
-// returns a *RateLimitError when it has entered MaxWrongCodesPerEmail wrong
+// returns a *WrongCodesError when it has entered MaxWrongCodesPerEmail wrong
 // codes within CodeRequestWindow.
 func lockWrongCodes(ctx context.Context, tx pgx.Tx, email string, now time.Time) error {
 	key := strings.ToLower(email)
@@ -214,7 +224,7 @@ func lockWrongCodes(ctx context.Context, tx pgx.Tx, email string, now time.Time)
 	if oldest != nil {
 		retry = oldest.Add(CodeRequestWindow).Sub(now)
 	}
-	return &RateLimitError{RetryAfter: max(retry, time.Second)}
+	return &WrongCodesError{RetryAfter: max(retry, time.Second)}
 }
 
 // recordWrongCode counts one wrong code for the address.

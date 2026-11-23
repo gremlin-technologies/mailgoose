@@ -92,7 +92,8 @@ func TestCLITokenCountsTowardWrongCodeCap(t *testing.T) {
 			t.Fatalf("wrong try %d: %d %s", i+1, rec.Code, rec.Body)
 		}
 	}
-	if rec := do(t, h, cliTokenRequest("123456")(t)); rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+	if rec := do(t, h, cliTokenRequest("123456")(t)); rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" ||
+		!strings.Contains(rec.Body.String(), "too_many_wrong_codes") {
 		t.Errorf("over the cap: %d %s", rec.Code, rec.Body)
 	}
 }

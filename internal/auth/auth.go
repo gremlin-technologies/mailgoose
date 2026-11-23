@@ -257,7 +257,7 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 		FROM users u JOIN accounts a ON a.id = u.account_id
 		WHERE lower(u.email) = lower($1)
 		FOR UPDATE OF u, a`, email).Scan(&userID, &storedEmail, &accountID, &status, &lastCode)
-	purpose := PurposeSignup
+	purpose, intro := PurposeSignup, introSignup
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		if err := tx.QueryRow(ctx, `
@@ -287,7 +287,7 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 			return nil
 		}
 		if status == "active" {
-			purpose = PurposeSignin
+			purpose, intro = PurposeSignin, introSignupExisting
 		} else {
 			// Still pending: the latest sign-up's name and acceptance win.
 			if _, err := tx.Exec(ctx, `UPDATE accounts SET name = $2, terms_accepted_at = $3, terms_version = $4, updated_at = $3 WHERE id = $1`,
@@ -300,13 +300,13 @@ func (s *Service) SignUp(ctx context.Context, in SignUpInput) error {
 		}
 	}
 
-	return s.issueCode(ctx, tx, userID, accountID, storedEmail, purpose, now)
+	return s.issueCode(ctx, tx, userID, accountID, storedEmail, purpose, intro, now)
 }
 
 // issueCode stores a new code for the user, replacing any unused one, commits
-// tx and emails the code. If the email can't be sent the code is dropped, so
+// tx and emails the code, opening the email with intro. If the email can't be sent the code is dropped, so
 // a retry isn't held back by ResendInterval.
-func (s *Service) issueCode(ctx context.Context, tx pgx.Tx, userID, accountID, to, purpose string, now time.Time) error {
+func (s *Service) issueCode(ctx context.Context, tx pgx.Tx, userID, accountID, to, purpose, intro string, now time.Time) error {
 	code, err := newCode()
 	if err != nil {
 		return err
@@ -328,7 +328,7 @@ func (s *Service) issueCode(ctx context.Context, tx pgx.Tx, userID, accountID, t
 	if err := tx.Commit(ctx); err != nil {
 		return err
 	}
-	if _, err := s.Mail.Send(ctx, codeMessage(s.From, to, code, purpose, accountID)); err != nil {
+	if _, err := s.Mail.Send(ctx, codeMessage(s.From, to, code, intro, accountID)); err != nil {
 		if _, derr := s.deleteCode(context.WithoutCancel(ctx), codeID); derr != nil {
 			s.log().ErrorContext(ctx, "drop unsent code", "err", derr)
 		}

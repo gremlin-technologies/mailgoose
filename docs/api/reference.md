@@ -122,7 +122,7 @@ Responses:
 
 - `201`: The request. [DeviceLoginStart](#schema-deviceloginstart)
 - `400`: The request is malformed. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-polldevicelogin"></a>
@@ -150,7 +150,7 @@ Responses:
 - `403`: The person denied the request. [Error](#schema-error)
 - `410`: The request expired, doesn't exist or was already collected. [Error](#schema-error)
 - `400`: The request is malformed. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getdevicelogin"></a>
@@ -174,7 +174,7 @@ Responses:
 - `200`: The request. [DeviceLogin](#schema-devicelogin)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-approvedevicelogin"></a>
@@ -198,7 +198,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-denydevicelogin"></a>
@@ -221,7 +221,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-revokecurrentclitoken"></a>
@@ -242,7 +242,7 @@ Responses:
 - `204`: Revoked.
 - `400`: The request wasn't made with a CLI token (code `not_a_cli_token`). [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getwhoami"></a>
@@ -260,7 +260,7 @@ Responses:
 
 - `200`: The caller. [Whoami](#schema-whoami)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createsignup"></a>
@@ -286,7 +286,7 @@ Responses:
 - `202`: A code is on its way, if the address can receive one. [CodeSent](#schema-codesent)
 - `400`: The request is malformed. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createsignin"></a>
@@ -312,7 +312,7 @@ Responses:
 - `202`: A code is on its way, if the address has an account. [CodeSent](#schema-codesent)
 - `400`: The request is malformed. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createclitoken"></a>
@@ -329,9 +329,13 @@ Uses a code from `createSignup` or `createSignIn`, like
 setting a session cookie. This is how `mailgoose signup` finishes
 without a browser: a person still has to read the code from the email
 and type it in. On success a pending account becomes active. A wrong,
-expired, used or locked code gets the same `invalid_code` error; a
-code stops working after 5 wrong tries. A suspended account gets
-`account_suspended` (403): it has no CLI logins.
+expired, used, replaced or locked code gets the same `invalid_code`
+error (each new code request replaces the address's earlier unused
+code); a code stops working after 5 wrong tries. After 10 wrong codes
+for one address within an hour, across `createSession` and this,
+even the right code gets 429 `too_many_wrong_codes` with
+`Retry-After`. A suspended account gets `account_suspended` (403): it
+has no CLI logins.
 
 Request body (`application/json`, required): [CliTokenRequest](#schema-clitokenrequest)
 
@@ -341,7 +345,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createsession"></a>
@@ -354,11 +358,13 @@ Responses:
 
 Uses a code from `createSignup` or `createSignIn`. On success a
 pending account becomes active, and the response sets an HttpOnly
-session cookie that lasts 30 days. A wrong, expired, used or locked
-code gets the same `invalid_code` error; a code stops working after 5
-wrong tries. After 10 wrong codes for one address within an hour,
-across all its codes and whether or not it has an account, even the
-right code gets 429 with `Retry-After` until the hour passes.
+session cookie that lasts 30 days. A wrong, expired, used, replaced
+or locked code gets the same `invalid_code` error (each new code
+request replaces the address's earlier unused code); a code stops
+working after 5 wrong tries. After 10 wrong codes for one address
+within an hour, across all its codes and whether or not it has an
+account, even the right code gets 429 `too_many_wrong_codes` with
+`Retry-After` until the hour passes.
 
 Request body (`application/json`, required): [SessionRequest](#schema-sessionrequest)
 
@@ -367,7 +373,7 @@ Responses:
 - `201`: Signed in. [Session](#schema-session)
 - `400`: The request is malformed. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-deleteallsessions"></a>
@@ -444,7 +450,7 @@ Responses:
 
 - `200`: The account. [AccountSettings](#schema-accountsettings)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-updateaccount"></a>
@@ -471,7 +477,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-deleteaccount"></a>
@@ -506,7 +512,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `502`: `payment_provider_error`: Stripe couldn't make the Checkout page; try again shortly. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -540,7 +546,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-api-keys"></a>
@@ -570,7 +576,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createapikey"></a>
@@ -598,7 +604,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-revokeapikey"></a>
@@ -624,7 +630,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-plan"></a>
@@ -651,7 +657,7 @@ Responses:
 
 - `200`: The plan. [Plan](#schema-plan)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createplancheckout"></a>
@@ -682,7 +688,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `409`: `plan_required`: credit packs are for the paid plan; start it with createPlanCheckout. `already_subscribed`: the account is already on the paid plan. `not_subscribed`: the account has no subscription to manage. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `502`: `payment_provider_error`: Stripe couldn't make the Checkout page; try again shortly. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -708,7 +714,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `409`: `plan_required`: credit packs are for the paid plan; start it with createPlanCheckout. `already_subscribed`: the account is already on the paid plan. `not_subscribed`: the account has no subscription to manage. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `502`: `payment_provider_error`: Stripe couldn't make the Checkout page; try again shortly. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -734,7 +740,7 @@ Responses:
 
 - `200`: The balance. [CreditSummary](#schema-creditsummary)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createcreditcheckout"></a>
@@ -767,7 +773,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `409`: `plan_required`: credit packs are for the paid plan; start it with createPlanCheckout. `already_subscribed`: the account is already on the paid plan. `not_subscribed`: the account has no subscription to manage. [Error](#schema-error)
 - `422`: `unknown_pack`: there's no pack by that name; `details.packs` lists the packs with their credits and prices. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `502`: `payment_provider_error`: Stripe couldn't make the Checkout page; try again shortly. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -794,7 +800,7 @@ Responses:
 - `200`: A page of transactions. [CreditTransactionList](#schema-credittransactionlist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-domains"></a>
@@ -823,7 +829,7 @@ Responses:
 - `200`: A page of domains. [DomainList](#schema-domainlist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createdomain"></a>
@@ -852,7 +858,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `409`: `domain_exists`: this account already has the domain. `domain_taken`: another mailgoose account has it. `domain_unavailable`: the domain is already set up in Amazon SES outside mailgoose's reach. Contact support for either of the last two. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getdomain"></a>
@@ -876,7 +882,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-deletedomain"></a>
@@ -902,7 +908,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-verifydomain"></a>
@@ -932,7 +938,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-contacts"></a>
@@ -981,7 +987,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `410`: `report_archived`: the campaign launched more than 12 months ago, and its raw events were deleted; only the report's saved numbers are left. [Error](#schema-error)
 - `422`: An engagement filter names a campaign it can't use: `unknown_campaign` (not one of the account's campaigns) or `tracking_off` (sent with open and click tracking off, so it has no opens or clicks). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createcontact"></a>
@@ -1012,7 +1018,7 @@ Responses:
 - `402`: `contact_limit`: a free account, or a tester account (MG-86) on any plan, holds at most 1,000 counted contacts (unconfirmed and subscribed), and a tester account 500. `details.limit` is the limit and `details.count` the counted contacts now. A free account's signup forms take up to 100 more before they answer with it. Other paid accounts have no cap. [Error](#schema-error)
 - `409`: `contact_exists`: the account already has a contact with that address. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-countcontacts"></a>
@@ -1048,7 +1054,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `410`: `report_archived`: the campaign launched more than 12 months ago, and its raw events were deleted; only the report's saved numbers are left. [Error](#schema-error)
 - `422`: An engagement filter names a campaign it can't use: `unknown_campaign` (not one of the account's campaigns) or `tracking_off` (sent with open and click tracking off, so it has no opens or clicks). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-exportcontacts"></a>
@@ -1092,7 +1098,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `410`: `report_archived`: the campaign launched more than 12 months ago, and its raw events were deleted; only the report's saved numbers are left. [Error](#schema-error)
 - `422`: An engagement filter names a campaign it can't use: `unknown_campaign` (not one of the account's campaigns) or `tracking_off` (sent with open and click tracking off, so it has no opens or clicks). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getcontact"></a>
@@ -1114,7 +1120,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-updatecontact"></a>
@@ -1147,7 +1153,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `contact_exists`: the account already has a contact with that address. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-deletecontact"></a>
@@ -1181,7 +1187,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getcontactdata"></a>
@@ -1208,7 +1214,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-tags"></a>
@@ -1237,7 +1243,7 @@ Responses:
 - `200`: A page of tags. [TagList](#schema-taglist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createtag"></a>
@@ -1259,7 +1265,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `409`: `tag_exists`: the account already has a tag with that name, ignoring case. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-renametag"></a>
@@ -1288,7 +1294,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `tag_exists`: the account already has a tag with that name, ignoring case. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-deletetag"></a>
@@ -1314,7 +1320,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-tagcontacts"></a>
@@ -1344,7 +1350,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-untagcontacts"></a>
@@ -1372,7 +1378,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-imports"></a>
@@ -1400,7 +1406,7 @@ Responses:
 - `200`: A page of imports. [ImportList](#schema-importlist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createimport"></a>
@@ -1454,7 +1460,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `413`: `request_too_large`: the request body is over the operation's limit. [Error](#schema-error)
 - `422`: The file can't be imported, and nothing was queued. `code` says why: `no_rows`, `no_email_column` (name the column in `columns.email`), `invalid_mapping` (a named column isn't in the header), `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes), `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found`, `too_many_tags`, `list_source_required` (say where the list came from), `list_source_detail_required` (describe an `other` source) or `invalid_list_source`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getimport"></a>
@@ -1478,7 +1484,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-cancelimport"></a>
@@ -1508,7 +1514,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `import_not_waiting`: only an import that's waiting for the paid plan can be cancelled. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-listimportskippedrows"></a>
@@ -1534,7 +1540,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-exportimportskippedrows"></a>
@@ -1564,7 +1570,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createmailchimpbundle"></a>
@@ -1604,7 +1610,7 @@ Responses:
 - `409`: `too_many_uploads`: the account already has 3 unconfirmed uploads; confirm or delete one (`deleteMailchimpBundle`), or wait for one to expire. `upload_in_progress`: another upload for the account is still arriving. `upload_confirmed`: a confirmed upload can't be deleted. [Error](#schema-error)
 - `413`: `request_too_large`: the request body is over the operation's limit. [Error](#schema-error)
 - `422`: The export can't be read or imported, and nothing was kept or queued. `code` says why: `not_zip_or_csv`, `bad_zip`, `unsafe_path`, `too_large` (over 1 GB unpacked), `too_many_members` (over the import's limit), `too_many_columns`, `no_email_column`, `unknown_status`, `nothing_to_read`, `file_required`, `invalid_audience_name`, `invalid_group_column`, `too_many_group_columns`, `permission_required`, `too_many_tags`, `invalid_campaigns`, `invalid_idempotency_key`, `idempotency_key_reused` or `upload_used` (the file was already imported and removed). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getmailchimpbundle"></a>
@@ -1630,7 +1636,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-deletemailchimpbundle"></a>
@@ -1658,7 +1664,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `too_many_uploads`: the account already has 3 unconfirmed uploads; confirm or delete one (`deleteMailchimpBundle`), or wait for one to expire. `upload_in_progress`: another upload for the account is still arriving. `upload_confirmed`: a confirmed upload can't be deleted. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-confirmmailchimpbundle"></a>
@@ -1708,7 +1714,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: The export can't be read or imported, and nothing was kept or queued. `code` says why: `not_zip_or_csv`, `bad_zip`, `unsafe_path`, `too_large` (over 1 GB unpacked), `too_many_members` (over the import's limit), `too_many_columns`, `no_email_column`, `unknown_status`, `nothing_to_read`, `file_required`, `invalid_audience_name`, `invalid_group_column`, `too_many_group_columns`, `permission_required`, `too_many_tags`, `invalid_campaigns`, `invalid_idempotency_key`, `idempotency_key_reused` or `upload_used` (the file was already imported and removed). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-connectmailchimp"></a>
@@ -1738,7 +1744,7 @@ Responses:
 - `200`: The link to open. [MailchimpConnect](#schema-mailchimpconnect)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getmailchimpconnection"></a>
@@ -1757,7 +1763,7 @@ Responses:
 
 - `200`: The connection, or `connected: false`. [MailchimpConnection](#schema-mailchimpconnection)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-disconnectmailchimp"></a>
@@ -1779,7 +1785,7 @@ Responses:
 - `200`: Nothing is connected now. [MailchimpConnection](#schema-mailchimpconnection)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-listmailchimpaudiences"></a>
@@ -1805,7 +1811,7 @@ Responses:
 - `200`: The audiences. [MailchimpAudienceList](#schema-mailchimpaudiencelist)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `409`: `mailchimp_not_connected`: no Mailchimp account is connected, or the connection has expired; connect one with `connectMailchimp`. `mailchimp_access_revoked`: Mailchimp no longer takes mailgoose's access, so the connection was forgotten; connect again. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `502`: `mailchimp_unavailable`: Mailchimp's API didn't answer, or refused the request. Try again in a few minutes. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -1845,7 +1851,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `409`: `mailchimp_not_connected` or `mailchimp_access_revoked`, as for `listMailchimpAudiences`. `fetch_in_progress`: the account's earlier fetch hasn't finished. `too_many_uploads`: the account already has 3 unconfirmed bundles; confirm or delete one. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getmailchimpfetch"></a>
@@ -1872,7 +1878,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-images"></a>
@@ -1900,7 +1906,7 @@ Responses:
 - `200`: A page of images. [ImageList](#schema-imagelist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-uploadimage"></a>
@@ -1929,7 +1935,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `413`: `request_too_large`: the request body is over the operation's limit. [Error](#schema-error)
 - `422`: `invalid_image`: the file is empty, over 5 MB, or isn't a JPEG, PNG, GIF or WebP; `details.detected` says what it looks like when it's another kind of file. `too_many_images`: the account already keeps 1,000 images. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-emails"></a>
@@ -1957,7 +1963,7 @@ Responses:
 - `200`: A page of emails. [EmailList](#schema-emaillist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createemail"></a>
@@ -1983,7 +1989,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `422`: `invalid_document`: the document breaks the schema; `message` names the place, such as `blocks[2].href`, and `details.path` holds it. `invalid_name` (empty or over 200 characters), `invalid_kind` (not blocks or html) or `kind_mismatch` (a document of the other kind). `invalid_html`: an html document's markup has errors, listed in `details.issues` as importEmailHtml describes; empty markup is allowed. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getemail"></a>
@@ -2007,7 +2013,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-updateemail"></a>
@@ -2039,7 +2045,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `version_conflict`: the email was saved since the version given was read, and nothing changed. `details.current_version` is its version now; read it again and redo the change. [Error](#schema-error)
 - `422`: `invalid_document`: the document breaks the schema; `message` names the place, such as `blocks[2].href`, and `details.path` holds it. `invalid_name` (empty or over 200 characters), `invalid_kind` (not blocks or html) or `kind_mismatch` (a document of the other kind). `invalid_html`: an html document's markup has errors, listed in `details.issues` as importEmailHtml describes; empty markup is allowed. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-deleteemail"></a>
@@ -2062,7 +2068,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-replaceemaildocument"></a>
@@ -2095,7 +2101,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `version_conflict`: the email was saved since the version given was read, and nothing changed. `details.current_version` is its version now; read it again and redo the change. [Error](#schema-error)
 - `422`: `invalid_document`: the document breaks the schema; `message` names the place, such as `blocks[2].href`, and `details.path` holds it. `invalid_name` (empty or over 200 characters), `invalid_kind` (not blocks or html) or `kind_mismatch` (a document of the other kind). `invalid_html`: an html document's markup has errors, listed in `details.issues` as importEmailHtml describes; empty markup is allowed. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-importemailhtml"></a>
@@ -2133,7 +2139,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `version_conflict`: the email was saved since the version given was read, and nothing changed. `details.current_version` is its version now; read it again and redo the change. [Error](#schema-error)
 - `422`: `invalid_html`: the markup has errors and nothing changed. `details.issues` lists each, with its `line`, `code` and `message`; `message` names the first. `kind_mismatch`: the email is a blocks email, which has no markup. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-previewemail"></a>
@@ -2165,7 +2171,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: `invalid_merge_tags`: a merge tag can't be filled or a link is unsafe; `details.problems` lists each with its `path` (such as `blocks[2].text`, or `html`) and `message`. `empty_email`: an html email with no markup yet. `invalid_html`: the html email's markup fails the import check (possible only for markup saved before a check was added); `details.problems` lists each with its `line`, `code` and `message`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-checkemail"></a>
@@ -2232,7 +2238,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-duplicateemail"></a>
@@ -2262,7 +2268,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: `invalid_document`: the document breaks the schema; `message` names the place, such as `blocks[2].href`, and `details.path` holds it. `invalid_name` (empty or over 200 characters), `invalid_kind` (not blocks or html) or `kind_mismatch` (a document of the other kind). `invalid_html`: an html document's markup has errors, listed in `details.issues` as importEmailHtml describes; empty markup is allowed. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-listemailblocks"></a>
@@ -2289,7 +2295,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: `kind_mismatch`: the email is html, which has no blocks. `invalid_document`: the block or the fields break the schema, or the change would (such as columns inside a column); `details.path` names the place. `footer_locked`: the change would remove or move the footer, add a second one, or put a block after it. `invalid_position`: the place can't be used, such as `after` a block that isn't there or `column` without `parent_id`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-addemailblock"></a>
@@ -2323,7 +2329,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `version_conflict`: the email was saved since the version given was read, and nothing changed. `details.current_version` is its version now; read it again and redo the change. [Error](#schema-error)
 - `422`: `kind_mismatch`: the email is html, which has no blocks. `invalid_document`: the block or the fields break the schema, or the change would (such as columns inside a column); `details.path` names the place. `footer_locked`: the change would remove or move the footer, add a second one, or put a block after it. `invalid_position`: the place can't be used, such as `after` a block that isn't there or `column` without `parent_id`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-updateemailblock"></a>
@@ -2355,7 +2361,7 @@ Responses:
 - `404`: `not_found`: there's no such email in this account. `block_not_found`: the email has no block with that id. [Error](#schema-error)
 - `409`: `version_conflict`: the email was saved since the version given was read, and nothing changed. `details.current_version` is its version now; read it again and redo the change. [Error](#schema-error)
 - `422`: `kind_mismatch`: the email is html, which has no blocks. `invalid_document`: the block or the fields break the schema, or the change would (such as columns inside a column); `details.path` names the place. `footer_locked`: the change would remove or move the footer, add a second one, or put a block after it. `invalid_position`: the place can't be used, such as `after` a block that isn't there or `column` without `parent_id`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-removeemailblock"></a>
@@ -2386,7 +2392,7 @@ Responses:
 - `404`: `not_found`: there's no such email in this account. `block_not_found`: the email has no block with that id. [Error](#schema-error)
 - `409`: `version_conflict`: the email was saved since the version given was read, and nothing changed. `details.current_version` is its version now; read it again and redo the change. [Error](#schema-error)
 - `422`: `kind_mismatch`: the email is html, which has no blocks. `invalid_document`: the block or the fields break the schema, or the change would (such as columns inside a column); `details.path` names the place. `footer_locked`: the change would remove or move the footer, add a second one, or put a block after it. `invalid_position`: the place can't be used, such as `after` a block that isn't there or `column` without `parent_id`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-moveemailblock"></a>
@@ -2419,7 +2425,7 @@ Responses:
 - `404`: `not_found`: there's no such email in this account. `block_not_found`: the email has no block with that id. [Error](#schema-error)
 - `409`: `version_conflict`: the email was saved since the version given was read, and nothing changed. `details.current_version` is its version now; read it again and redo the change. [Error](#schema-error)
 - `422`: `kind_mismatch`: the email is html, which has no blocks. `invalid_document`: the block or the fields break the schema, or the change would (such as columns inside a column); `details.path` names the place. `footer_locked`: the change would remove or move the footer, add a second one, or put a block after it. `invalid_position`: the place can't be used, such as `after` a block that isn't there or `column` without `parent_id`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-campaigns"></a>
@@ -2450,7 +2456,7 @@ Responses:
 - `200`: A page of campaigns. [CampaignList](#schema-campaignlist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createcampaign"></a>
@@ -2477,7 +2483,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email`, `unknown_tag` and `unknown_segment`: an id isn't one of the account's. `segment_invalid` (counting recipients only): the segment has a condition it can't use now; `details.problems` lists them. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-countcampaignrecipients"></a>
@@ -2501,7 +2507,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email`, `unknown_tag` and `unknown_segment`: an id isn't one of the account's. `segment_invalid` (counting recipients only): the segment has a condition it can't use now; `details.problems` lists them. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getcampaign"></a>
@@ -2525,7 +2531,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-updatecampaign"></a>
@@ -2557,7 +2563,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
 - `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email`, `unknown_tag` and `unknown_segment`: an id isn't one of the account's. `segment_invalid` (counting recipients only): the segment has a condition it can't use now; `details.problems` lists them. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-deletecampaign"></a>
@@ -2583,7 +2589,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-testcampaign"></a>
@@ -2699,7 +2705,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getcampaignreport"></a>
@@ -2731,7 +2737,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-listcampaignreportrecipients"></a>
@@ -2772,7 +2778,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `410`: `report_archived`: the campaign launched more than 12 months ago, and its raw events were deleted; only the report's saved numbers are left. [Error](#schema-error)
 - `422`: `tracking_off`: the campaign was sent with open and click tracking off, so there are no opens or clicks to list. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-exportcampaignreportrecipients"></a>
@@ -2805,7 +2811,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `410`: `report_archived`: the campaign launched more than 12 months ago, and its raw events were deleted; only the report's saved numbers are left. [Error](#schema-error)
 - `422`: `tracking_off`: the campaign was sent with open and click tracking off, so there are no opens or clicks to list. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-reschedulecampaign"></a>
@@ -2837,7 +2843,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
 - `422`: `invalid_campaign`: a part breaks a rule; `details.field` names it (`name`, `email_id`, `recipients` or `send_at`). `unknown_email`, `unknown_tag` and `unknown_segment`: an id isn't one of the account's. `segment_invalid` (counting recipients only): the segment has a condition it can't use now; `details.problems` lists them. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-forms"></a>
@@ -2865,7 +2871,7 @@ Responses:
 - `200`: A page of forms. [FormList](#schema-formlist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createform"></a>
@@ -2892,7 +2898,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `422`: `invalid_form`: a part of the form breaks a rule; `details.field` names it (such as `redirect_url` or `fields[1].name`). `unknown_tag`: a tag id isn't one of the account's tags. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getform"></a>
@@ -2914,7 +2920,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-updateform"></a>
@@ -2946,7 +2952,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: `invalid_form`: a part of the form breaks a rule; `details.field` names it (such as `redirect_url` or `fields[1].name`). `unknown_tag`: a tag id isn't one of the account's tags. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-deleteform"></a>
@@ -2972,7 +2978,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getformembed"></a>
@@ -3002,7 +3008,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-admin"></a>
@@ -3036,7 +3042,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getadminaccount"></a>
@@ -3064,7 +3070,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-pauseaccount"></a>
@@ -3097,7 +3103,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-unpauseaccount"></a>
@@ -3127,7 +3133,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-suspendaccount"></a>
@@ -3166,7 +3172,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `account_suspended`: the account is suspended already. `account_not_suspended`: the account isn't suspended. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-unsuspendaccount"></a>
@@ -3202,7 +3208,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `account_suspended`: the account is suspended already. `account_not_suspended`: the account isn't suspended. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-listsignupreviews"></a>
@@ -3231,7 +3237,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-approvesignup"></a>
@@ -3265,7 +3271,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `signup_not_waiting`: the account isn't waiting for its sign-up review (or, to approve, its review neither waits nor was rejected). [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-rejectsignup"></a>
@@ -3297,7 +3303,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `signup_not_waiting`: the account isn't waiting for its sign-up review (or, to approve, its review neither waits nor was rejected). [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-listtestmodeaccounts"></a>
@@ -3326,7 +3332,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getdeliverabilityreport"></a>
@@ -3369,7 +3375,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getstoragereport"></a>
@@ -3408,7 +3414,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-allowfullsending"></a>
@@ -3442,7 +3448,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `sending_mode_unchanged`: the account is in that sending mode already. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-settestmode"></a>
@@ -3476,7 +3482,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `sending_mode_unchanged`: the account is in that sending mode already. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-granttester"></a>
@@ -3513,7 +3519,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `signup_not_approved`: the account's sign-up review (MG-66) waits or was rejected, so it can't be a tester. `account_suspended`: the account is suspended. `not_tester`: revoking an account that isn't a tester account. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-revoketester"></a>
@@ -3548,7 +3554,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `signup_not_approved`: the account's sign-up review (MG-66) waits or was rejected, so it can't be a tester. `account_suspended`: the account is suspended. `not_tester`: revoking an account that isn't a tester account. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-grantcredits"></a>
@@ -3578,7 +3584,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-stopcampaign"></a>
@@ -3612,7 +3618,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `campaign_locked`: only drafts can be changed, tested, launched or deleted; `details.status` is the campaign's status. `version_conflict`: the campaign changed since the version given; `details.current_version` is its version now. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-approveimport"></a>
@@ -3643,7 +3649,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `import_not_held`: the import isn't waiting for approval. [Error](#schema-error)
 - `422`: `invalid_admin_request`: `details.field` is `reason` (missing, or over 500 characters), `amount` (not 1 to 1,000,000), or for a tester grant `until` (passed, or over 366 days away) or `credits` (not 1 to 10,000). [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-listadminactions"></a>
@@ -3671,7 +3677,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="tag-test-addresses"></a>
@@ -3697,7 +3703,7 @@ Responses:
 
 - `200`: The account's test addresses. [TestAddressList](#schema-testaddresslist)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-addtestaddress"></a>
@@ -3732,7 +3738,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `409`: `test_address_exists`: the account has that address already. `test_address_limit`: the account has 5 test addresses; remove one first. `test_address_confirmed`: the address is confirmed, so there's no link to resend. [Error](#schema-error)
 - `422`: `invalid_email`: that isn't an email address. `test_address_is_owner`: the owner's own sign-in address is always allowed, so it needs no slot. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `502`: `test_address_email_failed`: the confirm email couldn't be sent. The address is kept, pending; resend its link in a minute. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -3761,7 +3767,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `410`: `test_address_link_expired`: the link is older than 7 days. Resend it from the web app or with `mailgoose test-addresses resend`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-removetestaddress"></a>
@@ -3785,7 +3791,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-resendtestaddress"></a>
@@ -3817,7 +3823,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `test_address_exists`: the account has that address already. `test_address_limit`: the account has 5 test addresses; remove one first. `test_address_confirmed`: the address is confirmed, so there's no link to resend. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `502`: `test_address_email_failed`: the confirm email couldn't be sent. The address is kept, pending; resend its link in a minute. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -3848,7 +3854,7 @@ Responses:
 
 - `200`: The account's sender addresses. [SenderAddressList](#schema-senderaddresslist)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-addsenderaddress"></a>
@@ -3883,7 +3889,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `409`: `sender_address_exists`: the account has that address already. `sender_address_limit`: the account has 10 sender addresses; remove one first. `sender_address_confirmed`: the address is confirmed, so there's no link to resend. [Error](#schema-error)
 - `422`: `invalid_email`: that isn't an email address. `sender_address_is_owner`: the owner's own sign-in address always counts, so it needs no slot. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `502`: `sender_address_email_failed`: the confirm email couldn't be sent. The address is kept, pending; resend its link in a minute. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -3912,7 +3918,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `410`: `sender_address_link_expired`: the link is older than 7 days. Resend it from the web app or with `mailgoose sender-addresses resend`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-removesenderaddress"></a>
@@ -3938,7 +3944,7 @@ Responses:
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-resendsenderaddress"></a>
@@ -3971,7 +3977,7 @@ Responses:
 - `403`: `insufficient_scope`: a draft-scope key can't do this; use a full-scope key or the web app. `cross_origin_request`: a browser sent this from another site. `admin_only`: only a signed-in mailgoose admin can do this. `account_suspended`: the account is suspended; see the API's description for what it can still do. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `sender_address_exists`: the account has that address already. `sender_address_limit`: the account has 10 sender addresses; remove one first. `sender_address_confirmed`: the address is confirmed, so there's no link to resend. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `502`: `sender_address_email_failed`: the confirm email couldn't be sent. The address is kept, pending; resend its link in a minute. [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -4003,7 +4009,7 @@ Responses:
 - `200`: A page of segments. [SegmentList](#schema-segmentlist)
 - `400`: The request is malformed. [Error](#schema-error)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-createsegment"></a>
@@ -4030,7 +4036,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `409`: `segment_exists`: the account already has a segment with that name, ignoring case. `segment_limit`: the account has 100 segments, the most it can keep. [Error](#schema-error)
 - `422`: The segment can't be saved: `invalid_segment_name`, `invalid_conditions` (a malformed condition; `message` says which), `no_conditions`, or a condition naming something it can't use: `unknown_tag`, `unknown_campaign`, `tracking_off` (a campaign sent without open and click tracking) or `report_archived` (a campaign whose raw events were deleted after 12 months). `details` holds the `condition` and the `id`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-getsegment"></a>
@@ -4051,7 +4057,7 @@ Responses:
 - `200`: The segment. [Segment](#schema-segment)
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-updatesegment"></a>
@@ -4082,7 +4088,7 @@ Responses:
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `segment_exists`: the account already has a segment with that name, ignoring case. `segment_limit`: the account has 100 segments, the most it can keep. [Error](#schema-error)
 - `422`: The segment can't be saved: `invalid_segment_name`, `invalid_conditions` (a malformed condition; `message` says which), `no_conditions`, or a condition naming something it can't use: `unknown_tag`, `unknown_campaign`, `tracking_off` (a campaign sent without open and click tracking) or `report_archived` (a campaign whose raw events were deleted after 12 months). `details` holds the `condition` and the `id`. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-deletesegment"></a>
@@ -4110,7 +4116,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `409`: `segment_in_use`: a draft or scheduled campaign goes to the segment; `details.campaign_id`, `details.campaign_name` and `details.status` name the first one. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="op-listsegmentcontacts"></a>
@@ -4140,7 +4146,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: `segment_invalid`: a condition names a tag or campaign that's gone or can't be used now. `details.problems` lists them as the segment's `problems` does; update the segment's conditions to use it again. [Error](#schema-error)
-- `429`: Rate limited (`rate_limited`). [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
 <a id="schemas"></a>

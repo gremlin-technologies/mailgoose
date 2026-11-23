@@ -28,12 +28,14 @@ describe("signing in", () => {
     await user.click(screen.getByRole("button", { name: "Email me a code" }));
     expect(await screen.findByText("pat@example.com")).toBeTruthy();
 
-    await user.type(screen.getByLabelText("Code"), "111111");
+    await user.type(screen.getByLabelText("Code"), "111 111");
     await user.click(screen.getByRole("button", { name: "Continue" }));
     expect((await screen.findByRole("alert")).textContent).toContain("That code is wrong or has expired.");
 
     await user.clear(screen.getByLabelText("Code"));
-    await user.type(screen.getByLabelText("Code"), "042 917");
+    await user.type(screen.getByLabelText("Code"), "042-917");
+    // The browser's own checks take a code pasted with a dash (MG-123).
+    expect((screen.getByLabelText("Code") as HTMLInputElement).checkValidity()).toBe(true);
     await user.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(location()).toBe("/emails"));
     expect(screen.getByRole("heading", { name: "Emails" })).toBeTruthy();
@@ -45,11 +47,13 @@ describe("signing in", () => {
     ]);
   });
 
-  it("shows the API's rate limit message and hint", async () => {
+  it("says how long to wait in minutes when there are too many code requests", async () => {
     const api = fakeApi({
       ...signedOut,
-      "POST /v1/sign-in": () =>
-        apiError(429, "rate_limited", "Too many code requests.", "Wait an hour, then try again."),
+      "POST /v1/sign-in": () => ({
+        ...apiError(429, "rate_limited", "Too many code requests.", "Wait 3412 seconds (see Retry-After) and try again."),
+        headers: { "Retry-After": "3412" },
+      }),
     });
     const user = userEvent.setup();
     renderApp("/sign-in", api.fetch);
@@ -57,7 +61,39 @@ describe("signing in", () => {
     await user.click(screen.getByRole("button", { name: "Email me a code" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Too many code requests.");
-    expect(alert.textContent).toContain("Wait an hour, then try again.");
+    expect(alert.textContent).toContain("Try again in 57 minutes.");
+    expect(alert.textContent).not.toContain("seconds");
+    expect(alert.textContent).not.toContain("Retry-After");
+  });
+
+  it("words a bad code and too many wrong codes for the web", async () => {
+    let wrong = 0;
+    const api = fakeApi({
+      ...signedOut,
+      "POST /v1/sign-in": () => ({ status: 202, body: { status: "code_sent", message: "Check your email." } }),
+      "POST /v1/sessions": () =>
+        ++wrong === 1
+          ? apiError(422, "invalid_code", "That code didn't work.", "Request a new code and use the one in the newest email.")
+          : {
+              ...apiError(429, "too_many_wrong_codes", "Too many wrong codes for this address.", "Wait 59 seconds (see Retry-After), then request a new code and try again."),
+              headers: { "Retry-After": "59" },
+            },
+    });
+    const user = userEvent.setup();
+    renderApp("/sign-in", api.fetch);
+    await user.type(await screen.findByLabelText("Email"), "pat@example.com");
+    await user.click(screen.getByRole("button", { name: "Email me a code" }));
+    await user.type(await screen.findByLabelText("Code"), "111111");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    let alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("That code didn't work.");
+    expect(alert.textContent).toContain("Send a new code and use the one in the newest email.");
+
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Too many wrong codes for this address."));
+    alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("Try again in a minute.");
+    expect(alert.textContent).not.toContain("seconds");
   });
 
   it("ignores a ?next= that leaves the site", async () => {

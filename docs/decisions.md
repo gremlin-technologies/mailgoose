@@ -4,6 +4,29 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-23: Sign-in code errors and emails, as built (MG-123; reversible defaults)
+
+An alpha tester read a bad-code answer as a generic login error. A sign-up
+waiting for review was not the cause: it signs in normally and sees the review
+banner. What changed:
+
+- **`invalid_code` stays one answer** for a wrong, expired, used, replaced or
+  locked code, so it still reveals nothing about the address, but now names the
+  likely trap: "That code didn't work. Each code works once, for 10 minutes,
+  and only the newest one we sent works." (Each code request replaces the
+  address's earlier unused code.)
+- **Too many wrong codes is `too_many_wrong_codes`** (429 with `Retry-After`),
+  apart from `rate_limited`, which stays the code-request and API limit.
+- **The web app says how long to wait in whole minutes, rounded up**, from
+  `Retry-After` ("Try again in 57 minutes."), for both 429s, and "in an hour"
+  when the header is missing. The API's hints keep their seconds for the CLI.
+- **A requested sign-in code's email reads "Here's your code to sign in to
+  mailgoose."** The "someone tried to sign up with this address" wording is
+  only for a sign-up made with an address that already has an active account.
+  A pending account still gets its sign-up email. The subject is unchanged.
+- **The web code field takes a code with spaces or a dash**; only the digits
+  are sent.
+
 ## 2026-11-22: Tickets are built in Claude Code on the owner's machine; the reviewer stays in Claude Duet (owner decision, confirmed)
 
 The owner, Nov 22: "Sonnet is perfectly good for all these development tasks,

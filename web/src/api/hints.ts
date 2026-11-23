@@ -52,6 +52,9 @@ export const WEB_HINTS: Record<string, string> = {
   merge_tag: "Run the email check to see which merge tags or links to fix.",
   invalid_merge_tags: "Fix them in the editor, where each one is marked.",
 
+  // Signing in.
+  invalid_code: "Send a new code and use the one in the newest email.",
+
   // Plan and billing.
   plan_required: "Upgrade to the paid plan on the Billing page.",
   already_subscribed: "Change or cancel it from the Billing page.",
@@ -101,6 +104,23 @@ export const WEB_HINTS: Record<string, string> = {
 export const WEB_MESSAGES: Record<string, string> = {
   untested: "Send a test and check it looks right before you launch.",
 };
+
+/** Codes whose hint says how long to wait, worked out from Retry-After (MG-123). */
+export const WAIT_CODES = new Set(["rate_limited", "too_many_wrong_codes"]);
+
+/**
+ * How long to wait before trying again, from a Retry-After header in seconds,
+ * in whole minutes rounded up: never seconds, never the header's name. With
+ * no usable header it says an hour, the longest any of these limits lasts.
+ */
+export function waitHint(retryAfter: string | null): string {
+  const secs = Number(retryAfter);
+  if (retryAfter === null || retryAfter.trim() === "" || !Number.isFinite(secs) || secs <= 0) {
+    return "Try again in an hour.";
+  }
+  const minutes = Math.ceil(secs / 60);
+  return minutes === 1 ? "Try again in a minute." : `Try again in ${minutes} minutes.`;
+}
 
 /** What the web app shows for an API error's message and hint. */
 export function webWords(code: string, message: string, hint: string): { message: string; hint: string } {
