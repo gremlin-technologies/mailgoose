@@ -29,6 +29,9 @@ type Recipient struct {
 	FirstName      string
 	LastName       string
 	UnsubscribeURL string
+	// Branded adds the "Sent by mailgoose" footer to this copy (MG-119): a
+	// free account's, or a tester's. It's decided for each copy.
+	Branded bool
 }
 
 func (r Recipient) value(tag string) string {
@@ -50,6 +53,9 @@ type segment struct {
 	text     string
 	tag      string
 	fallback string
+	// slot is where the "Sent by mailgoose" footer goes (MG-119): filled
+	// for a branded copy, empty for any other.
+	slot bool
 }
 
 // parts is text with its merge tags found, ready to fill in.
@@ -57,8 +63,14 @@ type parts []segment
 
 // fill writes the parts with r's values. With escape, values are HTML
 // escaped; literal text and fallbacks were escaped when the parts were made.
-func (p parts) fill(b *strings.Builder, r Recipient, escape bool) {
+func (p parts) fill(b *strings.Builder, r Recipient, escape bool, brand string) {
 	for _, s := range p {
+		if s.slot {
+			if r.Branded {
+				b.WriteString(brand)
+			}
+			continue
+		}
 		if s.tag == "" {
 			b.WriteString(s.text)
 			continue

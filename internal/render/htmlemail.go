@@ -51,12 +51,13 @@ func compileHTML(doc *emails.Document, acct Account) (*Template, Problems, error
 	if strings.TrimSpace(acct.PostalAddress) == "" {
 		return nil, nil, ErrNoPostalAddress
 	}
-	src := *doc.HTML
+	src := cleanSlot(*doc.HTML)
 	if !showsAddress(src, acct.PostalAddress) {
 		src = addFooter(src, acct.PostalAddress)
 	}
 	// The text part has no preheader: it's hidden in the html.
-	text := htmlText(src)
+	text := htmlText(src) + brandSlot
+	src = addBrandSlot(src)
 	if p := doc.Settings.PreviewText; p != "" {
 		src = addPreheader(src, p)
 	}
@@ -67,7 +68,20 @@ func compileHTML(doc *emails.Document, acct Account) (*Template, Problems, error
 	htmlParts, e := findTags(src, "html")
 	problems = append(problems, e...)
 	textParts, _ := findTags(text, "html")
-	return &Template{subject: subject, html: htmlParts, text: textParts}, problems, nil
+	return &Template{subject: subject, html: splitSlot(htmlParts), text: splitSlot(textParts),
+		brandHTML: brandHTMLFragment(acct.AssetsURL), brandText: brandText(acct.AssetsURL)}, problems, nil
+}
+
+// addBrandSlot puts the place for the "Sent by mailgoose" footer (MG-119)
+// just before </body>, after the postal address, or at the end of a
+// fragment.
+func addBrandSlot(src string) string {
+	locs := bodyClose.FindAllStringIndex(src, -1)
+	if len(locs) == 0 {
+		return src + brandSlot
+	}
+	at := locs[len(locs)-1][0]
+	return src[:at] + brandSlot + src[at:]
 }
 
 // showsAddress reports whether every line of the postal address appears in

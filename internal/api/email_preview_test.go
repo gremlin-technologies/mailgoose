@@ -29,6 +29,10 @@ func TestPreviewEmail(t *testing.T) {
 			t.Errorf("desktop lacks %q", want)
 		}
 	}
+	// A free account's preview shows the "Sent by mailgoose" footer its copies carry (MG-119).
+	if !strings.Contains(body, "ref=footer") || !strings.Contains(body, `alt="Sent by mailgoose"`) {
+		t.Error("the preview lacks the footer a free account's copies carry")
+	}
 	if ct := rec.Header().Get("Content-Type"); ct != "text/html; charset=utf-8" {
 		t.Errorf("content type %q", ct)
 	}

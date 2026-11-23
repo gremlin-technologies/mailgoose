@@ -54,6 +54,9 @@ type Template struct {
 	subject parts
 	html    parts
 	text    parts
+	// brandHTML and brandText fill the footer's slot in a branded copy
+	// (MG-119); empty when there's no base URL to link and load from.
+	brandHTML, brandText string
 }
 
 // Message is one recipient's copy of an email.
@@ -89,11 +92,11 @@ func UnsubscribeHeaders(url string) []Header {
 // Personalize fills in the merge tags for r.
 func (t *Template) Personalize(r Recipient) Message {
 	var subject, htmlOut, text strings.Builder
-	t.subject.fill(&subject, r, false)
+	t.subject.fill(&subject, r, false, "")
 	htmlOut.Grow(t.html.size())
-	t.html.fill(&htmlOut, r, true)
+	t.html.fill(&htmlOut, r, true, t.brandHTML)
 	text.Grow(t.text.size())
-	t.text.fill(&text, r, false)
+	t.text.fill(&text, r, false, t.brandText)
 	return Message{
 		Subject: strings.Join(strings.Fields(subject.String()), " "),
 		HTML:    htmlOut.String(),
@@ -201,7 +204,8 @@ func compileBlocks(doc *emails.Document, acct Account) (*Template, Problems, err
 	subject, _ := findTags(doc.Settings.Subject, "")
 	htmlParts, _ := findTags(r.html(), "")
 	textParts, _ := findTags(r.text(), "")
-	return &Template{subject: subject, html: htmlParts, text: textParts}, problems, nil
+	return &Template{subject: subject, html: splitSlot(htmlParts), text: splitSlot(textParts),
+		brandHTML: brandHTML(acct.AssetsURL), brandText: brandText(acct.AssetsURL)}, problems, nil
 }
 
 // Has reports whether the email's HTML uses the merge tag, such as
@@ -304,6 +308,8 @@ img{border:0;outline:none;text-decoration:none;-ms-interpolation-mode:bicubic}
 	for _, b := range r.doc.Blocks {
 		r.block(b, inner, true)
 	}
+	// Under the footer, for a free account's copies (MG-119).
+	r.w(brandSlot)
 	r.w(`</table>
 <!--[if mso]></td></tr></table><![endif]-->
 </td></tr>

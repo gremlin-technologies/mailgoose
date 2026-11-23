@@ -2116,7 +2116,11 @@ export interface paths {
          *     first name Alex, last name Rivera, email alex@example.com, and an
          *     unsubscribe link that goes nowhere. `desktop` returns the email
          *     itself; `mobile` returns a page that shows it in a 375 pixel frame,
-         *     so its narrow-screen rules apply. Until the account has a postal
+         *     so its narrow-screen rules apply. A free account's preview, like its
+         *     test sends and every copy it sends, ends with a small "Sent by
+         *     mailgoose" line under the footer, linking to the sign-up page; it
+         *     can't be edited or removed, and the paid plan's copies don't carry
+         *     it. Until the account has a postal
          *     address, the footer shows a placeholder where it goes. The page
          *     runs no scripts.
          */

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
@@ -114,6 +115,18 @@ func (e *NotReadyError) Error() string {
 		msgs[i] = p.Message
 	}
 	return strings.Join(msgs, " ")
+}
+
+// Branded says whether the account's copies carry the "Sent by mailgoose"
+// footer (MG-119): a free account's do, and so do a tester's. A paid
+// account's don't. It's read when each copy is rendered, so upgrading ends
+// the footer from the next copy and a plan that ends brings it back.
+func Branded(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, accountID string) (bool, error) {
+	var branded bool
+	err := q.QueryRow(ctx, `SELECT plan = 'free' OR tester_started_at IS NOT NULL FROM accounts WHERE id = $1`, accountID).Scan(&branded)
+	return branded, err
 }
 
 // Prepared is a campaign ready to send: the email compiled, and who it's
