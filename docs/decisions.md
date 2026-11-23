@@ -4,6 +4,43 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-23: Selling the paid plan with one upgrade dialog (MG-126; reversible defaults)
+
+The owner asked for the billing page to "sell the paid plan in the copy",
+with an "Upgrade to Pay as you go" button that opens "a clean, well-designed
+modal presenting the options and their benefits over the free plan", made
+portable "so we can drop upgrade CTAs throughout the app and the upgrade
+moment is consistent." What changed:
+
+- **The web app calls the paid plan "Pay as you go".** The ticket's button
+  names it, and no earlier entry gave the plan a name. The free plan stays
+  "Free plan"; the API, CLI and docs keep "paid". Whether the button reads
+  "Upgrade to Pay as you go" or "Upgrade to Paid" is still the owner's
+  question; the name is one constant (`planName` in
+  `web/src/billing/upgrade.tsx`).
+- **One dialog, mounted once in the signed-in layout.** Any page opens it with
+  `useUpgrade().open(reason)` or an `<UpgradeButton reason=...>`, which shows
+  nothing on the paid plan. It's on the billing page and beside a launch's
+  `over_contact_limit` problem, where the reason line says why it opened.
+  It's labelled by its heading, keeps focus inside, closes on Escape, Close
+  or "Not now", gives focus back to the button that opened it, scrolls on a
+  phone, and stacks Monthly and Yearly there.
+- **Yearly says "two months free"**, worked out from the two prices (12
+  months at the monthly price less the yearly price), and says nothing when
+  they save no whole months.
+- **No goose in the dialog.** The brand guide keeps the goose for where the
+  product introduces itself, "not on every screen", and the dialog is a
+  purchase step.
+- **The words come from `GET /v1/plan`.** The plan now also answers
+  `included_contacts`, `contacts_per_unit`, `free_plan` (contacts, monthly
+  credits, daily sends), `paid_sending` (the daily limit a paid account
+  starts at and can reach, and `needs_domain` on the shared domain, MG-98)
+  and `credit_packs` (the cheapest pack and how many months credits last).
+  The web app's plan copy and `mailgoose plan` use them, so a change to a
+  limit or price changes the words with it. Neither panel talks of "units"
+  any more: the paid panel says what the account is billed and for how many
+  contacts.
+
 ## 2026-11-23: Pasting contacts into an import (MG-125; reversible defaults)
 
 The owner asked for "a copy/paste flow in import where folks can copy their

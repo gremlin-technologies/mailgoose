@@ -8,6 +8,8 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/billing"
+	"github.com/gremlin-technologies/mailgoose/internal/contacts"
+	"github.com/gremlin-technologies/mailgoose/internal/credits"
 )
 
 // StripeWebhookPath is where Stripe sends its webhook. It's outside the
@@ -127,6 +129,25 @@ func (s *Server) GetPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	out.Prices.Currency = apigen.PlanPricesCurrencyUsd
 	out.Prices.MonthCents, out.Prices.YearCents = int(p.Prices.MonthCents), int(p.Prices.YearCents)
+
+	// The plan's terms, from the server's own settings, so clients word
+	// prices and allowances from one place (MG-126).
+	out.IncludedContacts, out.ContactsPerUnit = billing.IncludedContacts, billing.ContactsPerUnit
+	out.FreePlan.Contacts, out.FreePlan.MonthlyCredits = contacts.FreeContactLimit, credits.FreeMonthlyGrant
+	if s.Sending != nil {
+		l := s.Sending.Limits
+		out.FreePlan.DailySends = l.FreeDaily
+		out.PaidSending.StartingDaily, out.PaidSending.MostDaily = min(l.NewDaily, l.Daily), l.Daily
+		needs, err := l.NeedsDomain(r.Context(), s.Sending.DB, c.AccountID)
+		if s.billingError(w, r, err) {
+			return
+		}
+		out.PaidSending.NeedsDomain = needs
+	}
+	pack := s.Billing.CheapestPack()
+	out.CreditPacks.Cheapest.Name, out.CreditPacks.Cheapest.Credits, out.CreditPacks.Cheapest.PriceCents =
+		pack.Name, int(pack.Credits), int(pack.PriceCents)
+	out.CreditPacks.Months = credits.LotMonths
 	writeJSON(w, http.StatusOK, out)
 }
 

@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { freePlan } from "../test/plans";
 import { fakeApi, renderApp, signedIn } from "../test/render";
 import { fromLocalInput, recipientsText, toLocalInput, type Campaign } from "./campaign";
 import { polling } from "./CampaignDetail";
@@ -408,6 +409,26 @@ describe("draft campaign", () => {
     expect(api.calls.filter((c) => c.path === `${base}/launch`).map((c) => c.body)).toEqual([{}, { confirm: "ABCD-1234" }]);
     expect(screen.getByText("Sending")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Review and launch" })).toBeNull();
+  });
+
+  it("offers the upgrade when the account has more contacts than the free plan sends to (MG-126)", async () => {
+    const api = server(campaign({ last_test: { at: "2026-11-19T10:00:00Z", version: 1, email_version: 4 } }), {
+      "GET /v1/plan": () => ({ status: 200, body: freePlan }),
+      [`POST ${base}/launch`]: () =>
+        fail(422, "not_ready", "This campaign can't launch yet.", {
+          problems: [{ code: "over_contact_limit", message: "The account has 3,100 contacts, over the free plan's 1,000.", hint: "" }],
+        }),
+    });
+    const user = userEvent.setup();
+    renderApp(`/campaigns/${campaignId}`, api.fetch);
+    await user.click(await screen.findByRole("button", { name: "Review and launch" }));
+    const alert = await screen.findByRole("alert");
+    await user.click(within(alert).getByRole("button", { name: "Upgrade to Pay as you go" }));
+    const dialog = await screen.findByRole("dialog", { name: "Upgrade to Pay as you go" });
+    expect(
+      within(dialog).getByText("You have more contacts than the free plan sends to, so this campaign can't launch yet."),
+    ).toBeTruthy();
+    expect(await within(dialog).findByText("With your 3,100 contacts, that's $10 a month, plus any sales tax.")).toBeTruthy();
   });
 
   it("says when a test or launch goes from the shared domain, with a link to add a domain (MG-85)", async () => {

@@ -180,6 +180,22 @@ func (s *Service) log() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
+// CheapestPack is the pack with the lowest price, from the service's packs
+// or, with none set, DefaultPacks.
+func (s *Service) CheapestPack() Pack {
+	packs := s.Packs
+	if len(packs) == 0 {
+		packs = DefaultPacks
+	}
+	best := packs[0]
+	for _, p := range packs[1:] {
+		if p.PriceCents < best.PriceCents {
+			best = p
+		}
+	}
+	return best
+}
+
 // Pack finds a pack by name, ignoring case.
 func (s *Service) Pack(name string) (Pack, error) {
 	for _, p := range s.Packs {

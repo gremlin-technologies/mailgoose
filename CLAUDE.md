@@ -129,6 +129,9 @@ scope; they only show where an idea came from.
   commands or flags, in errors or help; they point to the page or control
   instead. The CLI keeps its command hints, and the web app words the API's
   shared hints for itself.
+- Upgrade dialog (Nov 23, MG-126): the web app sells the paid plan as "Pay as
+  you go" through one shared dialog (`useUpgrade()` / `<UpgradeButton>`),
+  worded from the plan terms `GET /v1/plan` now returns; no "units" in copy.
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API

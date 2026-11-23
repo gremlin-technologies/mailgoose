@@ -5,10 +5,11 @@ import { useCallback, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { useApi } from "../api/context";
-import { attempt, type Failure, type Result } from "../api/result";
+import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
 import { Badge, FailureNotice, formatDate, LoadFailed, Loading, PageHeader, useLoad } from "../components";
-import { browser, dollars, isStripeUrl, packs } from "./money";
+import { dollars, openStripe, packs } from "./money";
+import { contactPricing, contactsCovered, freeHas, planName, UpgradeButton } from "./upgrade";
 
 type Plan = components["schemas"]["Plan"];
 type Credits = components["schemas"]["CreditSummary"];
@@ -30,22 +31,6 @@ export const typeLabels: Record<TransactionType, string> = {
   fee: "Account fee",
   expiry: "Expired",
 };
-
-const notStripe: Failure = {
-  code: "unexpected_response",
-  message: "mailgoose answered with a payment page that isn't Stripe's, so it wasn't opened.",
-  hint: "Try again in a moment, or contact support.",
-  status: 200,
-};
-
-/** Asks the API for a Stripe page, then goes there. Returns why it couldn't. */
-async function openStripe(get: () => Promise<Result<{ url: string } | undefined>>): Promise<Failure | undefined> {
-  const res = await get();
-  if (!res.ok) return res.failure;
-  if (!res.data || !isStripeUrl(res.data.url)) return notStripe;
-  browser.open(res.data.url);
-  return undefined;
-}
 
 export function Billing() {
   const api = useApi();
@@ -75,7 +60,9 @@ export function Billing() {
 
       {credits.state.status === "loading" && <Loading />}
       {credits.state.status === "failed" && <LoadFailed failure={credits.state.failure} retry={credits.reload} />}
-      {credits.state.status === "ok" && <CreditsPanel credits={credits.state.data} />}
+      {credits.state.status === "ok" && (
+        <CreditsPanel credits={credits.state.data} months={plan.state.status === "ok" ? plan.state.data.credit_packs.months : undefined} />
+      )}
 
       <History />
     </section>
@@ -84,62 +71,43 @@ export function Billing() {
 
 function PlanPanel({ plan: p }: { plan: Plan }) {
   const api = useApi();
-  const [interval, setBillingInterval] = useState<"month" | "year">("month");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure>();
 
-  async function go(get: () => Promise<Result<{ url: string } | undefined>>) {
+  async function portal() {
     setBusy(true);
     setFailure(undefined);
-    const failed = await openStripe(get);
+    const failed = await openStripe(() => attempt(() => api.POST("/v1/plan/portal")));
     setBusy(false);
     setFailure(failed);
   }
 
   if (p.plan === "free" || !p.status) {
-    const units = Math.max(p.units_needed, 1);
-    const price = (interval === "month" ? p.prices.month_cents : p.prices.year_cents) * units;
     return (
       <section className="panel stack" aria-label="Plan">
         <h2>Free plan</h2>
-        <p>Up to 1,000 contacts and 2,500 credits a month, and up to 1,000 emails a day. The paid plan raises your contacts and lets you buy credit packs.</p>
-        <fieldset className="choices">
-          <legend>Pay for the paid plan</legend>
-          <label className="choice">
-            <input type="radio" name="interval" checked={interval === "month"} onChange={() => setBillingInterval("month")} />
-            Monthly, {dollars(p.prices.month_cents)} a month
-          </label>
-          <label className="choice">
-            <input type="radio" name="interval" checked={interval === "year"} onChange={() => setBillingInterval("year")} />
-            Yearly, {dollars(p.prices.year_cents)} a year
-          </label>
-        </fieldset>
-        <p className="muted small">
-          That covers 2,500 contacts, and each further 10,000 is the same again. Your {p.contacts.toLocaleString()} contacts make{" "}
-          {units === 1 ? "1 unit" : `${units} units`}: {dollars(price)} a {interval}, plus any sales tax.
+        <p>{freeHas(p)}</p>
+        <p className="muted">
+          {planName} takes that line off, makes room for every contact you collect, and lets you buy more emails whenever
+          you need them. It starts at {dollars(p.prices.month_cents)} a month.
         </p>
         <div>
-          <button
-            type="button"
-            className="button primary"
-            disabled={busy}
-            onClick={() => void go(() => attempt(() => api.POST("/v1/plan/checkout", { body: { interval } })))}
-          >
-            {busy ? "Opening Stripe…" : "Start the paid plan"}
-          </button>
+          <UpgradeButton />
         </div>
-        <FailureNotice failure={failure} />
       </section>
     );
   }
 
-  const unit = p.interval === "year" ? p.prices.year_cents : p.prices.month_cents;
-  const per = p.interval === "year" ? "year" : "month";
+  const interval = p.interval === "year" ? "year" : "month";
+  const each = interval === "year" ? p.prices.year_cents : p.prices.month_cents;
+  const next = each * Math.max(p.units_needed, 1);
   const paused = pausedStatuses.includes(p.status);
   return (
     <section className="panel stack" aria-label="Plan">
       <div className="row">
-        <h2>Paid plan, billed {p.interval === "year" ? "yearly" : "monthly"}</h2>
+        <h2>
+          {planName}, billed {interval === "year" ? "yearly" : "monthly"}
+        </h2>
         {paused ? (
           <Badge tone="bad">Payment failed</Badge>
         ) : !liveStatuses.includes(p.status) ? (
@@ -158,12 +126,10 @@ function PlanPanel({ plan: p }: { plan: Plan }) {
       )}
       <dl className="facts">
         <dt>Contacts</dt>
-        <dd>
-          {p.contacts.toLocaleString()}, which {p.units_needed === 1 ? "is 1 unit" : `are ${p.units_needed} units`}
-        </dd>
+        <dd>{p.contacts.toLocaleString()}</dd>
         <dt>Now billed for</dt>
         <dd>
-          {p.units === 1 ? "1 unit" : `${p.units} units`}, {dollars(unit * p.units)} a {per}
+          {dollars(each * p.units)} a {interval}, for up to {contactsCovered(p, p.units).toLocaleString()} contacts
         </dd>
         {p.cancel_at_period_end ? (
           <>
@@ -174,21 +140,19 @@ function PlanPanel({ plan: p }: { plan: Plan }) {
           <>
             <dt>Next payment</dt>
             <dd>
-              {dollars(unit * p.units_needed)} plus any sales tax, on {formatDate(p.current_period_end)}
+              {dollars(next)} plus any sales tax, on {formatDate(p.current_period_end)}
             </dd>
           </>
         )}
       </dl>
       {!p.cancel_at_period_end && p.units_needed !== p.units && (
-        <p className="muted small">The plan moves to the units your contacts make now when it renews.</p>
+        <p className="muted small">
+          The price moves to {dollars(next)} a {interval} when it renews, to match your contacts now.
+        </p>
       )}
+      <p className="muted small">{contactPricing(p, interval)}</p>
       <div>
-        <button
-          type="button"
-          className="button"
-          disabled={busy}
-          onClick={() => void go(() => attempt(() => api.POST("/v1/plan/portal")))}
-        >
+        <button type="button" className="button" disabled={busy} onClick={() => void portal()}>
           {busy ? "Opening Stripe…" : "Manage plan and card"}
         </button>
       </div>
@@ -198,7 +162,7 @@ function PlanPanel({ plan: p }: { plan: Plan }) {
   );
 }
 
-function CreditsPanel({ credits: c }: { credits: Credits }) {
+function CreditsPanel({ credits: c, months }: { credits: Credits; months?: number }) {
   const api = useApi();
   const [busy, setBusy] = useState<string>();
   const [failure, setFailure] = useState<Failure>();
@@ -222,7 +186,7 @@ function CreditsPanel({ credits: c }: { credits: Credits }) {
           {c.next_grant_at
             ? `More free credits arrive ${formatDate(c.next_grant_at)}, and any free credits left then expire.`
             : "Your free credits arrive once your account is active."}{" "}
-          Credit packs come with the paid plan.
+          Credit packs come with {planName}.
         </p>
       ) : (
         <>
@@ -231,7 +195,9 @@ function CreditsPanel({ credits: c }: { credits: Credits }) {
               More free credits arrive {formatDate(c.next_grant_at)}, and any free credits left then expire.
             </p>
           )}
-          <p className="muted">Bought credits last 24 months and the oldest are used first.</p>
+          <p className="muted">
+            {months ? `Bought credits last ${months} months, and the oldest` : "The oldest bought credits"} are used first.
+          </p>
           <div className="packs" role="group" aria-label="Buy credits">
             {packs.map((p) => (
               <button key={p.name} type="button" className="button pack" disabled={!!busy} onClick={() => void buy(p.name)}>
