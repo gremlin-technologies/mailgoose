@@ -4,6 +4,22 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-23: Tickets are built in Claude Duet again (owner decision, confirmed)
+
+The owner, Nov 23: "ok, i'm kinda missing the autonomy of this old workflow.
+let's get the builder queue going back here on duet". The Claude Code builder
+on the owner's machine was stopped the same morning.
+
+- A builder thread in Claude Duet works the same queue as before: open issues
+  labelled `queued`, in MG order, after any "Build after" issue, skipping
+  `owner` and `blocked`. It fixes `changes-requested` PRs before new work and
+  checks for an existing PR or branch before starting a ticket.
+- Everything else in the Nov 22 entry below stands: one PR per ticket,
+  `ready-for-review` once CI is green, the reviewer thread merges, owner-merge
+  paths are left for the owner, and the builder never merges its own PR.
+- Claude Code on the owner's machine still does the AWS work, and its build
+  prompt stays as a fallback.
+
 ## 2026-11-23: Sign-in code errors and emails, as built (MG-123; reversible defaults)
 
 An alpha tester read a bad-code answer as a generic login error. A sign-up
