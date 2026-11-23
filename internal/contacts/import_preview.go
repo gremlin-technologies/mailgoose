@@ -118,7 +118,7 @@ func sampleRows(data []byte, l *csvLayout, n int) ([][]string, error) {
 			break
 		}
 		var pe *csv.ParseError
-		if errors.As(err, &pe) && !(errors.Is(pe.Err, csv.ErrQuote) && pe.Line > pe.StartLine) {
+		if errors.As(err, &pe) && (!errors.Is(pe.Err, csv.ErrQuote) || pe.Line <= pe.StartLine) {
 			// A row with a stray quote isn't shown.
 			continue
 		}
