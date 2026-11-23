@@ -7,7 +7,9 @@ import { useSession } from "../session";
 
 /**
  * The second step of signing up or in: the six-digit code from the email.
- * A good code starts the session; the page then moves on by itself.
+ * A good code starts the session; the page then moves on by itself. The
+ * field takes the code with spaces or a dash as pasted (MG-123); only its
+ * digits are sent.
  */
 export function CodeStep({
   email,
@@ -62,8 +64,7 @@ export function CodeStep({
           onChange={(e) => setCode(e.target.value)}
           inputMode="numeric"
           autoComplete="one-time-code"
-          pattern="[0-9 ]{6,7}"
-          maxLength={7}
+          maxLength={12}
           required
           autoFocus
         />

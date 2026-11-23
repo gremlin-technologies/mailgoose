@@ -46,6 +46,11 @@ func (s *Server) CreateSignup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// invalidCodeMessage is the one answer to every bad code: wrong, expired,
+// used, replaced by a newer one or locked. It names the likely cause without
+// saying which it was, so it reveals nothing about the address (MG-123).
+const invalidCodeMessage = "That code didn't work. Each code works once, for 10 minutes, and only the newest one we sent works."
+
 // CreateSession is POST /v1/sessions.
 func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 	if s.authUnavailable(w) {
@@ -61,8 +66,8 @@ func (s *Server) CreateSession(w http.ResponseWriter, r *http.Request) {
 		IP:        ClientIP(r),
 	})
 	if errors.Is(err, auth.ErrInvalidCode) {
-		WriteError(w, Unprocessable("invalid_code", "That code is wrong, expired or already used.").
-			WithHint("Request a new code and use it within 10 minutes. A code stops working after 5 wrong tries."))
+		WriteError(w, Unprocessable("invalid_code", invalidCodeMessage).
+			WithHint("Request a new code and use the one in the newest email, within 10 minutes. A code stops working after 5 wrong tries."))
 		return
 	}
 	if s.authError(w, r, err) {
@@ -94,8 +99,8 @@ func (s *Server) CreateCliToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if errors.Is(err, auth.ErrInvalidCode) {
-		WriteError(w, Unprocessable("invalid_code", "That code is wrong, expired or already used.").
-			WithHint("Ask for a new code with `mailgoose signup` and use it within 10 minutes. A code stops working after 5 wrong tries."))
+		WriteError(w, Unprocessable("invalid_code", invalidCodeMessage).
+			WithHint("Ask for a new code with `mailgoose signup` and use the one in the newest email, within 10 minutes. A code stops working after 5 wrong tries."))
 		return
 	}
 	if s.authError(w, r, err) {
@@ -117,6 +122,11 @@ func (s *Server) authError(w http.ResponseWriter, r *http.Request, err error) bo
 	var rl *auth.RateLimitError
 	if errors.As(err, &rl) {
 		writeRateLimited(w, rl.RetryAfter)
+		return true
+	}
+	var wc *auth.WrongCodesError
+	if errors.As(err, &wc) {
+		writeTooManyWrongCodes(w, wc.RetryAfter)
 		return true
 	}
 	var ve *auth.ValidationError
