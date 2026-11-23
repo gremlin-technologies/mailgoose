@@ -1426,6 +1426,13 @@ from common headers ("Email", "Email Address", "First Name",
 tabs all work as separators. `previewImport` shows how a file would
 be read, with each column's first values, before it's imported.
 
+Contacts pasted from a spreadsheet often have no header row. Send
+`has_header: false` for those: every row is a contact, columns are
+named by position (`#1`, `#2` ...), and the email column is the
+first one whose first row holds an address, unless `columns` names
+it. `previewImport`'s `has_header_guess` says which a file looks
+like. Leave `file_name` out for pasted contacts.
+
 Imported contacts are `unconfirmed` unless `permission_confirmed` says
 the account has these people's permission to mail them; then they're
 `subscribed`. Rows with a bad address, a repeat of an earlier row, an
@@ -1477,6 +1484,8 @@ Reads a file the way `createImport` would with the same `columns`,
 and changes nothing. It shows the separator, how many contact rows
 there are, and each column with its first few values and the field it
 would become, so the person can check the columns before importing.
+It also guesses whether the first row is a header
+(`has_header_guess`); send the same `has_header` to both calls.
 A problem `createImport` would refuse the file for, such as no email
 column or a named column that isn't there, is in `problem` instead of
 an error, so the columns can still be shown. Only a file whose header
@@ -4474,8 +4483,19 @@ column's header looks like it. Email can't be left empty.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `csv` | string | yes | The whole CSV file as UTF-8 text, header row first. |
+| `csv` | string | yes | The whole CSV file as UTF-8 text, header row first unless `has_header` is false. |
+| `has_header` | [ImportHasHeader](#schema-importhasheader) |  |  |
 | `columns` | [ImportColumns](#schema-importcolumns) |  |  |
+
+<a id="schema-importhasheader"></a>
+
+### ImportHasHeader
+
+False when the first row is a contact rather than a header, as when
+contacts are pasted from a spreadsheet. Columns are then named by
+position (`#1`, `#2` ...).
+
+Type: boolean
 
 <a id="schema-importpreview"></a>
 
@@ -4483,7 +4503,8 @@ column's header looks like it. Email can't be left empty.
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `separator` | string: one of `comma`, `semicolon`, `tab` | yes | The separator found in the header row. |
+| `separator` | string: one of `comma`, `semicolon`, `tab` | yes | The separator found in the first row. |
+| `has_header_guess` | boolean | yes | Whether the first row looks like a header: false when it holds an email address in the column email would come from, or in any column when no header names one. It doesn't depend on the `has_header` sent, so it can be shown as a choice. |
 | `rows` | integer | yes | Contact rows, not counting the header or blank rows. Counting stops past 100,000. |
 | `columns` | array of [ImportPreviewColumn](#schema-importpreviewcolumn) | yes | The file's columns, in order. |
 | `problem` | [ImportPreviewProblem](#schema-importpreviewproblem) or null | yes | Why `createImport` would refuse this file with these columns; null when it would take it. |
@@ -4495,7 +4516,7 @@ column's header looks like it. Email can't be left empty.
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `position` | integer | yes | The column's place in the file, counting from 1. |
-| `header` | string | yes | The column's header as written; may be empty. |
+| `header` | string | yes | The column's header as written; empty when it has none, and always empty with `has_header` false. |
 | `name` | string | yes | What to send in `columns` to pick this column. Its header, or `#3` for a column whose header is blank or repeated. |
 | `field` | [ImportField](#schema-importfield) or null | yes | The field this column would become; null when it isn't imported. |
 | `samples` | array of string | yes | The column's values in the first rows, an empty string where a row has none. |
@@ -4521,8 +4542,9 @@ Type: string: one of `email`, `first_name`, `last_name`, `status`, `tags`
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `csv` | string | yes | The whole CSV file as UTF-8 text, header row first. |
-| `file_name` | string or null |  | The file's name, to tell imports apart later. |
+| `csv` | string | yes | The whole CSV file as UTF-8 text, header row first unless `has_header` is false. |
+| `has_header` | [ImportHasHeader](#schema-importhasheader) |  |  |
+| `file_name` | string or null |  | The file's name, to tell imports apart later. Leave it out for pasted contacts. |
 | `columns` | [ImportColumns](#schema-importcolumns) |  |  |
 | `tags` | array of string |  | Tags, by name or id, put on every contact the import adds. They must exist. |
 | `permission_confirmed` | boolean |  | True says the account has these people's permission to mail them, so they're added `subscribed`. Otherwise they're `unconfirmed` and don't receive campaigns. |
@@ -4587,7 +4609,7 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 | --- | --- | --- | --- |
 | `id` | string (uuid) | yes |  |
 | `kind` | string: one of `csv`, `mailchimp` | yes | A CSV file (`createImport`) or a Mailchimp export (`confirmMailchimpBundle`). |
-| `file_name` | string or null | yes |  |
+| `file_name` | string or null | yes | The file's name; null for contacts pasted in rather than uploaded as a file. |
 | `status` | [ImportStatus](#schema-importstatus) | yes |  |
 | `contact_status` | string: one of `subscribed`, `unconfirmed` | yes | The status added contacts get; `subscribed` only when permission was confirmed. |
 | `columns` | object | yes | The header of the column each field came from; null when the file has none. |

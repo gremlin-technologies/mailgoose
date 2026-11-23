@@ -36,7 +36,11 @@ const separators: Record<ImportPreview["separator"], string> = {
   tab: "tabs",
 };
 
-type File_ = { name: string; text: string };
+/** The contacts to import: a file's text and name, or pasted text with no name. */
+type File_ = { name?: string; text: string };
+
+/** The name shown for an import without a file: contacts pasted in (MG-125). */
+export const pastedName = "Pasted contacts";
 
 /** Which column (by position) each field comes from; a field with none isn't imported. */
 type Matching = Partial<Record<ImportField, number>>;
@@ -84,12 +88,15 @@ export const listSources: { source: ListSource; label: string }[] = [
 /** The longest description of an "other" list source, as the API. */
 const maxListSourceDetail = 200;
 
-/** Uploading a CSV file: pick it, match its columns, confirm permission, start the import. */
+/** Importing contacts from a CSV file or pasted text: match the columns, confirm permission, start the import. */
 export function ImportContacts() {
   const api = useApi();
   const navigate = useNavigate();
   const tags = useTags();
+  const [way, setWay] = useState<"file" | "paste">("file");
+  const [pasted, setPasted] = useState("");
   const [file, setFile] = useState<File_>();
+  const [hasHeader, setHasHeader] = useState(true);
   const [preview, setPreview] = useState<ImportPreview>();
   const [matching, setMatching] = useState<Matching>({});
   const [checking, setChecking] = useState(false);
@@ -102,10 +109,12 @@ export function ImportContacts() {
   // Only the newest preview's answer counts.
   const previews = useRef(0);
 
-  async function check(text: string, columns?: Record<ImportField, string>) {
+  async function check(text: string, header: boolean, columns?: Record<ImportField, string>) {
     const n = ++previews.current;
     setChecking(true);
-    const res = await attempt(() => api.POST("/v1/imports/preview", { body: { csv: text, columns } }));
+    const res = await attempt(() =>
+      api.POST("/v1/imports/preview", { body: { csv: text, columns, ...(header ? {} : { has_header: false }) } }),
+    );
     if (n !== previews.current) return undefined;
     setChecking(false);
     if (!res.ok) {
@@ -115,10 +124,61 @@ export function ImportContacts() {
     return res.data;
   }
 
-  async function choose(e: ChangeEvent<HTMLInputElement>) {
+  /** Forgets the contacts being matched. */
+  function reset() {
+    previews.current++;
+    setChecking(false);
     setFailure(undefined);
     setFile(undefined);
     setPreview(undefined);
+  }
+
+  /**
+   * Previews the contacts, then again without a header when the first row
+   * looks like a contact, and shows the matching step.
+   */
+  async function read(f: File_) {
+    let p = await check(f.text, true);
+    if (!p) return;
+    const header = p.has_header_guess !== false;
+    if (!header) {
+      p = await check(f.text, false);
+      if (!p) return;
+    }
+    setFile(f);
+    setHasHeader(header);
+    setPreview(p);
+    setMatching(previewMatching(p));
+  }
+
+  /** Reads the contacts again with or without a header row, matching their columns afresh. */
+  async function changeHeader(header: boolean) {
+    if (!file) return;
+    setHasHeader(header);
+    setFailure(undefined);
+    const p = await check(file.text, header);
+    if (!p) return;
+    setPreview(p);
+    setMatching(previewMatching(p));
+  }
+
+  async function readPasted() {
+    reset();
+    if (pasted.trim() === "") return;
+    if (new Blob([pasted]).size > maxImportBytes) {
+      setFailure({
+        code: "file_too_large",
+        message: "The pasted contacts are larger than 10 MB.",
+        hint: "Split them into smaller parts and import each one.",
+        status: 0,
+      });
+      return;
+    }
+    await read({ text: pasted });
+  }
+
+  async function choose(e: ChangeEvent<HTMLInputElement>) {
+    reset();
     const f = e.target.files?.[0];
     if (!f) return;
     if (f.size > maxImportBytes) {
@@ -140,11 +200,7 @@ export function ImportContacts() {
       });
       return;
     }
-    const p = await check(text);
-    if (!p) return;
-    setFile({ name: f.name, text });
-    setPreview(p);
-    setMatching(previewMatching(p));
+    await read({ name: f.name, text });
   }
 
   /** Changes what one column becomes, and checks the file again with the new matching. */
@@ -153,7 +209,7 @@ export function ImportContacts() {
     const m = matchColumn(matching, position, field);
     setMatching(m);
     setFailure(undefined);
-    const p = await check(file.text, matchingColumns(preview, m));
+    const p = await check(file.text, hasHeader, matchingColumns(preview, m));
     if (p) setPreview((old) => (old ? { ...old, problem: p.problem } : p));
   }
 
@@ -166,7 +222,8 @@ export function ImportContacts() {
       api.POST("/v1/imports", {
         body: {
           csv: file.text,
-          file_name: file.name,
+          ...(file.name ? { file_name: file.name } : {}),
+          ...(hasHeader ? {} : { has_header: false }),
           columns: matchingColumns(preview, matching),
           tags: tagIDs,
           permission_confirmed: permission,
@@ -190,26 +247,95 @@ export function ImportContacts() {
       <p className="crumb">
         <Link to="/contacts">Contacts</Link>
       </p>
-      <PageHeader title="Import contacts" about="Add contacts from a CSV file with a header row. Addresses you already have are left as they are." />
+      <PageHeader
+        title="Import contacts"
+        about="Add contacts from a CSV file, or paste them from a spreadsheet. Addresses you already have are left as they are."
+      />
       <p>
         Moving from Mailchimp? <Link to="/contacts/import/mailchimp">Import from Mailchimp</Link> to bring your audiences,
         tags and emails over together.
       </p>
       <form onSubmit={start} className="stack">
         <div className="panel stack">
-          <label className="field">
-            <span>CSV file</span>
-            <input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" onChange={(e) => void choose(e)} />
-          </label>
-          {checking && !preview && <p className="muted small">Reading the file…</p>}
+          <fieldset className="choices">
+            <legend>How would you like to add them?</legend>
+            {(
+              [
+                ["file", "Upload a CSV file"],
+                ["paste", "Paste contacts"],
+              ] as const
+            ).map(([w, label]) => (
+              <label key={w} className="check">
+                <input
+                  type="radio"
+                  name="import_way"
+                  value={w}
+                  checked={way === w}
+                  onChange={() => {
+                    reset();
+                    setWay(w);
+                  }}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </fieldset>
+          {way === "file" ? (
+            <label className="field">
+              <span>CSV file</span>
+              <input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" onChange={(e) => void choose(e)} />
+            </label>
+          ) : (
+            <>
+              <label className="field">
+                <span>Contacts</span>
+                <textarea
+                  rows={8}
+                  value={pasted}
+                  onChange={(e) => {
+                    setPasted(e.target.value);
+                    if (file) reset();
+                  }}
+                  aria-describedby="paste-hint"
+                  spellCheck={false}
+                  placeholder={"pat@example.com\tPat\tLee\nsam@example.com\tSam\tRo"}
+                />
+              </label>
+              <p className="muted small" id="paste-hint">
+                Copy rows from a spreadsheet and paste them here, or paste comma-separated lines, one contact per line.
+              </p>
+              {!file && (
+                <div>
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={checking || pasted.trim() === ""}
+                    onClick={() => void readPasted()}
+                  >
+                    Continue
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+          {checking && !preview && <p className="muted small">Reading the contacts…</p>}
         </div>
 
         {file && preview && (
           <>
             <fieldset className="panel stack">
               <legend>Match the columns</legend>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={hasHeader}
+                  disabled={checking}
+                  onChange={(e) => void changeHeader(e.target.checked)}
+                />
+                <span>The first row is a header</span>
+              </label>
               <p className="muted small">
-                {file.name}: {preview.rows.toLocaleString()} {preview.rows === 1 ? "contact" : "contacts"}, separated by{" "}
+                {file.name ?? pastedName}: {preview.rows.toLocaleString()} {preview.rows === 1 ? "contact" : "contacts"}, separated by{" "}
                 {separators[preview.separator]}. Choose what each column becomes. mailgoose keeps email, first and last
                 name, status and tags, so other columns aren't imported.
               </p>
@@ -407,7 +533,7 @@ export function ImportDetail() {
       <p className="crumb">
         <Link to="/contacts">Contacts</Link>
       </p>
-      <PageHeader title={im.file_name ?? "Import"} about={`Started ${formatDate(im.created_at)}.`}>
+      <PageHeader title={im.file_name ?? (im.kind === "csv" ? pastedName : "Import")} about={`Started ${formatDate(im.created_at)}.`}>
         <Badge tone={s.tone}>{s.label}</Badge>
       </PageHeader>
 

@@ -269,7 +269,10 @@ it or change it. Columns that become no field aren't imported. Name a column
 with `--map field=header`, or `--map field=#3` by position for a blank or
 repeated header; `--map status=` leaves a field out even when a column looks
 like it. Pass the same `--map` flags to `mailgoose import`. Pasted text works
-too: comma- or tab-separated lines with a header row, piped in with `-`.
+too: comma- or tab-separated lines piped in with `-`. Rows copied from a
+spreadsheet often have no header row; the preview says when the first row
+looks like a contact, and then `--no-header` on both commands imports it as
+one, with columns named by position (`#1`, `#2` ...).
 
 ## Moving from Mailchimp
 

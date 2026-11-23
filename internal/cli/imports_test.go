@@ -45,10 +45,14 @@ func importsStub(t *testing.T) (*harness, *[]seenRequest) {
 			w.WriteHeader(http.StatusUnprocessableEntity)
 			_, _ = w.Write([]byte(`{"error":{"code":"no_email_column","message":"No column looks like email addresses.","hint":"Name the columns."}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/imports/preview" && strings.HasPrefix(req.body["csv"].(string), "name"):
-			_, _ = w.Write([]byte(`{"separator":"comma","rows":1,"columns":[{"position":1,"header":"name","name":"name","field":null,"samples":["Pat"]}],` +
+			_, _ = w.Write([]byte(`{"separator":"comma","rows":1,"has_header_guess":true,"columns":[{"position":1,"header":"name","name":"name","field":null,"samples":["Pat"]}],` +
 				`"problem":{"code":"no_email_column","message":"No column looks like email addresses."}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/imports/preview" && strings.HasPrefix(req.body["csv"].(string), "Pat"):
+			_, _ = w.Write([]byte(`{"separator":"tab","rows":1,"has_header_guess":false,"columns":[` +
+				`{"position":1,"header":"","name":"#1","field":null,"samples":["Pat"]},` +
+				`{"position":2,"header":"","name":"#2","field":"email","samples":["pat@example.com"]}],"problem":null}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/imports/preview":
-			_, _ = w.Write([]byte(`{"separator":"tab","rows":2,"columns":[` +
+			_, _ = w.Write([]byte(`{"separator":"tab","rows":2,"has_header_guess":true,"columns":[` +
 				`{"position":1,"header":"E-mail","name":"E-mail","field":"email","samples":["pat@example.com","ana@example.com"]},` +
 				`{"position":2,"header":"","name":"#2","field":"first_name","samples":["Pat",""]},` +
 				`{"position":3,"header":"status","name":"status","field":null,"samples":["unsubscribed","line\nbreak"]}],"problem":null}`))
@@ -70,7 +74,9 @@ func importsStub(t *testing.T) (*harness, *[]seenRequest) {
 		case r.URL.Path == one+"/skipped-rows":
 			_, _ = w.Write([]byte(`{"data":[{"row":5,"email":"pat@example.com","reason":"exists"}],"next_cursor":null}`))
 		case r.URL.Path == "/v1/imports":
-			_, _ = w.Write([]byte(`{"data":[` + testImport("done", 4, 2, 2) + `],"next_cursor":null}`))
+			pasted := strings.Replace(testImport("done", 4, 2, 2), `"file_name":"list.csv"`, `"kind":"csv","file_name":null`, 1)
+			pasted = strings.Replace(pasted, testImportID, "11111111-2222-3333-4444-555555555555", 1)
+			_, _ = w.Write([]byte(`{"data":[` + testImport("done", 4, 2, 2) + `,` + pasted + `],"next_cursor":null}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte(`{"error":{"code":"not_found","message":"No import with that id in this account.","hint":""}}`))
@@ -157,7 +163,7 @@ func TestImportList(t *testing.T) {
 	if code := h.run("import", "list", "--limit", "5"); code != ExitOK {
 		t.Fatalf("exit %d: %s", code, h.errOut)
 	}
-	if (*seen)[0].query != "limit=5" || !strings.Contains(h.out.String(), "list.csv") {
+	if (*seen)[0].query != "limit=5" || !strings.Contains(h.out.String(), "list.csv") || !strings.Contains(h.out.String(), "pasted") {
 		t.Errorf("query %q, output %s", (*seen)[0].query, h.out)
 	}
 }
@@ -230,6 +236,58 @@ func TestImportPreview(t *testing.T) {
 	n := len(*seen)
 	if code := h.run("import", "preview", path, "--map", "email="); code != ExitUsage || len(*seen) != n {
 		t.Errorf("--map email=: exit %d", code)
+	}
+}
+
+// --no-header sends has_header false, on the import and its preview, and
+// the preview says when the first row looks like a contact (MG-125).
+func TestImportWithoutHeader(t *testing.T) {
+	h, seen := importsStub(t)
+	pasted := writeCSV(t, "Pat\tpat@example.com\n")
+	if code := h.run("import", "preview", pasted); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if _, ok := (*seen)[0].body["has_header"]; ok {
+		t.Errorf("has_header sent without --no-header: %+v", (*seen)[0].body)
+	}
+	if !strings.Contains(h.out.String(), "The first row looks like a contact, not a header. If it is, add --no-header.") {
+		t.Errorf("no hint:\n%s", h.out)
+	}
+
+	h.out.Reset()
+	if code := h.run("import", "preview", pasted, "--no-header"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if (*seen)[1].body["has_header"] != false || strings.Contains(h.out.String(), "looks like") {
+		t.Errorf("request %+v, output:\n%s", (*seen)[1].body, h.out)
+	}
+
+	h.out.Reset()
+	if code := h.run("import", "preview", writeCSV(t, "E-mail\nann@example.com\n"), "--no-header"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if !strings.Contains(h.out.String(), "The first row looks like a header. If it is, leave out --no-header.") {
+		t.Errorf("no header hint:\n%s", h.out)
+	}
+
+	n := len(*seen)
+	if code := h.run("import", "-", "--no-header", "--list-source", "customers", "--map", "first_name=#1"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	post := (*seen)[n]
+	if post.body["has_header"] != false || post.body["csv"] != "email\nfrom@stdin.example\n" {
+		t.Errorf("request = %+v", post.body)
+	}
+	if _, ok := post.body["file_name"]; ok {
+		t.Errorf("file_name sent for standard input: %+v", post.body)
+	}
+
+	n = len(*seen)
+	if code := h.run("import", pasted, "--list-source", "customers"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if _, ok := (*seen)[n].body["has_header"]; ok {
+		t.Errorf("has_header sent without --no-header: %+v", (*seen)[n].body)
 	}
 }
 
