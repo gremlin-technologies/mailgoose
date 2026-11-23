@@ -148,19 +148,20 @@ scope; they only show where an idea came from.
 
 ## Working rules
 
-- **Two Claudes, one repo (changed Nov 22).** The cloud Claude (the owner's
-  Claude Duet "mailgoose" channel) plans, writes the PRD, docs and tickets, and
-  runs the reviewer. Claude Code on the owner's machine, on Sonnet, builds the
-  tickets, and handles anything that needs the owner's AWS sign-in:
-  `terraform apply`, SES setup, checking real infrastructure. It also runs and
-  debugs the app locally.
-- **The build queue (since Nov 22).** The queue is the open issues labelled
-  `queued`, built in MG order, each after any issue its "Build after" line
-  names. Issues labelled `owner` or `blocked` are skipped. The builder opens one
-  PR per ticket and labels it `ready-for-review` once CI is green; the reviewer
-  in Claude Duet picks those up, merges them or labels them
-  `changes-requested`, and the builder fixes those first. A PR touching the
-  owner-merge paths below also gets `owner-merge`.
+- **Two Claudes, one repo (changed Nov 23).** The cloud Claude (the owner's
+  Claude Duet "mailgoose" channel) plans, writes the PRD, docs and tickets,
+  builds the tickets in a builder thread, and runs the reviewer in another.
+  Claude Code on the owner's machine handles anything that needs the owner's
+  AWS sign-in: `terraform apply`, SES setup, checking real infrastructure. It
+  also runs and debugs the app locally, and can take over building if Duet's
+  builder stops.
+- **The build queue (since Nov 22; builder back in Duet Nov 23).** The queue
+  is the open issues labelled `queued`, built in MG order, each after any issue
+  its "Build after" line names. Issues labelled `owner` or `blocked` are
+  skipped. The builder opens one PR per ticket and labels it `ready-for-review`
+  once CI is green; the reviewer in Claude Duet picks those up, merges them or
+  labels them `changes-requested`, and the builder fixes those first. A PR
+  touching the owner-merge paths below also gets `owner-merge`.
 - **Branches and PRs.** Work on a branch and open a pull request into `main`.
   Never push to `main`, and never merge your own PR.
 - **Reviewer merges (since Nov 18).** A separate reviewer agent reviews each PR
