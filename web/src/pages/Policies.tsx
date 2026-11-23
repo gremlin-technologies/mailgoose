@@ -41,7 +41,7 @@ export const policies: Policy[] = [
       {
         heading: "Plans, credits and payment",
         points: [
-          "The free plan: 500 contacts and 1,000 emails a month.",
+          "The free plan: 1,000 contacts and 2,500 emails a month.",
           "The paid plan is billed monthly or yearly by card through Stripe; credits are bought in packs and last 24 months.",
           "Refunds, failed payments, price changes and how much notice we give.",
         ],

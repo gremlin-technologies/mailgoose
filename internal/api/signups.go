@@ -221,17 +221,17 @@ func (s *Server) writeSubmitError(w http.ResponseWriter, r *http.Request, err er
 			WithHint("The form's owner needs to save it in mailgoose first: forms a Mailchimp import makes start as drafts."))
 	case errors.Is(err, signups.ErrTestMode):
 		writeSignupError(w, r, Forbidden("test_mode", "This form is in test mode, so it only takes signups from its account's test addresses.").
-			WithHint("The form's owner can add and confirm test addresses with `mailgoose test-addresses add`, or ask mailgoose to allow full sending."))
+			WithHint("The form's owner can add this address as a test address, or ask mailgoose to allow full sending."))
 	case errors.Is(err, signups.ErrBadStamp):
 		writeSignupError(w, r, BadRequest("form_code_incomplete", "This form's code is incomplete, so it can't take signups.").
-			WithHint("The site's owner should paste the form's embed code again, from `mailgoose form embed <form-id>`."))
+			WithHint("The site's owner should paste the form's embed code again, from mailgoose."))
 	case errors.As(err, &invalid):
 		writeSignupError(w, r, Unprocessable("invalid_signup", invalid.Message).
 			WithDetails(map[string]any{"field": invalid.Field}))
 	case errors.Is(err, signups.ErrNotReady):
 		writeSignupError(w, r, &Error{Status: http.StatusServiceUnavailable, Code: "form_not_ready",
 			Message: "This form isn't taking signups yet.",
-			Hint:    "The form's owner needs a verified sending domain to send confirmation emails from; `mailgoose form get <form-id>` says what's missing."})
+			Hint:    "The form's owner needs a verified sending domain to send confirmation emails from."})
 	case errors.As(err, &capped):
 		// The form's daily cap (MG-92): Retry-After says when it takes one
 		// again.

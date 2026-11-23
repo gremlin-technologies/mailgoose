@@ -78,6 +78,50 @@ mailgoose: <url>`. Defaults, each easy to change:
   launched with** and carry no footer; only campaigns launched afterwards do.
 - **The email check doesn't see the footer**: it checks the customer's email.
 
+## 2026-11-22: The free tier's limits, as built (MG-120; reversible defaults)
+
+`FreeContactLimit` 1,000, `FreeMonthlyGrant` 2,500, `FREE_DAILY_SEND_LIMIT`
+1,000, and the form overflow, as decided above. Defaults, each easy to change:
+
+- **The overflow is a flat 100** (`contacts.FreeFormOverflow`), for signups
+  and double opt-in confirms alike. Imports, the Mailchimp import and the
+  API stop at 1,000.
+- **The hold is computed, not stored.** A free, non-tester account with more
+  than 1,000 counted contacts is "halted" for the dispatcher, a batch and each
+  copy's claim (the pause path), so a campaign already sending or scheduled
+  waits and goes on by itself once the account is at 1,000 or paid. It isn't
+  `sending_paused_at`, so no admin has anything to lift, and test sends still
+  work. Launch and confirm refuse with `over_contact_limit`.
+- **Not built: the once-only email to the owner when a form takes the account
+  over 1,000, and the digest line.** The launch refusal and the account page
+  already say it; both need a stored flag and mail, so they're left to a
+  follow-up if the owner wants them.
+- **The daily cap is applied last in `Limits.ForAccount`** and takes the plan
+  from the account row; zero (unset in tests) means no cap.
+- **Accounts already holding a grant keep it** to the end of its period; the
+  next one is 2,500. No top-up.
+- **Tester accounts are untouched**: 500 contacts, 100 copies a day.
+
+## 2026-11-22: The web app's own words, as built (MG-121; reversible defaults)
+
+Every API error the web app shows goes through `webWords` (`web/src/api/hints.ts`),
+in `failureFrom` and for each launch problem and form problem. Defaults:
+
+- **One map from code to wording**, as the ticket suggested; where the
+  API's message alone says enough the wording is empty (no hint shown).
+- **Unmapped hints are dropped when they name the CLI** (a `mailgoose` command,
+  a flag or an API route), and kept otherwise. A message naming one has the
+  sentence dropped; the few API messages that did are reworded for both.
+- **`untested` reads "Send a test and check it looks right before you
+  launch."** for both of its messages, with a Send test button beside it that
+  sends a test to the account owner, the same as the Send a test step with its
+  address left empty.
+- **The public signup errors** no longer name commands (`test_mode`,
+  `form_code_incomplete`, `form_not_ready`), since anyone filling in a form
+  can see them.
+- **The test of the API's code list** reads the server's Go sources for the
+  codes it builds errors with, since the spec has no list of codes.
+
 ## 2026-11-22: The web app speaks in its own words, never CLI commands (owner decision, confirmed)
 
 Asked about the untested-campaign error in the web app, which tells people to

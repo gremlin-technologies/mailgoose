@@ -417,7 +417,7 @@ func TestContactLimit(t *testing.T) {
 	h := newHarness(t)
 	if _, err := h.db.Exec(context.Background(), `
 		INSERT INTO contacts (account_id, email, status, source)
-		SELECT $1, 'c' || i || '@example.com', 'subscribed', 'api' FROM generate_series(1, $2) i`, h.acc, contacts.FreeContactLimit); err != nil {
+		SELECT $1, 'c' || i || '@example.com', 'subscribed', 'api' FROM generate_series(1, $2) i`, h.acc, contacts.FreeContactLimit+contacts.FreeFormOverflow); err != nil {
 		t.Fatal(err)
 	}
 	var le *contacts.LimitError

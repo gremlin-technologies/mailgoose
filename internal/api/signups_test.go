@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -447,7 +448,7 @@ func TestFormSignupContactLimit(t *testing.T) {
 	if _, err := f.db.Exec(t.Context(), `
 		INSERT INTO contacts (account_id, email, status, source)
 		SELECT $1, 'c' || n || '@example.com', 'subscribed', 'api' FROM generate_series(1, $2::int) n`,
-		f.acc, contacts.FreeContactLimit); err != nil {
+		f.acc, contacts.FreeContactLimit+contacts.FreeFormOverflow); err != nil {
 		t.Fatal(err)
 	}
 
@@ -540,5 +541,22 @@ func TestFormPostJSONFields(t *testing.T) {
 	}
 	if e := b.elapsed(); e == nil || *e != 1500*time.Millisecond {
 		t.Fatalf("elapsed %v", e)
+	}
+}
+
+// The signup form's errors and confirm pages are read by whoever fills in a
+// form, so none of them names a CLI command (MG-121).
+func TestPublicSignupErrorsNameNoCLICommand(t *testing.T) {
+	src, err := os.ReadFile("signups.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, line := range strings.Split(string(src), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "//") {
+			continue
+		}
+		if strings.Contains(line, "`mailgoose ") || strings.Contains(line, " --") {
+			t.Errorf("signups.go:%d names a CLI command or flag: %s", i+1, strings.TrimSpace(line))
+		}
 	}
 }

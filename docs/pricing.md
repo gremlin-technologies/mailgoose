@@ -12,7 +12,7 @@ $15 per 10,000 emails works as a price per email; the plan around it didn't. Del
 
 As first proposed, fully loaded margin is about 37% at 1,000 paying customers. With three changes it reaches about 56%, or 62% without Amazon's paid deliverability dashboard:
 
-- **Free tier:** 500 contacts and 1,000 credits a month (down from 1,000 and 2,000). No domain needed (changed Nov 22; it first said "sending only from a verified domain"). Paid accounts keep the 1,000 free credits a month too (decided Nov 22).
+- **Free tier:** 1,000 contacts and 2,500 credits a month, at most 1,000 sends a day, with the required "Sent by mailgoose" footer (changed Nov 22, MG-120; it was 500 and 1,000). No domain needed (changed Nov 22; it first said "sending only from a verified domain"). Paid accounts keep the same monthly free credits too (decided Nov 22).
 - **Paid account fee:** $5 a month, including the first 2,500 contacts; then $5 per extra 10,000. Billed by card as a subscription, monthly or yearly at $50 (changed Nov 18; it first came out of credits).
 - **Credits:** $20 for 10,000, $75 for 50,000, $240 for 200,000, $900 for 1,000,000 ($2.00 down to $0.90 per 1,000), valid 24 months.
 

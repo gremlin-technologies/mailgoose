@@ -87,7 +87,19 @@ const (
 // so a batch already on the send queue when the period ends sends nothing
 // more and is handed back, as for a pause (MG-107).
 func accountHalted(now string) string {
-	return `(a.sending_paused_at IS NOT NULL OR a.suspended_at IS NOT NULL OR coalesce(a.tester_until <= ` + now + `, false))`
+	return `(a.sending_paused_at IS NOT NULL OR a.suspended_at IS NOT NULL OR coalesce(a.tester_until <= ` + now + `, false)
+		OR ` + overContactLimitSQL("a") + `)`
+}
+
+// overContactLimitSQL is true for the account row alias holds, a free
+// account that isn't a tester and has more counted contacts than
+// contacts.FreeContactLimit (MG-120): its signup forms can take it past the
+// limit, and its sends are held, with nothing stored to clear, until it
+// upgrades or is back under. The count only runs for a free account.
+func overContactLimitSQL(alias string) string {
+	return fmt.Sprintf(`(%[1]s.plan = 'free' AND %[1]s.tester_started_at IS NULL AND
+		(SELECT count(*) FROM contacts k WHERE k.account_id = %[1]s.id AND k.status IN ('unconfirmed', 'subscribed')) > %[2]d)`,
+		alias, contacts.FreeContactLimit)
 }
 
 // Batch is one message on the send queue: recipient rows of one campaign.
@@ -111,6 +123,10 @@ type Limits struct {
 	// NewDaily its limit in that week. An account's own daily_send_limit
 	// overrides both.
 	Daily, NewDaily int
+	// FreeDaily caps a free account's daily limit (MG-120), after every
+	// other rule, so a lower throttle or staff-set limit still wins. Zero
+	// means no cap.
+	FreeDaily int
 	// SharedDomain is true when shared sending is on (SHARED_SENDING_DOMAIN,
 	// MG-85). An account with no verified domain of its own then stays at
 	// NewDaily, and one that has one grows from when it verified its first

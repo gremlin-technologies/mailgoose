@@ -102,7 +102,7 @@ function PlanPanel({ plan: p }: { plan: Plan }) {
     return (
       <section className="panel stack" aria-label="Plan">
         <h2>Free plan</h2>
-        <p>Up to 500 contacts and 1,000 credits a month. The paid plan raises your contacts and lets you buy credit packs.</p>
+        <p>Up to 1,000 contacts and 2,500 credits a month, and up to 1,000 emails a day. The paid plan raises your contacts and lets you buy credit packs.</p>
         <fieldset className="choices">
           <legend>Pay for the paid plan</legend>
           <label className="choice">

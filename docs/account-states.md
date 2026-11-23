@@ -31,7 +31,16 @@ never refuses a launch: copies over it wait for the next day's room.
   for the first week from activation, then doubling each clean week up to
   10,000 (`ACCOUNT_DAILY_SEND_LIMIT`), held at 1,000 while the last 30 days
   aren't clean. A limit staff set by hand (`accounts.daily_send_limit`) stands
-  in for the ramp; no command sets it.
+  in for the ramp; no command sets it. A free account never goes past
+  `FREE_DAILY_SEND_LIMIT` (1,000), applied last, so a throttle or a lower limit
+  still wins; paid accounts are unchanged (MG-120).
+- **Over the free contact limit** (MG-120): a free account (not a tester, which
+  keeps its own 500) with more than 1,000 counted contacts, which only its
+  signup forms can cause (they take up to 1,100). Nothing is stored: launches
+  are refused with `over_contact_limit`, and a campaign already sending or
+  scheduled waits at its next batch, as for a pause, until the account
+  upgrades or is back at 1,000. Test sends still work. The account clears it
+  itself; no admin command is involved.
 - **Shared-domain hold** (MG-98): with `SHARED_SENDING_DOMAIN` set, an account
   with no verified domain of its own stays at 1,000 a day (`needs_domain` in
   the account's send limit; in `admin account --json`, not the plain view).

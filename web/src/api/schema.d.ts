@@ -5956,9 +5956,11 @@ export interface components {
         };
         /**
          * @description `contact_limit`: a free account, or a tester account (MG-86) on any
-         *     plan, holds at most 500 counted contacts (unconfirmed and
-         *     subscribed). `details.limit` is the limit and `details.count` the
-         *     counted contacts now. Other paid accounts have no cap.
+         *     plan, holds at most 1,000 counted contacts (unconfirmed and
+         *     subscribed), and a tester account 500. `details.limit` is the limit
+         *     and `details.count` the counted contacts now. A free account's
+         *     signup forms take up to 100 more before they answer with it. Other
+         *     paid accounts have no cap.
          */
         ContactLimit: {
             headers: {
@@ -6454,7 +6456,10 @@ export interface components {
          *     payment until it's lifted), `no_recipients`, `credits_short` with `details.needed`,
          *     `details.balance` and `details.short`, and `tester_limit` (a tester account, MG-86, that has
          *     ended, or whose campaign needs more tester credits than are left; `details.needed`,
-         *     `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`), and
+         *     `details.credits`, `details.used`, `details.left`, `details.until` and `details.ended`),
+         *     `over_contact_limit` (a free account holds more than 1,000 counted contacts, which its
+         *     signup forms can cause by up to 100; `details.count` and `details.limit`; upgrade or
+         *     remove contacts), and
          *     `segment_invalid` (the campaign's segment has a condition it can't use now, such as a deleted
          *     tag; `details.segment_id` and `details.problems`, each with `condition`, `id` and `code`). `invalid_confirmation`: the
          *     code can't be used; `details.reason` is `no_code`, `expired`,

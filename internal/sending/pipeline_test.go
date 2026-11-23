@@ -19,6 +19,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
+	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/mail"
 	"github.com/gremlin-technologies/mailgoose/internal/unsubscribe"
 )
@@ -77,6 +78,12 @@ func launchTo(t *testing.T, h *harness, n int, created time.Time) *harness {
 		SELECT $1, 'reader' || i || '@example.com', 'Reader' || i, 'subscribed', 'api' FROM generate_series(1, $2) i`,
 		h.acc, n); err != nil {
 		t.Fatal(err)
+	}
+	// A list past the free plan's contact limit means a paid account (MG-120).
+	if n+1 > contacts.FreeContactLimit {
+		if _, err := h.db.Exec(ctx, `UPDATE accounts SET plan = 'paid' WHERE id = $1`, h.acc); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if _, err := h.test(); err != nil {
 		t.Fatal(err)

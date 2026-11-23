@@ -4,6 +4,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { useApi } from "../api/context";
+import { webWords } from "../api/hints";
 import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
 import { Badge, CopyButton, FailureNotice, LoadFailed, Loading, PageHeader, useLoad } from "../components";
@@ -132,11 +133,15 @@ export function FormEditor() {
       </dl>
       {f.problems && f.problems.length > 0 && (
         <div className="notice notice-warn" role="status">
-          {f.problems.map((p) => (
-            <p key={p.code}>
-              {p.message} {p.hint && <span className="hint">{p.hint}</span>}
-            </p>
-          ))}
+          {f.problems.map((p) => {
+            // The API's hint names CLI commands; the web app words its own (MG-121).
+            const w = webWords(p.code, p.message, p.hint ?? "");
+            return (
+              <p key={p.code}>
+                {w.message} {w.hint && <span className="hint">{w.hint}</span>}
+              </p>
+            );
+          })}
         </div>
       )}
       <div className="form-editor">
