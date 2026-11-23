@@ -284,11 +284,25 @@ func importColumns(maps []string) (map[string]string, error) {
 	return columns, nil
 }
 
+// fileLabel is the import's file name for the list: "pasted" for a CSV
+// import without one, as for contacts pasted in or read from standard input
+// (MG-125), and "-" for any other.
+func (j importJob) fileLabel() string {
+	switch {
+	case j.FileName != nil:
+		return *j.FileName
+	case j.Kind == "csv":
+		return "pasted"
+	}
+	return "-"
+}
+
 // importPreview is the API's ImportPreview.
 type importPreview struct {
-	Separator string `json:"separator"`
-	Rows      int    `json:"rows"`
-	Columns   []struct {
+	Separator      string `json:"separator"`
+	Rows           int    `json:"rows"`
+	HasHeaderGuess bool   `json:"has_header_guess"`
+	Columns        []struct {
 		Position int      `json:"position"`
 		Header   string   `json:"header"`
 		Name     string   `json:"name"`
@@ -304,6 +318,7 @@ type importPreview struct {
 // importPreviewCmd is "mailgoose import preview".
 func (a *App) importPreviewCmd() *cobra.Command {
 	var maps []string
+	var noHeader bool
 	cmd := calls("previewImport", &cobra.Command{
 		Use:   "preview <file.csv>",
 		Short: "Show how a CSV file would be imported, without importing it",
@@ -316,10 +331,16 @@ Name a column whose header is blank or repeated by its position, as in
 --map first_name=#3. --map status= (with nothing after =) leaves a field out,
 even when a column's header looks like it.
 
+When the first row is a contact rather than a header, as with rows copied
+from a spreadsheet, pass --no-header: columns are then named by position
+(#1, #2 ...) and the email column is the one with an address in the first
+row. The preview says when the first row looks like a contact.
+
 An agent importing for someone should show them this before importing, and
 let them confirm or change which column becomes which field.`,
 		Example: `  mailgoose import preview contacts.csv
   mailgoose import preview export.csv --map email="E-mail" --map first_name=#3 --map status=
+  pbpaste | mailgoose import preview - --no-header
   pbpaste | mailgoose import preview - --json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -335,6 +356,9 @@ let them confirm or change which column becomes which field.`,
 			if len(columns) > 0 {
 				body["columns"] = columns
 			}
+			if noHeader {
+				body["has_header"] = false
+			}
 			var p importPreview
 			if err := a.call(cmd.Context(), http.MethodPost, "/v1/imports/preview", body, &p, true); err != nil {
 				return err
@@ -343,14 +367,15 @@ let them confirm or change which column becomes which field.`,
 				a.printJSON(p)
 				return nil
 			}
-			return a.printImportPreview(p)
+			return a.printImportPreview(p, noHeader)
 		},
 	})
 	cmd.Flags().StringArrayVar(&maps, "map", nil, "field=header or field=#position, naming the column a field comes from; field= leaves it out; repeatable")
+	cmd.Flags().BoolVar(&noHeader, "no-header", false, "the first row is a contact, not a header; name columns by position (#1, #2 ...)")
 	return cmd
 }
 
-func (a *App) printImportPreview(p importPreview) error {
+func (a *App) printImportPreview(p importPreview, noHeader bool) error {
 	rows := "rows"
 	if p.Rows == 1 {
 		rows = "row"
@@ -375,6 +400,12 @@ func (a *App) printImportPreview(p importPreview) error {
 	if err := tw.Flush(); err != nil {
 		return err
 	}
+	switch {
+	case !noHeader && !p.HasHeaderGuess:
+		fmt.Fprintln(a.Stdout, "\nThe first row looks like a contact, not a header. If it is, add --no-header.")
+	case noHeader && p.HasHeaderGuess:
+		fmt.Fprintln(a.Stdout, "\nThe first row looks like a header. If it is, leave out --no-header.")
+	}
 	if p.Problem != nil {
 		fmt.Fprintf(a.Stdout, "\nThis file can't be imported as it is: %s\n", p.Problem.Message)
 		if p.Problem.Code == "no_email_column" || p.Problem.Code == "invalid_mapping" {
@@ -382,7 +413,7 @@ func (a *App) printImportPreview(p importPreview) error {
 		}
 		return nil
 	}
-	fmt.Fprintln(a.Stdout, "\nTo import it this way, run \"mailgoose import\" with the same file and --map flags.")
+	fmt.Fprintln(a.Stdout, "\nTo import it this way, run \"mailgoose import\" with the same file and flags.")
 	return nil
 }
 
@@ -395,17 +426,24 @@ var importFields = map[string]string{
 func (a *App) importCmd() *cobra.Command {
 	var maps, tags []string
 	var listSource, listSourceDetail string
-	var permission, wait bool
+	var permission, wait, noHeader bool
 	cmd := callsAll([]string{"createImport", "getImport", "listImportSkippedRows"}, &cobra.Command{
 		Use:   "import <file.csv>",
 		Short: "Import contacts from a CSV file",
-		Long: `Imports contacts from a CSV file. The first row is the header. The email,
-first name and last name columns are found from common headers ("Email",
-"Email Address", "First Name", "Surname" ...); name any others with --map,
+		Long: `Imports contacts from a CSV file. The first row is the header, unless
+you pass --no-header (see below). The email, first name and last name columns
+are found from common headers ("Email", "Email Address", "First Name",
+"Surname" ...); name any others with --map,
 by header or by position (--map first_name=#3), and leave a field out with
 --map status= (nothing after =). Commas, semicolons and tabs all work. Pass -
 to read the file from standard input. A file from "mailgoose export" imports
 as the same contacts and tags.
+
+Contacts pasted from a spreadsheet often have no header: pass --no-header,
+and the first row is imported as a contact. Columns are then named by
+position (--map first_name=#1), and the email column is the one with an
+address in the first row. Contacts read from standard input have no file
+name, and are listed as pasted.
 
 Run "mailgoose import preview" first to see which column becomes which field,
 with each column's first values. An agent importing for someone should show
@@ -438,6 +476,7 @@ until mailgoose approves it, and "mailgoose import status" says why it's held.`,
 		Example: `  mailgoose import contacts.csv --list-source form --permission-confirmed --wait
   mailgoose import export.csv --list-source export --map email="E-mail" --map first_name=Vorname --tag newsletter
   mailgoose import fair.csv --list-source other --list-source-detail "Signed up at our trade show stand"
+  pbpaste | mailgoose import - --no-header --list-source customers --map first_name=#1 --map last_name=#3
   mailgoose import status <id>`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -468,6 +507,9 @@ until mailgoose approves it, and "mailgoose import status" says why it's held.`,
 			if len(tags) > 0 {
 				body["tags"] = tags
 			}
+			if noHeader {
+				body["has_header"] = false
+			}
 			body["permission_confirmed"] = permission
 
 			ctx := cmd.Context()
@@ -496,6 +538,7 @@ until mailgoose approves it, and "mailgoose import status" says why it's held.`,
 	cmd.Flags().StringArrayVar(&tags, "tag", nil, "tag (name or id) to put on every added contact; repeatable; it must exist")
 	cmd.Flags().BoolVar(&permission, "permission-confirmed", false, "you have these people's permission to email them: add them subscribed, not unconfirmed")
 	cmd.Flags().BoolVar(&wait, "wait", false, "wait for the import to finish and show the result")
+	cmd.Flags().BoolVar(&noHeader, "no-header", false, "the first row is a contact, not a header; name columns by position (#1, #2 ...)")
 	cmd.Flags().StringVar(&listSource, "list-source", "", "required: where these contacts came from: form, customers, personal, export or other")
 	cmd.Flags().StringVar(&listSourceDetail, "list-source-detail", "", "with --list-source other, a few words on where these contacts came from")
 
@@ -547,11 +590,7 @@ until mailgoose approves it, and "mailgoose import status" says why it's held.`,
 			tw := tabwriter.NewWriter(a.Stdout, 0, 4, 2, ' ', 0)
 			fmt.Fprintln(tw, "ID\tFILE\tSTATUS\tROWS\tADDED\tSKIPPED\tREVIEW\tSTARTED")
 			for _, j := range page.Data {
-				file := "-"
-				if j.FileName != nil {
-					file = *j.FileName
-				}
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%s\t%s\n", j.ID, file, j.Status, j.TotalRows, j.Imported, j.Skipped, j.Review,
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%s\t%s\n", j.ID, j.fileLabel(), j.Status, j.TotalRows, j.Imported, j.Skipped, j.Review,
 					j.CreatedAt.Local().Format("2006-01-02 15:04"))
 			}
 			if err := tw.Flush(); err != nil {

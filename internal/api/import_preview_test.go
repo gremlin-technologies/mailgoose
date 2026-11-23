@@ -18,9 +18,10 @@ func tooLargePreview(t *testing.T) *http.Request {
 }
 
 type previewJSON struct {
-	Separator string `json:"separator"`
-	Rows      int    `json:"rows"`
-	Columns   []struct {
+	Separator      string `json:"separator"`
+	Rows           int    `json:"rows"`
+	HasHeaderGuess bool   `json:"has_header_guess"`
+	Columns        []struct {
 		Position int      `json:"position"`
 		Header   string   `json:"header"`
 		Name     string   `json:"name"`
@@ -154,6 +155,62 @@ func TestImportSkipsAnEmptyField(t *testing.T) {
 	b := rec.Body.String()
 	if !strings.Contains(b, `"status":"subscribed"`) || strings.Contains(b, `"name":"vip"`) ||
 		!strings.Contains(b, `"first_name":"Ann"`) || !strings.Contains(b, `"last_name":"Lee"`) {
+		t.Errorf("contact = %s", b)
+	}
+}
+
+// Pasted contacts without a header row (MG-125): previewed and imported
+// with has_header false, the first row is a contact.
+func TestImportWithoutHeader(t *testing.T) {
+	s := draftKey(authServer)(t)
+	h := importRunner{s.Handler(), s.Contacts}
+	const pasted = "Pat\tpat@example.com\tLee\nSam\tsam@example.com\tRo\n"
+
+	// Previewed as if it had a header, the guess says it hasn't.
+	rec := do(t, h, bearer(jsonRequest(http.MethodPost, "/v1/imports/preview", csvPreview(pasted)))(t))
+	var p previewJSON
+	decodeInto(t, rec, &p)
+	if rec.Code != http.StatusOK || p.HasHeaderGuess || p.Rows != 1 {
+		t.Fatalf("with a header: %d guess %v rows %d", rec.Code, p.HasHeaderGuess, p.Rows)
+	}
+	for _, body := range []string{
+		`{"has_header":false,"csv":"Pat\tpat@example.com\tLee\nSam\tsam@example.com\tRo\n"}`,
+		`{"has_header":false,"csv":"Pat,pat@example.com,Lee\nSam,sam@example.com,Ro\n"}`,
+	} {
+		rec := do(t, h, bearer(jsonRequest(http.MethodPost, "/v1/imports/preview", body))(t))
+		var p previewJSON
+		decodeInto(t, rec, &p)
+		if p.fields() != "#1=- #2=email #3=-" || p.problem() != "" || p.Rows != 2 || p.HasHeaderGuess ||
+			p.Columns[1].Samples[0] != "pat@example.com" {
+			t.Errorf("%s: %q problem %q rows %d", body, p.fields(), p.problem(), p.Rows)
+		}
+	}
+	// A file with a header still guesses one.
+	rec = do(t, h, bearer(jsonRequest(http.MethodPost, "/v1/imports/preview", previewBody))(t))
+	decodeInto(t, rec, &p)
+	if !p.HasHeaderGuess {
+		t.Error("a header row was guessed as a contact")
+	}
+
+	body := `{"list_source":"form","has_header":false,"csv":"Pat\tpat@example.com\tLee\nSam\tsam@example.com\tRo\n",` +
+		`"columns":{"first_name":"#1","last_name":"#3"}}`
+	rec = do(t, h, bearer(jsonRequest(http.MethodPost, "/v1/imports", body))(t))
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	var queued importBodyJSON
+	decodeInto(t, rec, &queued)
+	if queued.Columns.Email != "#2" || queued.FileName != nil || queued.TotalRows != 2 {
+		t.Errorf("queued = %+v", queued)
+	}
+	rec = do(t, h, bearer(request(http.MethodGet, "/v1/imports/"+queued.ID))(t))
+	var done importBodyJSON
+	decodeInto(t, rec, &done)
+	if done.Status != "done" || done.Imported != 2 {
+		t.Fatalf("done = %+v", done)
+	}
+	rec = do(t, h, bearer(request(http.MethodGet, "/v1/contacts?email=pat@example.com"))(t))
+	if b := rec.Body.String(); !strings.Contains(b, `"first_name":"Pat"`) || !strings.Contains(b, `"last_name":"Lee"`) {
 		t.Errorf("contact = %s", b)
 	}
 }

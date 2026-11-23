@@ -1252,6 +1252,13 @@ export interface paths {
          *     tabs all work as separators. `previewImport` shows how a file would
          *     be read, with each column's first values, before it's imported.
          *
+         *     Contacts pasted from a spreadsheet often have no header row. Send
+         *     `has_header: false` for those: every row is a contact, columns are
+         *     named by position (`#1`, `#2` ...), and the email column is the
+         *     first one whose first row holds an address, unless `columns` names
+         *     it. `previewImport`'s `has_header_guess` says which a file looks
+         *     like. Leave `file_name` out for pasted contacts.
+         *
          *     Imported contacts are `unconfirmed` unless `permission_confirmed` says
          *     the account has these people's permission to mail them; then they're
          *     `subscribed`. Rows with a bad address, a repeat of an earlier row, an
@@ -1299,6 +1306,8 @@ export interface paths {
          *     and changes nothing. It shows the separator, how many contact rows
          *     there are, and each column with its first few values and the field it
          *     would become, so the person can check the columns before importing.
+         *     It also guesses whether the first row is a header
+         *     (`has_header_guess`); send the same `has_header` to both calls.
          *     A problem `createImport` would refuse the file for, such as no email
          *     column or a named column that isn't there, is in `problem` instead of
          *     an error, so the columns can still be shown. Only a file whose header
@@ -3159,19 +3168,34 @@ export interface components {
         };
         PreviewImportRequest: {
             /**
-             * @description The whole CSV file as UTF-8 text, header row first.
+             * @description The whole CSV file as UTF-8 text, header row first unless `has_header` is false.
              * @example email,first_name
              *     pat@example.com,Pat
              */
             csv: string;
+            has_header?: components["schemas"]["ImportHasHeader"];
             columns?: components["schemas"]["ImportColumns"];
         };
+        /**
+         * @description False when the first row is a contact rather than a header, as when
+         *     contacts are pasted from a spreadsheet. Columns are then named by
+         *     position (`#1`, `#2` ...).
+         * @default true
+         */
+        ImportHasHeader: boolean;
         ImportPreview: {
             /**
-             * @description The separator found in the header row.
+             * @description The separator found in the first row.
              * @enum {string}
              */
             separator: "comma" | "semicolon" | "tab";
+            /**
+             * @description Whether the first row looks like a header: false when it holds
+             *     an email address in the column email would come from, or in any
+             *     column when no header names one. It doesn't depend on the
+             *     `has_header` sent, so it can be shown as a choice.
+             */
+            has_header_guess: boolean;
             /** @description Contact rows, not counting the header or blank rows. Counting stops past 100,000. */
             rows: number;
             /** @description The file's columns, in order. */
@@ -3182,7 +3206,7 @@ export interface components {
         ImportPreviewColumn: {
             /** @description The column's place in the file, counting from 1. */
             position: number;
-            /** @description The column's header as written; may be empty. */
+            /** @description The column's header as written; empty when it has none, and always empty with `has_header` false. */
             header: string;
             /**
              * @description What to send in `columns` to pick this column. Its header, or `#3` for a column whose header is blank or repeated.
@@ -3209,12 +3233,13 @@ export interface components {
         };
         CreateImportRequest: {
             /**
-             * @description The whole CSV file as UTF-8 text, header row first.
+             * @description The whole CSV file as UTF-8 text, header row first unless `has_header` is false.
              * @example email,first_name
              *     pat@example.com,Pat
              */
             csv: string;
-            /** @description The file's name, to tell imports apart later. */
+            has_header?: components["schemas"]["ImportHasHeader"];
+            /** @description The file's name, to tell imports apart later. Leave it out for pasted contacts. */
             file_name?: string | null;
             columns?: components["schemas"]["ImportColumns"];
             /** @description Tags, by name or id, put on every contact the import adds. They must exist. */
@@ -3276,6 +3301,7 @@ export interface components {
              * @enum {string}
              */
             kind: "csv" | "mailchimp";
+            /** @description The file's name; null for contacts pasted in rather than uploaded as a file. */
             file_name: string | null;
             status: components["schemas"]["ImportStatus"];
             /**

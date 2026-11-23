@@ -4,6 +4,41 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-23: Pasting contacts into an import (MG-125; reversible defaults)
+
+The owner asked for "a copy/paste flow in import where folks can copy their
+contact data in, either comma or tab-delimited format." What changed:
+
+- **The import page offers "Upload a CSV file" or "Paste contacts".** A paste
+  goes through the same preview and column matching as a file. An empty or
+  blank paste can't continue, and one over 10 MB is refused in the browser.
+- **`has_header` on `createImport` and the preview (`--no-header` in the
+  CLI)**, default `true`. With `false` the first row is a contact, the columns
+  have no headers, and they're named by position: "Column 1", "Column 2" ... in
+  the web app, `#1`, `#2` ... in `columns`, as MG-124 already names a blank
+  header's column. The email column is then the first one holding an address
+  in the first row. An import remembers `has_header`, so the worker reads the
+  file the same way.
+- **The header guess (`has_header_guess` in the preview).** The first row
+  isn't a header when it holds an email address where the email column would
+  come from were it the header, or, when no header would name an email
+  column, anywhere in the row. The ticket asked for the first half; the
+  second covers pasted rows whose address column a header guess can't find.
+  The web app ticks "The first row is a header" by the guess, and changing it
+  reads the contacts again. The CLI's preview says when the guess and
+  `--no-header` disagree.
+- **A pasted import keeps no stand-in file name.** `file_name` stays null,
+  and the web app shows a CSV import without one as "Pasted contacts"; the
+  CLI lists it as "pasted". Contacts piped into the CLI with `-` have no file
+  name either, so they show the same way.
+- **`#3` always means the third column when there is one**, even when
+  another column's header is literally `#3`; such a column is named by its
+  own position instead. This replaces MG-124's "when no header is exactly
+  `#3`", which could send a blank column's stored name to the wrong column.
+  A `#9` beyond the last column still matches a header `#9`.
+
+Each of these is a reversible default for the owner to change.
+
 ## 2026-11-23: Checking an import's columns before it runs (MG-124; reversible defaults)
 
 The owner asked for "a matching step to the import where they can confirm

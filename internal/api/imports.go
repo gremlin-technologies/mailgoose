@@ -152,13 +152,13 @@ func (s *Server) PreviewImport(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	in := contacts.ImportInput{CSV: []byte(req.Csv)}
+	in := contacts.ImportInput{CSV: []byte(req.Csv), NoHeader: req.HasHeader != nil && !*req.HasHeader}
 	setImportColumns(&in, req.Columns)
 	p, err := contacts.PreviewImport(in)
 	if s.importError(w, r, err) {
 		return
 	}
-	out := apigen.ImportPreview{Separator: apigen.ImportPreviewSeparator(p.Separator), Rows: p.Rows,
+	out := apigen.ImportPreview{Separator: apigen.ImportPreviewSeparator(p.Separator), Rows: p.Rows, HasHeaderGuess: p.HasHeaderGuess,
 		Columns: make([]apigen.ImportPreviewColumn, len(p.Columns))}
 	for i, col := range p.Columns {
 		out.Columns[i] = apigen.ImportPreviewColumn{Position: col.Position, Header: col.Header, Name: col.Name, Samples: col.Samples}
@@ -184,7 +184,8 @@ func (s *Server) CreateImport(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	in := contacts.ImportInput{CSV: []byte(req.Csv), ListSource: string(req.ListSource), ListSourceDetail: deref(req.ListSourceDetail)}
+	in := contacts.ImportInput{CSV: []byte(req.Csv), NoHeader: req.HasHeader != nil && !*req.HasHeader,
+		ListSource: string(req.ListSource), ListSourceDetail: deref(req.ListSourceDetail)}
 	if req.FileName != nil {
 		in.FileName = *req.FileName
 	}

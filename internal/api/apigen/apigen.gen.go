@@ -3151,14 +3151,19 @@ type CreateImportRequest struct {
 	// column's header looks like it. Email can't be left empty.
 	Columns *ImportColumns `json:"columns,omitempty"`
 
-	// Csv The whole CSV file as UTF-8 text, header row first.
+	// Csv The whole CSV file as UTF-8 text, header row first unless `has_header` is false.
 	//
 	// Examples: email,first_name
 	// pat@example.com,Pat
 	Csv string `json:"csv"`
 
-	// FileName The file's name, to tell imports apart later.
+	// FileName The file's name, to tell imports apart later. Leave it out for pasted contacts.
 	FileName *string `json:"file_name,omitempty"`
+
+	// HasHeader False when the first row is a contact rather than a header, as when
+	// contacts are pasted from a spreadsheet. Columns are then named by
+	// position (`#1`, `#2` ...).
+	HasHeader *ImportHasHeader `json:"has_header,omitempty"`
 
 	// ListSource Where an import's people came from. `form`: they signed up on my
 	// site or form. `customers`: they bought from me. `personal`: people I
@@ -3882,9 +3887,11 @@ type Import struct {
 	ExistingSuppressed int `json:"existing_suppressed"`
 
 	// ExistingTagged A Mailchimp import's addresses that were already contacts and only gained tags; 0 for a CSV.
-	ExistingTagged int        `json:"existing_tagged"`
-	FileName       *string    `json:"file_name"`
-	FinishedAt     *time.Time `json:"finished_at"`
+	ExistingTagged int `json:"existing_tagged"`
+
+	// FileName The file's name; null for contacts pasted in rather than uploaded as a file.
+	FileName   *string    `json:"file_name"`
+	FinishedAt *time.Time `json:"finished_at"`
 
 	// HoldMessage Why the import is held, in plain words, for showing to the account; null when it isn't held.
 	HoldMessage *string `json:"hold_message"`
@@ -4011,6 +4018,11 @@ type ImportEmailHtmlResult struct {
 // ImportField defines model for ImportField.
 type ImportField string
 
+// ImportHasHeader False when the first row is a contact rather than a header, as when
+// contacts are pasted from a spreadsheet. Columns are then named by
+// position (`#1`, `#2` ...).
+type ImportHasHeader = bool
+
 // ImportList defines model for ImportList.
 type ImportList struct {
 	Data       []Import `json:"data"`
@@ -4022,17 +4034,23 @@ type ImportPreview struct {
 	// Columns The file's columns, in order.
 	Columns []ImportPreviewColumn `json:"columns"`
 
+	// HasHeaderGuess Whether the first row looks like a header: false when it holds
+	// an email address in the column email would come from, or in any
+	// column when no header names one. It doesn't depend on the
+	// `has_header` sent, so it can be shown as a choice.
+	HasHeaderGuess bool `json:"has_header_guess"`
+
 	// Problem Why `createImport` would refuse this file with these columns; null when it would take it.
 	Problem *ImportPreviewProblem `json:"problem"`
 
 	// Rows Contact rows, not counting the header or blank rows. Counting stops past 100,000.
 	Rows int `json:"rows"`
 
-	// Separator The separator found in the header row.
+	// Separator The separator found in the first row.
 	Separator ImportPreviewSeparator `json:"separator"`
 }
 
-// ImportPreviewSeparator The separator found in the header row.
+// ImportPreviewSeparator The separator found in the first row.
 type ImportPreviewSeparator string
 
 // ImportPreviewColumn defines model for ImportPreviewColumn.
@@ -4040,7 +4058,7 @@ type ImportPreviewColumn struct {
 	// Field The field this column would become; null when it isn't imported.
 	Field *ImportField `json:"field"`
 
-	// Header The column's header as written; may be empty.
+	// Header The column's header as written; empty when it has none, and always empty with `has_header` false.
 	Header string `json:"header"`
 
 	// Name What to send in `columns` to pick this column. Its header, or `#3` for a column whose header is blank or repeated.
@@ -4536,11 +4554,16 @@ type PreviewImportRequest struct {
 	// column's header looks like it. Email can't be left empty.
 	Columns *ImportColumns `json:"columns,omitempty"`
 
-	// Csv The whole CSV file as UTF-8 text, header row first.
+	// Csv The whole CSV file as UTF-8 text, header row first unless `has_header` is false.
 	//
 	// Examples: email,first_name
 	// pat@example.com,Pat
 	Csv string `json:"csv"`
+
+	// HasHeader False when the first row is a contact rather than a header, as when
+	// contacts are pasted from a spreadsheet. Columns are then named by
+	// position (`#1`, `#2` ...).
+	HasHeader *ImportHasHeader `json:"has_header,omitempty"`
 }
 
 // RecipientCount defines model for RecipientCount.

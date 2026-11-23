@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -257,6 +257,7 @@ describe("imports", () => {
   const peoplePreview = {
     separator: "comma",
     rows: 4,
+    has_header_guess: true,
     columns: [
       previewCol(1, "E-mail Address", "email", ["pat@example.com", "sam@example.com", "not-an-address"]),
       previewCol(2, "Given name", null, ["Pat", "Sam", ""]),
@@ -424,6 +425,135 @@ describe("imports", () => {
     expect(api.calls.some((c) => c.path === "/v1/imports")).toBe(false);
   });
 
+  it("imports pasted rows without a header, and lets the header guess be changed", async () => {
+    const previewed: { csv: string; has_header?: boolean; columns?: Record<string, string> }[] = [];
+    let posted: unknown;
+    const headerless = {
+      separator: "tab",
+      rows: 2,
+      has_header_guess: false,
+      columns: [
+        previewCol(1, "", null, ["Pat", "Sam"], "#1"),
+        previewCol(2, "", "email", ["pat@example.com", "sam@example.com"], "#2"),
+        previewCol(3, "", null, ["Lee", "Ro"], "#3"),
+      ],
+      problem: null,
+    };
+    const headed = {
+      separator: "tab",
+      rows: 1,
+      has_header_guess: false,
+      columns: [previewCol(1, "Pat", null, ["Sam"]), previewCol(2, "pat@example.com", "email", ["sam@example.com"]), previewCol(3, "Lee", null, ["Ro"])],
+      problem: null,
+    };
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/tags": tagsRoute([]),
+      "POST /v1/imports/preview": (body) => {
+        const b = body as (typeof previewed)[number];
+        previewed.push(b);
+        return { status: 200, body: b.has_header === false ? headerless : headed };
+      },
+      "POST /v1/imports": (body) => {
+        posted = body;
+        return { status: 202, body: anImport("queued", 0, { file_name: null, kind: "csv" }) };
+      },
+      [`GET /v1/imports/${importID}`]: () => ({ status: 200, body: anImport("done", 2, { file_name: null, kind: "csv" }) }),
+      [`GET /v1/imports/${importID}/skipped-rows`]: () => ({ status: 200, body: { data: [], next_cursor: null } }),
+    });
+    const user = userEvent.setup();
+    renderApp("/contacts/import", api.fetch);
+
+    await user.click(await screen.findByRole("radio", { name: "Paste contacts" }));
+    expect(screen.queryByLabelText("CSV file")).toBeNull();
+    const box = screen.getByLabelText("Contacts");
+    expect(screen.getByText(/Copy rows from a spreadsheet and paste them here/)).toBeTruthy();
+    const continueButton = () => screen.getByRole("button", { name: "Continue" }) as HTMLButtonElement;
+    // An empty or blank paste can't continue.
+    expect(continueButton().disabled).toBe(true);
+    await user.type(box, "   ");
+    expect(continueButton().disabled).toBe(true);
+    await user.clear(box);
+
+    const text = "Pat\tpat@example.com\tLee\nSam\tsam@example.com\tRo\n";
+    await user.click(box);
+    await user.paste(text);
+    await user.click(continueButton());
+
+    // The first row holds an address, so it's read as a contact.
+    expect(await screen.findByText(/Pasted contacts: 2 contacts, separated by tabs/)).toBeTruthy();
+    expect(previewed.map((b) => b.has_header)).toEqual([undefined, false]);
+    expect(previewed[0].csv).toBe(text);
+    const header = screen.getByRole("checkbox", { name: "The first row is a header" }) as HTMLInputElement;
+    expect(header.checked).toBe(false);
+    expect((screen.getByLabelText("Column 2") as HTMLSelectElement).value).toBe("email");
+
+    // Ticking it reads the first row as the header.
+    await user.click(header);
+    expect(await screen.findByText(/Pasted contacts: 1 contact, separated by tabs/)).toBeTruthy();
+    expect(previewed.at(-1)?.has_header).toBeUndefined();
+    expect(screen.getByLabelText("pat@example.com")).toBeTruthy();
+    await user.click(header);
+    expect(await screen.findByText(/Pasted contacts: 2 contacts/)).toBeTruthy();
+
+    await user.selectOptions(screen.getByLabelText("Column 1"), "first_name");
+    await waitFor(() =>
+      expect(previewed.at(-1)).toEqual({
+        csv: text,
+        has_header: false,
+        columns: { email: "#2", first_name: "#1", last_name: "", status: "", tags: "" },
+      }),
+    );
+    await user.click(screen.getByRole("radio", { name: "They're customers who bought from me" }));
+    await user.click(screen.getByRole("button", { name: "Import contacts" }));
+    await waitFor(() => expect(location()).toBe(`/contacts/imports/${importID}`));
+    expect(posted).toEqual({
+      csv: text,
+      has_header: false,
+      columns: { email: "#2", first_name: "#1", last_name: "", status: "", tags: "" },
+      tags: [],
+      permission_confirmed: false,
+      list_source: "customers",
+    });
+    // A pasted import has no file name.
+    expect(await screen.findByRole("heading", { name: "Pasted contacts" })).toBeTruthy();
+  });
+
+  it("reads comma-separated lines with a header row as it guessed", async () => {
+    const previewed: { has_header?: boolean }[] = [];
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/tags": tagsRoute([]),
+      "POST /v1/imports/preview": (body) => {
+        previewed.push(body as { has_header?: boolean });
+        return { status: 200, body: { ...peoplePreview, has_header_guess: true } };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp("/contacts/import", api.fetch);
+    await user.click(await screen.findByRole("radio", { name: "Paste contacts" }));
+    await user.click(screen.getByLabelText("Contacts"));
+    await user.paste("E-mail Address,Given name\npat@example.com,Pat\n");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByText(/Pasted contacts: 4 contacts, separated by commas/)).toBeTruthy();
+    expect(previewed).toHaveLength(1);
+    expect((screen.getByRole("checkbox", { name: "The first row is a header" }) as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("E-mail Address") as HTMLSelectElement).value).toBe("email");
+  });
+
+  it("refuses a paste over 10 MB in the browser", async () => {
+    const api = fakeApi({ ...signedIn, "GET /v1/tags": tagsRoute([]) });
+    const user = userEvent.setup();
+    renderApp("/contacts/import", api.fetch);
+    await user.click(await screen.findByRole("radio", { name: "Paste contacts" }));
+    const box = screen.getByLabelText("Contacts");
+    fireEvent.change(box, { target: { value: "a@example.com\n".repeat((10 << 20) / 14 + 1) } });
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByText("The pasted contacts are larger than 10 MB.")).toBeTruthy();
+    expect(screen.getByText("Split them into smaller parts and import each one.")).toBeTruthy();
+    expect(api.calls.some((c) => c.path.startsWith("/v1/imports"))).toBe(false);
+  });
+
   it("refuses a file with no header before uploading anything", async () => {
     const api = fakeApi({ ...signedIn, "GET /v1/tags": tagsRoute([]) });
     const user = userEvent.setup();
@@ -487,6 +617,7 @@ describe("column matching", () => {
   const preview = {
     separator: "tab" as const,
     rows: 1,
+    has_header_guess: true,
     columns: [
       { position: 1, header: "Email", name: "Email", field: "email" as const, samples: [] },
       { position: 2, header: "", name: "#2", field: "first_name" as const, samples: [] },

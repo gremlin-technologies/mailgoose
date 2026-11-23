@@ -91,6 +91,7 @@ func decodeInto(t *testing.T, rec *httptest.ResponseRecorder, v any) {
 
 type importBodyJSON struct {
 	ID              string         `json:"id"`
+	FileName        *string        `json:"file_name"`
 	Status          string         `json:"status"`
 	ContactStatus   string         `json:"contact_status"`
 	Imported        int            `json:"imported"`

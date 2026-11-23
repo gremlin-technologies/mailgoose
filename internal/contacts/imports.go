@@ -88,9 +88,13 @@ var errLeaseLost = errors.New("import lease lost")
 
 // Import is one CSV import and how far it got.
 type Import struct {
-	ID                  string
-	AccountID           string
-	FileName            *string
+	ID        string
+	AccountID string
+	// FileName is nil for pasted contacts (MG-125).
+	FileName *string
+	// HasHeader is false when the file's first row is a contact, not a
+	// header (MG-125).
+	HasHeader           bool
 	Status              string
 	PermissionConfirmed bool
 	// The header of the column each field came from; nil when the file has
@@ -146,7 +150,8 @@ func (im *Import) ContactStatus() string {
 
 // SkippedRow is a row an import didn't add.
 type SkippedRow struct {
-	// Row is the file's line number where the row starts; the header is 1.
+	// Row is the file's line number where the row starts; the first line,
+	// the header if there is one, is 1.
 	Row int
 	// Email is the email cell as written, empty when the row couldn't be
 	// read.
@@ -161,6 +166,11 @@ type SkippedRow struct {
 type ImportInput struct {
 	CSV      []byte
 	FileName string
+	// NoHeader says the first row is a contact, not a header, as when
+	// contacts are pasted from a spreadsheet (MG-125). Columns are then
+	// named by position ("#1", "#2" ...), and the email column is found
+	// from the first row's addresses when it isn't named.
+	NoHeader bool
 	// EmailColumn, FirstNameColumn, LastNameColumn, StatusColumn and
 	// TagsColumn name the header of each field's column. Empty ones are found
 	// from common headers. A status cell can only hold a contact back: an
@@ -241,8 +251,13 @@ var importFields = []string{fieldEmail, fieldFirstName, fieldLastName, fieldStat
 // csvLayout is how to read a file: its delimiter and each field's column
 // (-1 when absent).
 type csvLayout struct {
-	comma  rune
-	header []string
+	comma rune
+	// hasHeader is false when the first row is a contact. header is then
+	// all blank, so every column is named by position, and first holds
+	// that row.
+	hasHeader bool
+	header    []string
+	first     []string
 	// col is each field's column index.
 	col map[string]int
 }
@@ -268,7 +283,7 @@ func (l *csvLayout) name(i int) string {
 	return "#" + strconv.Itoa(i+1)
 }
 
-// sniffComma picks the delimiter that appears most in the header line:
+// sniffComma picks the delimiter that appears most in the first line:
 // comma, semicolon (spreadsheets in many locales) or tab.
 func sniffComma(data []byte) rune {
 	line := data
@@ -316,18 +331,21 @@ var commonHeaders = map[string][]string{
 	fieldTags:      {"tags"},
 }
 
-// findColumn returns the column headed name: an exact match first, then a
-// position such as "#3" (counting from 1), then a loose match. It returns -1
-// when there's none.
+// findColumn returns the column named name: a position such as "#3"
+// (counting from 1) when there is such a column, then an exact header match,
+// then a loose match. It returns -1 when there's none.
 func findColumn(header []string, name string) int {
-	for i, h := range header {
-		if strings.TrimSpace(h) == strings.TrimSpace(name) {
-			return i
-		}
-	}
+	// "#3" is the third column whenever there is one, even when another
+	// column's header is literally "#3": a blank or repeated header's column
+	// is stored by that name, and must be read back as the same column.
 	if pos, ok := strings.CutPrefix(strings.TrimSpace(name), "#"); ok {
 		if n, err := strconv.Atoi(pos); err == nil && n >= 1 && n <= len(header) && strconv.Itoa(n) == pos {
 			return n - 1
+		}
+	}
+	for i, h := range header {
+		if strings.TrimSpace(h) == strings.TrimSpace(name) {
+			return i
 		}
 	}
 	for i, h := range header {
@@ -338,10 +356,10 @@ func findColumn(header []string, name string) int {
 	return -1
 }
 
-// readLayout reads the header row and finds each field's column. A named
-// column must exist, and email must be found.
-func readLayout(data []byte, c columnChoice) (*csvLayout, error) {
-	l, err := readHeader(data)
+// readLayout reads the header row, if the file has one, and finds each
+// field's column. A named column must exist, and email must be found.
+func readLayout(data []byte, hasHeader bool, c columnChoice) (*csvLayout, error) {
+	l, err := readHeader(data, hasHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -351,24 +369,38 @@ func readLayout(data []byte, c columnChoice) (*csvLayout, error) {
 	return l, nil
 }
 
-// readHeader reads a file's separator and header row.
-func readHeader(data []byte) (*csvLayout, error) {
+// readHeader reads a file's separator and first row: its header, or with
+// hasHeader false its first contact.
+func readHeader(data []byte, hasHeader bool) (*csvLayout, error) {
 	if len(bytes.TrimSpace(bytes.TrimPrefix(data, utf8BOM))) == 0 {
 		return nil, invalidImport("no_rows", "csv", "The file is empty.")
 	}
 	if !utf8.Valid(data) {
 		return nil, invalidImport("invalid_encoding", "csv", "The file isn't UTF-8 text. Save it from your spreadsheet as \"CSV UTF-8\" and try again.")
 	}
-	l := &csvLayout{comma: sniffComma(bytes.TrimPrefix(data, utf8BOM)), col: map[string]int{}}
-	header, err := newCSVReader(data, l.comma).Read()
+	l := &csvLayout{comma: sniffComma(bytes.TrimPrefix(data, utf8BOM)), hasHeader: hasHeader, col: map[string]int{}}
+	first, err := newCSVReader(data, l.comma).Read()
 	if err != nil {
-		return nil, invalidImport("invalid_csv", "csv", "The header row can't be read as CSV: "+err.Error())
+		return nil, invalidImport("invalid_csv", "csv", "The "+l.firstRowName()+" can't be read as CSV: "+err.Error())
 	}
-	l.header = slices.Clone(header)
+	if hasHeader {
+		l.header = slices.Clone(first)
+	} else {
+		l.header = make([]string, len(first))
+		l.first = slices.Clone(first)
+	}
 	for _, field := range importFields {
 		l.col[field] = -1
 	}
 	return l, nil
+}
+
+// firstRowName is what to call the file's first row in a message.
+func (l *csvLayout) firstRowName() string {
+	if l.hasHeader {
+		return "header row"
+	}
+	return "first row"
 }
 
 // headerList is the headers for an error message, with blank ones by
@@ -428,9 +460,22 @@ func (l *csvLayout) choose(c columnChoice) error {
 			}
 		}
 	}
+	// With no header, the email column is the first one whose first row
+	// holds an address.
+	if c.guess && !l.hasHeader && l.col[fieldEmail] < 0 && !c.skip[fieldEmail] && c.named[fieldEmail] == "" {
+		for i, v := range l.first {
+			if _, err := NormalizeEmail(unescapeCell(strings.TrimSpace(v))); err == nil && !used[i] {
+				used[i], l.col[fieldEmail] = true, i
+				break
+			}
+		}
+	}
 	if l.col[fieldEmail] < 0 && !c.skip[fieldEmail] && c.named[fieldEmail] == "" {
-		fail(invalidImport("no_email_column", "columns.email",
-			fmt.Sprintf("No column looks like email addresses. The headers are: %s. Name the email column, or add a header row if the file has none.", l.headerList())))
+		msg := fmt.Sprintf("No column looks like email addresses. The headers are: %s. Name the email column, or add a header row if the file has none.", l.headerList())
+		if !l.hasHeader {
+			msg = "No column holds an email address in the first row. Choose the column that holds the email addresses."
+		}
+		fail(invalidImport("no_email_column", "columns.email", msg))
 	}
 	return first
 }
@@ -461,14 +506,17 @@ func blank(rec []string) bool {
 	return true
 }
 
-// eachRow calls fn with every contact row after the header, in order. Blank
+// eachRow calls fn with every contact row, after the header if there is
+// one, in order. Blank
 // rows are left out. A row with a stray quote is passed as unreadable; a
 // quote that never closes, which would swallow the rest of the file, is an
 // error.
 func (l *csvLayout) eachRow(data []byte, fn func(csvRow) error) error {
 	r := newCSVReader(data, l.comma)
-	if _, err := r.Read(); err != nil {
-		return err
+	if l.hasHeader {
+		if _, err := r.Read(); err != nil {
+			return err
+		}
 	}
 	for i := 0; ; {
 		rec, err := r.Read()
@@ -581,7 +629,7 @@ const importColumns = `i.id, i.account_id, i.file_name, i.status, i.permission_c
 	ARRAY(SELECT t.id::text FROM tags t WHERE t.id = ANY(i.tag_ids) ORDER BY lower(t.name), t.id),
 	ARRAY(SELECT t.name FROM tags t WHERE t.id = ANY(i.tag_ids) ORDER BY lower(t.name), t.id),
 	ARRAY(SELECT s.reason || ':' || count(*) FROM import_skips s WHERE s.import_id = i.id GROUP BY s.reason),
-	i.kind, i.existing_tagged, i.existing_suppressed, i.unlisted_skipped, i.mailchimp`
+	i.kind, i.existing_tagged, i.existing_suppressed, i.unlisted_skipped, i.mailchimp, i.has_header`
 
 func scanImport(row pgx.Row) (*Import, error) {
 	var im Import
@@ -592,7 +640,7 @@ func scanImport(row pgx.Row) (*Import, error) {
 		&im.ListSource, &im.ListSourceDetail, &im.Checks.InvalidRows, &im.Checks.RoleAddresses, &im.Checks.DisposableAddresses,
 		&im.Checks.SharedAddresses, &im.Checks.SharedAccountID,
 		&tagIDs, &tagNames, &byReason,
-		&im.Kind, &im.ExistingTagged, &im.ExistingSuppressed, &im.UnlistedSkipped, &summary)
+		&im.Kind, &im.ExistingTagged, &im.ExistingSuppressed, &im.UnlistedSkipped, &summary, &im.HasHeader)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrImportNotFound
 	}
@@ -661,7 +709,7 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 	if len(in.CSV) > MaxImportBytes {
 		return nil, invalidImport("file_too_large", "csv", fmt.Sprintf("The file is over %d MB. Split it into smaller files.", MaxImportBytes>>20))
 	}
-	l, err := readLayout(in.CSV, in.choice())
+	l, err := readLayout(in.CSV, !in.NoHeader, in.choice())
 	if err != nil {
 		return nil, err
 	}
@@ -707,12 +755,14 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO imports (account_id, file_name, permission_confirmed, email_column, first_name_column, last_name_column,
 			status_column, tags_column, tag_ids, csv, total_rows, review, hold_reason, created_at,
-			list_source, list_source_detail, invalid_rows, role_addresses, disposable_addresses, shared_addresses, shared_account_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21) RETURNING id`,
+			list_source, list_source_detail, invalid_rows, role_addresses, disposable_addresses, shared_addresses, shared_account_id,
+			has_header)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) RETURNING id`,
 		accountID, fileName, in.PermissionConfirmed, *l.column(fieldEmail), l.column(fieldFirstName), l.column(fieldLastName),
 		l.column(fieldStatus), l.column(fieldTags),
 		tagIDs, in.CSV, total, review, holdReason, s.now(),
-		in.ListSource, detail, c.InvalidRows, c.RoleAddresses, c.DisposableAddresses, c.SharedAddresses, c.SharedAccountID).Scan(&id); err != nil {
+		in.ListSource, detail, c.InvalidRows, c.RoleAddresses, c.DisposableAddresses, c.SharedAddresses, c.SharedAccountID,
+		!in.NoHeader).Scan(&id); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `
@@ -759,7 +809,11 @@ func checkRows(data []byte, l *csvLayout, fn func(csvRow)) (int, error) {
 		return total, err
 	}
 	if total == 0 {
-		return 0, invalidImport("no_rows", "csv", "The file has a header row but no contacts.")
+		msg := "The file has a header row but no contacts."
+		if !l.hasHeader {
+			msg = "The file has no contacts."
+		}
+		return 0, invalidImport("no_rows", "csv", msg)
 	}
 	return total, nil
 }
@@ -864,6 +918,7 @@ type importJob struct {
 	consent   []byte
 	createdAt time.Time
 	kind      string
+	hasHeader bool
 }
 
 // RunNextImport claims the oldest waiting import, or one whose worker
@@ -894,11 +949,11 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 			ORDER BY created_at, id LIMIT 1 FOR UPDATE SKIP LOCKED)
 		RETURNING id, account_id, lease_token, csv, email_column, first_name_column, last_name_column, status_column, tags_column,
 			tag_ids::text[],
-			permission_confirmed, processed_rows, review, created_at, kind,
+			permission_confirmed, processed_rows, review, created_at, kind, has_header,
 			CASE WHEN list_source IS NULL THEN NULL ELSE
 				jsonb_build_object('list_source', list_source, 'list_source_detail', list_source_detail, 'file_name', file_name) END`,
 		now, now.Add(ImportLease)).Scan(&j.id, &j.accountID, &j.token, &j.data, &emailCol, &firstCol, &lastCol, &statusCol, &tagsCol, &j.tagIDs,
-		&permission, &j.processed, &j.review, &j.createdAt, &j.kind, &j.consent)
+		&permission, &j.processed, &j.review, &j.createdAt, &j.kind, &j.hasHeader, &j.consent)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -922,7 +977,7 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 }
 
 func (s *Service) runImport(ctx context.Context, j *importJob) error {
-	l, err := readLayout(j.data, columnChoice{named: j.named})
+	l, err := readLayout(j.data, j.hasHeader, columnChoice{named: j.named})
 	if err != nil {
 		return err
 	}
