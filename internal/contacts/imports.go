@@ -238,10 +238,6 @@ const (
 // are found.
 var importFields = []string{fieldEmail, fieldFirstName, fieldLastName, fieldStatus, fieldTags}
 
-// ImportFields are the fields an import reads: email, first_name,
-// last_name, status and tags.
-func ImportFields() []string { return slices.Clone(importFields) }
-
 // csvLayout is how to read a file: its delimiter and each field's column
 // (-1 when absent).
 type csvLayout struct {
