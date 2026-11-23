@@ -10,13 +10,20 @@ import (
 	mgmail "github.com/gremlin-technologies/mailgoose/internal/mail"
 )
 
+// What a code email says first, by why the code was sent (MG-123).
+const (
+	// introSignup finishes a new or still pending sign-up.
+	introSignup = "Here's your code to finish signing up for mailgoose."
+	// introSignin is a sign-in the person asked for.
+	introSignin = "Here's your code to sign in to mailgoose."
+	// introSignupExisting is a sign-up made with an address that already
+	// has an active account.
+	introSignupExisting = "Someone tried to sign up for mailgoose with this address, which already has an account. Here's a code to sign in instead."
+)
+
 // codeMessage is the email that carries a code. The code is in the subject
 // too, so it shows in a notification without opening the email.
-func codeMessage(from mgmail.Address, to, code, purpose, accountID string) mgmail.Message {
-	intro := "Here's your code to finish signing up for mailgoose."
-	if purpose == PurposeSignin {
-		intro = "Someone tried to sign up for mailgoose with this address, which already has an account. Here's a code to sign in instead."
-	}
+func codeMessage(from mgmail.Address, to, code, intro, accountID string) mgmail.Message {
 	const outro = "It works once, for 10 minutes. If you didn't ask for it, you can ignore this email."
 	text := fmt.Sprintf("%s\n\n%s\n\n%s\n", intro, code, outro)
 	body := fmt.Sprintf(`<!doctype html>

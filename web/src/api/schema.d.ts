@@ -763,9 +763,13 @@ export interface paths {
          *     setting a session cookie. This is how `mailgoose signup` finishes
          *     without a browser: a person still has to read the code from the email
          *     and type it in. On success a pending account becomes active. A wrong,
-         *     expired, used or locked code gets the same `invalid_code` error; a
-         *     code stops working after 5 wrong tries. A suspended account gets
-         *     `account_suspended` (403): it has no CLI logins.
+         *     expired, used, replaced or locked code gets the same `invalid_code`
+         *     error (each new code request replaces the address's earlier unused
+         *     code); a code stops working after 5 wrong tries. After 10 wrong codes
+         *     for one address within an hour, across `createSession` and this,
+         *     even the right code gets 429 `too_many_wrong_codes` with
+         *     `Retry-After`. A suspended account gets `account_suspended` (403): it
+         *     has no CLI logins.
          */
         post: operations["createCliToken"];
         delete?: never;
@@ -787,11 +791,13 @@ export interface paths {
          * Start a web session with an emailed code
          * @description Uses a code from `createSignup` or `createSignIn`. On success a
          *     pending account becomes active, and the response sets an HttpOnly
-         *     session cookie that lasts 30 days. A wrong, expired, used or locked
-         *     code gets the same `invalid_code` error; a code stops working after 5
-         *     wrong tries. After 10 wrong codes for one address within an hour,
-         *     across all its codes and whether or not it has an account, even the
-         *     right code gets 429 with `Retry-After` until the hour passes.
+         *     session cookie that lasts 30 days. A wrong, expired, used, replaced
+         *     or locked code gets the same `invalid_code` error (each new code
+         *     request replaces the address's earlier unused code); a code stops
+         *     working after 5 wrong tries. After 10 wrong codes for one address
+         *     within an hour, across all its codes and whether or not it has an
+         *     account, even the right code gets 429 `too_many_wrong_codes` with
+         *     `Retry-After` until the hour passes.
          */
         post: operations["createSession"];
         /**
@@ -6648,7 +6654,10 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Rate limited (`rate_limited`). */
+        /**
+         * @description Rate limited (`rate_limited`), or, for an emailed code, too many
+         *     wrong codes for the address (`too_many_wrong_codes`).
+         */
         TooManyRequests: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];

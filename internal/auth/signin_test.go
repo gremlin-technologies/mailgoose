@@ -35,7 +35,8 @@ func TestRequestSignIn(t *testing.T) {
 			t.Fatal(err)
 		}
 		last, _ := h.mail.Last()
-		if !strings.Contains(last.Message.Text, "already has an account") && !strings.Contains(last.Message.Text, "sign in") {
+		// A sign-in someone asked for reads as one (MG-123).
+		if !strings.HasPrefix(last.Message.Text, introSignin) || strings.Contains(last.Message.Text, "sign up") {
 			t.Errorf("email = %q", last.Message.Text)
 		}
 		code := h.lastCode(t, "pat@example.com")
@@ -44,6 +45,22 @@ func TestRequestSignIn(t *testing.T) {
 		}
 		if _, err := h.svc.Verify(ctx, "pat@example.com", code, SessionMeta{}); !errors.Is(err, ErrInvalidCode) {
 			t.Errorf("reused sign-in code: err = %v", err)
+		}
+	})
+
+	t.Run("sign-up with an active address says so", func(t *testing.T) {
+		h := newHarness(t)
+		activeUser(t, h, "pat@example.com")
+		h.clk.advance(ResendInterval)
+		if err := h.svc.SignUp(ctx, signUp("pat@example.com")); err != nil {
+			t.Fatal(err)
+		}
+		last, _ := h.mail.Last()
+		if !strings.HasPrefix(last.Message.Text, introSignupExisting) {
+			t.Errorf("email = %q", last.Message.Text)
+		}
+		if _, err := h.svc.Verify(ctx, "pat@example.com", h.lastCode(t, "pat@example.com"), SessionMeta{}); err != nil {
+			t.Errorf("its code: %v", err)
 		}
 	})
 
@@ -211,9 +228,9 @@ func TestWrongCodesCappedPerAddressAcrossCodes(t *testing.T) {
 	// The last code has had only 2 wrong tries, but the address is at the cap:
 	// the right code is refused, with when to try again.
 	_, err := h.svc.Verify(ctx, "PAT@example.com", code, SessionMeta{})
-	var rl *RateLimitError
-	if !errors.As(err, &rl) || rl.RetryAfter <= 0 || rl.RetryAfter > CodeRequestWindow {
-		t.Fatalf("right code over the cap: err = %v, want a RateLimitError", err)
+	var wc *WrongCodesError
+	if !errors.As(err, &wc) || wc.RetryAfter <= 0 || wc.RetryAfter > CodeRequestWindow {
+		t.Fatalf("right code over the cap: err = %v, want a WrongCodesError", err)
 	}
 
 	// After the window, a fresh code works. (The old one has expired by then.)
@@ -236,9 +253,9 @@ func TestWrongCodesCappedForUnknownAddresses(t *testing.T) {
 			t.Fatalf("try %d: err = %v", i+1, err)
 		}
 	}
-	var rl *RateLimitError
-	if _, err := h.svc.Verify(ctx, "nobody@example.com", "123456", SessionMeta{}); !errors.As(err, &rl) {
-		t.Errorf("over the cap: err = %v, want a RateLimitError", err)
+	var wc *WrongCodesError
+	if _, err := h.svc.Verify(ctx, "nobody@example.com", "123456", SessionMeta{}); !errors.As(err, &wc) {
+		t.Errorf("over the cap: err = %v, want a WrongCodesError", err)
 	}
 	// Another address isn't affected.
 	if _, err := h.svc.Verify(ctx, "somebody@example.com", "123456", SessionMeta{}); !errors.Is(err, ErrInvalidCode) {

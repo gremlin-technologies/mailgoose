@@ -21,7 +21,7 @@ afterEach(async () => {
 });
 
 /** A JSON body, or with html set, an HTML page. */
-type Reply = { status: number; body?: unknown; html?: string };
+type Reply = { status: number; body?: unknown; html?: string; headers?: Record<string, string> };
 /** Answers one request; gets the parsed JSON body, if any, and the URL. */
 type Route = (body: unknown, url: URL) => Reply;
 
@@ -45,7 +45,7 @@ export function fakeApi(routes: Record<string, Route>) {
     }
     return new Response(reply.body === undefined ? null : JSON.stringify(reply.body), {
       status: reply.status,
-      headers: reply.body === undefined ? {} : { "Content-Type": "application/json" },
+      headers: { ...(reply.body === undefined ? {} : { "Content-Type": "application/json" }), ...reply.headers },
     });
   };
   return { fetch, calls };

@@ -1,4 +1,4 @@
-import { webWords } from "./hints";
+import { WAIT_CODES, waitHint, webWords } from "./hints";
 
 /** Why a request failed, in words a person can act on. */
 export type Failure = {
@@ -40,10 +40,10 @@ export async function attempt<R extends Response_>(
   if (res.response.ok) {
     return { ok: true, data: res.data as Exclude<R["data"], undefined> | undefined };
   }
-  return { ok: false, failure: failureFrom(res.error, res.response.status) };
+  return { ok: false, failure: failureFrom(res.error, res.response.status, res.response.headers.get("Retry-After")) };
 }
 
-function failureFrom(body: unknown, status: number): Failure {
+function failureFrom(body: unknown, status: number, retryAfter: string | null): Failure {
   if (typeof body === "object" && body !== null && "error" in body) {
     const e = (body as { error: Partial<Failure> & { details?: unknown } }).error;
     if (typeof e?.message === "string") {
@@ -51,6 +51,8 @@ function failureFrom(body: unknown, status: number): Failure {
       const code = e.code ?? "error";
       // The API's hints are written for the CLI; the web app words its own (MG-121).
       const words = webWords(code, e.message, e.hint ?? "");
+      // A wait reads in minutes, from Retry-After, not the API's seconds (MG-123).
+      if (WAIT_CODES.has(code)) words.hint = waitHint(retryAfter);
       return { code, ...words, status, ...(details ? { details } : {}) };
     }
   }

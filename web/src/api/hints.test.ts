@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { namesCli, webWords, WEB_HINTS, WEB_MESSAGES, withoutCli } from "./hints";
+import { namesCli, waitHint, webWords, WEB_HINTS, WEB_MESSAGES, withoutCli } from "./hints";
 
 const internal = join(__dirname, "../../../internal");
 
@@ -87,6 +87,15 @@ describe("the web app's words for the API's errors", () => {
       expect(namesCli(shown.hint), `${code} hint: ${shown.hint}`).toBe(false);
       expect(shown.message.includes("--") || shown.hint.includes("--"), code).toBe(false);
     }
+  });
+
+  it("says how long to wait in whole minutes, never seconds", () => {
+    expect(waitHint("3412")).toBe("Try again in 57 minutes.");
+    expect(waitHint("60")).toBe("Try again in a minute.");
+    expect(waitHint("1")).toBe("Try again in a minute.");
+    expect(waitHint("61")).toBe("Try again in 2 minutes.");
+    expect(waitHint(null)).toBe("Try again in an hour.");
+    expect(waitHint("soon")).toBe("Try again in an hour.");
   });
 
   it("has no wording for a code the API doesn't have", () => {

@@ -167,6 +167,15 @@ func writeRateLimited(w http.ResponseWriter, retryAfter time.Duration) {
 		WithHint("Wait "+strconv.Itoa(secs)+" seconds (see Retry-After) and try again."))
 }
 
+// writeTooManyWrongCodes answers an address over the cap on wrong codes with
+// a 429 and Retry-After (MG-123).
+func writeTooManyWrongCodes(w http.ResponseWriter, retryAfter time.Duration) {
+	secs := max(1, int(math.Ceil(retryAfter.Seconds())))
+	w.Header().Set("Retry-After", strconv.Itoa(secs))
+	WriteError(w, TooManyRequests("too_many_wrong_codes", "Too many wrong codes for this address.").
+		WithHint("Wait "+strconv.Itoa(secs)+" seconds (see Retry-After), then request a new code and try again."))
+}
+
 // crossOriginProtection rejects browser requests that change something, come
 // from another origin and carry no Authorization header: the requests a
 // session cookie would otherwise authenticate on another site's behalf.

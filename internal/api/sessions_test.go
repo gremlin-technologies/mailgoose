@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,8 +81,8 @@ func TestCodeRequestLimitAnswers429(t *testing.T) {
 	for range auth.MaxCodeRequestsPerEmail + 1 {
 		rec = do(t, h, jsonRequest(http.MethodPost, "/v1/sign-in", signInBody)(t))
 	}
-	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("status = %d, want 429: %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), `"rate_limited"`) {
+		t.Fatalf("status = %d, want 429 rate_limited: %s", rec.Code, rec.Body)
 	}
 	secs, err := strconv.Atoi(rec.Header().Get("Retry-After"))
 	if err != nil || secs < 1 || secs > int(auth.CodeRequestWindow.Seconds()) {
@@ -95,8 +96,9 @@ func TestWrongCodeCapAnswers429(t *testing.T) {
 	for range auth.MaxWrongCodesPerEmail + 1 {
 		rec = do(t, h, sessionRequest("123456")(t))
 	}
-	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("status = %d, want 429: %s", rec.Code, rec.Body)
+	// Its own code, so the answer says the cause (MG-123).
+	if rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), `"too_many_wrong_codes"`) {
+		t.Fatalf("status = %d, want 429 too_many_wrong_codes: %s", rec.Code, rec.Body)
 	}
 	secs, err := strconv.Atoi(rec.Header().Get("Retry-After"))
 	if err != nil || secs < 1 || secs > int(auth.CodeRequestWindow.Seconds()) {
