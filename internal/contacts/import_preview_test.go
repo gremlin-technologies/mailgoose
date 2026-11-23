@@ -46,6 +46,15 @@ func TestColumnNames(t *testing.T) {
 	if l.col[fieldFirstName] != 3 || l.col[fieldLastName] != 4 || *l.column(fieldFirstName) != "#4" {
 		t.Errorf("cols = %v", l.col)
 	}
+	// A header that is literally another column's position name goes by its
+	// own position, so each name finds one column.
+	l, err = readLayout([]byte("#2,,Email\nx,Pat,a@example.com\n"), true, columnChoice{named: map[string]string{fieldFirstName: "#2"}, guess: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := l.name(0) + " " + l.name(1); got != "#1 #2" || l.col[fieldFirstName] != 1 {
+		t.Errorf("names = %s, cols = %v", got, l.col)
+	}
 	if _, err := readLayout([]byte("email\na@example.com\n"), true, columnChoice{named: map[string]string{fieldFirstName: "#2"}}); err == nil {
 		t.Error("#2 of one column was accepted")
 	}

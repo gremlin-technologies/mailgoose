@@ -31,6 +31,11 @@ contact data in, either comma or tab-delimited format." What changed:
   and the web app shows a CSV import without one as "Pasted contacts"; the
   CLI lists it as "pasted". Contacts piped into the CLI with `-` have no file
   name either, so they show the same way.
+- **`#3` always means the third column when there is one**, even when
+  another column's header is literally `#3`; such a column is named by its
+  own position instead. This replaces MG-124's "when no header is exactly
+  `#3`", which could send a blank column's stored name to the wrong column.
+  A `#9` beyond the last column still matches a header `#9`.
 
 Each of these is a reversible default for the owner to change.
 

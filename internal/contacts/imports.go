@@ -331,18 +331,21 @@ var commonHeaders = map[string][]string{
 	fieldTags:      {"tags"},
 }
 
-// findColumn returns the column headed name: an exact match first, then a
-// position such as "#3" (counting from 1), then a loose match. It returns -1
-// when there's none.
+// findColumn returns the column named name: a position such as "#3"
+// (counting from 1) when there is such a column, then an exact header match,
+// then a loose match. It returns -1 when there's none.
 func findColumn(header []string, name string) int {
-	for i, h := range header {
-		if strings.TrimSpace(h) == strings.TrimSpace(name) {
-			return i
-		}
-	}
+	// "#3" is the third column whenever there is one, even when another
+	// column's header is literally "#3": a blank or repeated header's column
+	// is stored by that name, and must be read back as the same column.
 	if pos, ok := strings.CutPrefix(strings.TrimSpace(name), "#"); ok {
 		if n, err := strconv.Atoi(pos); err == nil && n >= 1 && n <= len(header) && strconv.Itoa(n) == pos {
 			return n - 1
+		}
+	}
+	for i, h := range header {
+		if strings.TrimSpace(h) == strings.TrimSpace(name) {
+			return i
 		}
 	}
 	for i, h := range header {
