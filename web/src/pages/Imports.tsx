@@ -1,17 +1,18 @@
-import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { useApi } from "../api/context";
 import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
 import { Badge, FailureNotice, formatDate, LoadFailed, Loading, PageHeader, useLoad, type Tone } from "../components";
-import { csvHeader, csvRowCount, guessColumn, type ImportField } from "../csv";
 import { useTags } from "./Tags";
 
 type Import = components["schemas"]["Import"];
 type SkipReason = components["schemas"]["SkipReason"];
 type SkippedRow = components["schemas"]["SkippedRow"];
 type ListSource = components["schemas"]["ListSource"];
+type ImportField = components["schemas"]["ImportField"];
+type ImportPreview = components["schemas"]["ImportPreview"];
 
 /** The largest file an import takes (10 MB, as the API). */
 export const maxImportBytes = 10 << 20;
@@ -20,19 +21,57 @@ const maxImportTags = 20;
 /** How often an import's page asks how it's going, in ms. */
 export const importPollMs = 750;
 
-const fields: { field: ImportField; label: string; about: string }[] = [
-  { field: "email", label: "Email", about: "Required." },
-  { field: "first_name", label: "First name", about: "" },
-  { field: "last_name", label: "Last name", about: "" },
-  {
-    field: "status",
-    label: "Status",
-    about: "Rows marked unsubscribed, bounced, complained or unconfirmed keep that status.",
-  },
-  { field: "tags", label: "Tags", about: "Tag names separated by commas; new ones are created." },
+/** The fields a column can become, in the order the page offers them. */
+export const importFields: { field: ImportField; label: string }[] = [
+  { field: "email", label: "Email" },
+  { field: "first_name", label: "First name" },
+  { field: "last_name", label: "Last name" },
+  { field: "status", label: "Status" },
+  { field: "tags", label: "Tags" },
 ];
 
-type File_ = { name: string; text: string; headers: string[]; rows: number };
+const separators: Record<ImportPreview["separator"], string> = {
+  comma: "commas",
+  semicolon: "semicolons",
+  tab: "tabs",
+};
+
+type File_ = { name: string; text: string };
+
+/** Which column (by position) each field comes from; a field with none isn't imported. */
+type Matching = Partial<Record<ImportField, number>>;
+
+/** The matching a preview found. */
+export function previewMatching(p: ImportPreview): Matching {
+  const m: Matching = {};
+  for (const c of p.columns) if (c.field) m[c.field] = c.position;
+  return m;
+}
+
+/** Puts field on the column at position, taking it off any other column. */
+export function matchColumn(m: Matching, position: number, field: ImportField | ""): Matching {
+  const next: Matching = {};
+  for (const [f, pos] of Object.entries(m) as [ImportField, number][]) {
+    if (pos !== position && f !== field) next[f] = pos;
+  }
+  if (field) next[field] = position;
+  return next;
+}
+
+/**
+ * An import's columns for a matching: each field's column by its name, and
+ * an empty string for a field that isn't imported, so the import does
+ * exactly what was confirmed and guesses nothing.
+ */
+export function matchingColumns(p: ImportPreview, m: Matching): Record<ImportField, string> {
+  const name = (pos: number | undefined) => p.columns.find((c) => c.position === pos)?.name ?? "";
+  return Object.fromEntries(importFields.map(({ field }) => [field, name(m[field])])) as Record<ImportField, string>;
+}
+
+/** A column's name to show: its header, or its place for a blank one. */
+function columnLabel(c: ImportPreview["columns"][number]): string {
+  return c.header.trim() || `Column ${c.position}`;
+}
 
 /** Where an import's people came from, in the order the page offers them. */
 export const listSources: { source: ListSource; label: string }[] = [
@@ -51,17 +90,35 @@ export function ImportContacts() {
   const navigate = useNavigate();
   const tags = useTags();
   const [file, setFile] = useState<File_>();
-  const [columns, setColumns] = useState<Partial<Record<ImportField, string>>>({});
+  const [preview, setPreview] = useState<ImportPreview>();
+  const [matching, setMatching] = useState<Matching>({});
+  const [checking, setChecking] = useState(false);
   const [tagIDs, setTagIDs] = useState<string[]>([]);
   const [permission, setPermission] = useState(false);
   const [listSource, setListSource] = useState<ListSource>();
   const [listSourceDetail, setListSourceDetail] = useState("");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<Failure>();
+  // Only the newest preview's answer counts.
+  const previews = useRef(0);
+
+  async function check(text: string, columns?: Record<ImportField, string>) {
+    const n = ++previews.current;
+    setChecking(true);
+    const res = await attempt(() => api.POST("/v1/imports/preview", { body: { csv: text, columns } }));
+    if (n !== previews.current) return undefined;
+    setChecking(false);
+    if (!res.ok) {
+      setFailure(res.failure);
+      return undefined;
+    }
+    return res.data;
+  }
 
   async function choose(e: ChangeEvent<HTMLInputElement>) {
     setFailure(undefined);
     setFile(undefined);
+    setPreview(undefined);
     const f = e.target.files?.[0];
     if (!f) return;
     if (f.size > maxImportBytes) {
@@ -74,8 +131,7 @@ export function ImportContacts() {
       return;
     }
     const text = await f.text();
-    const headers = csvHeader(text);
-    if (headers.length === 0) {
+    if (text.trim() === "") {
       setFailure({
         code: "empty_file",
         message: `${f.name} has no header row.`,
@@ -84,22 +140,34 @@ export function ImportContacts() {
       });
       return;
     }
-    setFile({ name: f.name, text, headers, rows: csvRowCount(text) });
-    setColumns(Object.fromEntries(fields.map(({ field }) => [field, guessColumn(field, headers)])));
+    const p = await check(text);
+    if (!p) return;
+    setFile({ name: f.name, text });
+    setPreview(p);
+    setMatching(previewMatching(p));
+  }
+
+  /** Changes what one column becomes, and checks the file again with the new matching. */
+  async function rematch(position: number, field: ImportField | "") {
+    if (!file || !preview) return;
+    const m = matchColumn(matching, position, field);
+    setMatching(m);
+    setFailure(undefined);
+    const p = await check(file.text, matchingColumns(preview, m));
+    if (p) setPreview((old) => (old ? { ...old, problem: p.problem } : p));
   }
 
   async function start(e: FormEvent) {
     e.preventDefault();
-    if (!file || !listSource) return;
+    if (!file || !preview || !listSource) return;
     setBusy(true);
     setFailure(undefined);
-    const picked = Object.fromEntries(Object.entries(columns).filter(([, header]) => header));
     const res = await attempt(() =>
       api.POST("/v1/imports", {
         body: {
           csv: file.text,
           file_name: file.name,
-          columns: picked,
+          columns: matchingColumns(preview, matching),
           tags: tagIDs,
           permission_confirmed: permission,
           list_source: listSource,
@@ -131,43 +199,66 @@ export function ImportContacts() {
         <div className="panel stack">
           <label className="field">
             <span>CSV file</span>
-            <input type="file" accept=".csv,text/csv" onChange={(e) => void choose(e)} />
+            <input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" onChange={(e) => void choose(e)} />
           </label>
-          {file && (
-            <p className="muted small">
-              {file.name}: {file.headers.length} columns, about {file.rows.toLocaleString()} rows.
-            </p>
-          )}
+          {checking && !preview && <p className="muted small">Reading the file…</p>}
         </div>
 
-        {file && (
+        {file && preview && (
           <>
             <fieldset className="panel stack">
               <legend>Match the columns</legend>
-              {fields.map(({ field, label, about }) => (
-                <div key={field} className="field">
-                  <label htmlFor={`map-${field}`}>{label}</label>
-                  <select
-                    id={`map-${field}`}
-                    value={columns[field] ?? ""}
-                    onChange={(e) => setColumns((c) => ({ ...c, [field]: e.target.value }))}
-                    required={field === "email"}
-                    aria-describedby={about ? `map-${field}-about` : undefined}
-                  >
-                    <option value="">{field === "email" ? "Choose a column" : "Not mapped"}</option>
-                    {file.headers.map((h, i) => (
-                      <option key={`${i}:${h}`} value={h}>
-                        {h || `Column ${i + 1}`}
-                      </option>
-                    ))}
-                  </select>
-                  {about && (
-                    <span id={`map-${field}-about`} className="muted small">
-                      {about}
-                    </span>
-                  )}
-                </div>
-              ))}
+              <p className="muted small">
+                {file.name}: {preview.rows.toLocaleString()} {preview.rows === 1 ? "contact" : "contacts"}, separated by{" "}
+                {separators[preview.separator]}. Choose what each column becomes. mailgoose keeps email, first and last
+                name, status and tags, so other columns aren't imported.
+              </p>
+              <ul className="column-match">
+                {preview.columns.map((c) => {
+                  const field = (Object.entries(matching) as [ImportField, number][]).find(([, pos]) => pos === c.position)?.[0];
+                  const id = `match-${c.position}`;
+                  return (
+                    <li key={c.position}>
+                      <div className="column-match-about">
+                        <label htmlFor={id}>{columnLabel(c)}</label>
+                        <span className="muted small" id={`${id}-samples`}>
+                          {c.samples.some((v) => v.trim()) ? c.samples.map((v) => v.trim() || "(blank)").join(", ") : "No values in the first rows"}
+                        </span>
+                      </div>
+                      <div className="field">
+                        <select
+                          id={id}
+                          value={field ?? ""}
+                          onChange={(e) => void rematch(c.position, e.target.value as ImportField | "")}
+                          aria-describedby={`${id}-samples`}
+                        >
+                          <option value="">Don't import</option>
+                          {importFields.map(({ field: f, label }) => (
+                            <option key={f} value={f}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="muted small">
+                A status column can only hold contacts back: rows marked unsubscribed, bounced, complained or unconfirmed
+                keep that status. A tags column lists tag names separated by commas; new ones are created.
+              </p>
+              {matching.email === undefined ? (
+                <p className="notice notice-warn" role="alert">
+                  Choose the column that holds email addresses.
+                </p>
+              ) : (
+                preview.problem && (
+                  <p className="notice notice-warn" role="alert">
+                    {preview.problem.message}
+                  </p>
+                )
+              )}
             </fieldset>
 
             {tagList.length > 0 && (
@@ -237,12 +328,19 @@ export function ImportContacts() {
         )}
 
         <FailureNotice failure={failure} />
-        {file && (
+        {file && preview && (
           <div>
             <button
               type="submit"
               className="button primary"
-              disabled={busy || !columns.email || !listSource || (listSource === "other" && !listSourceDetail.trim())}
+              disabled={
+                busy ||
+                checking ||
+                matching.email === undefined ||
+                !!preview.problem ||
+                !listSource ||
+                (listSource === "other" && !listSourceDetail.trim())
+              }
             >
               {busy ? "Starting…" : "Import contacts"}
             </button>

@@ -1087,6 +1087,54 @@ func (e ImportReview) Valid() bool {
 	}
 }
 
+// Defines values for ImportField.
+const (
+	ImportFieldEmail     ImportField = "email"
+	ImportFieldFirstName ImportField = "first_name"
+	ImportFieldLastName  ImportField = "last_name"
+	ImportFieldStatus    ImportField = "status"
+	ImportFieldTags      ImportField = "tags"
+)
+
+// Valid indicates whether the value is a known member of the ImportField enum.
+func (e ImportField) Valid() bool {
+	switch e {
+	case ImportFieldEmail:
+		return true
+	case ImportFieldFirstName:
+		return true
+	case ImportFieldLastName:
+		return true
+	case ImportFieldStatus:
+		return true
+	case ImportFieldTags:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ImportPreviewSeparator.
+const (
+	ImportPreviewSeparatorComma     ImportPreviewSeparator = "comma"
+	ImportPreviewSeparatorSemicolon ImportPreviewSeparator = "semicolon"
+	ImportPreviewSeparatorTab       ImportPreviewSeparator = "tab"
+)
+
+// Valid indicates whether the value is a known member of the ImportPreviewSeparator enum.
+func (e ImportPreviewSeparator) Valid() bool {
+	switch e {
+	case ImportPreviewSeparatorComma:
+		return true
+	case ImportPreviewSeparatorSemicolon:
+		return true
+	case ImportPreviewSeparatorTab:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ImportStatus.
 const (
 	ImportStatusCancelled ImportStatus = "cancelled"
@@ -3096,7 +3144,11 @@ type CreateFormRequest struct {
 
 // CreateImportRequest defines model for CreateImportRequest.
 type CreateImportRequest struct {
-	// Columns The header of the column each field comes from. Leave a field out to have it found from common headers.
+	// Columns The column each field comes from: its header, or its position as
+	// `#3` (counting from 1) for a column whose header is blank or
+	// repeated. Leave a field out to have it found from common headers, or
+	// send an empty string to not import that field at all, even when a
+	// column's header looks like it. Email can't be left empty.
 	Columns *ImportColumns `json:"columns,omitempty"`
 
 	// Csv The whole CSV file as UTF-8 text, header row first.
@@ -3916,7 +3968,11 @@ type ImportChecks struct {
 	RoleAddresses int `json:"role_addresses"`
 }
 
-// ImportColumns The header of the column each field comes from. Leave a field out to have it found from common headers.
+// ImportColumns The column each field comes from: its header, or its position as
+// `#3` (counting from 1) for a column whose header is blank or
+// repeated. Leave a field out to have it found from common headers, or
+// send an empty string to not import that field at all, even when a
+// column's header looks like it. Email can't be left empty.
 type ImportColumns struct {
 	// Email Examples: Email Address
 	Email     *string `json:"email,omitempty"`
@@ -3952,10 +4008,64 @@ type ImportEmailHtmlResult struct {
 	Warnings []HtmlIssue `json:"warnings"`
 }
 
+// ImportField defines model for ImportField.
+type ImportField string
+
 // ImportList defines model for ImportList.
 type ImportList struct {
 	Data       []Import `json:"data"`
 	NextCursor *string  `json:"next_cursor"`
+}
+
+// ImportPreview defines model for ImportPreview.
+type ImportPreview struct {
+	// Columns The file's columns, in order.
+	Columns []ImportPreviewColumn `json:"columns"`
+
+	// Problem Why `createImport` would refuse this file with these columns; null when it would take it.
+	Problem *ImportPreviewProblem `json:"problem"`
+
+	// Rows Contact rows, not counting the header or blank rows. Counting stops past 100,000.
+	Rows int `json:"rows"`
+
+	// Separator The separator found in the header row.
+	Separator ImportPreviewSeparator `json:"separator"`
+}
+
+// ImportPreviewSeparator The separator found in the header row.
+type ImportPreviewSeparator string
+
+// ImportPreviewColumn defines model for ImportPreviewColumn.
+type ImportPreviewColumn struct {
+	// Field The field this column would become; null when it isn't imported.
+	Field *ImportField `json:"field"`
+
+	// Header The column's header as written; may be empty.
+	Header string `json:"header"`
+
+	// Name What to send in `columns` to pick this column. Its header, or `#3` for a column whose header is blank or repeated.
+	//
+	// Examples: Email Address
+	Name string `json:"name"`
+
+	// Position The column's place in the file, counting from 1.
+	Position int `json:"position"`
+
+	// Samples The column's values in the first rows, an empty string where a row has none.
+	Samples []string `json:"samples"`
+}
+
+// ImportPreviewProblem defines model for ImportPreviewProblem.
+type ImportPreviewProblem struct {
+	// Code The code `createImport` would refuse the file with, such as
+	// `no_email_column`, `invalid_mapping`, `too_many_rows`,
+	// `invalid_tag_name`, `too_many_tags`, `invalid_csv` (a quote that
+	// never closes) or `no_rows` (a header with no contacts).
+	//
+	//
+	// Examples: no_email_column
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 // ImportStatus `waiting`: a Mailchimp import whose subscribed contacts would take
@@ -4415,6 +4525,22 @@ type PlanPortal struct {
 // PollDeviceLoginRequest defines model for PollDeviceLoginRequest.
 type PollDeviceLoginRequest struct {
 	DeviceCode string `json:"device_code"`
+}
+
+// PreviewImportRequest defines model for PreviewImportRequest.
+type PreviewImportRequest struct {
+	// Columns The column each field comes from: its header, or its position as
+	// `#3` (counting from 1) for a column whose header is blank or
+	// repeated. Leave a field out to have it found from common headers, or
+	// send an empty string to not import that field at all, even when a
+	// column's header looks like it. Email can't be left empty.
+	Columns *ImportColumns `json:"columns,omitempty"`
+
+	// Csv The whole CSV file as UTF-8 text, header row first.
+	//
+	// Examples: email,first_name
+	// pat@example.com,Pat
+	Csv string `json:"csv"`
 }
 
 // RecipientCount defines model for RecipientCount.
@@ -5912,6 +6038,9 @@ type ConfirmMailchimpBundleJSONRequestBody = ConfirmMailchimpBundleRequest
 // CreateMailchimpFetchJSONRequestBody defines body for CreateMailchimpFetch for application/json ContentType.
 type CreateMailchimpFetchJSONRequestBody = CreateMailchimpFetchRequest
 
+// PreviewImportJSONRequestBody defines body for PreviewImport for application/json ContentType.
+type PreviewImportJSONRequestBody = PreviewImportRequest
+
 // CreatePlanCheckoutJSONRequestBody defines body for CreatePlanCheckout for application/json ContentType.
 type CreatePlanCheckoutJSONRequestBody = PlanCheckoutRequest
 
@@ -6952,6 +7081,9 @@ type ServerInterface interface {
 	// GetMailchimpFetch Get a fetch from Mailchimp
 	// (GET /v1/imports/mailchimp/fetch/{fetch_id})
 	GetMailchimpFetch(w http.ResponseWriter, r *http.Request, fetchId FetchId)
+	// PreviewImport Preview how a CSV file would be imported
+	// (POST /v1/imports/preview)
+	PreviewImport(w http.ResponseWriter, r *http.Request)
 	// GetImport Get an import
 	// (GET /v1/imports/{import_id})
 	GetImport(w http.ResponseWriter, r *http.Request, importId ImportId)
@@ -10268,6 +10400,20 @@ func (siw *ServerInterfaceWrapper) GetMailchimpFetch(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// PreviewImport operation middleware
+func (siw *ServerInterfaceWrapper) PreviewImport(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PreviewImport(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetImport operation middleware
 func (siw *ServerInterfaceWrapper) GetImport(w http.ResponseWriter, r *http.Request) {
 
@@ -11298,6 +11444,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/segments/{segment_id}/contacts", wrapper.ListSegmentContacts)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports", wrapper.ListImports)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports", wrapper.CreateImport)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/preview", wrapper.PreviewImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}", wrapper.GetImport)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/imports/{import_id}/cancel", wrapper.CancelImport)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/imports/{import_id}/skipped-rows", wrapper.ListImportSkippedRows)

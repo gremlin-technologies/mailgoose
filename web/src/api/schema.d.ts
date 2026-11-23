@@ -1249,13 +1249,14 @@ export interface paths {
          *     is the header. Columns for email, first name and last name are found
          *     from common headers ("Email", "Email Address", "First Name",
          *     "Surname" and so on), or named in `columns`. Commas, semicolons and
-         *     tabs all work as separators.
+         *     tabs all work as separators. `previewImport` shows how a file would
+         *     be read, with each column's first values, before it's imported.
          *
          *     Imported contacts are `unconfirmed` unless `permission_confirmed` says
          *     the account has these people's permission to mail them; then they're
          *     `subscribed`. Rows with a bad address, a repeat of an earlier row, an
          *     address already in the account, a suppressed address, or one past a
-         *     free account's 500-contact limit are skipped and listed by
+         *     free account's 1,000-contact limit are skipped and listed by
          *     `listImportSkippedRows`. Existing contacts aren't changed.
          *
          *     Every import says where its people came from in `list_source`; an
@@ -1277,6 +1278,36 @@ export interface paths {
          *     The request body can be up to 10 MB.
          */
         post: operations["createImport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/imports/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview how a CSV file would be imported
+         * @description Reads a file the way `createImport` would with the same `columns`,
+         *     and changes nothing. It shows the separator, how many contact rows
+         *     there are, and each column with its first few values and the field it
+         *     would become, so the person can check the columns before importing.
+         *     A problem `createImport` would refuse the file for, such as no email
+         *     column or a named column that isn't there, is in `problem` instead of
+         *     an error, so the columns can still be shown. Only a file whose header
+         *     row can't be read (`no_rows` for an empty file, `invalid_encoding`,
+         *     `invalid_csv`) or that's over 10 MB (`file_too_large`) is an error.
+         *
+         *     The request body can be up to 10 MB.
+         */
+        post: operations["previewImport"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3100,7 +3131,13 @@ export interface components {
             /** @description How many contacts the segment has now, on every page. */
             count: number;
         };
-        /** @description The header of the column each field comes from. Leave a field out to have it found from common headers. */
+        /**
+         * @description The column each field comes from: its header, or its position as
+         *     `#3` (counting from 1) for a column whose header is blank or
+         *     repeated. Leave a field out to have it found from common headers, or
+         *     send an empty string to not import that field at all, even when a
+         *     column's header looks like it. Email can't be left empty.
+         */
         ImportColumns: {
             /** @example Email Address */
             email?: string;
@@ -3119,6 +3156,56 @@ export interface components {
              *     name at most 200 different tags. Found under the header `tags`.
              */
             tags?: string;
+        };
+        PreviewImportRequest: {
+            /**
+             * @description The whole CSV file as UTF-8 text, header row first.
+             * @example email,first_name
+             *     pat@example.com,Pat
+             */
+            csv: string;
+            columns?: components["schemas"]["ImportColumns"];
+        };
+        ImportPreview: {
+            /**
+             * @description The separator found in the header row.
+             * @enum {string}
+             */
+            separator: "comma" | "semicolon" | "tab";
+            /** @description Contact rows, not counting the header or blank rows. Counting stops past 100,000. */
+            rows: number;
+            /** @description The file's columns, in order. */
+            columns: components["schemas"]["ImportPreviewColumn"][];
+            /** @description Why `createImport` would refuse this file with these columns; null when it would take it. */
+            problem: components["schemas"]["ImportPreviewProblem"] | null;
+        };
+        ImportPreviewColumn: {
+            /** @description The column's place in the file, counting from 1. */
+            position: number;
+            /** @description The column's header as written; may be empty. */
+            header: string;
+            /**
+             * @description What to send in `columns` to pick this column. Its header, or `#3` for a column whose header is blank or repeated.
+             * @example Email Address
+             */
+            name: string;
+            /** @description The field this column would become; null when it isn't imported. */
+            field: components["schemas"]["ImportField"] | null;
+            /** @description The column's values in the first rows, an empty string where a row has none. */
+            samples: string[];
+        };
+        /** @enum {string} */
+        ImportField: "email" | "first_name" | "last_name" | "status" | "tags";
+        ImportPreviewProblem: {
+            /**
+             * @description The code `createImport` would refuse the file with, such as
+             *     `no_email_column`, `invalid_mapping`, `too_many_rows`,
+             *     `invalid_tag_name`, `too_many_tags`, `invalid_csv` (a quote that
+             *     never closes) or `no_rows` (a header with no contacts).
+             * @example no_email_column
+             */
+            code: string;
+            message: string;
         };
         CreateImportRequest: {
             /**
@@ -8916,6 +9003,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Import"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            413: components["responses"]["RequestTooLarge"];
+            422: components["responses"]["ImportRefused"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    previewImport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewImportRequest"];
+            };
+        };
+        responses: {
+            /** @description How the file would be imported. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportPreview"];
                 };
             };
             400: components["responses"]["BadRequest"];

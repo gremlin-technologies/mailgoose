@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
-import { csvHeader, csvRowCount, guessColumn } from "../csv";
+import { matchColumn, matchingColumns, previewMatching } from "./Imports";
 import { apiError, fakeApi, renderApp, signedIn } from "../test/render";
 
 const location = () => screen.getByTestId("location").textContent;
@@ -247,12 +247,37 @@ describe("imports", () => {
     };
   }
 
-  it("maps columns, confirms permission, shows progress and the skipped rows", async () => {
+  const previewCol = (position: number, header: string, field: string | null, samples: string[], name = header) => ({
+    position,
+    header,
+    name,
+    field,
+    samples,
+  });
+  const peoplePreview = {
+    separator: "comma",
+    rows: 4,
+    columns: [
+      previewCol(1, "E-mail Address", "email", ["pat@example.com", "sam@example.com", "not-an-address"]),
+      previewCol(2, "Given name", null, ["Pat", "Sam", ""]),
+      previewCol(3, "Surname", "last_name", ["Lee", "", ""]),
+      previewCol(4, "Groups", null, ["a", "b", ""]),
+      previewCol(5, "", null, ["", "", ""], "#5"),
+    ],
+    problem: null,
+  };
+
+  it("matches columns, confirms permission, shows progress and the skipped rows", async () => {
     let posted: unknown;
+    const previewed: unknown[] = [];
     let polls = 0;
     const api = fakeApi({
       ...signedIn,
       "GET /v1/tags": tagsRoute([tagNews, tagVip]),
+      "POST /v1/imports/preview": (body) => {
+        previewed.push(body);
+        return { status: 200, body: peoplePreview };
+      },
       "POST /v1/imports": (body) => {
         posted = body;
         return { status: 202, body: anImport("queued", 0) };
@@ -273,12 +298,25 @@ describe("imports", () => {
     const file = new File([csv], "people.csv", { type: "text/csv" });
     await user.upload(await screen.findByLabelText("CSV file"), file);
 
-    expect(await screen.findByText("people.csv: 4 columns, about 4 rows.")).toBeTruthy();
-    expect((screen.getByLabelText("Email") as HTMLSelectElement).value).toBe("E-mail Address");
-    expect((screen.getByLabelText("First name") as HTMLSelectElement).value).toBe("Given name");
-    expect((screen.getByLabelText("Last name") as HTMLSelectElement).value).toBe("Surname");
-    expect((screen.getByLabelText("Tags") as HTMLSelectElement).value).toBe("");
-    await user.selectOptions(screen.getByLabelText("Tags"), "Groups");
+    expect(await screen.findByText(/people.csv: 4 contacts, separated by commas/)).toBeTruthy();
+    expect(previewed[0]).toEqual({ csv });
+    // Each column shows its first values and what it becomes.
+    expect((screen.getByLabelText("E-mail Address") as HTMLSelectElement).value).toBe("email");
+    expect(screen.getByText("pat@example.com, sam@example.com, not-an-address")).toBeTruthy();
+    expect(screen.getByText("Lee, (blank), (blank)")).toBeTruthy();
+    expect((screen.getByLabelText("Given name") as HTMLSelectElement).value).toBe("");
+    expect((screen.getByLabelText("Surname") as HTMLSelectElement).value).toBe("last_name");
+    expect((screen.getByLabelText("Column 5") as HTMLSelectElement).value).toBe("");
+    expect(screen.getByText("No values in the first rows")).toBeTruthy();
+    await user.selectOptions(screen.getByLabelText("Given name"), "first_name");
+    await user.selectOptions(screen.getByLabelText("Groups"), "tags");
+    // Each change is checked again with the whole matching.
+    await waitFor(() =>
+      expect(previewed.at(-1)).toEqual({
+        csv,
+        columns: { email: "E-mail Address", first_name: "Given name", last_name: "Surname", status: "", tags: "Groups" },
+      }),
+    );
     await user.click(screen.getByRole("checkbox", { name: "VIP" }));
     await user.click(screen.getByRole("checkbox", { name: /given me permission/ }));
     // Where the list came from is required.
@@ -292,7 +330,7 @@ describe("imports", () => {
     expect(posted).toEqual({
       csv,
       file_name: "people.csv",
-      columns: { email: "E-mail Address", first_name: "Given name", last_name: "Surname", tags: "Groups" },
+      columns: { email: "E-mail Address", first_name: "Given name", last_name: "Surname", status: "", tags: "Groups" },
       tags: [tagVip.id],
       permission_confirmed: true,
       list_source: "other",
@@ -355,6 +393,37 @@ describe("imports", () => {
     expect(screen.queryByRole("button", { name: "Cancel import" })).toBeNull();
   });
 
+  it("shows a problem before the import starts, and won't start without an email column", async () => {
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/tags": tagsRoute([]),
+      "POST /v1/imports/preview": (body) => {
+        const cols = (body as { columns?: Record<string, string> }).columns;
+        const problem =
+          cols?.tags === "Groups" ? { code: "invalid_tag_name", message: "Row 3 has a tag that isn't 1 to 100 characters." } : null;
+        return { status: 200, body: { ...peoplePreview, problem } };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp("/contacts/import", api.fetch);
+    await user.upload(await screen.findByLabelText("CSV file"), new File(["E-mail Address\nx\n"], "people.csv", { type: "text/csv" }));
+    await user.click(await screen.findByRole("radio", { name: "They signed up on my site or form" }));
+    const button = () => screen.getByRole("button", { name: "Import contacts" }) as HTMLButtonElement;
+    await waitFor(() => expect(button().disabled).toBe(false));
+
+    await user.selectOptions(screen.getByLabelText("Groups"), "tags");
+    expect(await screen.findByText("Row 3 has a tag that isn't 1 to 100 characters.")).toBeTruthy();
+    expect(button().disabled).toBe(true);
+    await user.selectOptions(screen.getByLabelText("Groups"), "");
+    await waitFor(() => expect(screen.queryByText(/has a tag that isn't/)).toBeNull());
+    expect(button().disabled).toBe(false);
+
+    await user.selectOptions(screen.getByLabelText("E-mail Address"), "");
+    expect(await screen.findByText("Choose the column that holds email addresses.")).toBeTruthy();
+    expect(button().disabled).toBe(true);
+    expect(api.calls.some((c) => c.path === "/v1/imports")).toBe(false);
+  });
+
   it("refuses a file with no header before uploading anything", async () => {
     const api = fakeApi({ ...signedIn, "GET /v1/tags": tagsRoute([]) });
     const user = userEvent.setup();
@@ -414,12 +483,27 @@ describe("tags page", () => {
   });
 });
 
-describe("csv header", () => {
-  it("reads quoted cells, a byte-order mark and CRLF", () => {
-    expect(csvHeader('﻿email,"Name, full","say ""hi"""\r\nx,y,z')).toEqual(["email", "Name, full", 'say "hi"']);
-    expect(csvHeader("")).toEqual([]);
-    expect(csvRowCount("email\r\na@b.co\r\n\r\nc@d.co\r\n")).toBe(2);
-    expect(guessColumn("email", ["Name", "Email Address"])).toBe("Email Address");
-    expect(guessColumn("tags", ["Name"])).toBe("");
+describe("column matching", () => {
+  const preview = {
+    separator: "tab" as const,
+    rows: 1,
+    columns: [
+      { position: 1, header: "Email", name: "Email", field: "email" as const, samples: [] },
+      { position: 2, header: "", name: "#2", field: "first_name" as const, samples: [] },
+      { position: 3, header: "Name", name: "Name", field: null, samples: [] },
+    ],
+    problem: null,
+  };
+
+  it("gives each field one column and sends the rest as not imported", () => {
+    const m = previewMatching(preview);
+    expect(m).toEqual({ email: 1, first_name: 2 });
+    // Picking a field for a second column takes it off the first.
+    const moved = matchColumn(m, 3, "first_name");
+    expect(moved).toEqual({ email: 1, first_name: 3 });
+    // A column takes one field.
+    expect(matchColumn(moved, 3, "last_name")).toEqual({ email: 1, last_name: 3 });
+    expect(matchColumn(moved, 1, "")).toEqual({ first_name: 3 });
+    expect(matchingColumns(preview, m)).toEqual({ email: "Email", first_name: "#2", last_name: "", status: "", tags: "" });
   });
 });
