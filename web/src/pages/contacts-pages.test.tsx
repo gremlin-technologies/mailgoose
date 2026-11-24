@@ -2,7 +2,15 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
-import { matchColumn, matchingColumns, previewMatching } from "./Imports";
+import {
+  fieldRequest,
+  matchColumn,
+  matchFieldColumn,
+  matchingColumns,
+  newFieldCount,
+  previewFieldMatching,
+  previewMatching,
+} from "./Imports";
 import { apiError, fakeApi, renderApp, signedIn } from "../test/render";
 
 const location = () => screen.getByTestId("location").textContent;
@@ -248,12 +256,22 @@ describe("imports", () => {
     };
   }
 
-  const previewCol = (position: number, header: string, field: string | null, samples: string[], name = header) => ({
+  const previewCol = (
+    position: number,
+    header: string,
+    field: string | null,
+    samples: string[],
+    name = header,
+    extra: { custom_field?: unknown; new_field?: unknown } = {},
+  ) => ({
     position,
     header,
     name,
     field,
+    custom_field: null,
+    new_field: null,
     samples,
+    ...extra,
   });
   const peoplePreview = {
     separator: "comma",
@@ -542,6 +560,191 @@ describe("imports", () => {
     expect((screen.getByLabelText("E-mail Address") as HTMLSelectElement).value).toBe("email");
   });
 
+  const fieldCompanyRef = { id: "33333333-3333-4333-8333-333333333333", key: "company", name: "Company" };
+  const fieldRow = (id: string, key: string, name: string) => ({
+    id,
+    key,
+    name,
+    created_at: "2026-11-18T10:00:00Z",
+    updated_at: "2026-11-18T10:00:00Z",
+  });
+  const crmPreview = {
+    separator: "comma",
+    rows: 2,
+    has_header_guess: true,
+    columns: [
+      previewCol(1, "Email", "email", ["pat@example.com", "sam@example.com"]),
+      previewCol(2, "Company", null, ["Acme", ""], "Company", { custom_field: fieldCompanyRef }),
+      previewCol(3, "Size", null, ["12", "40"]),
+      previewCol(4, "Region", null, ["EU", "US"]),
+    ],
+    problem: null,
+  };
+  const crmCSV = "Email,Company,Size,Region\npat@example.com,Acme,12,EU\nsam@example.com,,40,US\n";
+
+  it("matches columns to contact fields, creates fields from headers and sends the mappings (MG-131)", async () => {
+    const previewed: Record<string, unknown>[] = [];
+    let posted: unknown;
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/tags": tagsRoute([]),
+      "GET /v1/plan": () => ({ status: 200, body: { plan: "free", contact_field_limit: 20 } }),
+      "GET /v1/contact-fields": () => ({
+        status: 200,
+        body: { data: [fieldRow(fieldCompanyRef.id, "company", "Company"), fieldRow("44444444-4444-4444-8444-444444444444", "plan", "Plan tier")], next_cursor: null },
+      }),
+      "POST /v1/imports/preview": (body) => {
+        previewed.push(body as Record<string, unknown>);
+        return { status: 200, body: crmPreview };
+      },
+      "POST /v1/imports": (body) => {
+        posted = body;
+        return { status: 202, body: anImport("queued", 0) };
+      },
+      [`GET /v1/imports/${importID}`]: () => ({ status: 200, body: anImport("done", 4, { existing_updated: 1 }) }),
+      [`GET /v1/imports/${importID}/skipped-rows`]: () => ({ status: 200, body: { data: [], next_cursor: null } }),
+    });
+    const user = userEvent.setup();
+    renderApp("/contacts/import", api.fetch);
+    await user.upload(await screen.findByLabelText("CSV file"), new File([crmCSV], "crm.csv", { type: "text/csv" }));
+    expect(await screen.findByText(/crm.csv: 2 contacts/)).toBeTruthy();
+
+    // A header matching a field is matched to it; the rest default to not imported.
+    const company = screen.getByLabelText("Company") as HTMLSelectElement;
+    expect(company.value).toBe("field:company");
+    expect(screen.getByText("Acme, (blank)")).toBeTruthy();
+    const size = screen.getByLabelText("Size") as HTMLSelectElement;
+    expect(size.value).toBe("");
+    expect(within(size).getByRole("option", { name: "Plan tier" })).toBeTruthy();
+    expect(within(size).getByRole("option", { name: "New field: Size" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Create field from Company" })).toBeNull();
+
+    // Create field is one click away, named from the header.
+    await user.click(screen.getByRole("button", { name: "Create field from Size" }));
+    expect(size.value).toBe("new");
+    await user.selectOptions(screen.getByLabelText("Region"), "field:plan");
+    await waitFor(() =>
+      expect(previewed.at(-1)).toEqual({
+        csv: crmCSV,
+        columns: { email: "Email", first_name: "", last_name: "", status: "", tags: "" },
+        field_columns: { company: "Company", plan: "Region" },
+        new_fields: [{ column: "Size", name: "Size" }],
+      }),
+    );
+    // Back to not imported, and a field moves between columns.
+    await user.selectOptions(screen.getByLabelText("Region"), "field:company");
+    expect(company.value).toBe("");
+
+    await user.click(screen.getByRole("radio", { name: "They signed up on my site or form" }));
+    await user.click(screen.getByRole("button", { name: "Import contacts" }));
+    await waitFor(() => expect(location()).toBe(`/contacts/imports/${importID}`));
+    expect(posted).toEqual({
+      csv: crmCSV,
+      file_name: "crm.csv",
+      columns: { email: "Email", first_name: "", last_name: "", status: "", tags: "" },
+      field_columns: { company: "Region", plan: "" },
+      new_fields: [{ column: "Size", name: "Size" }],
+      tags: [],
+      permission_confirmed: false,
+      list_source: "form",
+    });
+    expect(await screen.findByText("Contacts you already had, with fields updated from the file: 1")).toBeTruthy();
+  });
+
+  it("stops offering Create field at the plan's field limit, and says so (MG-131)", async () => {
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/tags": tagsRoute([]),
+      "GET /v1/plan": () => ({ status: 200, body: { plan: "free", contact_field_limit: 2 } }),
+      "GET /v1/contact-fields": () => ({ status: 200, body: { data: [fieldRow(fieldCompanyRef.id, "company", "Company")], next_cursor: null } }),
+      "POST /v1/imports/preview": () => ({ status: 200, body: crmPreview }),
+    });
+    const user = userEvent.setup();
+    renderApp("/contacts/import", api.fetch);
+    await user.upload(await screen.findByLabelText("CSV file"), new File([crmCSV], "crm.csv", { type: "text/csv" }));
+    await screen.findByText(/crm.csv: 2 contacts/);
+    expect(screen.queryByText(/so no more can be made/)).toBeNull();
+
+    // One more field fits; after it, Create field is unavailable elsewhere.
+    await user.click(screen.getByRole("button", { name: "Create field from Size" }));
+    const regionButton = (await screen.findByRole("button", { name: "Create field from Region" })) as HTMLButtonElement;
+    await waitFor(() => expect(regionButton.disabled).toBe(true));
+    const region = screen.getByLabelText("Region");
+    expect((within(region).getByRole("option", { name: "New field: Region" }) as HTMLOptionElement).disabled).toBe(true);
+    expect((within(screen.getByLabelText("Size")).getByRole("option", { name: "New field: Size" }) as HTMLOptionElement).disabled).toBe(false);
+    expect(
+      screen.getByText(
+        "Your plan allows 2 contact fields, and with the new ones here they're all used, so no more can be made. A column can still go into one of your existing fields.",
+      ),
+    ).toBeTruthy();
+    // Mapping to an existing field still works.
+    await user.selectOptions(region, "field:company");
+    expect((region as HTMLSelectElement).value).toBe("field:company");
+
+    // Taking the new field back makes room again.
+    await user.selectOptions(screen.getByLabelText("Size"), "");
+    await waitFor(() => expect(screen.queryByText(/so no more can be made/)).toBeNull());
+  });
+
+  it("asks for a name when Create field is used on pasted contacts without a header (MG-131)", async () => {
+    let posted: unknown;
+    const previewed: Record<string, unknown>[] = [];
+    const headerless = {
+      separator: "tab",
+      rows: 2,
+      has_header_guess: false,
+      columns: [previewCol(1, "", "email", ["pat@example.com", "sam@example.com"], "#1"), previewCol(2, "", null, ["Acme", "Bolt"], "#2")],
+      problem: null,
+    };
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/tags": tagsRoute([]),
+      "GET /v1/plan": () => ({ status: 200, body: { plan: "free", contact_field_limit: 20 } }),
+      "GET /v1/contact-fields": () => ({ status: 200, body: { data: [], next_cursor: null } }),
+      "POST /v1/imports/preview": (body) => {
+        previewed.push(body as Record<string, unknown>);
+        return { status: 200, body: headerless };
+      },
+      "POST /v1/imports": (body) => {
+        posted = body;
+        return { status: 202, body: anImport("queued", 0, { file_name: null, kind: "csv" }) };
+      },
+      [`GET /v1/imports/${importID}`]: () => ({ status: 200, body: anImport("done", 2, { file_name: null, kind: "csv" }) }),
+      [`GET /v1/imports/${importID}/skipped-rows`]: () => ({ status: 200, body: { data: [], next_cursor: null } }),
+    });
+    const user = userEvent.setup();
+    renderApp("/contacts/import", api.fetch);
+    await user.click(await screen.findByRole("radio", { name: "Paste contacts" }));
+    await user.click(screen.getByLabelText("Contacts"));
+    await user.paste("pat@example.com\tAcme\nsam@example.com\tBolt\n");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await screen.findByText(/Pasted contacts: 2 contacts/);
+    expect(within(screen.getByLabelText("Column 2")).getByRole("option", { name: "New field…" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Create field from Column 2" }));
+    const name = await screen.findByLabelText("Name for the new field");
+    // Nothing is checked until it has a name.
+    expect(previewed.some((b) => b.new_fields)).toBe(false);
+    await user.click(screen.getByRole("radio", { name: "They're customers who bought from me" }));
+    const button = () => screen.getByRole("button", { name: "Import contacts" }) as HTMLButtonElement;
+    expect(button().disabled).toBe(true);
+    await user.type(name, "Company");
+    // The name is checked once typing stops.
+    await waitFor(() => expect(previewed.at(-1)?.new_fields).toEqual([{ column: "#2", name: "Company" }]));
+    await waitFor(() => expect(button().disabled).toBe(false));
+    await user.click(button());
+    await waitFor(() => expect(location()).toBe(`/contacts/imports/${importID}`));
+    expect(posted).toEqual({
+      csv: "pat@example.com\tAcme\nsam@example.com\tBolt\n",
+      has_header: false,
+      columns: { email: "#1", first_name: "", last_name: "", status: "", tags: "" },
+      new_fields: [{ column: "#2", name: "Company" }],
+      tags: [],
+      permission_confirmed: false,
+      list_source: "customers",
+    });
+  });
+
   it("refuses a paste over 10 MB in the browser", async () => {
     const api = fakeApi({ ...signedIn, "GET /v1/tags": tagsRoute([]) });
     const user = userEvent.setup();
@@ -779,9 +982,19 @@ describe("column matching", () => {
     rows: 1,
     has_header_guess: true,
     columns: [
-      { position: 1, header: "Email", name: "Email", field: "email" as const, samples: [] },
-      { position: 2, header: "", name: "#2", field: "first_name" as const, samples: [] },
-      { position: 3, header: "Name", name: "Name", field: null, samples: [] },
+      { position: 1, header: "Email", name: "Email", field: "email" as const, custom_field: null, new_field: null, samples: [] },
+      { position: 2, header: "", name: "#2", field: "first_name" as const, custom_field: null, new_field: null, samples: [] },
+      { position: 3, header: "Name", name: "Name", field: null, custom_field: null, new_field: null, samples: [] },
+      {
+        position: 4,
+        header: "Org",
+        name: "Org",
+        field: null,
+        custom_field: { id: "33333333-3333-4333-8333-333333333333", key: "company", name: "Company" },
+        new_field: null,
+        samples: [],
+      },
+      { position: 5, header: "Size", name: "Size", field: null, custom_field: null, new_field: { name: "Size", key: "size" }, samples: [] },
     ],
     problem: null,
   };
@@ -796,5 +1009,21 @@ describe("column matching", () => {
     expect(matchColumn(moved, 3, "last_name")).toEqual({ email: 1, last_name: 3 });
     expect(matchColumn(moved, 1, "")).toEqual({ first_name: 3 });
     expect(matchingColumns(preview, m)).toEqual({ email: "Email", first_name: "#2", last_name: "", status: "", tags: "" });
+  });
+
+  it("gives each contact field one column, and sends every known field and the new ones (MG-131)", () => {
+    const fm = previewFieldMatching(preview);
+    expect(fm).toEqual({ 4: { key: "company" }, 5: { name: "Size" } });
+    expect(newFieldCount(fm)).toBe(1);
+    // Picking an existing field for another column takes it off the first.
+    const moved = matchFieldColumn(fm, 3, { key: "company" });
+    expect(moved).toEqual({ 3: { key: "company" }, 5: { name: "Size" } });
+    expect(matchFieldColumn(moved, 5, undefined)).toEqual({ 3: { key: "company" } });
+    expect(fieldRequest(preview, moved, [{ key: "company" }, { key: "plan" }])).toEqual({
+      field_columns: { company: "Name", plan: "" },
+      new_fields: [{ column: "Size", name: "Size" }],
+    });
+    // Nothing to say, nothing sent.
+    expect(fieldRequest(preview, {}, [])).toEqual({});
   });
 });

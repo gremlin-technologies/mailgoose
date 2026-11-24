@@ -13,7 +13,7 @@ func TestPreviewImportRowLimit(t *testing.T) {
 	for i := 0; i <= MaxImportRows; i++ {
 		b.WriteString("a@example.com\n")
 	}
-	p, err := PreviewImport(ImportInput{CSV: []byte(b.String())})
+	p, err := PreviewFile(ImportInput{CSV: []byte(b.String())}, AccountFields{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +22,7 @@ func TestPreviewImportRowLimit(t *testing.T) {
 	}
 
 	big := make([]byte, MaxImportBytes+1)
-	if _, err := PreviewImport(ImportInput{CSV: big}); err == nil || !strings.Contains(err.Error(), "over 10 MB") {
+	if _, err := PreviewFile(ImportInput{CSV: big}, AccountFields{}); err == nil || !strings.Contains(err.Error(), "over 10 MB") {
 		t.Errorf("over 10 MB: %v", err)
 	}
 }
@@ -71,7 +71,7 @@ func TestPreviewWithoutHeader(t *testing.T) {
 		{"comma", "Pat,pat@example.com,Lee\nSam,sam@example.com,Ro\n", "comma"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p, err := PreviewImport(ImportInput{CSV: []byte(tc.csv), NoHeader: true})
+			p, err := PreviewFile(ImportInput{CSV: []byte(tc.csv), NoHeader: true}, AccountFields{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -96,12 +96,12 @@ func TestPreviewWithoutHeader(t *testing.T) {
 	}
 
 	// Naming columns by position.
-	p, err := PreviewImport(ImportInput{CSV: []byte("Pat,pat@example.com\n"), NoHeader: true, EmailColumn: "#2", FirstNameColumn: "#1"})
+	p, err := PreviewFile(ImportInput{CSV: []byte("Pat,pat@example.com\n"), NoHeader: true, EmailColumn: "#2", FirstNameColumn: "#1"}, AccountFields{})
 	if err != nil || p.Problem != nil || p.Columns[0].Field != "first_name" || p.Columns[1].Field != "email" {
 		t.Fatalf("named: %v %+v", err, p)
 	}
 	// No address in the first row: the email column has to be chosen.
-	p, err = PreviewImport(ImportInput{CSV: []byte("Pat,Lee\n"), NoHeader: true})
+	p, err = PreviewFile(ImportInput{CSV: []byte("Pat,Lee\n"), NoHeader: true}, AccountFields{})
 	if err != nil || p.Problem == nil || p.Problem.Code != "no_email_column" || strings.Contains(p.Problem.Message, "header") {
 		t.Fatalf("no email: %v %+v", err, p.Problem)
 	}
@@ -120,7 +120,7 @@ func TestHeaderGuess(t *testing.T) {
 		{"Pat,pat@example.com\n", false},
 		{"first,last\nPat,Lee\n", true},
 	} {
-		p, err := PreviewImport(ImportInput{CSV: []byte(tc.csv)})
+		p, err := PreviewFile(ImportInput{CSV: []byte(tc.csv)}, AccountFields{})
 		if err != nil {
 			t.Fatal(err)
 		}

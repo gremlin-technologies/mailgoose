@@ -51,6 +51,13 @@ type importJob struct {
 	} `json:"checks"`
 	ExistingTagged     int `json:"existing_tagged"`
 	ExistingSuppressed int `json:"existing_suppressed"`
+	ExistingUpdated    int `json:"existing_updated"`
+	// FieldColumns are the contact fields the import fills (MG-131).
+	FieldColumns []struct {
+		Field   importFieldRef `json:"field"`
+		Column  string         `json:"column"`
+		Created bool           `json:"created"`
+	} `json:"field_columns"`
 	// Mailchimp is a Mailchimp import's upload and emails.
 	Mailchimp *struct {
 		BundleID string            `json:"bundle_id"`
@@ -61,6 +68,13 @@ type importJob struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	StartedAt   *time.Time `json:"started_at"`
 	FinishedAt  *time.Time `json:"finished_at"`
+}
+
+// importFieldRef is the API's ImportFieldRef.
+type importFieldRef struct {
+	ID   string `json:"id"`
+	Key  string `json:"key"`
+	Name string `json:"name"`
 }
 
 type importPage struct {
@@ -89,7 +103,7 @@ var skipReasons = []struct{ code, text string }{
 	{"invalid_email", "not an email address"},
 	{"invalid_row", "row couldn't be read"},
 	{"duplicate", "repeats an earlier row"},
-	{"exists", "already a contact (left as it is)"},
+	{"exists", "already a contact (not added again; only its fields are updated)"},
 	{"suppressed", "unsubscribed, bounced or complained before"},
 	{"over_limit", "over the free plan's 1,000 contacts"},
 	{"not_subscribed", "never subscribed in Mailchimp (transactional)"},
@@ -206,6 +220,19 @@ func (a *App) printImport(ctx context.Context, j importJob) error {
 		}
 		fmt.Fprintf(a.Stdout, "Held for review. %s Its contacts won't receive campaigns until mailgoose approves it.\n", msg)
 	}
+	if len(j.FieldColumns) > 0 {
+		parts := make([]string, len(j.FieldColumns))
+		for i, fc := range j.FieldColumns {
+			parts[i] = fmt.Sprintf("%s from %q", fc.Field.Key, fc.Column)
+			if fc.Created {
+				parts[i] += " (new)"
+			}
+		}
+		fmt.Fprintf(a.Stdout, "Contact fields: %s.\n", strings.Join(parts, ", "))
+	}
+	if j.ExistingUpdated > 0 {
+		fmt.Fprintf(a.Stdout, "Existing contacts: %d had their contact fields updated.\n", j.ExistingUpdated)
+	}
 	if j.ExistingTagged+j.ExistingSuppressed > 0 {
 		fmt.Fprintf(a.Stdout, "Existing contacts: %d gained tags, %d came off the list.\n", j.ExistingTagged, j.ExistingSuppressed)
 	}
@@ -284,6 +311,50 @@ func importColumns(maps []string) (map[string]string, error) {
 	return columns, nil
 }
 
+// importFieldFlags turns --field and --new-field flags into an import's
+// field_columns and new_fields (MG-131). --field key= leaves that field out.
+func importFieldFlags(fields, newFields []string) (map[string]string, []map[string]string, error) {
+	cols := map[string]string{}
+	for _, f := range fields {
+		key, col, ok := strings.Cut(f, "=")
+		if !ok || strings.TrimSpace(key) == "" {
+			return nil, nil, usageError(fmt.Sprintf("--field %q isn't key=header.", f),
+				"Name a contact field by its key and the column it comes from, as in --field company=\"Company name\". "+
+					"--field company= leaves it out. \"mailgoose fields list\" shows the keys.")
+		}
+		cols[strings.TrimSpace(key)] = strings.TrimSpace(col)
+	}
+	var news []map[string]string
+	for _, nf := range newFields {
+		col, name, _ := strings.Cut(nf, "=")
+		if strings.TrimSpace(col) == "" {
+			return nil, nil, usageError(fmt.Sprintf("--new-field %q doesn't name a column.", nf),
+				"Name the column to make a field from, and optionally the field's name: --new-field \"Company size\" or --new-field '#4=Company size'.")
+		}
+		m := map[string]string{"column": strings.TrimSpace(col)}
+		if strings.TrimSpace(name) != "" {
+			m["name"] = strings.TrimSpace(name)
+		}
+		news = append(news, m)
+	}
+	return cols, news, nil
+}
+
+// setImportFieldFlags puts --field and --new-field on an import request's body.
+func setImportFieldFlags(body map[string]any, fields, newFields []string) error {
+	cols, news, err := importFieldFlags(fields, newFields)
+	if err != nil {
+		return err
+	}
+	if len(cols) > 0 {
+		body["field_columns"] = cols
+	}
+	if len(news) > 0 {
+		body["new_fields"] = news
+	}
+	return nil
+}
+
 // fileLabel is the import's file name for the list: "pasted" for a CSV
 // import without one, as for contacts pasted in or read from standard input
 // (MG-125), and "-" for any other.
@@ -303,11 +374,16 @@ type importPreview struct {
 	Rows           int    `json:"rows"`
 	HasHeaderGuess bool   `json:"has_header_guess"`
 	Columns        []struct {
-		Position int      `json:"position"`
-		Header   string   `json:"header"`
-		Name     string   `json:"name"`
-		Field    *string  `json:"field"`
-		Samples  []string `json:"samples"`
+		Position    int             `json:"position"`
+		Header      string          `json:"header"`
+		Name        string          `json:"name"`
+		Field       *string         `json:"field"`
+		CustomField *importFieldRef `json:"custom_field"`
+		NewField    *struct {
+			Name string `json:"name"`
+			Key  string `json:"key"`
+		} `json:"new_field"`
+		Samples []string `json:"samples"`
 	} `json:"columns"`
 	Problem *struct {
 		Code    string `json:"code"`
@@ -317,7 +393,7 @@ type importPreview struct {
 
 // importPreviewCmd is "mailgoose import preview".
 func (a *App) importPreviewCmd() *cobra.Command {
-	var maps []string
+	var maps, fields, newFields []string
 	var noHeader bool
 	cmd := calls("previewImport", &cobra.Command{
 		Use:   "preview <file.csv>",
@@ -331,6 +407,13 @@ Name a column whose header is blank or repeated by its position, as in
 --map first_name=#3. --map status= (with nothing after =) leaves a field out,
 even when a column's header looks like it.
 
+Other columns can fill the account's contact fields ("mailgoose fields list"):
+a column whose header matches a field's name or key fills it, or name it with
+--field company="Company name" (--field company= leaves it out). Make a new
+field from a column with --new-field "Company size", named after its header,
+or --new-field '#4=Company size' to name it; the account's plan allows a
+limited number of fields.
+
 When the first row is a contact rather than a header, as with rows copied
 from a spreadsheet, pass --no-header: columns are then named by position
 (#1, #2 ...) and the email column is the one with an address in the first
@@ -340,7 +423,8 @@ An agent importing for someone should show them this before importing, and
 let them confirm or change which column becomes which field.`,
 		Example: `  mailgoose import preview contacts.csv
   mailgoose import preview export.csv --map email="E-mail" --map first_name=#3 --map status=
-  pbpaste | mailgoose import preview - --no-header
+  mailgoose import preview crm.csv --field company=Organisation --new-field "Company size"
+  pbpaste | mailgoose import preview - --no-header --new-field '#3=Company'
   pbpaste | mailgoose import preview - --json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -355,6 +439,9 @@ let them confirm or change which column becomes which field.`,
 			body := map[string]any{"csv": string(data)}
 			if len(columns) > 0 {
 				body["columns"] = columns
+			}
+			if err := setImportFieldFlags(body, fields, newFields); err != nil {
+				return err
 			}
 			if noHeader {
 				body["has_header"] = false
@@ -372,7 +459,16 @@ let them confirm or change which column becomes which field.`,
 	})
 	cmd.Flags().StringArrayVar(&maps, "map", nil, "field=header or field=#position, naming the column a field comes from; field= leaves it out; repeatable")
 	cmd.Flags().BoolVar(&noHeader, "no-header", false, "the first row is a contact, not a header; name columns by position (#1, #2 ...)")
+	addImportFieldFlags(cmd, &fields, &newFields)
 	return cmd
+}
+
+// addImportFieldFlags adds --field and --new-field to an import command.
+func addImportFieldFlags(cmd *cobra.Command, fields, newFields *[]string) {
+	cmd.Flags().StringArrayVar(fields, "field", nil,
+		"key=header or key=#position, naming the column a contact field comes from; key= leaves it out; repeatable")
+	cmd.Flags().StringArrayVar(newFields, "new-field", nil,
+		"header or #position, optionally =name: make a contact field from that column, named after its header unless named; repeatable")
 }
 
 func (a *App) printImportPreview(p importPreview, noHeader bool) error {
@@ -386,8 +482,13 @@ func (a *App) printImportPreview(p importPreview, noHeader bool) error {
 	clean := func(v string) string { return strings.Join(strings.Fields(v), " ") }
 	for _, c := range p.Columns {
 		field := "not imported"
-		if c.Field != nil {
+		switch {
+		case c.Field != nil:
 			field = *c.Field
+		case c.CustomField != nil:
+			field = "field " + c.CustomField.Key
+		case c.NewField != nil:
+			field = "new field " + c.NewField.Key + " (" + clean(c.NewField.Name) + ")"
 		}
 		samples := make([]string, len(c.Samples))
 		for i, v := range c.Samples {
@@ -408,8 +509,13 @@ func (a *App) printImportPreview(p importPreview, noHeader bool) error {
 	}
 	if p.Problem != nil {
 		fmt.Fprintf(a.Stdout, "\nThis file can't be imported as it is: %s\n", p.Problem.Message)
-		if p.Problem.Code == "no_email_column" || p.Problem.Code == "invalid_mapping" {
+		switch p.Problem.Code {
+		case "no_email_column", "invalid_mapping":
 			fmt.Fprintln(a.Stdout, "Name the columns with --map, as in --map email=\"Email Address\".")
+		case "field_exists":
+			fmt.Fprintln(a.Stdout, "Fill the existing field instead, as in --field company=\"Company\".")
+		case "field_limit":
+			fmt.Fprintln(a.Stdout, "Fill existing fields with --field instead of making new ones, or delete a field you no longer use.")
 		}
 		return nil
 	}
@@ -424,7 +530,7 @@ var importFields = map[string]string{
 }
 
 func (a *App) importCmd() *cobra.Command {
-	var maps, tags []string
+	var maps, tags, fields, newFields []string
 	var listSource, listSourceDetail string
 	var permission, wait, noHeader bool
 	cmd := callsAll([]string{"createImport", "getImport", "listImportSkippedRows"}, &cobra.Command{
@@ -445,6 +551,14 @@ position (--map first_name=#1), and the email column is the one with an
 address in the first row. Contacts read from standard input have no file
 name, and are listed as pasted.
 
+Other columns can fill the account's contact fields ("mailgoose fields list").
+A column whose header matches a field's name or key fills that field; name
+one with --field company="Company name", or leave it out with --field
+company=. --new-field "Company size" makes a contact field from that column,
+named after its header; --new-field '#4=Company size' names it. New fields
+are made when the import starts, all or none, within the plan's field limit.
+A blank cell sets no value.
+
 Run "mailgoose import preview" first to see which column becomes which field,
 with each column's first values. An agent importing for someone should show
 them that and let them confirm it before importing.
@@ -463,7 +577,9 @@ separated by commas, on each row's contact, creating tags the account lacks.
 Rows with a bad address, a repeat of an earlier row, an address already in the
 account, an address that unsubscribed, bounced or complained before, or one
 past the free plan's 1,000 contacts are skipped and listed by
-"mailgoose import status". Existing contacts aren't changed.
+"mailgoose import status". An existing contact isn't added again and keeps
+its name, status and tags, but its contact fields take the row's non-blank
+values.
 
 The file is checked as it's imported: rows that aren't addresses, role
 addresses (info@, sales@ ...) and addresses at disposable domains are counted
@@ -476,6 +592,7 @@ until mailgoose approves it, and "mailgoose import status" says why it's held.`,
 		Example: `  mailgoose import contacts.csv --list-source form --permission-confirmed --wait
   mailgoose import export.csv --list-source export --map email="E-mail" --map first_name=Vorname --tag newsletter
   mailgoose import fair.csv --list-source other --list-source-detail "Signed up at our trade show stand"
+  mailgoose import crm.csv --list-source customers --field company=Organisation --new-field "Company size"
   pbpaste | mailgoose import - --no-header --list-source customers --map first_name=#1 --map last_name=#3
   mailgoose import status <id>`,
 		Args: cobra.ExactArgs(1),
@@ -503,6 +620,9 @@ until mailgoose approves it, and "mailgoose import status" says why it's held.`,
 			}
 			if len(columns) > 0 {
 				body["columns"] = columns
+			}
+			if err := setImportFieldFlags(body, fields, newFields); err != nil {
+				return err
 			}
 			if len(tags) > 0 {
 				body["tags"] = tags
@@ -541,6 +661,7 @@ until mailgoose approves it, and "mailgoose import status" says why it's held.`,
 	cmd.Flags().BoolVar(&noHeader, "no-header", false, "the first row is a contact, not a header; name columns by position (#1, #2 ...)")
 	cmd.Flags().StringVar(&listSource, "list-source", "", "required: where these contacts came from: form, customers, personal, export or other")
 	cmd.Flags().StringVar(&listSourceDetail, "list-source-detail", "", "with --list-source other, a few words on where these contacts came from")
+	addImportFieldFlags(cmd, &fields, &newFields)
 
 	status := callsAll([]string{"getImport", "listImportSkippedRows"}, &cobra.Command{
 		Use:     "status <id>",

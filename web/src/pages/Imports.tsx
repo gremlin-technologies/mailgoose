@@ -5,6 +5,7 @@ import { useApi } from "../api/context";
 import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
 import { Badge, FailureNotice, formatDate, LoadFailed, Loading, PageHeader, useLoad, type Tone } from "../components";
+import { useContactFields, type ContactField } from "./Fields";
 import { useTags } from "./Tags";
 
 type Import = components["schemas"]["Import"];
@@ -72,10 +73,75 @@ export function matchingColumns(p: ImportPreview, m: Matching): Record<ImportFie
   return Object.fromEntries(importFields.map(({ field }) => [field, name(m[field])])) as Record<ImportField, string>;
 }
 
+/**
+ * What a column fills when it isn't a built-in field (MG-131): one of the
+ * account's contact fields by key, or a new field made from the column.
+ */
+export type FieldTarget = { key: string } | { name: string };
+/** Each column's contact field target, by position; a column with none fills no contact field. */
+export type FieldMatching = Record<number, FieldTarget>;
+
+/** The contact fields a preview matched or would make. */
+export function previewFieldMatching(p: ImportPreview): FieldMatching {
+  const m: FieldMatching = {};
+  for (const c of p.columns) {
+    if (c.custom_field) m[c.position] = { key: c.custom_field.key };
+    else if (c.new_field) m[c.position] = { name: c.new_field.name };
+  }
+  return m;
+}
+
+/** Puts target on the column at position, taking the same existing field off any other column. */
+export function matchFieldColumn(m: FieldMatching, position: number, target: FieldTarget | undefined): FieldMatching {
+  const next: FieldMatching = {};
+  for (const [pos, t] of Object.entries(m)) {
+    const p = Number(pos);
+    if (p === position) continue;
+    if (target && "key" in target && "key" in t && t.key === target.key) continue;
+    next[p] = t;
+  }
+  if (target) next[position] = target;
+  return next;
+}
+
+/** How many new fields a matching would make. */
+export function newFieldCount(m: FieldMatching): number {
+  return Object.values(m).filter((t) => "name" in t).length;
+}
+
+/**
+ * An import's contact field columns for a matching: every field the page
+ * knows by its column, or an empty string when it isn't imported, so the
+ * import guesses nothing; and the new fields to make. Both are left out
+ * when there's nothing to say.
+ */
+export function fieldRequest(
+  p: ImportPreview,
+  m: FieldMatching,
+  fields: { key: string }[],
+): { field_columns?: Record<string, string>; new_fields?: { column: string; name: string }[] } {
+  const name = (pos: number) => p.columns.find((c) => c.position === pos)?.name ?? "";
+  const cols: Record<string, string> = Object.fromEntries(fields.map((f) => [f.key, ""]));
+  const news: { column: string; name: string }[] = [];
+  for (const [pos, t] of Object.entries(m)) {
+    if ("key" in t) cols[t.key] = name(Number(pos));
+    else news.push({ column: name(Number(pos)), name: t.name.trim() });
+  }
+  return {
+    ...(Object.keys(cols).length > 0 ? { field_columns: cols } : {}),
+    ...(news.length > 0 ? { new_fields: news } : {}),
+  };
+}
+
 /** A column's name to show: its header, or its place for a blank one. */
 function columnLabel(c: ImportPreview["columns"][number]): string {
   return c.header.trim() || `Column ${c.position}`;
 }
+
+/** The longest contact field name, as the API. */
+const maxFieldName = 50;
+/** How long after the last keystroke a new field's name is checked, in ms. */
+const nameCheckMs = 400;
 
 /** Where an import's people came from, in the order the page offers them. */
 export const listSources: { source: ListSource; label: string }[] = [
@@ -93,12 +159,16 @@ export function ImportContacts() {
   const api = useApi();
   const navigate = useNavigate();
   const tags = useTags();
+  const contactFields = useContactFields();
+  const loadPlan = useCallback(() => attempt(() => api.GET("/v1/plan")), [api]);
+  const plan = useLoad(loadPlan);
   const [way, setWay] = useState<"file" | "paste">("file");
   const [pasted, setPasted] = useState("");
   const [file, setFile] = useState<File_>();
   const [hasHeader, setHasHeader] = useState(true);
   const [preview, setPreview] = useState<ImportPreview>();
   const [matching, setMatching] = useState<Matching>({});
+  const [fieldMatching, setFieldMatching] = useState<FieldMatching>({});
   const [checking, setChecking] = useState(false);
   const [tagIDs, setTagIDs] = useState<string[]>([]);
   const [permission, setPermission] = useState(false);
@@ -108,12 +178,20 @@ export function ImportContacts() {
   const [failure, setFailure] = useState<Failure>();
   // Only the newest preview's answer counts.
   const previews = useRef(0);
+  // The wait before a typed field name is checked.
+  const naming = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(naming.current), []);
 
-  async function check(text: string, header: boolean, columns?: Record<ImportField, string>) {
+  async function check(
+    text: string,
+    header: boolean,
+    columns?: Record<ImportField, string>,
+    fieldCols?: ReturnType<typeof fieldRequest>,
+  ) {
     const n = ++previews.current;
     setChecking(true);
     const res = await attempt(() =>
-      api.POST("/v1/imports/preview", { body: { csv: text, columns, ...(header ? {} : { has_header: false }) } }),
+      api.POST("/v1/imports/preview", { body: { csv: text, columns, ...fieldCols, ...(header ? {} : { has_header: false }) } }),
     );
     if (n !== previews.current) return undefined;
     setChecking(false);
@@ -149,6 +227,7 @@ export function ImportContacts() {
     setHasHeader(header);
     setPreview(p);
     setMatching(previewMatching(p));
+    setFieldMatching(previewFieldMatching(p));
   }
 
   /** Reads the contacts again with or without a header row, matching their columns afresh. */
@@ -160,6 +239,7 @@ export function ImportContacts() {
     if (!p) return;
     setPreview(p);
     setMatching(previewMatching(p));
+    setFieldMatching(previewFieldMatching(p));
   }
 
   async function readPasted() {
@@ -203,14 +283,45 @@ export function ImportContacts() {
     await read({ name: f.name, text });
   }
 
-  /** Changes what one column becomes, and checks the file again with the new matching. */
-  async function rematch(position: number, field: ImportField | "") {
-    if (!file || !preview) return;
-    const m = matchColumn(matching, position, field);
+  /**
+   * Changes what one column becomes: a built-in field, a contact field
+   * ("field:key"), a new field ("new") or nothing (""). Then checks the file
+   * again with the new matching.
+   */
+  async function rematch(position: number, value: string) {
+    if (!preview) return;
+    let m = matchColumn(matching, position, "");
+    let fm = matchFieldColumn(fieldMatching, position, undefined);
+    if (value.startsWith("field:")) fm = matchFieldColumn(fm, position, { key: value.slice("field:".length) });
+    else if (value === "new") {
+      const header = preview.columns.find((c) => c.position === position)?.header.trim() ?? "";
+      fm = matchFieldColumn(fm, position, { name: header });
+    } else if (value) m = matchColumn(m, position, value as ImportField);
     setMatching(m);
+    setFieldMatching(fm);
+    // A new field from a column with no header waits for its name.
+    if (value === "new" && !preview.columns.find((c) => c.position === position)?.header.trim()) {
+      previews.current++;
+      setChecking(false);
+      return;
+    }
+    await recheck(m, fm);
+  }
+
+  /** Checks the file again with a matching. */
+  async function recheck(m: Matching, fm: FieldMatching) {
+    if (!file || !preview) return;
     setFailure(undefined);
-    const p = await check(file.text, hasHeader, matchingColumns(preview, m));
+    const p = await check(file.text, hasHeader, matchingColumns(preview, m), fieldRequest(preview, fm, fieldList));
     if (p) setPreview((old) => (old ? { ...old, problem: p.problem } : p));
+  }
+
+  /** Names the new field a headerless column makes, and checks the file again once typing stops. */
+  function nameNewField(position: number, name: string) {
+    const fm = matchFieldColumn(fieldMatching, position, { name });
+    setFieldMatching(fm);
+    clearTimeout(naming.current);
+    naming.current = setTimeout(() => void recheck(matching, fm), nameCheckMs);
   }
 
   async function start(e: FormEvent) {
@@ -225,6 +336,7 @@ export function ImportContacts() {
           ...(file.name ? { file_name: file.name } : {}),
           ...(hasHeader ? {} : { has_header: false }),
           columns: matchingColumns(preview, matching),
+          ...fieldRequest(preview, fieldMatching, fieldList),
           tags: tagIDs,
           permission_confirmed: permission,
           list_source: listSource,
@@ -242,6 +354,20 @@ export function ImportContacts() {
   }
 
   const tagList = tags.state.status === "ok" ? tags.state.data : [];
+  // The account's fields, with any the preview matched that the list
+  // couldn't load, so each can be shown and chosen.
+  const loadedFields: ContactField[] = contactFields.state.status === "ok" ? contactFields.state.data : [];
+  const fieldList: { key: string; name: string }[] = [...loadedFields];
+  for (const c of preview?.columns ?? []) {
+    if (c.custom_field && !fieldList.some((f) => f.key === c.custom_field?.key)) fieldList.push(c.custom_field);
+  }
+  const fieldLimit = plan.state.status === "ok" ? plan.state.data.contact_field_limit : undefined;
+  const newCount = newFieldCount(fieldMatching);
+  // How many more fields this import could make; unknown when the plan or
+  // the fields didn't load, and then the import itself says.
+  const canMake =
+    fieldLimit === undefined || contactFields.state.status !== "ok" ? Infinity : fieldLimit - loadedFields.length - newCount;
+  const unnamed = Object.values(fieldMatching).some((t) => "name" in t && !t.name.trim());
   return (
     <section className="page">
       <p className="crumb">
@@ -249,7 +375,7 @@ export function ImportContacts() {
       </p>
       <PageHeader
         title="Import contacts"
-        about="Add contacts from a CSV file, or paste them from a spreadsheet. Addresses you already have are left as they are."
+        about="Add contacts from a CSV file, or paste them from a spreadsheet. Addresses you already have aren't added again; only their fields are updated."
       />
       <p>
         Moving from Mailchimp? <Link to="/contacts/import/mailchimp">Import from Mailchimp</Link> to bring your audiences,
@@ -336,12 +462,16 @@ export function ImportContacts() {
               </label>
               <p className="muted small">
                 {file.name ?? pastedName}: {preview.rows.toLocaleString()} {preview.rows === 1 ? "contact" : "contacts"}, separated by{" "}
-                {separators[preview.separator]}. Choose what each column becomes. mailgoose keeps email, first and last
-                name, status and tags, so other columns aren't imported.
+                {separators[preview.separator]}. Choose what each column becomes: email, first or last name, status, tags or
+                one of your fields. A column you don't need can stay out, or become a new field named after it.
               </p>
               <ul className="column-match">
                 {preview.columns.map((c) => {
                   const field = (Object.entries(matching) as [ImportField, number][]).find(([, pos]) => pos === c.position)?.[0];
+                  const target = fieldMatching[c.position];
+                  const value = field ?? (target ? ("key" in target ? `field:${target.key}` : "new") : "");
+                  const header = c.header.trim();
+                  const isNew = target !== undefined && "name" in target;
                   const id = `match-${c.position}`;
                   return (
                     <li key={c.position}>
@@ -351,25 +481,70 @@ export function ImportContacts() {
                           {c.samples.some((v) => v.trim()) ? c.samples.map((v) => v.trim() || "(blank)").join(", ") : "No values in the first rows"}
                         </span>
                       </div>
-                      <div className="field">
-                        <select
-                          id={id}
-                          value={field ?? ""}
-                          onChange={(e) => void rematch(c.position, e.target.value as ImportField | "")}
-                          aria-describedby={`${id}-samples`}
-                        >
-                          <option value="">Don't import</option>
-                          {importFields.map(({ field: f, label }) => (
-                            <option key={f} value={f}>
-                              {label}
+                      <div className="column-match-choice">
+                        <div className="field">
+                          <select
+                            id={id}
+                            value={value}
+                            onChange={(e) => void rematch(c.position, e.target.value)}
+                            aria-describedby={`${id}-samples`}
+                          >
+                            <option value="">Don't import</option>
+                            {importFields.map(({ field: f, label }) => (
+                              <option key={f} value={f}>
+                                {label}
+                              </option>
+                            ))}
+                            {fieldList.length > 0 && (
+                              <optgroup label="Your fields">
+                                {fieldList.map((f) => (
+                                  <option key={f.key} value={`field:${f.key}`}>
+                                    {f.name}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            <option value="new" disabled={!isNew && canMake <= 0}>
+                              {header ? `New field: ${header}` : "New field…"}
                             </option>
-                          ))}
-                        </select>
+                          </select>
+                        </div>
+                        {value === "" && (
+                          <button
+                            type="button"
+                            className="button small"
+                            disabled={checking || canMake <= 0}
+                            aria-label={`Create field from ${columnLabel(c)}`}
+                            onClick={() => void rematch(c.position, "new")}
+                          >
+                            Create field
+                          </button>
+                        )}
+                        {isNew && !header && (
+                          <label className="field">
+                            <span>Name for the new field</span>
+                            <input
+                              type="text"
+                              value={target.name}
+                              maxLength={maxFieldName}
+                              onChange={(e) => nameNewField(c.position, e.target.value)}
+                              autoComplete="off"
+                              required
+                            />
+                          </label>
+                        )}
                       </div>
                     </li>
                   );
                 })}
               </ul>
+              {fieldLimit !== undefined && canMake <= 0 && (
+                <p className="muted small" role="status">
+                  Your plan allows {fieldLimit.toLocaleString()} contact fields, and{" "}
+                  {newCount > 0 ? "with the new ones here they're" : "they're"} all used, so no more can be made. A
+                  column can still go into one of your existing fields.
+                </p>
+              )}
               <p className="muted small">
                 A status column can only hold contacts back: rows marked unsubscribed, bounced, complained or unconfirmed
                 keep that status. A tags column lists tag names separated by commas; new ones are created.
@@ -464,6 +639,7 @@ export function ImportContacts() {
                 checking ||
                 matching.email === undefined ||
                 !!preview.problem ||
+                unnamed ||
                 !listSource ||
                 (listSource === "other" && !listSourceDetail.trim())
               }
@@ -583,6 +759,11 @@ export function ImportDetail() {
         </div>
       </dl>
 
+      {im.existing_updated > 0 && (
+        <p className="muted">
+          Contacts you already had, with fields updated from the file: {im.existing_updated.toLocaleString()}
+        </p>
+      )}
       {im.list_source && (
         <p className="muted">
           Where they came from:{" "}

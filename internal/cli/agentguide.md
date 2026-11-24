@@ -282,6 +282,16 @@ spreadsheet often have no header row; the preview says when the first row
 looks like a contact, and then `--no-header` on both commands imports it as
 one, with columns named by position (`#1`, `#2` ...).
 
+Other columns can fill the account's contact fields. The preview shows a
+column whose header matches a field's name or key as `field <key>`; name one
+with `--field key=header`, or leave it out with `--field key=`. For a column
+with no field yet, offer to make one: `--new-field header`, or
+`--new-field '#3=Name'` to name it. New fields count against the plan's
+field limit, and an import over it is refused (`field_limit`) with nothing
+made, so ask the person before adding fields. An existing contact's field
+values are overwritten by the file's non-blank cells; say so before
+importing a file of people who are already contacts.
+
 ## Moving from Mailchimp
 
 mailgoose reads Mailchimp's own export, or a connected Mailchimp account, and

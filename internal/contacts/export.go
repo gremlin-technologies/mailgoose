@@ -317,7 +317,7 @@ var skipWhy = map[string]string{
 	"invalid_email":  "Not an email address.",
 	"invalid_row":    "The row couldn't be read as CSV.",
 	"duplicate":      "The same address is on an earlier row.",
-	"exists":         "Already a contact; left as it was.",
+	"exists":         "Already a contact; not added again.",
 	"suppressed":     "Unsubscribed, bounced or complained before.",
 	"over_limit":     "The account was full.",
 	"not_subscribed": "A non-subscribed (transactional) member in Mailchimp.",

@@ -369,3 +369,72 @@ func applyFields(ctx context.Context, tx pgx.Tx, accountID string, current map[s
 	}
 	return out, nil
 }
+
+// AccountFields is an account's contact fields, in the order they were
+// made, and the most its plan allows: what an import's columns can be
+// matched to (MG-131).
+type AccountFields struct {
+	Fields []*Field
+	Limit  int
+}
+
+// accountFields reads the account's fields and its plan's field limit.
+func (s *Service) accountFields(ctx context.Context, accountID string) (AccountFields, error) {
+	var plan string
+	if err := s.DB.QueryRow(ctx, `SELECT plan FROM accounts WHERE id = $1`, accountID).Scan(&plan); err != nil {
+		return AccountFields{}, fmt.Errorf("read plan: %w", err)
+	}
+	fs, err := s.AllFields(ctx, accountID)
+	if err != nil {
+		return AccountFields{}, err
+	}
+	return AccountFields{Fields: fs, Limit: FieldLimit(plan)}, nil
+}
+
+// importFieldLimit is the error for an import whose new fields would take
+// the account past its plan's field limit.
+func importFieldLimit(limit, count, adding int) error {
+	noun := "fields"
+	if adding == 1 {
+		noun = "field"
+	}
+	left := max(limit-count, 0)
+	return invalidImport("field_limit", "new_fields", fmt.Sprintf(
+		"This import would make %d new %s, but an account can have at most %d contact fields and this one has %d, so %d more can be made. "+
+			"Match those columns to existing fields, or leave some out.", adding, noun, limit, count, left))
+}
+
+// createImportFields makes an import's new fields in tx, whose caller holds
+// the account row's lock, checking the plan's limit first. On an error the
+// caller rolls tx back, so either every field is made or none is.
+func (s *Service) createImportFields(ctx context.Context, tx pgx.Tx, accountID, plan string, news []newFieldCol) ([]*Field, error) {
+	if len(news) == 0 {
+		return nil, nil
+	}
+	var n int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM contact_fields WHERE account_id = $1`, accountID).Scan(&n); err != nil {
+		return nil, err
+	}
+	if limit := FieldLimit(plan); n+len(news) > limit {
+		return nil, importFieldLimit(limit, n, len(news))
+	}
+	now := s.now()
+	out := make([]*Field, len(news))
+	for i, nf := range news {
+		// A microsecond apart, so the new fields list in the file's order.
+		at := now.Add(time.Duration(i) * time.Microsecond)
+		f, err := scanField(tx.QueryRow(ctx, `
+			INSERT INTO contact_fields (account_id, key, name, created_at, updated_at) VALUES ($1, $2, $3, $4, $4)
+			RETURNING `+fieldColumns, accountID, nf.key, nf.name, at))
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return nil, invalidImport("field_exists", "new_fields",
+					fmt.Sprintf("This account already has a contact field named %q, or with the key %s. Match the column to it instead.", nf.name, nf.key))
+			}
+			return nil, err
+		}
+		out[i] = f
+	}
+	return out, nil
+}

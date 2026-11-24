@@ -166,7 +166,7 @@ func TestImportThroughTheAPI(t *testing.T) {
 		rec.Header().Get("Content-Disposition") != `attachment; filename="skipped-rows.csv"` {
 		t.Errorf("export = %d %v", rec.Code, rec.Header())
 	}
-	if want := "row,source,email,reason,why\n3,,pat@example.com,exists,Already a contact; left as it was.\n" +
+	if want := "row,source,email,reason,why\n3,,pat@example.com,exists,Already a contact; not added again.\n" +
 		"4,,broken,invalid_email,Not an email address.\n5,,ana@example.com,duplicate,The same address is on an earlier row.\n"; rec.Body.String() != want {
 		t.Errorf("export =\n%s", rec.Body)
 	}

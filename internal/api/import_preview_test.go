@@ -219,3 +219,100 @@ func csvPreview(csv string) string {
 	b, _ := json.Marshal(map[string]string{"csv": csv})
 	return string(b)
 }
+
+// Import columns to contact fields (MG-131): the preview shows matches and
+// new fields, and the import makes the new ones and fills both.
+func TestImportContactFields(t *testing.T) {
+	s := draftKey(authServer)(t)
+	h := importRunner{s.Handler(), s.Contacts}
+	call := func(method, path, body string) (int, map[string]any) {
+		t.Helper()
+		var req func(*testing.T) *http.Request
+		if body == "" {
+			req = request(method, path)
+		} else {
+			req = jsonRequest(method, path, body)
+		}
+		rec := do(t, h, bearer(req)(t))
+		var out map[string]any
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	errCode := func(b map[string]any) string {
+		e, _ := b["error"].(map[string]any)
+		c, _ := e["code"].(string)
+		return c
+	}
+	if code, b := call(http.MethodPost, "/v1/contact-fields", `{"name":"Company"}`); code != http.StatusCreated {
+		t.Fatalf("field: %d %v", code, b)
+	}
+	call(http.MethodPost, "/v1/contacts", `{"email":"old@example.com","fields":{"company":"Old Co"}}`)
+	const file = "Email,company,Size\npat@example.com,Acme,12\nold@example.com,New Co,\n"
+	csvJSON, _ := json.Marshal(file)
+
+	code, p := call(http.MethodPost, "/v1/imports/preview", `{"csv":`+string(csvJSON)+`,"new_fields":[{"column":"Size","name":"Company size"}]}`)
+	cols, _ := p["columns"].([]any)
+	if code != http.StatusOK || len(cols) != 3 || p["problem"] != nil {
+		t.Fatalf("preview: %d %v", code, p)
+	}
+	company := cols[1].(map[string]any)
+	size := cols[2].(map[string]any)
+	if cf, _ := company["custom_field"].(map[string]any); company["field"] != nil || cf["key"] != "company" || company["new_field"] != nil {
+		t.Errorf("company column = %v", company)
+	}
+	if nf, _ := size["new_field"].(map[string]any); size["custom_field"] != nil || nf["key"] != "company_size" || nf["name"] != "Company size" {
+		t.Errorf("size column = %v", size)
+	}
+	if s, _ := size["samples"].([]any); len(s) != 2 || s[0] != "12" {
+		t.Errorf("size samples = %v", size["samples"])
+	}
+
+	// A name that's taken is refused, and nothing is made.
+	code, b := call(http.MethodPost, "/v1/imports", `{"list_source":"form","csv":`+string(csvJSON)+`,"field_columns":{"company":""},`+
+		`"new_fields":[{"column":"Size"},{"column":"company"}]}`)
+	if code != http.StatusUnprocessableEntity || errCode(b) != "field_exists" {
+		t.Errorf("taken name: %d %v", code, b)
+	}
+	if _, l := call(http.MethodGet, "/v1/contact-fields", ""); len(l["data"].([]any)) != 1 {
+		t.Errorf("fields after a refusal = %v", l["data"])
+	}
+	if code, b := call(http.MethodPost, "/v1/imports", `{"list_source":"form","csv":`+string(csvJSON)+`,"field_columns":{"nope":"Size"}}`); code != http.StatusUnprocessableEntity ||
+		errCode(b) != "unknown_field" {
+		t.Errorf("unknown field: %d %v", code, b)
+	}
+
+	code, queued := call(http.MethodPost, "/v1/imports", `{"list_source":"form","csv":`+string(csvJSON)+`,"field_columns":{"company":"company"},`+
+		`"new_fields":[{"column":"Size","name":"Company size"}]}`)
+	if code != http.StatusAccepted {
+		t.Fatalf("create: %d %v", code, queued)
+	}
+	fcs, _ := queued["field_columns"].([]any)
+	if len(fcs) != 2 {
+		t.Fatalf("field_columns = %v", queued["field_columns"])
+	}
+	if fc := fcs[1].(map[string]any); fc["column"] != "Size" || fc["created"] != true || fc["field"].(map[string]any)["key"] != "company_size" {
+		t.Errorf("new field column = %v", fc)
+	}
+	_, done := call(http.MethodGet, "/v1/imports/"+queued["id"].(string), "")
+	if done["status"] != "done" || done["imported"] != 1.0 || done["existing_updated"] != 1.0 {
+		t.Fatalf("done = %v", done)
+	}
+	for email, want := range map[string]string{
+		"pat@example.com": `"fields":{"company":"Acme","company_size":"12"}`,
+		"old@example.com": `"fields":{"company":"New Co"}`,
+	} {
+		rec := do(t, h, bearer(request(http.MethodGet, "/v1/contacts?email="+email))(t))
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("%s = %s", email, rec.Body)
+		}
+	}
+
+	// At the limit, a new field is refused with field_limit.
+	for i := range 18 {
+		call(http.MethodPost, "/v1/contact-fields", fmt.Sprintf(`{"name":"Extra %d"}`, i))
+	}
+	code, b = call(http.MethodPost, "/v1/imports", `{"list_source":"form","csv":"email,Region\na@example.com,EU\n","new_fields":[{"column":"Region"}]}`)
+	if code != http.StatusUnprocessableEntity || errCode(b) != "field_limit" || !strings.Contains(b["error"].(map[string]any)["message"].(string), "at most 20") {
+		t.Errorf("limit: %d %v", code, b)
+	}
+}

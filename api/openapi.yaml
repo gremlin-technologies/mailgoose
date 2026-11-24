@@ -2693,12 +2693,27 @@ paths:
         it. `previewImport`'s `has_header_guess` says which a file looks
         like. Leave `file_name` out for pasted contacts.
 
+        Other columns can fill the account's contact fields
+        (`listContactFields`). A column whose header matches a field's name
+        or key, compared loosely, fills that field unless `field_columns`
+        says otherwise; `field_columns` names a field's column, or leaves
+        the field out with an empty string. `new_fields` makes a field from
+        a column, named after its header unless a name is given. New fields
+        are made when the import is created, all or none: past the plan's
+        field limit (`field_limit`), or with a name that's taken
+        (`field_exists`) or not allowed, nothing is made or queued. A blank
+        cell sets no value, and a value is cut to 500 characters on one
+        line.
+
         Imported contacts are `unconfirmed` unless `permission_confirmed` says
         the account has these people's permission to mail them; then they're
         `subscribed`. Rows with a bad address, a repeat of an earlier row, an
         address already in the account, a suppressed address, or one past a
         free account's 1,000-contact limit are skipped and listed by
-        `listImportSkippedRows`. Existing contacts aren't changed.
+        `listImportSkippedRows`. An existing contact isn't added again and
+        keeps its name, status and tags, but its contact fields take the
+        row's non-blank values; `existing_updated` counts the contacts that
+        changed.
 
         Every import says where its people came from in `list_source`; an
         import carries no proof that they asked for mail, the way a form
@@ -2762,6 +2777,9 @@ paths:
         would become, so the person can check the columns before importing.
         It also guesses whether the first row is a header
         (`has_header_guess`); send the same `has_header` to both calls.
+        Each column shows the contact field it would fill (`custom_field`),
+        including one matched by its header, or make (`new_field`), with the
+        same `field_columns` and `new_fields`.
         A problem `createImport` would refuse the file for, such as no email
         column or a named column that isn't there, is in `problem` instead of
         an error, so the columns can still be shown. Only a file whose header
@@ -6380,6 +6398,48 @@ components:
           $ref: "#/components/schemas/ImportHasHeader"
         columns:
           $ref: "#/components/schemas/ImportColumns"
+        field_columns:
+          $ref: "#/components/schemas/ImportFieldColumns"
+        new_fields:
+          $ref: "#/components/schemas/ImportNewFields"
+    ImportFieldColumns:
+      type: object
+      maxProperties: 100
+      description: |
+        The column each of the account's contact fields comes from, keyed by
+        the field's key or id: a header, or a position such as `#3`. An
+        empty string leaves the field out, even when a column's header
+        matches it. A field left out of this object fills from a column
+        whose header matches its name or key, compared loosely, if one isn't
+        already taken.
+      additionalProperties:
+        type: string
+        maxLength: 200
+      examples: [{ company: Company, plan: "#4" }]
+    ImportNewFields:
+      type: array
+      maxItems: 20
+      description: |
+        Contact fields to make from columns, each filled from its column.
+        They're made when the import is created, all or none, within the
+        plan's field limit.
+      items:
+        $ref: "#/components/schemas/ImportNewField"
+    ImportNewField:
+      type: object
+      required: [column]
+      additionalProperties: false
+      properties:
+        column:
+          type: string
+          maxLength: 200
+          description: The column, named as in `columns`.
+          examples: [Company size]
+        name:
+          type: [string, "null"]
+          maxLength: 200
+          description: The new field's name; its column's header when left out. Required for a column with no header.
+          examples: [Company size]
     ImportHasHeader:
       type: boolean
       default: true
@@ -6418,7 +6478,7 @@ components:
           description: Why `createImport` would refuse this file with these columns; null when it would take it.
     ImportPreviewColumn:
       type: object
-      required: [position, header, name, field, samples]
+      required: [position, header, name, field, custom_field, new_field, samples]
       additionalProperties: false
       properties:
         position:
@@ -6436,7 +6496,20 @@ components:
           oneOf:
             - $ref: "#/components/schemas/ImportField"
             - type: "null"
-          description: The field this column would become; null when it isn't imported.
+          description: The built-in field this column would become; null when it isn't imported or fills a contact field.
+        custom_field:
+          description: |
+            The account's contact field this column would fill: the one
+            `field_columns` names, or one whose name or key matches the
+            header. Null when none.
+          oneOf:
+            - $ref: "#/components/schemas/ImportFieldRef"
+            - type: "null"
+        new_field:
+          description: The contact field the import would make from this column (`new_fields`); null when none.
+          oneOf:
+            - $ref: "#/components/schemas/ImportNewFieldPreview"
+            - type: "null"
         samples:
           type: array
           maxItems: 3
@@ -6446,6 +6519,32 @@ components:
     ImportField:
       type: string
       enum: [email, first_name, last_name, status, tags]
+    ImportNewFieldPreview:
+      type: object
+      additionalProperties: false
+      required: [name, key]
+      properties:
+        name:
+          type: string
+          examples: [Company size]
+        key:
+          type: string
+          description: The key the new field would have.
+          examples: [company_size]
+    ImportFieldRef:
+      type: object
+      additionalProperties: false
+      required: [id, key, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+          examples: [company]
+        name:
+          type: string
+          examples: [Company]
     ImportPreviewProblem:
       type: object
       required: [code, message]
@@ -6457,7 +6556,9 @@ components:
             The code `createImport` would refuse the file with, such as
             `no_email_column`, `invalid_mapping`, `too_many_rows`,
             `invalid_tag_name`, `too_many_tags`, `invalid_csv` (a quote that
-            never closes) or `no_rows` (a header with no contacts).
+            never closes), `no_rows` (a header with no contacts),
+            `unknown_field`, `invalid_field_name`, `reserved_field_name`,
+            `field_exists` or `field_limit`.
           examples: [no_email_column]
         message:
           type: string
@@ -6478,6 +6579,10 @@ components:
           description: The file's name, to tell imports apart later. Leave it out for pasted contacts.
         columns:
           $ref: "#/components/schemas/ImportColumns"
+        field_columns:
+          $ref: "#/components/schemas/ImportFieldColumns"
+        new_fields:
+          $ref: "#/components/schemas/ImportNewFields"
         tags:
           type: array
           maxItems: 20
@@ -6519,6 +6624,19 @@ components:
         disposable_addresses:
           type: integer
           description: Valid rows with an address at a disposable (throwaway) mail domain.
+    ImportFieldColumn:
+      type: object
+      required: [field, column, created]
+      additionalProperties: false
+      properties:
+        field:
+          $ref: "#/components/schemas/ImportFieldRef"
+        column:
+          type: string
+          description: The column the field comes from, named as in `columns`.
+        created:
+          type: boolean
+          description: The import made this field.
     ImportStatus:
       type: string
       enum: [queued, running, waiting, done, failed, cancelled]
@@ -6537,14 +6655,15 @@ components:
         `invalid_email`: not an email address. `invalid_row`: the row
         couldn't be read as CSV (a stray quote, say). `duplicate`: the same
         address is on an earlier row. `exists`: the account already has the
-        contact, which is left as it is. `suppressed`: the address
+        contact, which isn't added again; only its contact fields take the
+        row's non-blank values. `suppressed`: the address
         unsubscribed, bounced or complained before. `over_limit`: a free
         account, or a tester account (MG-86), was full.
     Import:
       type: object
       required: [id, kind, file_name, status, contact_status, columns, tags, total_rows, processed_rows, imported, skipped,
-        skipped_by_reason, existing_tagged, existing_suppressed, review, hold_reason, hold_message, list_source,
-        list_source_detail, checks, mailchimp, waiting_note, error, created_at, started_at, finished_at]
+        skipped_by_reason, existing_tagged, existing_suppressed, existing_updated, field_columns, review, hold_reason, hold_message,
+        list_source, list_source_detail, checks, mailchimp, waiting_note, error, created_at, started_at, finished_at]
       properties:
         id:
           type: string
@@ -6618,6 +6737,20 @@ components:
         existing_suppressed:
           type: integer
           description: Of those, how many Mailchimp's unsubscribe or clean took off the mailing list.
+        existing_updated:
+          type: integer
+          description: |
+            Contacts already in the account whose contact fields the import
+            changed. They're counted in `skipped_by_reason.exists` too, since
+            the import didn't add them.
+        field_columns:
+          type: array
+          description: |
+            The contact fields the import fills and the column each comes
+            from, in the fields' order. A field deleted since is left out,
+            and its column isn't imported.
+          items:
+            $ref: "#/components/schemas/ImportFieldColumn"
         review:
           type: string
           enum: [none, held, approved]
@@ -10967,8 +11100,13 @@ components:
         `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes),
         `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found`,
         `too_many_tags`, `list_source_required` (say where the list came
-        from), `list_source_detail_required` (describe an `other` source) or
-        `invalid_list_source`.
+        from), `list_source_detail_required` (describe an `other` source),
+        `invalid_list_source`, `unknown_field` (`field_columns` names a field
+        the account doesn't have), `invalid_field_name` or
+        `reserved_field_name` (a new field's name isn't allowed),
+        `field_exists` (a new field's name or key is taken) or
+        `field_limit` (the new fields would pass the plan's field limit).
+        Nothing is made or queued.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -138,6 +139,28 @@ type Import struct {
 	UnlistedSkipped    int
 	// Mailchimp is the bundle's summary, for a Mailchimp import.
 	Mailchimp *MailchimpSummary
+	// FieldColumns are the contact fields the import fills and the column
+	// each comes from, in the fields' order (MG-131). A field deleted since
+	// is left out.
+	FieldColumns []ImportFieldColumn
+	// ExistingUpdated counts contacts already in the account whose contact
+	// field values the import changed.
+	ExistingUpdated int
+}
+
+// ImportFieldColumn is a contact field an import fills, and its column.
+type ImportFieldColumn struct {
+	ID, Key, Name string
+	Column        string
+	// Created says the import made the field.
+	Created bool
+}
+
+// storedFieldColumn is how an import keeps a contact field's column.
+type storedFieldColumn struct {
+	FieldID string `json:"field_id"`
+	Column  string `json:"column"`
+	Created bool   `json:"created,omitempty"`
 }
 
 // ContactStatus is the status the import gives the contacts it adds.
@@ -189,6 +212,15 @@ type ImportInput struct {
 	// SkipFields are fields not to import, even when a column's header
 	// looks like one (MG-124). Email can't be skipped.
 	SkipFields []string
+	// FieldColumns names the column each of the account's contact fields
+	// comes from (MG-131), keyed by the field's key or id; an empty column
+	// leaves that field out even when a header matches it. Fields left out
+	// of the map are found from a column whose header matches the field's
+	// name or key, compared loosely.
+	FieldColumns map[string]string
+	// NewFields are contact fields to make from columns when the import is
+	// created, and to fill from them.
+	NewFields []NewImportField
 	// Tags are tag names or ids, put on every contact the import adds.
 	Tags []string
 	// PermissionConfirmed says the account has the people's permission to
@@ -200,19 +232,43 @@ type ImportInput struct {
 	ListSourceDetail string
 }
 
+// NewImportField is a contact field an import makes from one of the file's
+// columns (MG-131).
+type NewImportField struct {
+	// Column names the column as the other columns are named.
+	Column string
+	// Name is the new field's name; empty means the column's header.
+	Name string
+}
+
 // choice is how the import picks its columns: the ones named, none for a
-// skipped field, and common headers for the rest.
-func (in ImportInput) choice() columnChoice {
+// skipped field, and common headers for the rest. af is the account's
+// contact fields, which FieldColumns names and headers can match.
+func (in ImportInput) choice(af AccountFields) columnChoice {
 	skip := map[string]bool{}
 	for _, f := range in.SkipFields {
 		skip[f] = true
 	}
-	return columnChoice{
+	c := columnChoice{
 		named: map[string]string{fieldEmail: in.EmailColumn, fieldFirstName: in.FirstNameColumn, fieldLastName: in.LastNameColumn,
 			fieldStatus: in.StatusColumn, fieldTags: in.TagsColumn},
-		skip:  skip,
-		guess: true,
+		skip:       skip,
+		guess:      true,
+		fields:     af.Fields,
+		fieldLimit: af.Limit,
+		fieldNamed: map[string]string{},
+		newFields:  in.NewFields,
 	}
+	for _, ref := range slices.Sorted(maps.Keys(in.FieldColumns)) {
+		r := strings.TrimSpace(ref)
+		i := slices.IndexFunc(af.Fields, func(f *Field) bool { return f.Key == r || f.ID == r })
+		if i < 0 {
+			c.unknownFields = append(c.unknownFields, ref)
+			continue
+		}
+		c.fieldNamed[af.Fields[i].ID] = strings.TrimSpace(in.FieldColumns[ref])
+	}
+	return c
 }
 
 // columnChoice is how to pick each field's column.
@@ -221,10 +277,28 @@ type columnChoice struct {
 	named map[string]string
 	// skip are fields not imported at all.
 	skip map[string]bool
-	// guess finds fields that aren't named or skipped from common headers.
-	// A queued import's columns were all picked when it was created, so the
-	// worker doesn't guess again.
+	// guess finds fields that aren't named or skipped from common headers,
+	// and contact fields from headers matching their names or keys. A queued
+	// import's columns were all picked when it was created, so the worker
+	// doesn't guess again.
 	guess bool
+	// fields are the account's contact fields, and fieldLimit the most it
+	// may have (MG-131).
+	fields     []*Field
+	fieldLimit int
+	// fieldNamed maps a contact field's id to the column it comes from; ""
+	// leaves the field out. A field missing from it is guessed.
+	fieldNamed map[string]string
+	// unknownFields are contact fields named that the account doesn't have.
+	unknownFields []string
+	// newFields are contact fields to make from columns.
+	newFields []NewImportField
+}
+
+// newFieldCol is a contact field an import will make, and its column.
+type newFieldCol struct {
+	name, key string
+	col       int
 }
 
 func invalidImport(code, field, msg string) error {
@@ -260,6 +334,10 @@ type csvLayout struct {
 	first     []string
 	// col is each field's column index.
 	col map[string]int
+	// fieldCol is the column index of each contact field the import fills,
+	// by the field's id, and newCols the fields it will make (MG-131).
+	fieldCol map[string]int
+	newCols  []newFieldCol
 }
 
 // column is how field's column is stored on the import, nil when the file
@@ -378,7 +456,7 @@ func readHeader(data []byte, hasHeader bool) (*csvLayout, error) {
 	if !utf8.Valid(data) {
 		return nil, invalidImport("invalid_encoding", "csv", "The file isn't UTF-8 text. Save it from your spreadsheet as \"CSV UTF-8\" and try again.")
 	}
-	l := &csvLayout{comma: sniffComma(bytes.TrimPrefix(data, utf8BOM)), hasHeader: hasHeader, col: map[string]int{}}
+	l := &csvLayout{comma: sniffComma(bytes.TrimPrefix(data, utf8BOM)), hasHeader: hasHeader, col: map[string]int{}, fieldCol: map[string]int{}}
 	first, err := newCSVReader(data, l.comma).Read()
 	if err != nil {
 		return nil, invalidImport("invalid_csv", "csv", "The "+l.firstRowName()+" can't be read as CSV: "+err.Error())
@@ -446,6 +524,7 @@ func (l *csvLayout) choose(c columnChoice) error {
 		}
 		used[i], l.col[field] = true, i
 	}
+	l.chooseFields(c, used, fail)
 	for _, field := range importFields {
 		if !c.guess || c.named[field] != "" || c.skip[field] {
 			continue
@@ -457,6 +536,19 @@ func (l *csvLayout) choose(c columnChoice) error {
 					used[i], l.col[field] = true, i
 					break find
 				}
+			}
+		}
+	}
+	// A contact field is found under its name or its key, after the
+	// built-in fields, so a header such as "First" stays a first name.
+	for _, f := range c.fields {
+		if _, named := c.fieldNamed[f.ID]; !c.guess || named {
+			continue
+		}
+		for i, h := range l.header {
+			if hk := headerKey(h); hk != "" && !used[i] && (hk == headerKey(f.Name) || hk == headerKey(f.Key)) {
+				used[i], l.fieldCol[f.ID] = true, i
+				break
 			}
 		}
 	}
@@ -480,6 +572,103 @@ func (l *csvLayout) choose(c columnChoice) error {
 	return first
 }
 
+// chooseFields picks the columns of the contact fields named in c and of
+// the new fields to make, checking each new field's name against the
+// account's fields and its plan's limit (MG-131).
+func (l *csvLayout) chooseFields(c columnChoice, used map[int]bool, fail func(error)) {
+	clear(l.fieldCol)
+	l.newCols = nil
+	for _, ref := range c.unknownFields {
+		fail(invalidImport("unknown_field", "field_columns",
+			fmt.Sprintf("This account has no contact field with the key or id %q.", strings.TrimSpace(ref))))
+	}
+	keyOf := func(id string) string {
+		if i := slices.IndexFunc(c.fields, func(f *Field) bool { return f.ID == id }); i >= 0 {
+			return c.fields[i].Key
+		}
+		return id
+	}
+	for _, id := range slices.Sorted(maps.Keys(c.fieldNamed)) {
+		name := c.fieldNamed[id]
+		if name == "" {
+			continue
+		}
+		i := findColumn(l.header, name)
+		if i < 0 {
+			fail(invalidImport("invalid_mapping", "field_columns."+keyOf(id),
+				fmt.Sprintf("No column is headed %q. The headers are: %s.", name, l.headerList())))
+			continue
+		}
+		if used[i] {
+			fail(invalidImport("invalid_mapping", "columns", "Each field needs its own column."))
+			continue
+		}
+		used[i], l.fieldCol[id] = true, i
+	}
+
+	// "name:" and a lower-case name, or "key:" and a key, to the field that
+	// has it; new fields are added as they're checked.
+	type taken struct {
+		name  string
+		isNew bool
+	}
+	names := map[string]taken{}
+	for _, f := range c.fields {
+		names["name:"+strings.ToLower(f.Name)], names["key:"+f.Key] = taken{f.Name, false}, taken{f.Name, false}
+	}
+	exists := func(t taken, msg string) {
+		if t.isNew {
+			msg = fmt.Sprintf("Two new fields would both be named %q, or have the same key. Give one another name.", t.name)
+		}
+		fail(invalidImport("field_exists", "new_fields", msg))
+	}
+	for _, nf := range c.newFields {
+		i := findColumn(l.header, nf.Column)
+		if strings.TrimSpace(nf.Column) == "" || i < 0 {
+			fail(invalidImport("invalid_mapping", "new_fields",
+				fmt.Sprintf("No column is headed %q. The headers are: %s.", nf.Column, l.headerList())))
+			continue
+		}
+		if used[i] {
+			fail(invalidImport("invalid_mapping", "columns", "Each field needs its own column."))
+			continue
+		}
+		raw := nf.Name
+		if strings.TrimSpace(raw) == "" {
+			raw = l.header[i]
+		}
+		if strings.TrimSpace(raw) == "" {
+			fail(invalidImport("invalid_field_name", "new_fields",
+				fmt.Sprintf("Column %d has no header, so its new field needs a name.", i+1)))
+			continue
+		}
+		name, key, err := normalizeFieldName(raw)
+		if err != nil {
+			var ve *auth.ValidationError
+			if errors.As(err, &ve) {
+				err = invalidImport(ve.Code, "new_fields", ve.Message)
+			}
+			fail(err)
+			continue
+		}
+		if t, ok := names["name:"+strings.ToLower(name)]; ok {
+			exists(t, fmt.Sprintf("There's already a contact field named %q. Match the column to it instead of making a new one.", t.name))
+			continue
+		}
+		if t, ok := names["key:"+key]; ok {
+			exists(t, fmt.Sprintf("A new field named %q would have the key %s, which the field %q already has. "+
+				"Pick another name, or match the column to that field.", name, key, t.name))
+			continue
+		}
+		names["name:"+strings.ToLower(name)], names["key:"+key] = taken{name, true}, taken{name, true}
+		used[i] = true
+		l.newCols = append(l.newCols, newFieldCol{name: name, key: key, col: i})
+	}
+	if len(c.newFields) > 0 && len(c.fields)+len(c.newFields) > c.fieldLimit {
+		fail(importFieldLimit(c.fieldLimit, len(c.fields), len(c.newFields)))
+	}
+}
+
 // csvRow is one contact row of a file.
 type csvRow struct {
 	// index counts contact rows from 0, the way processed_rows does.
@@ -487,7 +676,10 @@ type csvRow struct {
 	// line is where the row starts in the file; the header is line 1.
 	line                             int
 	email, first, last, status, tags string
-	unreadable                       bool
+	// fields are the row's contact field values by field id, as written;
+	// a blank cell is left out.
+	fields     map[string]string
+	unreadable bool
 }
 
 func cell(rec []string, i int) string {
@@ -541,6 +733,14 @@ func (l *csvLayout) eachRow(data []byte, fn func(csvRow) error) error {
 			get := func(field string) string { return unescapeCell(cell(rec, l.col[field])) }
 			row = csvRow{line: line, email: get(fieldEmail), first: get(fieldFirstName), last: get(fieldLastName),
 				status: get(fieldStatus), tags: cell(rec, l.col[fieldTags])}
+			for id, i := range l.fieldCol {
+				if v := importFieldValue(cell(rec, i)); v != "" {
+					if row.fields == nil {
+						row.fields = map[string]string{}
+					}
+					row.fields[id] = v
+				}
+			}
 		}
 		row.index = i
 		i++
@@ -572,6 +772,18 @@ func importName(v string) *string {
 		v = strings.TrimSpace(string(r[:MaxNameLen]))
 	}
 	return &v
+}
+
+// importFieldValue is a contact field cell as a value (MG-131): an
+// export's formula guard taken off, line breaks become spaces and it's cut
+// to MaxFieldValueLen characters, so a long value never costs a contact.
+// "" is no value.
+func importFieldValue(v string) string {
+	v = strings.Join(strings.Fields(unescapeCell(strings.TrimSpace(v))), " ")
+	if r := []rune(v); len(r) > MaxFieldValueLen {
+		v = strings.TrimSpace(string(r[:MaxFieldValueLen]))
+	}
+	return v
 }
 
 // formulaStart are the characters a spreadsheet reads as the start of a
@@ -629,18 +841,23 @@ const importColumns = `i.id, i.account_id, i.file_name, i.status, i.permission_c
 	ARRAY(SELECT t.id::text FROM tags t WHERE t.id = ANY(i.tag_ids) ORDER BY lower(t.name), t.id),
 	ARRAY(SELECT t.name FROM tags t WHERE t.id = ANY(i.tag_ids) ORDER BY lower(t.name), t.id),
 	ARRAY(SELECT s.reason || ':' || count(*) FROM import_skips s WHERE s.import_id = i.id GROUP BY s.reason),
-	i.kind, i.existing_tagged, i.existing_suppressed, i.unlisted_skipped, i.mailchimp, i.has_header`
+	i.kind, i.existing_tagged, i.existing_suppressed, i.unlisted_skipped, i.mailchimp, i.has_header,
+	coalesce((SELECT jsonb_agg(jsonb_build_object('id', f.id, 'key', f.key, 'name', f.name, 'column', fc->>'column',
+			'created', coalesce((fc->>'created')::boolean, false)) ORDER BY f.created_at, f.id)
+		FROM jsonb_array_elements(i.field_columns) AS fc JOIN contact_fields f ON f.id = (fc->>'field_id')::uuid), '[]'),
+	i.existing_updated`
 
 func scanImport(row pgx.Row) (*Import, error) {
 	var im Import
 	var tagIDs, tagNames, byReason []string
-	var summary []byte
+	var summary, fieldCols []byte
 	err := row.Scan(&im.ID, &im.AccountID, &im.FileName, &im.Status, &im.PermissionConfirmed, &im.EmailColumn, &im.FirstNameColumn, &im.LastNameColumn,
 		&im.StatusColumn, &im.TagsColumn, &im.TotalRows, &im.ProcessedRows, &im.Imported, &im.Skipped, &im.Review, &im.HoldReason, &im.Error, &im.CreatedAt, &im.StartedAt, &im.FinishedAt,
 		&im.ListSource, &im.ListSourceDetail, &im.Checks.InvalidRows, &im.Checks.RoleAddresses, &im.Checks.DisposableAddresses,
 		&im.Checks.SharedAddresses, &im.Checks.SharedAccountID,
 		&tagIDs, &tagNames, &byReason,
-		&im.Kind, &im.ExistingTagged, &im.ExistingSuppressed, &im.UnlistedSkipped, &summary, &im.HasHeader)
+		&im.Kind, &im.ExistingTagged, &im.ExistingSuppressed, &im.UnlistedSkipped, &summary, &im.HasHeader,
+		&fieldCols, &im.ExistingUpdated)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrImportNotFound
 	}
@@ -660,6 +877,20 @@ func scanImport(row pgx.Row) (*Import, error) {
 		im.SkippedByReason[reason], _ = strconv.Atoi(n)
 	}
 	im.SkippedByReason[SkipInvalidRow] += im.UnlistedSkipped
+	var fcs []struct {
+		ID      string `json:"id"`
+		Key     string `json:"key"`
+		Name    string `json:"name"`
+		Column  string `json:"column"`
+		Created bool   `json:"created"`
+	}
+	if err := json.Unmarshal(fieldCols, &fcs); err != nil {
+		return nil, fmt.Errorf("read import field columns: %w", err)
+	}
+	im.FieldColumns = make([]ImportFieldColumn, len(fcs))
+	for i, fc := range fcs {
+		im.FieldColumns[i] = ImportFieldColumn(fc)
+	}
 	if summary != nil {
 		im.Mailchimp = &MailchimpSummary{}
 		if err := json.Unmarshal(summary, im.Mailchimp); err != nil {
@@ -709,7 +940,11 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 	if len(in.CSV) > MaxImportBytes {
 		return nil, invalidImport("file_too_large", "csv", fmt.Sprintf("The file is over %d MB. Split it into smaller files.", MaxImportBytes>>20))
 	}
-	l, err := readLayout(in.CSV, !in.NoHeader, in.choice())
+	af, err := s.accountFields(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	l, err := readLayout(in.CSV, !in.NoHeader, in.choice(af))
 	if err != nil {
 		return nil, err
 	}
@@ -735,11 +970,24 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	// Lock the account so two first imports can't both count as first.
+	// The lock also keeps the new fields below, and fields made meanwhile,
+	// from both slipping under the plan's limit (see CreateField).
 	var first bool
+	var plan string
 	if err := tx.QueryRow(ctx, `
-		SELECT NOT EXISTS (SELECT 1 FROM imports WHERE account_id = a.id AND status NOT IN ('failed', 'cancelled'))
-		FROM accounts a WHERE a.id = $1 FOR UPDATE`, accountID).Scan(&first); err != nil {
+		SELECT NOT EXISTS (SELECT 1 FROM imports WHERE account_id = a.id AND status NOT IN ('failed', 'cancelled')), a.plan
+		FROM accounts a WHERE a.id = $1 FOR UPDATE`, accountID).Scan(&first, &plan); err != nil {
 		return nil, fmt.Errorf("lock account: %w", err)
+	}
+	// New fields are made now, before any row is imported, all or none
+	// (MG-131).
+	made, err := s.createImportFields(ctx, tx, accountID, plan, l.newCols)
+	if err != nil {
+		return nil, err
+	}
+	fieldCols, err := l.storedFieldColumns(made)
+	if err != nil {
+		return nil, err
 	}
 	if scan.counts.SharedAddresses, scan.counts.SharedAccountID, err = sharedWith(ctx, tx, accountID, scan.hashes); err != nil {
 		return nil, err
@@ -756,13 +1004,13 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 		INSERT INTO imports (account_id, file_name, permission_confirmed, email_column, first_name_column, last_name_column,
 			status_column, tags_column, tag_ids, csv, total_rows, review, hold_reason, created_at,
 			list_source, list_source_detail, invalid_rows, role_addresses, disposable_addresses, shared_addresses, shared_account_id,
-			has_header)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22) RETURNING id`,
+			has_header, field_columns)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23) RETURNING id`,
 		accountID, fileName, in.PermissionConfirmed, *l.column(fieldEmail), l.column(fieldFirstName), l.column(fieldLastName),
 		l.column(fieldStatus), l.column(fieldTags),
 		tagIDs, in.CSV, total, review, holdReason, s.now(),
 		in.ListSource, detail, c.InvalidRows, c.RoleAddresses, c.DisposableAddresses, c.SharedAddresses, c.SharedAccountID,
-		!in.NoHeader).Scan(&id); err != nil {
+		!in.NoHeader, fieldCols).Scan(&id); err != nil {
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `
@@ -775,6 +1023,19 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 		return nil, err
 	}
 	return im, tx.Commit(ctx)
+}
+
+// storedFieldColumns is how the import keeps its contact fields' columns,
+// as JSON: the fields it matched, then made, the new ones by their ids.
+func (l *csvLayout) storedFieldColumns(made []*Field) ([]byte, error) {
+	out := []storedFieldColumn{}
+	for _, id := range slices.Sorted(maps.Keys(l.fieldCol)) {
+		out = append(out, storedFieldColumn{FieldID: id, Column: l.name(l.fieldCol[id])})
+	}
+	for i, f := range made {
+		out = append(out, storedFieldColumn{FieldID: f.ID, Column: l.name(l.newCols[i].col), Created: true})
+	}
+	return json.Marshal(out)
 }
 
 // checkRows reads every contact row the way CreateImport checks a file,
@@ -919,6 +1180,9 @@ type importJob struct {
 	createdAt time.Time
 	kind      string
 	hasHeader bool
+	// fieldCols are the contact fields the import fills and their columns
+	// (MG-131).
+	fieldCols []storedFieldColumn
 }
 
 // RunNextImport claims the oldest waiting import, or one whose worker
@@ -936,6 +1200,7 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 	var permission bool
 	var emailCol string
 	var firstCol, lastCol, statusCol, tagsCol *string
+	var fieldCols []byte
 	err := s.DB.QueryRow(ctx, `
 		UPDATE imports SET status = 'running', lease_token = gen_random_uuid(), lease_until = $2,
 			attempts = attempts + 1, started_at = coalesce(started_at, $1)
@@ -951,9 +1216,10 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 			tag_ids::text[],
 			permission_confirmed, processed_rows, review, created_at, kind, has_header,
 			CASE WHEN list_source IS NULL THEN NULL ELSE
-				jsonb_build_object('list_source', list_source, 'list_source_detail', list_source_detail, 'file_name', file_name) END`,
+				jsonb_build_object('list_source', list_source, 'list_source_detail', list_source_detail, 'file_name', file_name) END,
+			field_columns`,
 		now, now.Add(ImportLease)).Scan(&j.id, &j.accountID, &j.token, &j.data, &emailCol, &firstCol, &lastCol, &statusCol, &tagsCol, &j.tagIDs,
-		&permission, &j.processed, &j.review, &j.createdAt, &j.kind, &j.hasHeader, &j.consent)
+		&permission, &j.processed, &j.review, &j.createdAt, &j.kind, &j.hasHeader, &j.consent, &fieldCols)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -962,6 +1228,9 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 	}
 	j.named = map[string]string{fieldEmail: emailCol, fieldFirstName: deref(firstCol), fieldLastName: deref(lastCol),
 		fieldStatus: deref(statusCol), fieldTags: deref(tagsCol)}
+	if err := json.Unmarshal(fieldCols, &j.fieldCols); err != nil {
+		return true, fmt.Errorf("import %s: read field columns: %w", j.id, err)
+	}
 	j.status = StatusUnconfirmed
 	if permission {
 		j.status = StatusSubscribed
@@ -977,7 +1246,11 @@ func (s *Service) RunNextImport(ctx context.Context) (bool, error) {
 }
 
 func (s *Service) runImport(ctx context.Context, j *importJob) error {
-	l, err := readLayout(j.data, j.hasHeader, columnChoice{named: j.named})
+	fieldNamed := map[string]string{}
+	for _, fc := range j.fieldCols {
+		fieldNamed[fc.FieldID] = fc.Column
+	}
+	l, err := readLayout(j.data, j.hasHeader, columnChoice{named: j.named, fieldNamed: fieldNamed})
 	if err != nil {
 		return err
 	}
@@ -1095,6 +1368,8 @@ type candidate struct {
 	first, last *string
 	status      string
 	tags        []string
+	// fields are the row's contact field values by field id.
+	fields map[string]string
 }
 
 // importBatch adds one batch of rows in one transaction and records how far
@@ -1122,7 +1397,7 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 		seen[e] = struct{}{}
 		tags, _ := rowTags(r.tags) // checked when the import was created
 		cands = append(cands, candidate{line: r.line, raw: r.email, email: e, first: importName(r.first), last: importName(r.last),
-			status: rowStatus(r.status, j.status), tags: tags})
+			status: rowStatus(r.status, j.status), tags: tags, fields: r.fields})
 	}
 
 	tx, err := s.DB.Begin(ctx)
@@ -1148,11 +1423,24 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 	if err != nil {
 		return err
 	}
+	// The import's contact fields that still exist, locked until the batch
+	// commits so none is deleted between here and the write; a field
+	// deleted since the import was created is skipped (MG-131).
+	fieldKeys, err := liveFieldKeys(ctx, tx, j.accountID, j.fieldCols)
+	if err != nil {
+		return err
+	}
 	var add []candidate
+	var updEmails, updFields []string
 	for i, c := range cands {
 		switch {
 		case existing[c.email]:
 			skip(c.line, c.raw, SkipExists)
+			// An existing contact isn't added again, but its contact
+			// fields take the row's non-blank values.
+			if v := fieldValuesJSON(c.fields, fieldKeys); v != "{}" {
+				updEmails, updFields = append(updEmails, c.email), append(updFields, v)
+			}
 		case suppressed[hashes[i]]:
 			skip(c.line, c.raw, SkipSuppressed)
 		case limit.capped() && Counted(c.status) && count >= limit.limit:
@@ -1179,23 +1467,25 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 	firsts := make([]*string, len(add))
 	lasts := make([]*string, len(add))
 	statuses := make([]string, len(add))
+	addFields := make([]string, len(add))
 	for i, c := range add {
 		addEmails[i], firsts[i], lasts[i], statuses[i] = c.email, c.first, c.last, c.status
+		addFields[i] = fieldValuesJSON(c.fields, fieldKeys)
 	}
 	// A microsecond apart, so contacts keep the file's order in lists and
 	// exports.
 	now := s.now()
 	rows2, err := tx.Query(ctx, `
 		INSERT INTO contacts (account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at,
-			held_import_id, import_id)
-		SELECT $1, x.email, x.first_name, x.last_name, x.status, 'import', x.at, x.at, x.at, $7, $8
+			held_import_id, import_id, fields)
+		SELECT $1, x.email, x.first_name, x.last_name, x.status, 'import', x.at, x.at, x.at, $7, $8, x.fields::jsonb
 		FROM (
 			SELECT *, $6::timestamptz + (n - 1) * interval '1 microsecond' AS at
-			FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) WITH ORDINALITY AS u(email, first_name, last_name, status, n)
+			FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $9::text[]) WITH ORDINALITY AS u(email, first_name, last_name, status, fields, n)
 		) AS x
 		ORDER BY x.n
 		ON CONFLICT (account_id, email) DO NOTHING
-		RETURNING id::text, email`, j.accountID, addEmails, firsts, lasts, statuses, now, held, j.id)
+		RETURNING id::text, email`, j.accountID, addEmails, firsts, lasts, statuses, now, held, j.id, addFields)
 	if err != nil {
 		return err
 	}
@@ -1233,6 +1523,18 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 	if err := s.tagFromCells(ctx, tx, j.accountID, add, added, now); err != nil {
 		return err
 	}
+	updated := 0
+	if len(updEmails) > 0 {
+		// Only contacts whose values change are touched and counted.
+		res, err := tx.Exec(ctx, `
+			UPDATE contacts c SET fields = c.fields || x.f::jsonb, updated_at = $4
+			FROM unnest($2::text[], $3::text[]) AS x(email, f)
+			WHERE c.account_id = $1 AND c.email = x.email AND NOT c.fields @> x.f::jsonb`, j.accountID, updEmails, updFields, now)
+		if err != nil {
+			return err
+		}
+		updated = int(res.RowsAffected())
+	}
 	if len(ids) > 0 && j.consent != nil {
 		// Each added contact's consent record is the list source the
 		// import gave (MG-63).
@@ -1259,8 +1561,9 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 	}
 	processed := rows[len(rows)-1].index + 1
 	if err := s.leased(ctx, tx, j, `
-		UPDATE imports SET processed_rows = $3, imported = imported + $4, skipped = skipped + $5, lease_until = $6`,
-		processed, len(ids), len(skips), now.Add(ImportLease)); err != nil {
+		UPDATE imports SET processed_rows = $3, imported = imported + $4, skipped = skipped + $5, lease_until = $6,
+			existing_updated = existing_updated + $7`,
+		processed, len(ids), len(skips), now.Add(ImportLease), updated); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -1271,6 +1574,45 @@ func (s *Service) importBatch(ctx context.Context, j *importJob, rows []csvRow, 
 		return afterImportBatch(processed)
 	}
 	return nil
+}
+
+// liveFieldKeys returns the key of each of an import's contact fields that
+// still exists, by field id, and locks those fields until tx ends.
+func liveFieldKeys(ctx context.Context, tx pgx.Tx, accountID string, cols []storedFieldColumn) (map[string]string, error) {
+	out := map[string]string{}
+	if len(cols) == 0 {
+		return out, nil
+	}
+	ids := make([]string, len(cols))
+	for i, fc := range cols {
+		ids[i] = fc.FieldID
+	}
+	rows, err := tx.Query(ctx, `SELECT id::text, key FROM contact_fields WHERE account_id = $1 AND id = ANY($2::uuid[]) FOR SHARE`, accountID, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, key string
+		if err := rows.Scan(&id, &key); err != nil {
+			return nil, err
+		}
+		out[id] = key
+	}
+	return out, rows.Err()
+}
+
+// fieldValuesJSON is a row's contact field values as a JSON object by field
+// key, leaving out fields that no longer exist.
+func fieldValuesJSON(values map[string]string, keys map[string]string) string {
+	out := map[string]string{}
+	for id, v := range values {
+		if k := keys[id]; k != "" {
+			out[k] = v
+		}
+	}
+	b, _ := json.Marshal(out) // a map of strings always marshals
+	return string(b)
 }
 
 // tagFromCells puts each added contact's tags-column tags on it, creating the
