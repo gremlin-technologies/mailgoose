@@ -15,16 +15,17 @@ import (
 
 // contact is the API's Contact.
 type contact struct {
-	ID              string    `json:"id"`
-	Email           string    `json:"email"`
-	Tags            []tagRef  `json:"tags"`
-	FirstName       *string   `json:"first_name"`
-	LastName        *string   `json:"last_name"`
-	Status          string    `json:"status"`
-	Source          string    `json:"source"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
-	StatusChangedAt time.Time `json:"status_changed_at"`
+	ID              string            `json:"id"`
+	Email           string            `json:"email"`
+	Tags            []tagRef          `json:"tags"`
+	Fields          map[string]string `json:"fields"`
+	FirstName       *string           `json:"first_name"`
+	LastName        *string           `json:"last_name"`
+	Status          string            `json:"status"`
+	Source          string            `json:"source"`
+	CreatedAt       time.Time         `json:"created_at"`
+	UpdatedAt       time.Time         `json:"updated_at"`
+	StatusChangedAt time.Time         `json:"status_changed_at"`
 }
 
 type tagRef struct {
@@ -95,6 +96,9 @@ func (a *App) printContact(c contact) {
 	fmt.Fprintf(tw, "ID\t%s\nEmail\t%s\nName\t%s\nStatus\t%s (since %s)\nTags\t%s\nSource\t%s\nAdded\t%s\n",
 		c.ID, c.Email, name, c.Status, c.StatusChangedAt.Local().Format("2006-01-02 15:04"), tags, c.Source,
 		c.CreatedAt.Local().Format("2006-01-02 15:04"))
+	for _, k := range sortedFieldKeys(c.Fields) {
+		fmt.Fprintf(tw, "%s\t%s\n", k, c.Fields[k])
+	}
 	_ = tw.Flush()
 }
 
@@ -116,14 +120,23 @@ hash of its address, so adding it again keeps its status.`,
 	}
 
 	var first, last, status string
+	var addFields []string
 	add := calls("createContact", &cobra.Command{
 		Use:   "add <email>",
 		Short: "Add a contact",
 		Example: `  mailgoose contacts add pat@example.com --first-name Pat --last-name Lee
-  mailgoose contacts add sam@example.com --status unconfirmed`,
+  mailgoose contacts add sam@example.com --status unconfirmed
+  mailgoose contacts add lee@example.com --field company_size=50 --field plan=Pro`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body := map[string]any{"email": args[0]}
+			fields, err := fieldValues(addFields, false)
+			if err != nil {
+				return err
+			}
+			if len(fields) > 0 {
+				body["fields"] = fields
+			}
 			if first != "" {
 				body["first_name"] = first
 			}
@@ -151,6 +164,7 @@ hash of its address, so adding it again keeps its status.`,
 	add.Flags().StringVar(&first, "first-name", "", "first name")
 	add.Flags().StringVar(&last, "last-name", "", "last name")
 	add.Flags().StringVar(&status, "status", "", "subscribed (default), unconfirmed or unsubscribed")
+	add.Flags().StringArrayVar(&addFields, "field", nil, "a contact field's value as key=value; repeat for more (see mailgoose fields list)")
 
 	var filters contactFilterFlags
 	var cursor string
@@ -236,13 +250,17 @@ and opened or clicked none, so a contact who got nothing isn't one.
 	})
 
 	var uEmail, uFirst, uLast, uStatus string
+	var uFields []string
 	update := callsAll([]string{"updateContact", "listContacts"}, &cobra.Command{
 		Use:   "update <email-or-id>",
-		Short: "Change a contact's address, name or status",
+		Short: "Change a contact's address, name, status or field values",
 		Long: `Changes only the flags given. An empty --first-name or --last-name removes it.
---status takes subscribed, unconfirmed or unsubscribed.`,
+--status takes subscribed, unconfirmed or unsubscribed. --field key=value sets
+a contact field's value, --field key= clears it, and fields not named keep
+their values.`,
 		Example: `  mailgoose contacts update pat@example.com --last-name Lee
-  mailgoose contacts update pat@example.com --status unsubscribed`,
+  mailgoose contacts update pat@example.com --status unsubscribed
+  mailgoose contacts update pat@example.com --field company_size=75 --field plan=`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body := map[string]any{}
@@ -262,8 +280,15 @@ and opened or clicked none, so a contact who got nothing isn't one.
 			if cmd.Flags().Changed("status") {
 				body["status"] = uStatus
 			}
+			fields, err := fieldValues(uFields, true)
+			if err != nil {
+				return err
+			}
+			if len(fields) > 0 {
+				body["fields"] = fields
+			}
 			if len(body) == 0 {
-				return usageError("Nothing to change.", "Pass at least one of --email, --first-name, --last-name or --status.")
+				return usageError("Nothing to change.", "Pass at least one of --email, --first-name, --last-name, --status or --field.")
 			}
 			id, err := a.contactID(cmd.Context(), args[0])
 			if err != nil {
@@ -286,6 +311,7 @@ and opened or clicked none, so a contact who got nothing isn't one.
 	update.Flags().StringVar(&uFirst, "first-name", "", "first name; empty removes it")
 	update.Flags().StringVar(&uLast, "last-name", "", "last name; empty removes it")
 	update.Flags().StringVar(&uStatus, "status", "", "subscribed, unconfirmed or unsubscribed")
+	update.Flags().StringArrayVar(&uFields, "field", nil, "set a contact field as key=value, or clear it with key=; repeat for more")
 
 	var yes, erase bool
 	del := callsAll([]string{"deleteContact", "listContacts"}, &cobra.Command{

@@ -69,10 +69,19 @@ func contactJSON(c *contacts.Contact) apigen.Contact {
 		Status:          apigen.ContactStatus(c.Status),
 		Source:          apigen.ContactSource(c.Source),
 		Tags:            tagRefsJSON(c.Tags),
+		Fields:          fieldValuesJSON(c.Fields),
 		CreatedAt:       c.CreatedAt.UTC(),
 		UpdatedAt:       c.UpdatedAt.UTC(),
 		StatusChangedAt: c.StatusChangedAt.UTC(),
 	}
+}
+
+// fieldValuesJSON is a contact's field values, never null.
+func fieldValuesJSON(v map[string]string) map[string]string {
+	if v == nil {
+		return map[string]string{}
+	}
+	return v
 }
 
 // contactCursor joins a contact's keyset values into a cursor value.
@@ -144,6 +153,9 @@ func (s *Server) CreateContact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in := contacts.CreateInput{Email: req.Email, FirstName: req.FirstName, LastName: req.LastName}
+	if req.Fields != nil {
+		in.Fields = *req.Fields
+	}
 	if req.Status != nil {
 		in.Status = string(*req.Status)
 	}
@@ -190,6 +202,8 @@ type updateContactBody struct {
 	FirstName nullable `json:"first_name"`
 	LastName  nullable `json:"last_name"`
 	Status    nullable `json:"status"`
+	// Fields are field values by key; a null or empty value clears one.
+	Fields map[string]*string `json:"fields"`
 }
 
 // UpdateContact is PATCH /v1/contacts/{contact_id}.
@@ -203,10 +217,11 @@ func (s *Server) UpdateContact(w http.ResponseWriter, r *http.Request, id string
 		WriteError(w, err)
 		return
 	}
-	u := contacts.UpdateInput{Email: req.Email.field(), FirstName: req.FirstName.field(), LastName: req.LastName.field(), Status: req.Status.field()}
-	if !u.Email.Set && !u.FirstName.Set && !u.LastName.Set && !u.Status.Set {
+	u := contacts.UpdateInput{Email: req.Email.field(), FirstName: req.FirstName.field(), LastName: req.LastName.field(), Status: req.Status.field(),
+		Fields: req.Fields}
+	if !u.Email.Set && !u.FirstName.Set && !u.LastName.Set && !u.Status.Set && len(u.Fields) == 0 {
 		WriteError(w, BadRequest("empty_update", "The request changes nothing.").
-			WithHint("Send at least one of email, first_name, last_name or status."))
+			WithHint("Send at least one of email, first_name, last_name, status or fields."))
 		return
 	}
 	ct, err := s.Contacts.Update(r.Context(), c.AccountID, id, u)

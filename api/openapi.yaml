@@ -1808,10 +1808,14 @@ paths:
         The account's contacts as a CSV file, oldest first, with the same
         filters as listing them; with none, every contact. Columns: `email`,
         `first_name`, `last_name`, `status`, `tags` (names separated by
-        commas), `source`, `created_at`, `status_changed_at` and
+        commas), `source`, `created_at`, `status_changed_at`,
         `permission_confirmed` (true or false for contacts an import added,
         whether the account confirmed it had their permission; empty for
-        others). Importing the file back gives the same contacts and tags. A
+        others), then `signup_form_id`, `signup_at`, `signup_ip` and
+        `signup_confirmed_at` (the contact's latest signup through a form;
+        empty for none), then one column for each contact field
+        (`listContactFields`), in that order, headed by the field's name.
+        Importing the file back gives the same contacts and tags. A
         cell that starts with `=`, `+`, `-` or `@` gets a `'` in front so a
         spreadsheet doesn't run it as a formula; imports take it off again.
       tags: [contacts]
@@ -1845,7 +1849,7 @@ paths:
             text/csv:
               schema:
                 type: string
-                examples: ["email,first_name,last_name,status,tags,source,created_at,status_changed_at,permission_confirmed\npat@example.com,Pat,,subscribed,vip,api,2026-11-18T12:00:00Z,2026-11-18T12:00:00Z,\n"]
+                examples: ["email,first_name,last_name,status,tags,source,created_at,status_changed_at,permission_confirmed,signup_form_id,signup_at,signup_ip,signup_confirmed_at,Company size\npat@example.com,Pat,,subscribed,vip,api,2026-11-18T12:00:00Z,2026-11-18T12:00:00Z,,,,,,50\n"]
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1892,7 +1896,8 @@ paths:
       operationId: updateContact
       summary: Change a contact
       description: |
-        Changes only the fields sent; `null` removes a first or last name. A
+        Changes only the fields sent; `null` removes a first or last name.
+        `fields` changes only the keys it names. A
         contact that unsubscribed, bounced or complained can't be subscribed
         again here (422 `contact_suppressed`): the person subscribes again
         through a signup form. Bounced and complained come only from Amazon
@@ -2246,6 +2251,169 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/contact-fields:
+    get:
+      operationId: listContactFields
+      summary: List contact fields
+      description: |
+        The account's own contact fields (MG-130), in the order they were
+        made, which is the order the contacts table and the contacts export
+        show them in. An account has at most `contact_field_limit` of them
+        (`getPlan`).
+      tags: [contact-fields]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: A page of fields.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactFieldList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    post:
+      operationId: createContactField
+      summary: Create a contact field
+      description: |
+        Adds a text field to every contact. Its `key`, which contacts'
+        `fields` use, is worked out from the name: lower case, each run of
+        anything but `a`-`z` and `0`-`9` becomes `_`, with no `_` at either
+        end, and `f_` in front when it doesn't start with a letter
+        ("Company size" is `company_size`, "2nd email" `f_2nd_email`). A name
+        whose key is one of a contact's own columns (`email`, `first_name`,
+        `last_name`, `status`, `tags`, `source`, `id`, `contact_id`,
+        `created_at`, `updated_at`, `status_changed_at`,
+        `permission_confirmed`, or an export column such as `signup_ip`) is
+        refused with 422 `reserved_field_name`. An account on any plan has at
+        most 20 fields; one more is a 409 `field_limit`.
+      tags: [contact-fields]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateContactFieldRequest"
+      responses:
+        "201":
+          description: The new field.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactField"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "409":
+          $ref: "#/components/responses/ContactFieldConflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+  /v1/contact-fields/{field_id}:
+    patch:
+      operationId: renameContactField
+      summary: Rename a contact field
+      description: |
+        Changes the field's name, its label and export header. Its `key` and
+        every contact's value stay. The new name follows the same rules as a
+        new field's.
+      tags: [contact-fields]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/FieldId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameContactFieldRequest"
+      responses:
+        "200":
+          description: The renamed field.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactField"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/ContactFieldConflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+    delete:
+      operationId: deleteContactField
+      summary: Delete a contact field
+      description: |
+        Deletes the field and every contact's value for it, which can't be
+        undone. The response counts the contacts that had a value.
+      tags: [contact-fields]
+      security:
+        - apiKey: []
+        - sessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/FieldId"
+      responses:
+        "200":
+          description: What deleting the field changed.
+          headers:
+            X-Request-Id:
+              $ref: "#/components/headers/X-Request-Id"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactFieldDeleted"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/CrossOrigin"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "503":
@@ -5612,7 +5780,7 @@ components:
       description: How the contact was added. `manual` is the web app.
     Contact:
       type: object
-      required: [id, email, first_name, last_name, status, source, tags, created_at, updated_at, status_changed_at]
+      required: [id, email, first_name, last_name, status, source, tags, fields, created_at, updated_at, status_changed_at]
       properties:
         id:
           type: string
@@ -5635,6 +5803,16 @@ components:
           description: The contact's tags, by name.
           items:
             $ref: "#/components/schemas/TagRef"
+        fields:
+          type: object
+          description: |
+            The contact's values for the account's contact fields
+            (`listContactFields`), by field `key`. A field with no value
+            isn't here.
+          additionalProperties:
+            type: string
+          examples:
+            - company_size: "50"
         created_at:
           type: string
           format: date-time
@@ -5688,6 +5866,8 @@ components:
           enum: [api, manual]
           default: api
           description: '`manual` is for contacts a person typed in; agents and scripts leave it out.'
+        fields:
+          $ref: "#/components/schemas/ContactFieldValues"
     UpdateContactRequest:
       type: object
       additionalProperties: false
@@ -5705,6 +5885,12 @@ components:
         status:
           type: string
           enum: [subscribed, unconfirmed, unsubscribed]
+        fields:
+          allOf:
+            - $ref: "#/components/schemas/ContactFieldValues"
+          description: |
+            Field values to change, by key. An empty string or `null` clears
+            a value, and keys left out keep theirs.
     ContactData:
       type: object
       required: [contact, tags, import, skipped_rows, consents]
@@ -5874,6 +6060,82 @@ components:
         campaigns_updated:
           type: integer
           description: How many draft or scheduled campaigns had the tag among their recipients.
+    ContactField:
+      type: object
+      required: [id, key, name, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+          pattern: "^[a-z][a-z0-9_]*$"
+          description: What a contact's `fields` calls it. Worked out from the name when the field is made; a rename keeps it.
+          examples: [company_size]
+        name:
+          type: string
+          description: The field's label, and its column's header in a contacts export.
+          examples: [Company size]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ContactFieldList:
+      type: object
+      required: [data, next_cursor]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactField"
+        next_cursor:
+          type: [string, "null"]
+    CreateContactFieldRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: |
+            One line, unique in the account ignoring case, with at least one
+            letter or digit; no two fields may work out to the same key.
+          examples: [Company size]
+    RenameContactFieldRequest:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 50
+          examples: [Team size]
+    ContactFieldDeleted:
+      type: object
+      required: [values_deleted]
+      properties:
+        values_deleted:
+          type: integer
+          minimum: 0
+          description: How many contacts had a value for the field.
+    ContactFieldValues:
+      type: object
+      description: |
+        Values for the account's contact fields, by field `key`. Values are
+        text, one line, at most 500 characters; an empty string or `null`
+        is no value. A key that isn't one of the account's fields is a 422
+        `unknown_field`.
+      additionalProperties:
+        type: [string, "null"]
+        maxLength: 500
+      examples:
+        - company_size: "50"
+          plan_interest: Pro
     ContactFilter:
       type: object
       additionalProperties: false
@@ -7656,7 +7918,7 @@ components:
     Plan:
       type: object
       required: [plan, status, interval, units, current_period_end, cancel_at_period_end, contacts, units_needed, prices,
-        included_contacts, contacts_per_unit, free_plan, paid_sending, credit_packs]
+        included_contacts, contacts_per_unit, free_plan, paid_sending, credit_packs, contact_field_limit]
       properties:
         plan:
           type: string
@@ -7756,6 +8018,12 @@ components:
             months:
               type: integer
               description: How many months bought credits last.
+        contact_field_limit:
+          type: integer
+          minimum: 0
+          description: |
+            The most contact fields (`listContactFields`) this account's plan
+            allows: 20 on every plan today.
     CreditCheckoutRequest:
       type: object
       additionalProperties: false
@@ -10372,6 +10640,14 @@ components:
       schema:
         type: string
         format: uuid
+    FieldId:
+      name: field_id
+      in: path
+      required: true
+      description: The contact field's `id`.
+      schema:
+        type: string
+        format: uuid
     SegmentId:
       name: segment_id
       in: path
@@ -10595,6 +10871,20 @@ components:
             $ref: "#/components/schemas/Error"
     TagConflict:
       description: "`tag_exists`: the account already has a tag with that name, ignoring case."
+      headers:
+        X-Request-Id:
+          $ref: "#/components/headers/X-Request-Id"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ContactFieldConflict:
+      description: |
+        `field_exists`: the account already has a field with that name,
+        ignoring case, or one whose key the name works out to
+        (`details.key`). `field_limit`: the account has as many fields as its
+        plan allows; `details.limit` is the limit and `details.count` the
+        fields now.
       headers:
         X-Request-Id:
           $ref: "#/components/headers/X-Request-Id"

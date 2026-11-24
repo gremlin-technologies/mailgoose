@@ -21,6 +21,7 @@ func TestDeleteAccount(t *testing.T) {
 			`INSERT INTO contacts (account_id, email, status, source) VALUES ($1, 'ann@example.com', 'subscribed', 'manual')`,
 			`INSERT INTO suppressions (account_id, email_hash, reason) VALUES ($1, 'h', 'bounced')`,
 			`INSERT INTO tags (account_id, name) VALUES ($1, 'vip')`,
+			`INSERT INTO contact_fields (account_id, key, name, created_at, updated_at) VALUES ($1, 'company', 'Company', now(), now())`,
 			`INSERT INTO emails (account_id, name, kind, document) VALUES ($1, 'Spring', 'html', '{}')`,
 			`INSERT INTO forms (account_id, name, fields, button_text, success_message, confirm_subject, confirm_text, signing_key)
 				VALUES ($1, 'Footer', '[]', 'Go', 'Thanks', 'Confirm', 'Please', '\x00')`,

@@ -76,6 +76,9 @@ type Contact struct {
 	StatusChangedAt time.Time
 	// Tags are the contact's tags, sorted by name.
 	Tags []TagRef
+	// Fields are the contact's values for the account's custom fields
+	// (MG-130), by field key. A field with no value isn't here.
+	Fields map[string]string
 }
 
 // TagRef names one of a contact's tags.
@@ -105,13 +108,14 @@ func (s *Service) now() time.Time {
 
 const columns = `id, account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at,
 	ARRAY(SELECT t.id::text FROM contact_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.contact_id = contacts.id ORDER BY lower(t.name), t.id),
-	ARRAY(SELECT t.name FROM contact_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.contact_id = contacts.id ORDER BY lower(t.name), t.id)`
+	ARRAY(SELECT t.name FROM contact_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.contact_id = contacts.id ORDER BY lower(t.name), t.id),
+	fields`
 
 func scan(row pgx.Row) (*Contact, error) {
 	var c Contact
 	var tagIDs, tagNames []string
 	err := row.Scan(&c.ID, &c.AccountID, &c.Email, &c.FirstName, &c.LastName, &c.Status, &c.Source,
-		&c.CreatedAt, &c.UpdatedAt, &c.StatusChangedAt, &tagIDs, &tagNames)
+		&c.CreatedAt, &c.UpdatedAt, &c.StatusChangedAt, &tagIDs, &tagNames, &c.Fields)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -190,6 +194,9 @@ type CreateInput struct {
 	Status string
 	// Source is api when empty.
 	Source string
+	// Fields are values for the account's custom fields, by key; an empty
+	// or nil value is no value. Unknown keys are refused.
+	Fields map[string]*string
 }
 
 // Create adds a contact. An address on the suppression list comes back with
@@ -241,11 +248,15 @@ func (s *Service) Create(ctx context.Context, accountID string, in CreateInput) 
 			return nil, err
 		}
 	}
+	fields, err := applyFields(ctx, tx, accountID, nil, in.Fields)
+	if err != nil {
+		return nil, err
+	}
 	now := s.now()
 	c, err := scan(tx.QueryRow(ctx, `
-		INSERT INTO contacts (account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $7)
-		RETURNING `+columns, accountID, email, first, last, status, source, now))
+		INSERT INTO contacts (account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at, fields)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $7, $7, $8)
+		RETURNING `+columns, accountID, email, first, last, status, source, now, fields))
 	if isUniqueViolation(err) {
 		return nil, ErrExists
 	}
@@ -267,6 +278,9 @@ type UpdateInput struct {
 	FirstName auth.Field
 	LastName  auth.Field
 	Status    auth.Field
+	// Fields changes custom field values by key: a nil or empty value takes
+	// it off, and keys left out stay. Unknown keys are refused.
+	Fields map[string]*string
 }
 
 // Update changes the fields set in u. A contact that unsubscribed, bounced or
@@ -339,6 +353,11 @@ func (s *Service) Update(ctx context.Context, accountID, id string, u UpdateInpu
 		}
 	}
 
+	fields, err := applyFields(ctx, tx, accountID, c.Fields, u.Fields)
+	if err != nil {
+		return nil, err
+	}
+
 	if !Counted(c.Status) && Counted(status) {
 		if err := ensureRoom(ctx, tx, accountID, 1); err != nil {
 			return nil, err
@@ -350,9 +369,10 @@ func (s *Service) Update(ctx context.Context, accountID, id string, u UpdateInpu
 		changed = now
 	}
 	c, err = scan(tx.QueryRow(ctx, `
-		UPDATE contacts SET email = $3, first_name = $4, last_name = $5, status = $6, status_changed_at = $7, updated_at = $8
+		UPDATE contacts SET email = $3, first_name = $4, last_name = $5, status = $6, status_changed_at = $7, updated_at = $8,
+			fields = $9
 		WHERE account_id = $1 AND id = $2
-		RETURNING `+columns, accountID, id, email, first, last, status, changed, now))
+		RETURNING `+columns, accountID, id, email, first, last, status, changed, now, fields))
 	if isUniqueViolation(err) {
 		return nil, ErrExists
 	}

@@ -43,6 +43,8 @@ type plan struct {
 		} `json:"cheapest"`
 		Months int `json:"months"`
 	} `json:"credit_packs"`
+	// ContactFieldLimit is the most contact fields the plan allows (MG-130).
+	ContactFieldLimit int `json:"contact_field_limit"`
 }
 
 // printFreeTerms says what the free plan allows and what the paid plan adds,

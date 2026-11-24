@@ -87,6 +87,13 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 - [Tag contacts](reference.md#op-tagcontacts): `POST /v1/tags/{tag_id}/contacts`, CLI `mailgoose tags add`. Puts the tag on the contacts listed in `contact_ids` (up to 1,000), or on every contact matching `filter`; an empty filter is every contact.
 - [Untag contacts](reference.md#op-untagcontacts): `POST /v1/tags/{tag_id}/contacts/remove`, CLI `mailgoose tags remove`. Takes the tag off the selected contacts, chosen as in `tagContacts`.
 
+## Contact fields
+
+- [List contact fields](reference.md#op-listcontactfields): `GET /v1/contact-fields`, CLI `mailgoose fields delete`, `mailgoose fields list`, `mailgoose fields rename`. The account's own contact fields (MG-130), in the order they were made, which is the order the contacts table and the contacts export show them in.
+- [Create a contact field](reference.md#op-createcontactfield): `POST /v1/contact-fields`, CLI `mailgoose fields create`. Adds a text field to every contact.
+- [Rename a contact field](reference.md#op-renamecontactfield): `PATCH /v1/contact-fields/{field_id}`, CLI `mailgoose fields rename`. Changes the field's name, its label and export header.
+- [Delete a contact field](reference.md#op-deletecontactfield): `DELETE /v1/contact-fields/{field_id}`, CLI `mailgoose fields delete`. Deletes the field and every contact's value for it, which can't be undone.
+
 ## Imports and exports
 
 - [List CSV imports](reference.md#op-listimports): `GET /v1/imports`, CLI `mailgoose import list`. The account's imports, newest first.

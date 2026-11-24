@@ -988,10 +988,14 @@ export interface paths {
          * @description The account's contacts as a CSV file, oldest first, with the same
          *     filters as listing them; with none, every contact. Columns: `email`,
          *     `first_name`, `last_name`, `status`, `tags` (names separated by
-         *     commas), `source`, `created_at`, `status_changed_at` and
+         *     commas), `source`, `created_at`, `status_changed_at`,
          *     `permission_confirmed` (true or false for contacts an import added,
          *     whether the account confirmed it had their permission; empty for
-         *     others). Importing the file back gives the same contacts and tags. A
+         *     others), then `signup_form_id`, `signup_at`, `signup_ip` and
+         *     `signup_confirmed_at` (the contact's latest signup through a form;
+         *     empty for none), then one column for each contact field
+         *     (`listContactFields`), in that order, headed by the field's name.
+         *     Importing the file back gives the same contacts and tags. A
          *     cell that starts with `=`, `+`, `-` or `@` gets a `'` in front so a
          *     spreadsheet doesn't run it as a formula; imports take it off again.
          */
@@ -1032,7 +1036,8 @@ export interface paths {
         head?: never;
         /**
          * Change a contact
-         * @description Changes only the fields sent; `null` removes a first or last name. A
+         * @description Changes only the fields sent; `null` removes a first or last name.
+         *     `fields` changes only the keys it names. A
          *     contact that unsubscribed, bounced or complained can't be subscribed
          *     again here (422 `contact_suppressed`): the person subscribes again
          *     through a signup form. Bounced and complained come only from Amazon
@@ -1150,6 +1155,70 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/v1/contact-fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List contact fields
+         * @description The account's own contact fields (MG-130), in the order they were
+         *     made, which is the order the contacts table and the contacts export
+         *     show them in. An account has at most `contact_field_limit` of them
+         *     (`getPlan`).
+         */
+        get: operations["listContactFields"];
+        put?: never;
+        /**
+         * Create a contact field
+         * @description Adds a text field to every contact. Its `key`, which contacts'
+         *     `fields` use, is worked out from the name: lower case, each run of
+         *     anything but `a`-`z` and `0`-`9` becomes `_`, with no `_` at either
+         *     end, and `f_` in front when it doesn't start with a letter
+         *     ("Company size" is `company_size`, "2nd email" `f_2nd_email`). A name
+         *     whose key is one of a contact's own columns (`email`, `first_name`,
+         *     `last_name`, `status`, `tags`, `source`, `id`, `contact_id`,
+         *     `created_at`, `updated_at`, `status_changed_at`,
+         *     `permission_confirmed`, or an export column such as `signup_ip`) is
+         *     refused with 422 `reserved_field_name`. An account on any plan has at
+         *     most 20 fields; one more is a 409 `field_limit`.
+         */
+        post: operations["createContactField"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/contact-fields/{field_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a contact field
+         * @description Deletes the field and every contact's value for it, which can't be
+         *     undone. The response counts the contacts that had a value.
+         */
+        delete: operations["deleteContactField"];
+        options?: never;
+        head?: never;
+        /**
+         * Rename a contact field
+         * @description Changes the field's name, its label and export header. Its `key` and
+         *     every contact's value stay. The new name follows the same rules as a
+         *     new field's.
+         */
+        patch: operations["renameContactField"];
         trace?: never;
     };
     "/v1/segments": {
@@ -2909,6 +2978,17 @@ export interface components {
             source: components["schemas"]["ContactSource"];
             /** @description The contact's tags, by name. */
             tags: components["schemas"]["TagRef"][];
+            /**
+             * @description The contact's values for the account's contact fields
+             *     (`listContactFields`), by field `key`. A field with no value
+             *     isn't here.
+             * @example {
+             *       "company_size": "50"
+             *     }
+             */
+            fields: {
+                [key: string]: string;
+            };
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -2941,6 +3021,7 @@ export interface components {
              * @enum {string}
              */
             source: "api" | "manual";
+            fields?: components["schemas"]["ContactFieldValues"];
         };
         UpdateContactRequest: {
             email?: string;
@@ -2948,6 +3029,11 @@ export interface components {
             last_name?: string | null;
             /** @enum {string} */
             status?: "subscribed" | "unconfirmed" | "unsubscribed";
+            /**
+             * @description Field values to change, by key. An empty string or `null` clears
+             *     a value, and keys left out keep theirs.
+             */
+            fields?: components["schemas"]["ContactFieldValues"];
         };
         ContactData: {
             contact: components["schemas"]["Contact"];
@@ -3044,6 +3130,57 @@ export interface components {
             contacts_untagged: number;
             /** @description How many draft or scheduled campaigns had the tag among their recipients. */
             campaigns_updated: number;
+        };
+        ContactField: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description What a contact's `fields` calls it. Worked out from the name when the field is made; a rename keeps it.
+             * @example company_size
+             */
+            key: string;
+            /**
+             * @description The field's label, and its column's header in a contacts export.
+             * @example Company size
+             */
+            name: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        ContactFieldList: {
+            data: components["schemas"]["ContactField"][];
+            next_cursor: string | null;
+        };
+        CreateContactFieldRequest: {
+            /**
+             * @description One line, unique in the account ignoring case, with at least one
+             *     letter or digit; no two fields may work out to the same key.
+             * @example Company size
+             */
+            name: string;
+        };
+        RenameContactFieldRequest: {
+            /** @example Team size */
+            name: string;
+        };
+        ContactFieldDeleted: {
+            /** @description How many contacts had a value for the field. */
+            values_deleted: number;
+        };
+        /**
+         * @description Values for the account's contact fields, by field `key`. Values are
+         *     text, one line, at most 500 characters; an empty string or `null`
+         *     is no value. A key that isn't one of the account's fields is a 422
+         *     `unknown_field`.
+         * @example {
+         *       "company_size": "50",
+         *       "plan_interest": "Pro"
+         *     }
+         */
+        ContactFieldValues: {
+            [key: string]: string | null;
         };
         /** @description Matches contacts as `listContacts` does; fields left out don't filter. */
         ContactFilter: {
@@ -4384,6 +4521,11 @@ export interface components {
                 /** @description How many months bought credits last. */
                 months: number;
             };
+            /**
+             * @description The most contact fields (`listContactFields`) this account's plan
+             *     allows: 20 on every plan today.
+             */
+            contact_field_limit: number;
         };
         CreditCheckoutRequest: {
             /** @description The pack's name, such as `10k`; case doesn't matter. */
@@ -6054,6 +6196,22 @@ export interface components {
             };
         };
         /**
+         * @description `field_exists`: the account already has a field with that name,
+         *     ignoring case, or one whose key the name works out to
+         *     (`details.key`). `field_limit`: the account has as many fields as its
+         *     plan allows; `details.limit` is the limit and `details.count` the
+         *     fields now.
+         */
+        ContactFieldConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description `segment_exists`: the account already has a segment with that name,
          *     ignoring case. `segment_limit`: the account has 100 segments, the
          *     most it can keep.
@@ -6906,6 +7064,8 @@ export interface components {
         ContactId: string;
         /** @description The tag's `id`. */
         TagId: string;
+        /** @description The contact field's `id`. */
+        FieldId: string;
         /** @description The segment's `id`. */
         SegmentId: string;
         /** @description The account's `id`. */
@@ -8822,6 +8982,134 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["CrossOrigin"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    listContactFields: {
+        parameters: {
+            query?: {
+                /** @description Items per page. */
+                limit?: components["parameters"]["Limit"];
+                /** @description The `next_cursor` of the previous page. Leave it out for the first page. */
+                cursor?: components["parameters"]["Cursor"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of fields. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactFieldList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    createContactField: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateContactFieldRequest"];
+            };
+        };
+        responses: {
+            /** @description The new field. */
+            201: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactField"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            409: components["responses"]["ContactFieldConflict"];
+            422: components["responses"]["ValidationFailed"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    deleteContactField: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The contact field's `id`. */
+                field_id: components["parameters"]["FieldId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description What deleting the field changed. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactFieldDeleted"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    renameContactField: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The contact field's `id`. */
+                field_id: components["parameters"]["FieldId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RenameContactFieldRequest"];
+            };
+        };
+        responses: {
+            /** @description The renamed field. */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["X-Request-Id"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactField"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["CrossOrigin"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["ContactFieldConflict"];
             422: components["responses"]["ValidationFailed"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];

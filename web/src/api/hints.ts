@@ -75,6 +75,9 @@ export const WEB_HINTS: Record<string, string> = {
 
   // Contacts, tags, segments, images, emails and forms.
   tag_exists: "Pick the existing tag instead.",
+  field_exists: "Field names, and the keys made from them, are unique. Pick another name.",
+  field_limit: "Delete a field you no longer use on the Fields page to add another.",
+  unknown_field: "Add the field on the Fields page first.",
   unknown_tag: "Pick one of your tags.",
   unknown_email: "Pick one of your emails.",
   unknown_segment: "Pick one of your segments.",

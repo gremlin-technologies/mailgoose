@@ -250,9 +250,17 @@ mailgoose contacts add pat@example.com --first-name Pat --json
 mailgoose import preview contacts.csv --json
 mailgoose import contacts.csv --list-source form --map status= --wait --json
 mailgoose tags add VIP pat@example.com --json
+mailgoose fields create "Company size" --json        # key: company_size
+mailgoose contacts update pat@example.com --field company_size=50 --json
 mailgoose form create --name "Footer" --json
 mailgoose form embed <form-id> > signup.html
 ```
+
+Contact fields are the account's own text fields beside name and tags, up to
+`contact_field_limit` from `mailgoose plan --json` (20 today; more is
+`field_limit`). Contacts carry them as `fields`, by key; the key comes from
+the name and stays when it's renamed. `--field key=` clears a value, and
+deleting a field deletes its values, so ask the person first.
 
 Import only people who agreed to hear from the person you help.
 `--list-source` is required and you can't guess it: ask the person where the
