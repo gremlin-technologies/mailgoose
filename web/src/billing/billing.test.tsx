@@ -213,6 +213,9 @@ describe("billing page", () => {
     // The paid plan isn't offered again.
     expect(screen.queryByRole("button", { name: "Upgrade to Pay as you go" })).toBeNull();
     expect(screen.getByText("Bought credits last 24 months, and the oldest are used first.")).toBeTruthy();
+    // The portal changes the card, shows invoices and cancels; it can't switch monthly and yearly (MG-128).
+    expect(within(plan).getByText("On Stripe you can change your card, see invoices or cancel.")).toBeTruthy();
+    expect(plan.textContent).not.toMatch(/switch/i);
 
     const buy = await screen.findByRole("group", { name: "Buy credits" });
     expect(within(buy).getAllByRole("button").map((b) => b.textContent)).toEqual([

@@ -156,7 +156,7 @@ function PlanPanel({ plan: p }: { plan: Plan }) {
           {busy ? "Opening Stripe…" : "Manage plan and card"}
         </button>
       </div>
-      <p className="muted small">On Stripe you can change your card, see invoices, switch monthly or yearly, or cancel.</p>
+      <p className="muted small">On Stripe you can change your card, see invoices or cancel.</p>
       <FailureNotice failure={failure} />
     </section>
   );

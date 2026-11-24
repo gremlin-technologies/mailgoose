@@ -4,6 +4,22 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-24: Yearly is chosen at upgrade, with no switch on a running plan (MG-128)
+
+The owner: "shouldn't annual be an offer we just make at the start of the
+plan, or whenever a plan change is made? not sure i've ever seen an option to
+switch to yearly when on a monthly plan", then "Queue the fix".
+
+- **Monthly or yearly is picked when upgrading** (in the upgrade dialog, or
+  with `mailgoose plan upgrade --yearly`), or at a later plan change. A
+  running plan has no monthly/yearly switch, in the app or in Stripe's
+  customer portal. This confirms the Nov 18 note that switching is cancel
+  and start again.
+- **The billing page stops saying the portal can switch.** It can't: each
+  checkout carries its own price, so Stripe holds no prices to switch
+  between. The line now names what the portal does: change the card, see
+  invoices, cancel.
+
 ## 2026-11-23: Selling the paid plan with one upgrade dialog (MG-126; reversible defaults)
 
 The owner asked for the billing page to "sell the paid plan in the copy",
