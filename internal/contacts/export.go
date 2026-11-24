@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,7 +20,9 @@ import (
 // false for contacts an import added, saying whether the account confirmed
 // it had their permission, and empty for others. The signup_ columns are
 // from the contact's latest signup through a form (CMP-3): which form,
-// when, from which IP, and when they confirmed; empty when none.
+// when, from which IP, and when they confirmed; empty when none. After
+// these come the account's custom fields (MG-130), one column each in the
+// order they were made, headed by the field's name.
 var ExportHeader = []string{
 	"email", "first_name", "last_name", "status", "tags", "source", "created_at", "status_changed_at", "permission_confirmed",
 	"signup_form_id", "signup_at", "signup_ip", "signup_confirmed_at",
@@ -38,13 +41,18 @@ func guardFormula(v string) string {
 // first, and returns how many it wrote. Contacts held by an import are
 // included; the export is everything the account holds.
 func (s *Service) ExportCSV(ctx context.Context, accountID string, f Filter, w io.Writer) (int, error) {
+	fields, err := s.AllFields(ctx, accountID)
+	if err != nil {
+		return 0, err
+	}
 	q, args := f.where(`
 		SELECT email, coalesce(first_name, ''), coalesce(last_name, ''), status,
 			coalesce((SELECT string_agg(t.name, ', ' ORDER BY lower(t.name), t.id)
 				FROM contact_tags ct JOIN tags t ON t.id = ct.tag_id WHERE ct.contact_id = contacts.id), ''),
 			source, created_at, status_changed_at,
 			(SELECT i.permission_confirmed FROM imports i WHERE i.id = contacts.import_id),
-			coalesce(sc.signup_form::text, ''), sc.signup_at, coalesce(sc.signup_ip, ''), sc.signup_confirmed
+			coalesce(sc.signup_form::text, ''), sc.signup_at, coalesce(sc.signup_ip, ''), sc.signup_confirmed,
+			fields
 		FROM contacts
 		LEFT JOIN LATERAL (SELECT k.form_id AS signup_form, k.created_at AS signup_at, k.ip AS signup_ip,
 				k.confirmed_at AS signup_confirmed
@@ -57,7 +65,11 @@ func (s *Service) ExportCSV(ctx context.Context, accountID string, f Filter, w i
 	}
 	defer rows.Close()
 	cw := csv.NewWriter(w)
-	if err := cw.Write(ExportHeader); err != nil {
+	header := slices.Clone(ExportHeader)
+	for _, fd := range fields {
+		header = append(header, guardFormula(fd.Name))
+	}
+	if err := cw.Write(header); err != nil {
 		return 0, err
 	}
 	n := 0
@@ -66,8 +78,9 @@ func (s *Service) ExportCSV(ctx context.Context, accountID string, f Filter, w i
 		var created, changed time.Time
 		var permission *bool
 		var signupAt, signupConfirmed *time.Time
+		var values map[string]string
 		if err := rows.Scan(&email, &first, &last, &status, &tags, &source, &created, &changed, &permission,
-			&signupForm, &signupAt, &signupIP, &signupConfirmed); err != nil {
+			&signupForm, &signupAt, &signupIP, &signupConfirmed, &values); err != nil {
 			return n, err
 		}
 		perm := ""
@@ -78,11 +91,15 @@ func (s *Service) ExportCSV(ctx context.Context, accountID string, f Filter, w i
 		for _, t := range strings.Split(tags, ", ") {
 			guarded = append(guarded, guardFormula(t))
 		}
-		if err := cw.Write([]string{
+		record := []string{
 			guardFormula(email), guardFormula(first), guardFormula(last), status, strings.Join(guarded, ", "), source,
 			created.UTC().Format(time.RFC3339), changed.UTC().Format(time.RFC3339), perm,
 			signupForm, formatTime(signupAt), guardFormula(signupIP), formatTime(signupConfirmed),
-		}); err != nil {
+		}
+		for _, fd := range fields {
+			record = append(record, guardFormula(values[fd.Key]))
+		}
+		if err := cw.Write(record); err != nil {
 			return n, err
 		}
 		n++

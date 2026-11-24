@@ -132,6 +132,12 @@ scope; they only show where an idea came from.
 - Upgrade dialog (Nov 23, MG-126): the web app sells the paid plan as "Pay as
   you go" through one shared dialog (`useUpgrade()` / `<UpgradeButton>`),
   worded from the plan terms `GET /v1/plan` now returns; no "units" in copy.
+- Contact fields (Nov 24, MG-130): an account defines up to 20 text fields
+  of its own (one per-plan setting, `contacts.FieldLimit`, 20 on free and
+  paid; `contact_field_limit` in `GET /v1/plan`), managed on the Fields page
+  and with `mailgoose fields`. Contacts carry `fields` by key, the key worked
+  out from the name and kept on rename; the contacts table and export show a
+  column per field in the order made.
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API

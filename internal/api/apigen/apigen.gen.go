@@ -2924,10 +2924,18 @@ type Contact struct {
 	// Email Stored in lower case.
 	//
 	// Examples: pat@example.com
-	Email     string  `json:"email"`
-	FirstName *string `json:"first_name"`
-	Id        string  `json:"id"`
-	LastName  *string `json:"last_name"`
+	Email string `json:"email"`
+
+	// Fields The contact's values for the account's contact fields
+	// (`listContactFields`), by field `key`. A field with no value
+	// isn't here.
+	//
+	//
+	// Examples: {"company_size":"50"}
+	Fields    map[string]string `json:"fields"`
+	FirstName *string           `json:"first_name"`
+	Id        string            `json:"id"`
+	LastName  *string           `json:"last_name"`
 
 	// Source How the contact was added. `manual` is the web app.
 	Source ContactSource `json:"source"`
@@ -3018,6 +3026,43 @@ type ContactData struct {
 // ContactDataConsentsSource defines model for ContactData.Consents.Source.
 type ContactDataConsentsSource string
 
+// ContactField defines model for ContactField.
+type ContactField struct {
+	CreatedAt time.Time `json:"created_at"`
+	Id        string    `json:"id"`
+
+	// Key What a contact's `fields` calls it. Worked out from the name when the field is made; a rename keeps it.
+	//
+	// Examples: company_size
+	Key string `json:"key"`
+
+	// Name The field's label, and its column's header in a contacts export.
+	//
+	// Examples: Company size
+	Name      string    `json:"name"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// ContactFieldDeleted defines model for ContactFieldDeleted.
+type ContactFieldDeleted struct {
+	// ValuesDeleted How many contacts had a value for the field.
+	ValuesDeleted int `json:"values_deleted"`
+}
+
+// ContactFieldList defines model for ContactFieldList.
+type ContactFieldList struct {
+	Data       []ContactField `json:"data"`
+	NextCursor *string        `json:"next_cursor"`
+}
+
+// ContactFieldValues Values for the account's contact fields, by field `key`. Values are
+// text, one line, at most 500 characters; an empty string or `null`
+// is no value. A key that isn't one of the account's fields is a 422
+// `unknown_field`.
+//
+// Examples: {"company_size":"50","plan_interest":"Pro"}
+type ContactFieldValues map[string]*string
+
 // ContactFilter Matches contacts as `listContacts` does; fields left out don't filter.
 type ContactFilter struct {
 	Email *string `json:"email,omitempty"`
@@ -3080,12 +3125,31 @@ type CreateCampaignRequest struct {
 	Tracking *bool `json:"tracking,omitempty"`
 }
 
+// CreateContactFieldRequest defines model for CreateContactFieldRequest.
+type CreateContactFieldRequest struct {
+	// Name One line, unique in the account ignoring case, with at least one
+	// letter or digit; no two fields may work out to the same key.
+	//
+	//
+	// Examples: Company size
+	Name string `json:"name"`
+}
+
 // CreateContactRequest defines model for CreateContactRequest.
 type CreateContactRequest struct {
 	// Email Examples: pat@example.com
-	Email     string  `json:"email"`
-	FirstName *string `json:"first_name,omitempty"`
-	LastName  *string `json:"last_name,omitempty"`
+	Email string `json:"email"`
+
+	// Fields Values for the account's contact fields, by field `key`. Values are
+	// text, one line, at most 500 characters; an empty string or `null`
+	// is no value. A key that isn't one of the account's fields is a 422
+	// `unknown_field`.
+	//
+	//
+	// Examples: {"company_size":"50","plan_interest":"Pro"}
+	Fields    *ContactFieldValues `json:"fields,omitempty"`
+	FirstName *string             `json:"first_name,omitempty"`
+	LastName  *string             `json:"last_name,omitempty"`
 
 	// Source `manual` is for contacts a person typed in; agents and scripts leave it out.
 	Source *CreateContactRequestSource `json:"source,omitempty"`
@@ -4463,6 +4527,10 @@ type Plan struct {
 	// CancelAtPeriodEnd True when the plan was cancelled and ends at `current_period_end`.
 	CancelAtPeriodEnd bool `json:"cancel_at_period_end"`
 
+	// ContactFieldLimit The most contact fields (`listContactFields`) this account's plan
+	// allows: 20 on every plan today.
+	ContactFieldLimit int `json:"contact_field_limit"`
+
 	// Contacts Counted contacts now (subscribed and unconfirmed).
 	Contacts int `json:"contacts"`
 
@@ -4629,6 +4697,12 @@ type RecipientsInput struct {
 	All       *bool     `json:"all,omitempty"`
 	SegmentId *string   `json:"segment_id,omitempty"`
 	TagIds    *[]string `json:"tag_ids,omitempty"`
+}
+
+// RenameContactFieldRequest defines model for RenameContactFieldRequest.
+type RenameContactFieldRequest struct {
+	// Name Examples: Team size
+	Name string `json:"name"`
 }
 
 // RenameTagRequest defines model for RenameTagRequest.
@@ -5247,7 +5321,11 @@ type UpdateCampaignRequest struct {
 
 // UpdateContactRequest defines model for UpdateContactRequest.
 type UpdateContactRequest struct {
-	Email     *string                     `json:"email,omitempty"`
+	Email *string `json:"email,omitempty"`
+
+	// Fields Field values to change, by key. An empty string or `null` clears
+	// a value, and keys left out keep theirs.
+	Fields    *ContactFieldValues         `json:"fields,omitempty"`
 	FirstName *string                     `json:"first_name,omitempty"`
 	LastName  *string                     `json:"last_name,omitempty"`
 	Status    *UpdateContactRequestStatus `json:"status,omitempty"`
@@ -5393,6 +5471,9 @@ type EmailId = string
 // FetchId defines model for FetchId.
 type FetchId = string
 
+// FieldId defines model for FieldId.
+type FieldId = string
+
 // FormId defines model for FormId.
 type FormId = string
 
@@ -5431,6 +5512,9 @@ type CampaignConflict = Error
 
 // ContactConflict defines model for ContactConflict.
 type ContactConflict = Error
+
+// ContactFieldConflict defines model for ContactFieldConflict.
+type ContactFieldConflict = Error
 
 // ContactFilterUnusable defines model for ContactFilterUnusable.
 type ContactFilterUnusable = Error
@@ -5695,6 +5779,15 @@ type ExportCampaignReportRecipientsParams struct {
 	// Link With `activity=clicked`, only those who clicked the link at this
 	// position in the report's `links`, from 1.
 	Link *ReportLinkPosition `form:"link,omitempty" json:"link,omitempty"`
+}
+
+// ListContactFieldsParams defines parameters for ListContactFields.
+type ListContactFieldsParams struct {
+	// Limit Items per page.
+	Limit *Limit `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// Cursor The `next_cursor` of the previous page. Leave it out for the first page.
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // ListContactsParams defines parameters for ListContacts.
@@ -6038,6 +6131,12 @@ type TestCampaignJSONRequestBody = TestCampaignRequest
 
 // CreateCliTokenJSONRequestBody defines body for CreateCliToken for application/json ContentType.
 type CreateCliTokenJSONRequestBody = CliTokenRequest
+
+// CreateContactFieldJSONRequestBody defines body for CreateContactField for application/json ContentType.
+type CreateContactFieldJSONRequestBody = CreateContactFieldRequest
+
+// RenameContactFieldJSONRequestBody defines body for RenameContactField for application/json ContentType.
+type RenameContactFieldJSONRequestBody = RenameContactFieldRequest
 
 // CreateContactJSONRequestBody defines body for CreateContact for application/json ContentType.
 type CreateContactJSONRequestBody = CreateContactRequest
@@ -6977,6 +7076,18 @@ type ServerInterface interface {
 	// RevokeCurrentCliToken Sign out the CLI
 	// (DELETE /v1/cli-tokens/current)
 	RevokeCurrentCliToken(w http.ResponseWriter, r *http.Request)
+	// ListContactFields List contact fields
+	// (GET /v1/contact-fields)
+	ListContactFields(w http.ResponseWriter, r *http.Request, params ListContactFieldsParams)
+	// CreateContactField Create a contact field
+	// (POST /v1/contact-fields)
+	CreateContactField(w http.ResponseWriter, r *http.Request)
+	// DeleteContactField Delete a contact field
+	// (DELETE /v1/contact-fields/{field_id})
+	DeleteContactField(w http.ResponseWriter, r *http.Request, fieldId FieldId)
+	// RenameContactField Rename a contact field
+	// (PATCH /v1/contact-fields/{field_id})
+	RenameContactField(w http.ResponseWriter, r *http.Request, fieldId FieldId)
 	// ListContacts List contacts
 	// (GET /v1/contacts)
 	ListContacts(w http.ResponseWriter, r *http.Request, params ListContactsParams)
@@ -8507,6 +8618,118 @@ func (siw *ServerInterfaceWrapper) RevokeCurrentCliToken(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.RevokeCurrentCliToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListContactFields operation middleware
+func (siw *ServerInterfaceWrapper) ListContactFields(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListContactFieldsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListContactFields(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateContactField operation middleware
+func (siw *ServerInterfaceWrapper) CreateContactField(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateContactField(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteContactField operation middleware
+func (siw *ServerInterfaceWrapper) DeleteContactField(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "field_id" -------------
+	var fieldId FieldId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "field_id", r.PathValue("field_id"), &fieldId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "field_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteContactField(w, r, fieldId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RenameContactField operation middleware
+func (siw *ServerInterfaceWrapper) RenameContactField(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "field_id" -------------
+	var fieldId FieldId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "field_id", r.PathValue("field_id"), &fieldId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "field_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RenameContactField(w, r, fieldId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -11500,6 +11723,10 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/tags/{tag_id}", wrapper.RenameTag)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tags/{tag_id}/contacts", wrapper.TagContacts)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tags/{tag_id}/contacts/remove", wrapper.UntagContacts)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/contact-fields", wrapper.ListContactFields)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/contact-fields", wrapper.CreateContactField)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/contact-fields/{field_id}", wrapper.DeleteContactField)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/contact-fields/{field_id}", wrapper.RenameContactField)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/segments", wrapper.ListSegments)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/segments", wrapper.CreateSegment)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/segments/{segment_id}", wrapper.DeleteSegment)

@@ -44,6 +44,7 @@ var AccountTables = []string{
 	"imports",
 	"contacts",
 	"tags",
+	"contact_fields",
 	"suppressions",
 	"domains",
 	"device_logins",

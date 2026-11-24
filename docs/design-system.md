@@ -99,7 +99,9 @@ the app; the mascot keeps them.
 - **Buttons.** Default is white with an edge ring; primary is the blue, used
   once per view for the main action; danger only for destructive ones.
 - **Cards and tables.** A hairline plus `--shadow-card`. Table headers are 12px
-  muted on `--surface-subtle`; rows highlight on hover.
+  muted on `--surface-subtle`; rows highlight on hover. A table that can
+  grow past the page's width, like contacts with their own fields, sits in
+  `.table-scroll` and scrolls sideways inside it; the page never does.
 - **Badges.** Pills, 12px/500, soft fill. Neutral ones get a hairline.
 - **Notices.** Soft status fill, no icon, no border.
 - **Inputs.** A 3:1 edge. Focus turns the edge blue and adds a soft 3px ring.

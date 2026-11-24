@@ -23,6 +23,7 @@ var tagTitles = []struct{ tag, title string }{
 	{"domains", "Sending domains"},
 	{"contacts", "Contacts"},
 	{"tags", "Tags"},
+	{"contact-fields", "Contact fields"},
 	{"imports", "Imports and exports"},
 	{"images", "Images"},
 	{"emails", "Emails"},

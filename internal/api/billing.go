@@ -148,6 +148,7 @@ func (s *Server) GetPlan(w http.ResponseWriter, r *http.Request) {
 	out.CreditPacks.Cheapest.Name, out.CreditPacks.Cheapest.Credits, out.CreditPacks.Cheapest.PriceCents =
 		pack.Name, int(pack.Credits), int(pack.PriceCents)
 	out.CreditPacks.Months = credits.LotMonths
+	out.ContactFieldLimit = contacts.FieldLimit(p.Plan)
 	writeJSON(w, http.StatusOK, out)
 }
 

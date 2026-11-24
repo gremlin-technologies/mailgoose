@@ -18,6 +18,7 @@ import {
   type Conditions,
   type Draft,
 } from "../segments/conditions";
+import { useContactFields, type ContactField } from "./Fields";
 import { useTags, type Tag } from "./Tags";
 
 type Contact = components["schemas"]["Contact"];
@@ -82,6 +83,9 @@ function ContactList({ filters }: { filters: Filters }) {
   const [, setParams] = useSearchParams();
   const tags = useTags();
   const tagList = tags.state.status === "ok" ? tags.state.data : [];
+  const fieldDefs = useContactFields();
+  // Without the fields the table shows the built-in columns only.
+  const fieldList = fieldDefs.state.status === "ok" ? fieldDefs.state.data : [];
   // Cursors of the pages before this one; the last is this page's.
   const [cursors, setCursors] = useState<string[]>([]);
   const cursor = cursors[cursors.length - 1];
@@ -212,48 +216,61 @@ function ContactList({ filters }: { filters: Filters }) {
           </p>
         ) : (
           <>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="pick">
-                    <input
-                      type="checkbox"
-                      aria-label="Select every contact on this page"
-                      checked={allSelected}
-                      onChange={() => setSelected(allSelected ? new Set() : new Set(contacts.map((c) => c.id)))}
-                    />
-                  </th>
-                  <th>Email</th>
-                  <th>Name</th>
-                  <th>Status</th>
-                  <th>Tags</th>
-                  <th>Added</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contacts.map((c) => (
-                  <tr key={c.id}>
-                    <td className="pick">
+            <div className="table-scroll">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th className="pick">
                       <input
                         type="checkbox"
-                        aria-label={`Select ${c.email}`}
-                        checked={selected.has(c.id)}
-                        onChange={() => toggle(c.id)}
+                        aria-label="Select every contact on this page"
+                        checked={allSelected}
+                        onChange={() => setSelected(allSelected ? new Set() : new Set(contacts.map((c) => c.id)))}
                       />
-                    </td>
-                    <td>
-                      <Link to={`/contacts/${c.id}`}>{c.email}</Link>
-                    </td>
-                    <td>{fullName(c)}</td>
-                    <td>
-                      <ContactBadge status={c.status} />
-                    </td>
-                    <td className="small">{c.tags.map((t) => t.name).join(", ")}</td>
-                    <td className="muted">{formatDate(c.created_at)}</td>
+                    </th>
+                    <th>Email</th>
+                    <th>Name</th>
+                    <th>Status</th>
+                    <th>Tags</th>
+                    <th>Added</th>
+                    {fieldList.map((f) => (
+                      <th key={f.id}>{f.name}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {contacts.map((c) => (
+                    <tr key={c.id}>
+                      <td className="pick">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${c.email}`}
+                          checked={selected.has(c.id)}
+                          onChange={() => toggle(c.id)}
+                        />
+                      </td>
+                      <td>
+                        <Link to={`/contacts/${c.id}`}>{c.email}</Link>
+                      </td>
+                      <td>{fullName(c)}</td>
+                      <td>
+                        <ContactBadge status={c.status} />
+                      </td>
+                      <td className="small">{c.tags.map((t) => t.name).join(", ")}</td>
+                      <td className="muted">{formatDate(c.created_at)}</td>
+                      {fieldList.map((f) => {
+                        const v = c.fields?.[f.key] ?? "";
+                        return (
+                          <td key={f.id} className="field-value" title={v || undefined}>
+                            {v}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <nav className="row pager" aria-label="Pages">
               <button
                 type="button"
@@ -426,10 +443,12 @@ function BulkTag({ ids, tags, onDone }: { ids: string[]; tags: Tag[]; onDone: (m
 
 const editable: EditableStatus[] = ["subscribed", "unconfirmed", "unsubscribed"];
 
-/** One contact: edit its fields, its tags, or delete it. */
+/** One contact: edit its details and field values, its tags, or delete it. */
 export function ContactDetail() {
   const api = useApi();
   const { id = "" } = useParams();
+  const fieldDefs = useContactFields();
+  const fieldList = fieldDefs.state.status === "ok" ? fieldDefs.state.data : [];
   const load = useCallback(
     () => attempt(() => api.GET("/v1/contacts/{contact_id}", { params: { path: { contact_id: id } } })),
     [api, id],
@@ -457,7 +476,7 @@ export function ContactDetail() {
       <PageHeader title={c.email} about={`Added ${formatDate(c.created_at)} by ${sourceLabel[c.source]}.`}>
         <ContactBadge status={c.status} />
       </PageHeader>
-      <EditContact key={c.updated_at} contact={c} onSaved={replace} />
+      <EditContact key={c.updated_at} contact={c} fields={fieldList} onSaved={replace} />
       <ContactTags contact={c} changed={reload} />
       <DeleteContact contact={c} />
     </section>
@@ -471,9 +490,18 @@ const sourceLabel: Record<Contact["source"], string> = {
   manual: "hand",
 };
 
-function EditContact({ contact: c, onSaved }: { contact: Contact; onSaved: (c: Contact) => void }) {
+function EditContact({
+  contact: c,
+  fields,
+  onSaved,
+}: {
+  contact: Contact;
+  fields: ContactField[];
+  onSaved: (c: Contact) => void;
+}) {
   const api = useApi();
   const [email, setEmail] = useState(c.email);
+  const [values, setValues] = useState<Record<string, string>>(() => ({ ...c.fields }));
   const [first, setFirst] = useState(c.first_name ?? "");
   const [last, setLast] = useState(c.last_name ?? "");
   const [status, setStatus] = useState(c.status);
@@ -489,6 +517,12 @@ function EditContact({ contact: c, onSaved }: { contact: Contact; onSaved: (c: C
     if ((first.trim() || null) !== (c.first_name || null)) body.first_name = first.trim() || null;
     if ((last.trim() || null) !== (c.last_name || null)) body.last_name = last.trim() || null;
     if (status !== c.status && canChangeStatus) body.status = status as EditableStatus;
+    const changedFields: Record<string, string | null> = {};
+    for (const f of fields) {
+      const v = (values[f.key] ?? "").trim();
+      if (v !== (c.fields?.[f.key] ?? "")) changedFields[f.key] = v || null;
+    }
+    if (Object.keys(changedFields).length > 0) body.fields = changedFields;
     setSaved(false);
     setFailure(undefined);
     if (Object.keys(body).length === 0) return setSaved(true);
@@ -527,6 +561,20 @@ function EditContact({ contact: c, onSaved }: { contact: Contact; onSaved: (c: C
           </label>
         )}
       </div>
+      {fields.length > 0 && (
+        <div className="row-form" role="group" aria-label="Fields">
+          {fields.map((f) => (
+            <label key={f.id} className="field">
+              <span>{f.name}</span>
+              <input
+                value={values[f.key] ?? ""}
+                onChange={(e) => setValues((vs) => ({ ...vs, [f.key]: e.target.value }))}
+                maxLength={500}
+              />
+            </label>
+          ))}
+        </div>
+      )}
       {!canChangeStatus && (
         <p className="muted small">
           This address {c.status === "bounced" ? "bounced" : "marked an email as spam"}, so it stays{" "}

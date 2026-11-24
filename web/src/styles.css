@@ -987,6 +987,30 @@ progress {
   padding-right: 0;
 }
 
+/* A table with more columns than fit, such as contacts with their own
+   fields (MG-130), scrolls sideways inside its own box, so the page never
+   does. */
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-lg);
+}
+
+.table-scroll > .table {
+  min-width: 100%;
+}
+
+.table-scroll th {
+  white-space: nowrap;
+}
+
+.table .field-value {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pager {
   justify-content: flex-end;
 }

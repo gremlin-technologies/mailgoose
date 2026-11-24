@@ -1,5 +1,6 @@
 import {
   ClipboardList,
+  Columns3,
   CreditCard,
   Globe,
   KeyRound,
@@ -32,6 +33,13 @@ export const navPages: NavPage[] = [
   },
   { path: "/contacts", label: "Contacts", about: "Add, import and export the people on your list.", icon: Users, group: "Marketing" },
   { path: "/tags", label: "Tags", about: "Group your contacts, and send to a group.", icon: Tag, group: "Marketing" },
+  {
+    path: "/fields",
+    label: "Fields",
+    about: "Your own contact fields, such as company or plan, shown on the contacts table.",
+    icon: Columns3,
+    group: "Marketing",
+  },
   {
     path: "/segments",
     label: "Segments",

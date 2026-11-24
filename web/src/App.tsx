@@ -15,6 +15,7 @@ import { Device } from "./pages/Device";
 import { Designer } from "./designer/Designer";
 import { DomainDetail, Domains } from "./pages/Domains";
 import { Emails } from "./pages/Emails";
+import { Fields } from "./pages/Fields";
 import { FormEditor } from "./forms/FormEditor";
 import { Forms } from "./pages/Forms";
 import { ImportContacts, ImportDetail } from "./pages/Imports";
@@ -40,6 +41,7 @@ const built: Record<string, ReactNode> = {
   "/credits": <Billing />,
   "/contacts": <Contacts />,
   "/tags": <Tags />,
+  "/fields": <Fields />,
   "/segments": <Segments />,
   "/domains": <Domains />,
   "/api-keys": <ApiKeys />,

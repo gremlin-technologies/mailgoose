@@ -4,6 +4,60 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-24: Custom contact fields (MG-130; reversible defaults)
+
+The owner: "We need to be able to store more headers than just first name,
+last name, tags. Like, folks should be able to import their own arbitrary
+fields that we store and display on the contacts table." And: "we should
+probably limit these to some sensible number, maybe 20? this is a good
+upgrade option if we decide to support more." This ticket is the fields
+themselves; mapping import columns to them (MG-131) and Mailchimp merge
+fields (MG-132) come next. What changed:
+
+- **Text only for now.** A value is one line of text, at most 500
+  characters, trimmed; an empty value is no value. No number, date or
+  choice types yet.
+- **20 fields per account on every plan, held in one per-plan setting.**
+  `contacts.FieldLimit(plan)` answers `FreeFieldLimit` or `PaidFieldLimit`,
+  both 20, so a higher paid limit can become an upgrade by changing one
+  constant. `GET /v1/plan` returns the account's own limit as
+  `contact_field_limit`. Field 21 is a 409 `field_limit` naming the limit,
+  in the API, the CLI and the web app.
+- **Names are 1 to 50 characters on one line**, unique ignoring case. A
+  name is the field's label and its export column's header.
+- **Keys are worked out from the name**: lower case, each run of anything
+  but a to z and 0 to 9 becomes `_`, no `_` at either end, `f_` in front
+  when it doesn't start with a letter. Keys are unique per account, so
+  "Company size" and "Company-size!" can't both exist. A key can't be a
+  contact's own column (`id`, `contact_id`, `email`, `first_name`,
+  `last_name`, `status`, `tags`, `source`, `created_at`, `updated_at`,
+  `status_changed_at`, `permission_confirmed`) or, beyond the ticket, an
+  export column (`signup_form_id`, `signup_at`, `signup_ip`,
+  `signup_confirmed_at`), so an export's header reads one way
+  (`reserved_field_name`). A name with no a to z letter or digit, such as
+  one written only in another script, is refused rather than given a made-up
+  key; that's the first default to revisit if it bites.
+- **A rename keeps the key and every value**, and a new name follows the
+  same rules, reserved keys included. **A delete deletes every value**, in
+  the same transaction; a later field with the same key starts empty.
+- **Values are stored on the contact, keyed by field key**
+  (`contacts.fields`, jsonb), not by field id as the ticket suggested.
+  Keys never change, so a rename still rewrites nothing, reads need no
+  lookup of the account's fields, and later segment conditions and merge
+  tags can name `fields->>'key'` directly. Setting a value locks the field
+  row so a delete can't slip between the check and the write.
+- **Fields show in the order made**: the Fields page, the contacts table
+  (one column each after the built-in ones, in a box that scrolls sideways)
+  and the export (one column each after the existing ones).
+- **Where fields are managed**: the Fields page, beside Tags in the side
+  menu, which says how many of the limit are used and disables adding at the
+  limit; values are edited on each contact's page. The API has
+  `/v1/contact-fields` and the CLI `mailgoose fields list|create|rename|delete`
+  (a field named by id, key or name), plus `--field key=value` on
+  `contacts add` and `contacts update` (`key=` clears on update).
+- **Out of scope**: segment conditions on fields, merge tags for fields,
+  fields on signup forms, and import column mapping (MG-131).
+
 ## 2026-11-24: Yearly is chosen at upgrade, with no switch on a running plan (MG-128)
 
 The owner: "shouldn't annual be an offer we just make at the start of the

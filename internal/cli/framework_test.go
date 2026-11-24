@@ -201,9 +201,12 @@ func TestNoCommandWaitsForInput(t *testing.T) {
 		"/v1/credits/transactions": func(w http.ResponseWriter) {
 			_, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`))
 		},
-		"/v1/contacts":  func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },
-		"/v1/domains":   func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },
-		"/v1/tags":      func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },
+		"/v1/contacts": func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },
+		"/v1/domains":  func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },
+		"/v1/tags":     func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },
+		"/v1/contact-fields": func(w http.ResponseWriter) {
+			_, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`))
+		},
 		"/v1/segments":  func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },
 		"/v1/imports":   func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },
 		"/v1/emails":    func(w http.ResponseWriter) { _, _ = w.Write([]byte(`{"data":[],"next_cursor":null}`)) },

@@ -19,6 +19,7 @@ function contact(n: number, extra = {}) {
     status: "subscribed",
     source: "manual",
     tags: [] as { id: string; name: string }[],
+    fields: {} as Record<string, string>,
     created_at: "2026-11-18T10:00:00Z",
     updated_at: "2026-11-18T10:00:00Z",
     status_changed_at: "2026-11-18T10:00:00Z",
@@ -610,6 +611,165 @@ describe("tags page", () => {
     expect(screen.getByText(/Delete VIP\? Its 0 contacts stay/)).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Delete tag" }));
     await waitFor(() => expect(screen.queryByRole("link", { name: "VIP" })).toBeNull());
+  });
+});
+
+const fieldCompany = {
+  id: "33333333-3333-4333-8333-333333333333",
+  key: "company",
+  name: "Company",
+  created_at: "2026-11-18T10:00:00Z",
+  updated_at: "2026-11-18T10:00:00Z",
+};
+const fieldPlan = { ...fieldCompany, id: "44444444-4444-4444-8444-444444444444", key: "plan", name: "Plan tier" };
+const fieldsRoute = (fields: unknown[]) => () => ({ status: 200, body: { data: fields, next_cursor: null } });
+const planRoute = (limit: number) => () => ({ status: 200, body: { plan: "free", contact_field_limit: limit } });
+
+describe("contact fields", () => {
+  it("shows a column for each field on the contacts table, in a box that scrolls sideways", async () => {
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/tags": tagsRoute([]),
+      "GET /v1/contact-fields": fieldsRoute([fieldCompany, fieldPlan]),
+      "GET /v1/contacts": () => ({
+        status: 200,
+        body: { data: [contact(1, { fields: { company: "Acme", plan: "Pro" } }), contact(2)], next_cursor: null },
+      }),
+    });
+    renderApp("/contacts", api.fetch);
+
+    expect(await screen.findByRole("columnheader", { name: "Plan tier" })).toBeTruthy();
+    const headers = screen.getAllByRole("columnheader").map((h) => h.textContent);
+    expect(headers.slice(-3)).toEqual(["Added", "Company", "Plan tier"]);
+    const rows = screen.getAllByRole("row");
+    expect(within(rows[1]).getByRole("cell", { name: "Acme" })).toBeTruthy();
+    expect(within(rows[1]).getByRole("cell", { name: "Pro" })).toBeTruthy();
+    expect(screen.getByRole("table").parentElement?.className).toBe("table-scroll");
+  });
+
+  it("shows the built-in columns when the fields can't be read", async () => {
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/tags": tagsRoute([]),
+      "GET /v1/contacts": () => ({ status: 200, body: { data: [contact(1)], next_cursor: null } }),
+    });
+    renderApp("/contacts", api.fetch);
+    expect(await screen.findByRole("link", { name: "person1@example.com" })).toBeTruthy();
+    expect(screen.getAllByRole("columnheader").map((h) => h.textContent).at(-1)).toBe("Added");
+  });
+
+  it("edits a contact's field values on its page, clearing an emptied one", async () => {
+    let current = contact(1, { fields: { company: "Acme" } });
+    const patches: unknown[] = [];
+    const id = current.id;
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/tags": tagsRoute([]),
+      "GET /v1/contact-fields": fieldsRoute([fieldCompany, fieldPlan]),
+      [`GET /v1/contacts/${id}`]: () => ({ status: 200, body: current }),
+      [`PATCH /v1/contacts/${id}`]: (body) => {
+        patches.push(body);
+        current = { ...current, fields: { plan: "Pro" }, updated_at: "2026-11-18T11:00:00Z" };
+        return { status: 200, body: current };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp(`/contacts/${id}`, api.fetch);
+
+    const form = await screen.findByRole("form", { name: "Edit contact" });
+    const company = await within(form).findByLabelText("Company");
+    expect((company as HTMLInputElement).value).toBe("Acme");
+    await user.clear(company);
+    await user.type(within(form).getByLabelText("Plan tier"), " Pro ");
+    await user.click(within(form).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(patches).toEqual([{ fields: { company: null, plan: "Pro" } }]));
+    // The saved contact fills the form again.
+    await waitFor(() => expect((screen.getByLabelText("Company") as HTMLInputElement).value).toBe(""));
+    expect((screen.getByLabelText("Plan tier") as HTMLInputElement).value).toBe("Pro");
+  });
+});
+
+describe("fields page", () => {
+  it("lists, adds, renames and deletes fields, and counts them against the limit", async () => {
+    let fields = [fieldCompany];
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/plan": planRoute(20),
+      "GET /v1/contact-fields": () => ({ status: 200, body: { data: fields, next_cursor: null } }),
+      "POST /v1/contact-fields": (body) => {
+        const name = (body as { name: string }).name;
+        if (name === "Email") return apiError(422, "reserved_field_name", "Email is one of a contact's own columns.");
+        fields = [...fields, { ...fieldPlan, name, key: "plan" }];
+        return { status: 201, body: fields[1] };
+      },
+      [`PATCH /v1/contact-fields/${fieldCompany.id}`]: (body) => {
+        fields = fields.map((f) => (f.id === fieldCompany.id ? { ...f, name: (body as { name: string }).name } : f));
+        return { status: 200, body: fields[0] };
+      },
+      [`DELETE /v1/contact-fields/${fieldPlan.id}`]: () => {
+        fields = fields.filter((f) => f.id !== fieldPlan.id);
+        return { status: 200, body: { values_deleted: 3 } };
+      },
+    });
+    const user = userEvent.setup();
+    renderApp("/fields", api.fetch);
+
+    expect(await screen.findByRole("cell", { name: "Company" })).toBeTruthy();
+    expect(screen.getByRole("cell", { name: "company" })).toBeTruthy();
+    expect(await screen.findByText("1 of 20 fields used")).toBeTruthy();
+
+    await user.type(screen.getByLabelText("New field"), "Email");
+    await user.click(screen.getByRole("button", { name: "Add field" }));
+    expect(await screen.findByText("Email is one of a contact's own columns.")).toBeTruthy();
+    await user.clear(screen.getByLabelText("New field"));
+    await user.type(screen.getByLabelText("New field"), "Plan");
+    await user.click(screen.getByRole("button", { name: "Add field" }));
+    expect(await screen.findByRole("cell", { name: "Plan" })).toBeTruthy();
+    expect(screen.getByText("2 of 20 fields used")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Rename Company" }));
+    const input = screen.getByLabelText("New name for Company");
+    await user.clear(input);
+    await user.type(input, "Employer");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("cell", { name: "Employer" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Delete Plan" }));
+    expect(screen.getByText(/Delete Plan\? Every contact's Plan value is deleted too/)).toBeTruthy();
+    expect(api.calls.some((c) => c.method === "DELETE")).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Delete field" }));
+    await waitFor(() => expect(screen.queryByRole("cell", { name: "Plan" })).toBeNull());
+    expect(screen.getByText("1 of 20 fields used")).toBeTruthy();
+  });
+
+  it("disables adding at the limit, and shows the API's refusal", async () => {
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/plan": planRoute(2),
+      "GET /v1/contact-fields": fieldsRoute([fieldCompany, fieldPlan]),
+    });
+    renderApp("/fields", api.fetch);
+
+    expect(await screen.findByText("2 of 2 fields used. Delete a field you no longer use to add another.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Add field" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText("New field") as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("shows a refused create past the limit when the plan isn't known", async () => {
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/contact-fields": fieldsRoute([fieldCompany]),
+      "POST /v1/contact-fields": () =>
+        apiError(409, "field_limit", "An account can have at most 20 contact fields, and this one has 20.", "Delete one."),
+    });
+    const user = userEvent.setup();
+    renderApp("/fields", api.fetch);
+
+    expect(await screen.findByText("1 field")).toBeTruthy();
+    await user.type(screen.getByLabelText("New field"), "Region");
+    await user.click(screen.getByRole("button", { name: "Add field" }));
+    expect(await screen.findByText("An account can have at most 20 contact fields, and this one has 20.")).toBeTruthy();
+    expect(screen.getByText("Delete a field you no longer use on the Fields page to add another.")).toBeTruthy();
   });
 });
 

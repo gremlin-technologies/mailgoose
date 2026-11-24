@@ -51,6 +51,7 @@ Servers:
 - [Sending domains](#tag-domains)
 - [Contacts](#tag-contacts)
 - [Tags](#tag-tags)
+- [Contact fields](#tag-contact-fields)
 - [Imports and exports](#tag-imports)
 - [Images](#tag-images)
 - [Emails](#tag-emails)
@@ -1074,10 +1075,14 @@ Responses:
 The account's contacts as a CSV file, oldest first, with the same
 filters as listing them; with none, every contact. Columns: `email`,
 `first_name`, `last_name`, `status`, `tags` (names separated by
-commas), `source`, `created_at`, `status_changed_at` and
+commas), `source`, `created_at`, `status_changed_at`,
 `permission_confirmed` (true or false for contacts an import added,
 whether the account confirmed it had their permission; empty for
-others). Importing the file back gives the same contacts and tags. A
+others), then `signup_form_id`, `signup_at`, `signup_ip` and
+`signup_confirmed_at` (the contact's latest signup through a form;
+empty for none), then one column for each contact field
+(`listContactFields`), in that order, headed by the field's name.
+Importing the file back gives the same contacts and tags. A
 cell that starts with `=`, `+`, `-` or `@` gets a `'` in front so a
 spreadsheet doesn't run it as a formula; imports take it off again.
 
@@ -1137,7 +1142,8 @@ Responses:
 - Operation: `updateContact`
 - CLI: `mailgoose contacts update`
 
-Changes only the fields sent; `null` removes a first or last name. A
+Changes only the fields sent; `null` removes a first or last name.
+`fields` changes only the keys it names. A
 contact that unsubscribed, bounced or complained can't be subscribed
 again here (422 `contact_suppressed`): the person subscribes again
 through a signup form. Bounced and complained come only from Amazon
@@ -1383,6 +1389,128 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="tag-contact-fields"></a>
+
+## Contact fields
+
+<a id="op-listcontactfields"></a>
+
+### List contact fields
+
+`GET /v1/contact-fields`
+
+- Operation: `listContactFields`
+- CLI: `mailgoose fields delete`, `mailgoose fields list`, `mailgoose fields rename`
+
+The account's own contact fields (MG-130), in the order they were
+made, which is the order the contacts table and the contacts export
+show them in. An account has at most `contact_field_limit` of them
+(`getPlan`).
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `limit` | query | integer |  | Items per page. |
+| `cursor` | query | string |  | The `next_cursor` of the previous page. Leave it out for the first page. |
+
+Responses:
+
+- `200`: A page of fields. [ContactFieldList](#schema-contactfieldlist)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-createcontactfield"></a>
+
+### Create a contact field
+
+`POST /v1/contact-fields`
+
+- Operation: `createContactField`
+- CLI: `mailgoose fields create`
+
+Adds a text field to every contact. Its `key`, which contacts'
+`fields` use, is worked out from the name: lower case, each run of
+anything but `a`-`z` and `0`-`9` becomes `_`, with no `_` at either
+end, and `f_` in front when it doesn't start with a letter
+("Company size" is `company_size`, "2nd email" `f_2nd_email`). A name
+whose key is one of a contact's own columns (`email`, `first_name`,
+`last_name`, `status`, `tags`, `source`, `id`, `contact_id`,
+`created_at`, `updated_at`, `status_changed_at`,
+`permission_confirmed`, or an export column such as `signup_ip`) is
+refused with 422 `reserved_field_name`. An account on any plan has at
+most 20 fields; one more is a 409 `field_limit`.
+
+Request body (`application/json`, required): [CreateContactFieldRequest](#schema-createcontactfieldrequest)
+
+Responses:
+
+- `201`: The new field. [ContactField](#schema-contactfield)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `409`: `field_exists`: the account already has a field with that name, ignoring case, or one whose key the name works out to (`details.key`). `field_limit`: the account has as many fields as its plan allows; `details.limit` is the limit and `details.count` the fields now. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-renamecontactfield"></a>
+
+### Rename a contact field
+
+`PATCH /v1/contact-fields/{field_id}`
+
+- Operation: `renameContactField`
+- CLI: `mailgoose fields rename`
+
+Changes the field's name, its label and export header. Its `key` and
+every contact's value stay. The new name follows the same rules as a
+new field's.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `field_id` | path | string (uuid) | yes | The contact field's `id`. |
+
+Request body (`application/json`, required): [RenameContactFieldRequest](#schema-renamecontactfieldrequest)
+
+Responses:
+
+- `200`: The renamed field. [ContactField](#schema-contactfield)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `field_exists`: the account already has a field with that name, ignoring case, or one whose key the name works out to (`details.key`). `field_limit`: the account has as many fields as its plan allows; `details.limit` is the limit and `details.count` the fields now. [Error](#schema-error)
+- `422`: The request is well formed but a field is wrong. `code` says which problem, such as `invalid_email`, `invalid_account_name`, `account_name_not_allowed`, `terms_not_accepted` or `invalid_code`. [Error](#schema-error)
+- `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
+- `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
+
+<a id="op-deletecontactfield"></a>
+
+### Delete a contact field
+
+`DELETE /v1/contact-fields/{field_id}`
+
+- Operation: `deleteContactField`
+- CLI: `mailgoose fields delete`
+
+Deletes the field and every contact's value for it, which can't be
+undone. The response counts the contacts that had a value.
+
+| Parameter | In | Type | Required | Description |
+| --- | --- | --- | --- | --- |
+| `field_id` | path | string (uuid) | yes | The contact field's `id`. |
+
+Responses:
+
+- `200`: What deleting the field changed. [ContactFieldDeleted](#schema-contactfielddeleted)
+- `400`: The request is malformed. [Error](#schema-error)
+- `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
+- `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
+- `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -4237,6 +4365,7 @@ Type: string: one of `form`, `import`, `api`, `manual`
 | `status` | [ContactStatus](#schema-contactstatus) | yes |  |
 | `source` | [ContactSource](#schema-contactsource) | yes |  |
 | `tags` | array of [TagRef](#schema-tagref) | yes | The contact's tags, by name. |
+| `fields` | object | yes | The contact's values for the account's contact fields (`listContactFields`), by field `key`. A field with no value isn't here. |
 | `created_at` | string (date-time) | yes |  |
 | `updated_at` | string (date-time) | yes |  |
 | `status_changed_at` | string (date-time) | yes |  |
@@ -4269,6 +4398,7 @@ Type: string: one of `form`, `import`, `api`, `manual`
 | `last_name` | string or null |  |  |
 | `status` | string: one of `subscribed`, `unconfirmed`, `unsubscribed` |  | Use `unconfirmed` for someone who hasn't yet given permission to be mailed. |
 | `source` | string: one of `api`, `manual` |  | `manual` is for contacts a person typed in; agents and scripts leave it out. |
+| `fields` | [ContactFieldValues](#schema-contactfieldvalues) |  |  |
 
 <a id="schema-updatecontactrequest"></a>
 
@@ -4280,6 +4410,7 @@ Type: string: one of `form`, `import`, `api`, `manual`
 | `first_name` | string or null |  |  |
 | `last_name` | string or null |  |  |
 | `status` | string: one of `subscribed`, `unconfirmed`, `unsubscribed` |  |  |
+| `fields` | [ContactFieldValues](#schema-contactfieldvalues) |  | Field values to change, by key. An empty string or `null` clears a value, and keys left out keep theirs. |
 
 <a id="schema-contactdata"></a>
 
@@ -4346,6 +4477,62 @@ Type: string: one of `form`, `import`, `api`, `manual`
 | --- | --- | --- | --- |
 | `contacts_untagged` | integer | yes | How many contacts had the tag. |
 | `campaigns_updated` | integer | yes | How many draft or scheduled campaigns had the tag among their recipients. |
+
+<a id="schema-contactfield"></a>
+
+### ContactField
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | yes |  |
+| `key` | string | yes | What a contact's `fields` calls it. Worked out from the name when the field is made; a rename keeps it. |
+| `name` | string | yes | The field's label, and its column's header in a contacts export. |
+| `created_at` | string (date-time) | yes |  |
+| `updated_at` | string (date-time) | yes |  |
+
+<a id="schema-contactfieldlist"></a>
+
+### ContactFieldList
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `data` | array of [ContactField](#schema-contactfield) | yes |  |
+| `next_cursor` | string or null | yes |  |
+
+<a id="schema-createcontactfieldrequest"></a>
+
+### CreateContactFieldRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes | One line, unique in the account ignoring case, with at least one letter or digit; no two fields may work out to the same key. |
+
+<a id="schema-renamecontactfieldrequest"></a>
+
+### RenameContactFieldRequest
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes |  |
+
+<a id="schema-contactfielddeleted"></a>
+
+### ContactFieldDeleted
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `values_deleted` | integer | yes | How many contacts had a value for the field. |
+
+<a id="schema-contactfieldvalues"></a>
+
+### ContactFieldValues
+
+Values for the account's contact fields, by field `key`. Values are
+text, one line, at most 500 characters; an empty string or `null`
+is no value. A key that isn't one of the account's fields is a 422
+`unknown_field`.
+
+Type: object
 
 <a id="schema-contactfilter"></a>
 
@@ -5268,6 +5455,7 @@ Type: string: one of `full`, `draft`
 | `free_plan` | object | yes | The free plan's limits. |
 | `paid_sending` | object | yes | A paid account's daily sending limit. It starts at `starting_daily` and doubles each week of clean sending up to `most_daily`. With `needs_domain` true, this account sends from mailgoose's shared domain and stays at `starting_daily` until it verifies a domain of its own. |
 | `credit_packs` | object | yes | Credit packs, which the paid plan can buy. |
+| `contact_field_limit` | integer | yes | The most contact fields (`listContactFields`) this account's plan allows: 20 on every plan today. |
 
 <a id="schema-creditcheckoutrequest"></a>
 
