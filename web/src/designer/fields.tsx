@@ -1,7 +1,8 @@
 // Form fields the designer's properties panel is built from.
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 
-import { fallbackProblem, insert, maxFallback, mergeTag, mergeTags, type Edit, type MergeTag } from "./format";
+import { fallbackProblem, insert, maxFallback, mergeTag, mergeTags, type Edit } from "./format";
+import { useMergeFields } from "./mergefields";
 
 type TextControl = HTMLInputElement | HTMLTextAreaElement;
 
@@ -25,13 +26,18 @@ export function useSelection<T extends TextControl>(ref: RefObject<T | null>) {
   };
 }
 
-/** A menu that writes a merge tag, with an optional fallback for an empty value. */
+/**
+ * A menu that writes a merge tag, with an optional fallback for an empty
+ * value: the built-in tags, then the account's own contact fields (MG-133).
+ */
 export function MergeTags({ onInsert, unsubscribe = true }: { onInsert: (tag: string) => void; unsubscribe?: boolean }) {
   const [open, setOpen] = useState(false);
-  const [tag, setTag] = useState<MergeTag>("first_name");
+  const [tag, setTag] = useState<string>("first_name");
   const [fallback, setFallback] = useState("");
+  const fields = useMergeFields();
   const problem = tag === "unsubscribe_url" ? undefined : fallbackProblem(fallback);
   const tags = mergeTags.filter((t) => unsubscribe || t.tag !== "unsubscribe_url");
+  const field = fields.find((f) => f.key === tag);
   if (!open) {
     return (
       <button type="button" className="button small" onClick={() => setOpen(true)}>
@@ -43,18 +49,28 @@ export function MergeTags({ onInsert, unsubscribe = true }: { onInsert: (tag: st
     <div className="merge-tags panel" role="group" aria-label="Merge tag">
       <label className="field">
         <span>Fill in</span>
-        <select value={tag} onChange={(e) => setTag(e.target.value as MergeTag)}>
+        <select value={tag} onChange={(e) => setTag(e.target.value)}>
           {tags.map((t) => (
             <option key={t.tag} value={t.tag}>
               {t.label}
             </option>
           ))}
+          {fields.length > 0 && (
+            <optgroup label="Your fields">
+              {fields.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.name}
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
       </label>
       {tag !== "unsubscribe_url" && (
         <label className="field">
           <span>When it's empty, use (optional)</span>
-          <input value={fallback} onChange={(e) => setFallback(e.target.value)} maxLength={maxFallback + 10} placeholder="there" />
+          <input value={fallback} onChange={(e) => setFallback(e.target.value)} maxLength={maxFallback + 10} placeholder={field ? "" : "there"} />
+          {field && <small className="muted">Contacts with no {field.name} get this, or nothing if it's empty.</small>}
         </label>
       )}
       {problem && <p className="field-error">{problem}</p>}

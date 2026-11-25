@@ -97,6 +97,15 @@ mailgoose email blocks add <email-id> --type button --text "See the menu" --href
 mailgoose email blocks list <email-id> --json
 ```
 
+Merge tags fill in each contact's details: `{{first_name}}`, `{{last_name}}`,
+`{{email}}`, `{{unsubscribe_url}}`, and each of the account's contact fields
+by its key (`mailgoose fields list --json`), such as `{{company}}`. Every tag
+but `{{unsubscribe_url}}` takes a fallback for contacts with no value:
+`{{company|your team}}`. Give a contact field's tag one: the check warns
+(`merge_tag_no_fallback`) when it has none, since that contact sees nothing
+there. A tag that is neither built in nor a field's key is an error
+(`merge_tag`), and its message lists the keys there are.
+
 Each block has an id (`b_...`). Change one with `email blocks update`, move it
 with `email blocks move`, remove it with `email blocks remove`. Put blocks
 side by side with a `columns` block and `--in <columns-id> --column 0`.
@@ -135,7 +144,9 @@ The check lists errors, which stop a send (no subject, a From that isn't on
 a verified domain, no postal address, merge tags that can't be filled), and
 warnings, which some readers would trip on (such as images without alt text).
 Fix the errors, and tell the person about the warnings. The preview is the email as it will be sent, filled in with sample
-data.
+data: the sample person has no contact field values, so field tags show their
+fallbacks. `--contact <id-or-email>` fills it in from one contact instead,
+their field values included.
 
 ## 5. Make a campaign and send a test
 
@@ -259,8 +270,11 @@ mailgoose form embed <form-id> > signup.html
 Contact fields are the account's own text fields beside name and tags, up to
 `contact_field_limit` from `mailgoose plan --json` (20 today; more is
 `field_limit`). Contacts carry them as `fields`, by key; the key comes from
-the name and stays when it's renamed. `--field key=` clears a value, and
-deleting a field deletes its values, so ask the person first.
+the name and stays when it's renamed, so emails using `{{key}}` keep
+working. `--field key=` clears a value, and deleting a field deletes its
+values, so ask the person first. A field whose tag is in the email of a draft
+or scheduled campaign can't be deleted (`field_in_use` names the emails);
+take the tag out first.
 
 Import only people who agreed to hear from the person you help.
 `--list-source` is required and you can't guess it: ask the person where the

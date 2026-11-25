@@ -32,6 +32,20 @@ func addedField(t *testing.T, h http.Handler) {
 	t.Cleanup(func() { addedFields.Delete(t) })
 }
 
+// usedField is addedField whose merge tag the email of a draft campaign
+// uses (MG-133), so it can't be deleted.
+func usedField(t *testing.T, h http.Handler) {
+	t.Helper()
+	addedField(t, h)
+	addedEmailFrom(`{"name":"Fields","document":{"settings":{"subject":"For {{company|you}}"},"blocks":[{"type":"text","text":"Hi"}]}}`)(t, h)
+	v, _ := addedEmails.Load(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(jsonRequest(http.MethodPost, "/v1/campaigns", `{"name":"Fields","email_id":"`+v.(string)+`","recipients":{"all":true}}`))(t))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("add campaign: %d %s", rec.Code, rec.Body)
+	}
+}
+
 // fieldPath is a request to /v1/contact-fields/{the test's field}, or to a
 // field that doesn't exist when the test added none.
 func fieldPath(method, body string) func(*testing.T) *http.Request {

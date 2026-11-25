@@ -36,6 +36,10 @@ type Account struct {
 	// the social block's icons (MG-109). Without it, social links render as
 	// text.
 	AssetsURL string
+	// FieldKeys are the account's contact field keys, each a merge tag
+	// (MG-133). A tag that's neither built in nor one of these can't be
+	// filled in.
+	FieldKeys []string
 }
 
 // Problems is every merge tag or link Lint found that can't be rendered.
@@ -108,11 +112,12 @@ func (t *Template) Personalize(r Recipient) Message {
 // Lint returns every merge tag in the document that can't be filled in,
 // every text-block link that isn't a full https:// address (or mailto: or
 // {{unsubscribe_url}}), and every link a merge tag could point anywhere.
-// Compile refuses a document Lint finds anything in.
-func Lint(doc *emails.Document) []*TagError {
+// Compile refuses a document Lint finds anything in. fields are the
+// account's contact field keys, which are merge tags too (MG-133).
+func Lint(doc *emails.Document, fields []string) []*TagError {
 	var errs []*TagError
 	check := func(path, s string) {
-		_, e := findTags(s, path)
+		_, e := findTags(s, path, fields)
 		errs = append(errs, e...)
 	}
 	// A document saved before MG-64 may hold a link a merge tag decides.
@@ -196,14 +201,14 @@ func compileBlocks(doc *emails.Document, acct Account) (*Template, Problems, err
 	if strings.TrimSpace(acct.PostalAddress) == "" {
 		return nil, nil, ErrNoPostalAddress
 	}
-	problems := Problems(Lint(doc))
+	problems := Problems(Lint(doc, acct.FieldKeys))
 	r := &renderer{doc: doc, acct: acct, width: doc.Settings.ContentWidth}
 	if r.width <= 0 {
 		r.width = emails.DefaultSettings().ContentWidth
 	}
-	subject, _ := findTags(doc.Settings.Subject, "")
-	htmlParts, _ := findTags(r.html(), "")
-	textParts, _ := findTags(r.text(), "")
+	subject, _ := findTags(doc.Settings.Subject, "", acct.FieldKeys)
+	htmlParts, _ := findTags(r.html(), "", acct.FieldKeys)
+	textParts, _ := findTags(r.text(), "", acct.FieldKeys)
 	return &Template{subject: subject, html: splitSlot(htmlParts), text: splitSlot(textParts),
 		brandHTML: brandHTML(acct.AssetsURL), brandText: brandText(acct.AssetsURL)}, problems, nil
 }

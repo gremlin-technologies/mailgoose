@@ -244,3 +244,36 @@ func TestDefaultFromWarning(t *testing.T) {
 		}
 	}
 }
+
+func TestFieldTags(t *testing.T) {
+	in := good
+	in.FieldKeys = []string{"company", "plan"}
+	in.Doc = blocksDoc(t, `{"subject":"News for {{company}}"}`,
+		`{"type":"heading","text":"Hi {{first_name}} at {{company|your team}}"},`+
+			`{"type":"text","text":"Your plan: {{plan}}, {{plan}}. {{nickname|you}}"},`+
+			`{"type":"footer","text":""}`)
+	res := Check(context.Background(), in, nil)
+	// A field's tag with no fallback is a warning, once a place; a built-in
+	// tag with none isn't. A tag no field has is an error listing the keys.
+	if got, want := codes(res.Warnings), "merge_tag_no_fallback@blocks[1].text merge_tag_no_fallback@settings.subject"; got != want {
+		t.Errorf("warnings\n got %s\nwant %s", got, want)
+	}
+	if got := codes(res.Errors); got != "merge_tag@blocks[1].text" {
+		t.Errorf("errors %s", got)
+	}
+	if m := res.Errors[0].Message; !strings.Contains(m, "{{nickname|you}} isn't a merge tag") || !strings.HasSuffix(m, "contact fields: {{company}}, {{plan}}.") {
+		t.Errorf("unknown tag message %q", m)
+	}
+	for _, w := range res.Warnings {
+		if w.Path == "settings.subject" && w.Message != "{{company}} has no fallback, so contacts with no company value get nothing there. Add one for them, such as {{company|your words}}." {
+			t.Errorf("warning message %q", w.Message)
+		}
+	}
+
+	// An html email's tags are found in its markup.
+	in.Doc = htmlDoc(t, `{"subject":"Hi"}`, `<html><body><p>{{plan}} {{company|x}}</p><a href="{{unsubscribe_url}}">Unsubscribe</a></body></html>`)
+	res = Check(context.Background(), in, nil)
+	if !res.OK() || codes(res.Warnings) != "merge_tag_no_fallback@html" {
+		t.Errorf("html email: errors %s; warnings %s", codes(res.Errors), codes(res.Warnings))
+	}
+}

@@ -35,7 +35,9 @@ func storeParts(p parts) []storedSegment {
 func loadParts(in []storedSegment) (parts, error) {
 	out := make(parts, len(in))
 	for i, s := range in {
-		if s.Tag != "" && !knownTag(s.Tag) {
+		// A contact field's tag (MG-133) is kept by its key; a field
+		// deleted since launch fills in as empty, taking the fallback.
+		if s.Tag != "" && !Builtin(s.Tag) && !fieldKey.MatchString(s.Tag) {
 			return nil, fmt.Errorf("render: stored template has unknown merge tag %q", s.Tag)
 		}
 		out[i] = segment{text: s.Text, tag: s.Tag, fallback: s.Fallback, slot: s.Slot}
@@ -69,13 +71,4 @@ func (t *Template) UnmarshalJSON(b []byte) error {
 	}
 	t.brandHTML, t.brandText = st.BrandHTML, st.BrandText
 	return nil
-}
-
-func knownTag(tag string) bool {
-	for _, t := range Tags {
-		if t == tag {
-			return true
-		}
-	}
-	return false
 }

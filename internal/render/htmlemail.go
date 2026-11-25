@@ -63,11 +63,11 @@ func compileHTML(doc *emails.Document, acct Account) (*Template, Problems, error
 	}
 
 	var problems Problems
-	subject, e := findTags(doc.Settings.Subject, "settings.subject")
+	subject, e := findTags(doc.Settings.Subject, "settings.subject", acct.FieldKeys)
 	problems = append(problems, e...)
-	htmlParts, e := findTags(src, "html")
+	htmlParts, e := findTags(src, "html", acct.FieldKeys)
 	problems = append(problems, e...)
-	textParts, _ := findTags(text, "html")
+	textParts, _ := findTags(text, "html", acct.FieldKeys)
 	return &Template{subject: subject, html: splitSlot(htmlParts), text: splitSlot(textParts),
 		brandHTML: brandHTMLFragment(acct.AssetsURL), brandText: brandText(acct.AssetsURL)}, problems, nil
 }

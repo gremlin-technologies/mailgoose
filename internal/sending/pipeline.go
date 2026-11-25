@@ -721,7 +721,8 @@ func (p *Pipeline) send(ctx context.Context, b Batch, s *sendable, id int64, r c
 	if err != nil {
 		return false, err
 	}
-	m := s.copy.Template.Personalize(render.Recipient{Email: r.email, FirstName: r.first, LastName: r.last, UnsubscribeURL: url, Branded: branded})
+	m := s.copy.Template.Personalize(render.Recipient{Email: r.email, FirstName: r.first, LastName: r.last, Fields: r.fields,
+		UnsubscribeURL: url, Branded: branded})
 	if s.links != nil {
 		unsub := strings.TrimRight(p.BaseURL, "/") + unsubscribe.PathPrefix
 		m.HTML = render.Track(m.HTML, s.links.For(id), func(href string) bool {
@@ -782,6 +783,9 @@ func (p *Pipeline) send(ctx context.Context, b Batch, s *sendable, id int64, r c
 
 type claimed struct {
 	contactID, email, first, last string
+	// fields are the contact's field values (MG-133), read with the rest
+	// of its row.
+	fields map[string]string
 	// skipped is a row claim skipped rather than claimed.
 	skipped bool
 }
@@ -828,8 +832,8 @@ func (p *Pipeline) claim(ctx context.Context, b Batch, id int64) (claimed, bool,
 	var status string
 	var first, last *string
 	if contactID != nil {
-		err = tx.QueryRow(ctx, `SELECT email, status, first_name, last_name FROM contacts WHERE id = $1`, *contactID).
-			Scan(&r.email, &status, &first, &last)
+		err = tx.QueryRow(ctx, `SELECT email, status, first_name, last_name, fields FROM contacts WHERE id = $1`, *contactID).
+			Scan(&r.email, &status, &first, &last, &r.fields)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 			return r, false, err
 		}

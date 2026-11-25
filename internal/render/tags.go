@@ -3,12 +3,19 @@ package render
 import (
 	"fmt"
 	"html"
+	"regexp"
+	"slices"
 	"strings"
+
+	"github.com/gremlin-technologies/mailgoose/internal/emails"
 )
 
 // Merge tags (DES-7) are replaced per recipient: {{first_name}},
 // {{last_name}} and {{email}}, each with an optional fallback for an empty
-// value ({{first_name|there}}), and {{unsubscribe_url}}.
+// value ({{first_name|there}}), and {{unsubscribe_url}}. Each of the
+// account's contact fields (MG-130) is a merge tag too, by its key
+// ({{company|your team}}, MG-133); the built-in tags come first, and no
+// field can have one of their keys.
 const (
 	TagFirstName      = "first_name"
 	TagLastName       = "last_name"
@@ -29,6 +36,9 @@ type Recipient struct {
 	FirstName      string
 	LastName       string
 	UnsubscribeURL string
+	// Fields are the recipient's contact field values by key (MG-133). A
+	// field with no value, or one that's gone, takes the tag's fallback.
+	Fields map[string]string
 	// Branded adds the "Sent by mailgoose" footer to this copy (MG-119): a
 	// free account's, or a tester's. It's decided for each copy.
 	Branded bool
@@ -45,7 +55,7 @@ func (r Recipient) value(tag string) string {
 	case TagUnsubscribeURL:
 		return r.UnsubscribeURL
 	}
-	return ""
+	return r.Fields[tag]
 }
 
 // segment is literal text, or a merge tag when tag is set.
@@ -107,8 +117,9 @@ type TagError struct {
 func (e *TagError) Error() string { return fmt.Sprintf("%s: %s", e.Path, e.Message) }
 
 // findTags splits s into literal text and merge tags, reporting each tag it
-// can't use. Anything that doesn't open with "{{" is literal.
-func findTags(s, path string) (parts, []*TagError) {
+// can't use. Anything that doesn't open with "{{" is literal. fields are the
+// account's contact field keys, each a merge tag too (MG-133).
+func findTags(s, path string, fields []string) (parts, []*TagError) {
 	var out parts
 	var errs []*TagError
 	for {
@@ -127,9 +138,8 @@ func findTags(s, path string) (parts, []*TagError) {
 		name = strings.TrimSpace(name)
 		fallback = strings.TrimSpace(fallback)
 		switch {
-		case !known(name):
-			errs = append(errs, &TagError{Path: path, Tag: raw,
-				Message: fmt.Sprintf("%s isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}} or {{unsubscribe_url}}", raw)})
+		case !known(name, fields):
+			errs = append(errs, &TagError{Path: path, Tag: raw, Message: unknownTagMessage(raw, fields)})
 		case hasFallback && name == TagUnsubscribeURL:
 			errs = append(errs, &TagError{Path: path, Tag: raw, Message: "{{unsubscribe_url}} takes no fallback; every recipient has one"})
 		case strings.ContainsAny(fallback, "{}"):
@@ -154,13 +164,108 @@ func findTags(s, path string) (parts, []*TagError) {
 	return out, errs
 }
 
-func known(name string) bool {
-	for _, t := range Tags {
-		if name == t {
-			return true
+func known(name string, fields []string) bool {
+	return Builtin(name) || slices.Contains(fields, name)
+}
+
+// Builtin reports whether name is one of the built-in merge tags, rather
+// than a contact field's key.
+func Builtin(name string) bool { return slices.Contains(Tags, name) }
+
+// unknownTagMessage says a tag isn't one, and lists the tags that are: the
+// built-in ones and the account's contact field keys.
+func unknownTagMessage(raw string, fields []string) string {
+	if len(fields) == 0 {
+		return fmt.Sprintf("%s isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}} or {{unsubscribe_url}} "+
+			"(this account has no contact fields to use as tags)", raw)
+	}
+	keys := make([]string, len(fields))
+	for i, k := range fields {
+		keys[i] = "{{" + k + "}}"
+	}
+	return fmt.Sprintf("%s isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}}, {{unsubscribe_url}} "+
+		"or one of this account's contact fields: %s", raw, strings.Join(keys, ", "))
+}
+
+// fieldKey matches what a contact field's key can be (contacts.FieldKey):
+// a to z, 0 to 9 and _, starting with a letter.
+var fieldKey = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// TagUse is one well-formed merge tag in an email: where it is, its name
+// and whether it has a fallback. The name may be one no account has.
+type TagUse struct {
+	// Path names where it is, as TagError.Path does.
+	Path        string
+	Tag         string
+	HasFallback bool
+}
+
+// UsedTags lists every well-formed merge tag in an email, of either kind,
+// in the order they come, once for each tag at each path (twice when it's
+// there both with a fallback and without). It's how a
+// check finds a contact field's tag with no fallback, and how deleting a
+// field finds the emails that use it.
+func UsedTags(doc *emails.Document) []TagUse {
+	var out []TagUse
+	seen := map[TagUse]bool{}
+	eachTagged(doc, func(path, s string) {
+		for {
+			i := strings.Index(s, "{{")
+			if i < 0 {
+				return
+			}
+			j := strings.Index(s[i:], "}}")
+			if j < 0 {
+				return
+			}
+			name, _, hasFallback := strings.Cut(s[i+2:i+j], "|")
+			s = s[i+j+2:]
+			if name = strings.TrimSpace(name); name == "" {
+				continue
+			}
+			u := TagUse{Path: path, Tag: name, HasFallback: hasFallback}
+			if !seen[u] {
+				seen[u] = true
+				out = append(out, u)
+			}
+		}
+	})
+	return out
+}
+
+// eachTagged calls fn with every text of an email that merge tags can be
+// in, and where it is. For an html email that's its subject, preview text
+// and markup.
+func eachTagged(doc *emails.Document, fn func(path, s string)) {
+	fn("settings.subject", doc.Settings.Subject)
+	fn("settings.preview_text", doc.Settings.PreviewText)
+	if doc.HTML != nil {
+		fn("html", *doc.HTML)
+		return
+	}
+	for _, info := range emails.ListBlocks(doc) {
+		p := info.Path
+		switch b := info.Block.(type) {
+		case *emails.Heading:
+			fn(p+".text", b.Text)
+		case *emails.Text:
+			fn(p+".text", b.Text)
+		case *emails.Image:
+			fn(p+".alt", b.Alt)
+			if b.Href != nil {
+				fn(p+".href", *b.Href)
+			}
+		case *emails.Button:
+			fn(p+".text", b.Text)
+			fn(p+".href", b.Href)
+		case *emails.Social:
+			for i, l := range b.Links {
+				fn(fmt.Sprintf("%s.links[%d].label", p, i), l.Label)
+			}
+		case *emails.Footer:
+			fn(p+".text", b.Text)
 		}
 	}
-	return false
 }
 
 func clip(s string) string {

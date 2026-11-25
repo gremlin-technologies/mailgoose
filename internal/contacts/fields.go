@@ -15,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
+	"github.com/gremlin-technologies/mailgoose/internal/emails"
+	"github.com/gremlin-technologies/mailgoose/internal/render"
 )
 
 // Custom contact fields (MG-130): text fields an account defines beside
@@ -41,12 +43,13 @@ func FieldLimit(plan string) int {
 	return PaidFieldLimit
 }
 
-// ReservedFieldKeys are keys a field can't have: the contact's own columns
-// and the contacts export's columns, so neither the API's contacts nor an
-// export's header can be read two ways.
+// ReservedFieldKeys are keys a field can't have: the contact's own columns,
+// the contacts export's columns and the built-in merge tags, so neither the
+// API's contacts, an export's header nor a merge tag (MG-133) can be read
+// two ways.
 var ReservedFieldKeys = func() []string {
 	keys := []string{"id", "contact_id", "email", "first_name", "last_name", "status", "tags", "source",
-		"created_at", "updated_at", "status_changed_at", "permission_confirmed"}
+		"created_at", "updated_at", "status_changed_at", "permission_confirmed", render.TagUnsubscribeURL}
 	for _, h := range ExportHeader {
 		if !slices.Contains(keys, h) {
 			keys = append(keys, h)
@@ -54,6 +57,24 @@ var ReservedFieldKeys = func() []string {
 	}
 	return keys
 }()
+
+// FieldInUseError means a field can't be deleted while emails of draft or
+// scheduled campaigns use its merge tag (MG-133): those emails would send
+// with the tag empty, or not at all.
+type FieldInUseError struct {
+	Key    string
+	Emails []EmailRef
+}
+
+func (e *FieldInUseError) Error() string {
+	return fmt.Sprintf("field %s is used by %d emails", e.Key, len(e.Emails))
+}
+
+// EmailRef names one email.
+type EmailRef struct {
+	ID   string
+	Name string
+}
 
 var (
 	// ErrFieldNotFound means no field with that id in the account.
@@ -120,7 +141,7 @@ func normalizeFieldName(raw string) (name, key string, err error) {
 	}
 	if slices.Contains(ReservedFieldKeys, key) {
 		return "", "", &auth.ValidationError{Code: "reserved_field_name", Field: "name",
-			Message: fmt.Sprintf("%q would have the key %s, which is one of a contact's own columns. Pick another name.", name, key)}
+			Message: fmt.Sprintf("%q would have the key %s, which is one of a contact's own columns or merge tags. Pick another name.", name, key)}
 	}
 	return name, key, nil
 }
@@ -216,7 +237,8 @@ type FieldDeleted struct {
 }
 
 // DeleteField deletes a field and every contact's value for it, in one
-// transaction.
+// transaction. A field whose merge tag the email of a draft or scheduled
+// campaign uses isn't deleted (*FieldInUseError, MG-133).
 func (s *Service) DeleteField(ctx context.Context, accountID, id string) (*FieldDeleted, error) {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -233,6 +255,13 @@ func (s *Service) DeleteField(ctx context.Context, accountID, id string) (*Field
 	if err != nil {
 		return nil, err
 	}
+	used, err := emailsUsingField(ctx, tx, accountID, key)
+	if err != nil {
+		return nil, err
+	}
+	if len(used) > 0 {
+		return nil, &FieldInUseError{Key: key, Emails: used}
+	}
 	res, err := tx.Exec(ctx, `UPDATE contacts SET fields = fields - $2 WHERE account_id = $1 AND fields ? $2`, accountID, key)
 	if err != nil {
 		return nil, err
@@ -241,6 +270,62 @@ func (s *Service) DeleteField(ctx context.Context, accountID, id string) (*Field
 		return nil, err
 	}
 	return &FieldDeleted{ValuesDeleted: int(res.RowsAffected())}, tx.Commit(ctx)
+}
+
+// emailsUsingField lists the emails of the account's draft and scheduled
+// campaigns that use the field's merge tag, by name. Emails that no such
+// campaign uses aren't listed: their check reports the tag once the field
+// is gone. A sending or sent campaign kept its own copy at launch, which
+// fills the tag in as empty once the field is gone.
+func emailsUsingField(ctx context.Context, tx pgx.Tx, accountID, key string) ([]EmailRef, error) {
+	// The key's characters are never escaped in JSON, so the text match
+	// keeps the documents read to the few that may use it.
+	rows, err := tx.Query(ctx, `
+		SELECT id, name, kind, document FROM emails
+		WHERE account_id = $1 AND strpos(document::text, $2) > 0
+			AND id IN (SELECT email_id FROM campaigns WHERE account_id = $1 AND status IN ('draft', 'scheduled') AND email_id IS NOT NULL)
+		ORDER BY lower(name), id`, accountID, key)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []EmailRef
+	for rows.Next() {
+		var ref EmailRef
+		var kind string
+		var raw []byte
+		if err := rows.Scan(&ref.ID, &ref.Name, &kind, &raw); err != nil {
+			return nil, err
+		}
+		doc, err := emails.ParseDocument(kind, raw)
+		if err != nil {
+			return nil, fmt.Errorf("stored document of email %s: %w", ref.ID, err)
+		}
+		for _, u := range render.UsedTags(doc) {
+			if u.Tag == key {
+				out = append(out, ref)
+				break
+			}
+		}
+	}
+	return out, rows.Err()
+}
+
+// FieldKeys returns the keys of the account's fields, in the order they
+// were made: the merge tags they add (MG-133).
+func (s *Service) FieldKeys(ctx context.Context, accountID string) ([]string, error) {
+	return FieldKeys(ctx, s.DB, accountID)
+}
+
+// FieldKeys is Service.FieldKeys for any querier, such as a transaction.
+func FieldKeys(ctx context.Context, db interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}, accountID string) ([]string, error) {
+	rows, err := db.Query(ctx, `SELECT key FROM contact_fields WHERE account_id = $1 ORDER BY created_at, id`, accountID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
 // GetField returns one field of the account.

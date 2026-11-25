@@ -72,6 +72,10 @@ describe("html helpers", () => {
     expect(fillSample("Hi {{first_name|there}} {{ last_name }} <{{email}}> {{unsubscribe_url}} {{nickname}}")).toBe(
       "Hi Alex Rivera <alex@example.com> #unsubscribe {{nickname}}",
     );
+    // A contact field's tag shows its fallback, or nothing: the sample has no values for fields.
+    expect(fillSample("At {{company|your team}}, {{ company }}{{plan}} {{constructor}}", ["company"])).toBe(
+      "At your team, {{plan}} {{constructor}}",
+    );
   });
 
   it("reads the issues of an invalid_html answer, ignoring anything malformed", () => {

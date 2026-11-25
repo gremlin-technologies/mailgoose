@@ -32,6 +32,13 @@ func (s *Server) CheckEmail(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	in := emailcheck.Input{Doc: e.Document, Safety: s.LinkSafety}
+	// The account's contact fields are merge tags too (MG-133).
+	if s.Contacts != nil {
+		if in.FieldKeys, err = s.Contacts.FieldKeys(r.Context(), c.AccountID); err != nil {
+			s.emailError(w, r, err)
+			return
+		}
+	}
 	var fromName string
 	if s.Auth != nil {
 		st, err := s.Auth.AccountSettings(r.Context(), c.AccountID)

@@ -83,3 +83,52 @@ func TestEmailPreviewProblems(t *testing.T) {
 		t.Errorf("empty email: exit %d %s", code, h.errOut)
 	}
 }
+
+// TestFieldMergeTags: the CLI's preview and check know the account's
+// contact fields (MG-133), and a field an active campaign's email uses
+// isn't deleted.
+func TestFieldMergeTags(t *testing.T) {
+	h := liveAPI(t)
+	for _, args := range [][]string{
+		{"fields", "create", "Company"},
+		{"fields", "create", "Plan"},
+		{"contacts", "add", "pat@example.com", "--first-name", "Pat", "--field", "company=Acme", "--field", "plan=Pro"},
+	} {
+		if code := h.run(args...); code != ExitOK {
+			t.Fatalf("%v: exit %d %s", args, code, h.errOut)
+		}
+	}
+	h.app.Stdin = strings.NewReader(`{"settings":{"subject":"News"},"blocks":[
+		{"type":"heading","text":"For {{company|your team}}"},
+		{"type":"text","text":"Your plan: {{plan}}."}]}`)
+	if code := h.run("email", "create", "--name", "Fields", "--file", "-", "--json"); code != ExitOK {
+		t.Fatalf("create: exit %d %s", code, h.errOut)
+	}
+	id := h.jsonOut(t)["id"].(string)
+
+	if code := h.run("email", "preview", id); code != ExitOK || !strings.Contains(h.out.String(), ">For your team</h1>") {
+		t.Errorf("sample preview: exit %d %.200s", code, h.errOut)
+	}
+	if code := h.run("email", "preview", id, "--contact", "pat@example.com"); code != ExitOK ||
+		!strings.Contains(h.out.String(), ">For Acme</h1>") || !strings.Contains(h.out.String(), "Your plan: Pro.") {
+		t.Errorf("--contact: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("email", "preview", id, "--contact", "nobody@example.com"); code != ExitNotFound {
+		t.Errorf("unknown contact: exit %d", code)
+	}
+
+	if code := h.run("email", "check", id, "--json"); code != ExitError && code != ExitOK {
+		t.Fatalf("check: exit %d %s", code, h.errOut)
+	}
+	if out := h.out.String(); !strings.Contains(out, `"merge_tag_no_fallback"`) || strings.Contains(out, `"merge_tag"`) {
+		t.Errorf("check: %s", out)
+	}
+
+	if code := h.run("campaign", "create", "--name", "Fields", "--email", id, "--all", "--json"); code != ExitOK {
+		t.Fatalf("campaign: exit %d %s", code, h.errOut)
+	}
+	if code := h.run("fields", "delete", "plan", "--yes", "--json"); code == ExitOK || !strings.Contains(h.errOut.String(), "field_in_use") ||
+		!strings.Contains(h.errOut.String(), `The email \"Fields\"`) {
+		t.Errorf("delete a field in use: exit %d %s", code, h.errOut)
+	}
+}

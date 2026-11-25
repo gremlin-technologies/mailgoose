@@ -116,6 +116,7 @@ describe("text formatting", () => {
     expect(mergeTag("first_name", " there ")).toBe("{{first_name|there}}");
     expect(mergeTag("email")).toBe("{{email}}");
     expect(mergeTag("unsubscribe_url", "ignored")).toBe("{{unsubscribe_url}}");
+    expect(mergeTag("company", "your team")).toBe("{{company|your team}}");
     expect(fallbackProblem("friend")).toBeUndefined();
     expect(fallbackProblem("{x}")).toMatch(/can't contain/);
     expect(fallbackProblem("x".repeat(101))).toMatch(/up to 100/);
@@ -178,6 +179,32 @@ describe("designer properties and autosave", () => {
       settings: { subject: "Hi {{first_name|there}}, it's spring" },
     });
     expect(screen.getByRole("heading", { name: "Spring 2027", level: 1 })).toBeTruthy();
+  });
+
+  it("offers the account's contact fields as merge tags, with a fallback", async () => {
+    const fields = [
+      { id: "44444444-4444-4444-8444-444444444444", key: "company", name: "Company", created_at: "2026-11-24T10:00:00Z", updated_at: "2026-11-24T10:00:00Z" },
+    ];
+    const api = server({ "GET /v1/contact-fields": () => ({ status: 200, body: { data: fields, next_cursor: null } }) });
+    const user = userEvent.setup();
+    renderApp(`/emails/${emailId}`, api.fetch);
+    const panel = await screen.findByRole("form", { name: "Email settings" });
+    const subject = within(panel).getByLabelText("Subject") as HTMLInputElement;
+    await user.clear(subject);
+    await user.type(subject, "News for ");
+    const subjectField = subject.closest(".tag-field") as HTMLElement;
+    await user.click(within(subjectField).getByRole("button", { name: "Merge tag" }));
+    const menu = within(subjectField).getByRole("group", { name: "Merge tag" });
+    // The built-in tags come first, then the account's own fields.
+    const select = within(menu).getByLabelText("Fill in");
+    await waitFor(() => expect(within(select).getByRole("option", { name: "Company" })).toBeTruthy());
+    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual(["First name", "Last name", "Email address", "Company"]);
+    expect(within(select).getByRole("group", { name: "Your fields" })).toBeTruthy();
+    await user.selectOptions(select, "company");
+    expect(within(menu).getByText("Contacts with no Company get this, or nothing if it's empty.")).toBeTruthy();
+    await user.type(within(menu).getByLabelText(/When it's empty/), "your team");
+    await user.click(within(menu).getByRole("button", { name: "Insert" }));
+    expect(subject.value).toBe("News for {{company|your team}}");
   });
 
   it("types on a text block in place, saving its Markdown", async () => {

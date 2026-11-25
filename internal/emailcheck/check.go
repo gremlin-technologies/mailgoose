@@ -54,6 +54,9 @@ const (
 	// account. It sends; its own domain would do better.
 	SharedDomain   = "shared_domain"
 	UnsupportedCSS = emails.HTMLUnsupportedCSS
+	// FieldTagNoFallback is a contact field's merge tag (MG-133) with no
+	// fallback: contacts with no value for the field get nothing there.
+	FieldTagNoFallback = "merge_tag_no_fallback"
 )
 
 // NearSizeBytes is where the size warning starts: tracking adds to every
@@ -111,6 +114,9 @@ type Input struct {
 	// Safety looks links up on the phishing and malware lists (MG-64); nil
 	// skips that.
 	Safety *linkrisk.Checker
+	// FieldKeys are the account's contact field keys, which are merge tags
+	// too (MG-133).
+	FieldKeys []string
 }
 
 // unsubscribeSample stands in for each recipient's own unsubscribe link,
@@ -168,7 +174,7 @@ func Check(ctx context.Context, in Input, links LinkChecker) Result {
 		c.fail(Issue{Code: EmptyEmail, Path: "blocks", Message: "The email has no blocks besides the footer."})
 	}
 
-	tpl, problems, err := render.Draft(doc, render.Account{PostalAddress: addr})
+	tpl, problems, err := render.Draft(doc, render.Account{PostalAddress: addr, FieldKeys: in.FieldKeys})
 	if err != nil {
 		c.fail(Issue{Code: InvalidHTML, Message: "The email can't be rendered: " + err.Error()})
 		return c.res
@@ -189,6 +195,7 @@ func Check(ctx context.Context, in Input, links LinkChecker) Result {
 	if doc.HTML == nil {
 		c.blockAlts(doc)
 	}
+	c.fieldFallbacks(doc, in.FieldKeys)
 
 	msg := tpl.Personalize(sample)
 	switch n := len(msg.HTML); {
@@ -209,6 +216,19 @@ type checker struct {
 
 func (c *checker) fail(i Issue) { c.res.Errors = append(c.res.Errors, i) }
 func (c *checker) warn(i Issue) { c.res.Warnings = append(c.res.Warnings, i) }
+
+// fieldFallbacks warns about each contact field tag (MG-133) with no
+// fallback, once for each place it's in: some contacts may have no value.
+func (c *checker) fieldFallbacks(doc *emails.Document, fields []string) {
+	for _, u := range render.UsedTags(doc) {
+		if u.HasFallback || render.Builtin(u.Tag) || !slices.Contains(fields, u.Tag) {
+			continue
+		}
+		c.warn(Issue{Code: FieldTagNoFallback, Path: u.Path, Message: fmt.Sprintf(
+			"{{%s}} has no fallback, so contacts with no %s value get nothing there. Add one for them, such as {{%s|your words}}.",
+			u.Tag, u.Tag, u.Tag)})
+	}
+}
 
 // hasContent reports whether a blocks email has any block but the footer.
 func hasContent(doc *emails.Document) bool {

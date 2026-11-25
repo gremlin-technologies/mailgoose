@@ -2,6 +2,7 @@
 // tested on their own.
 import type { Failure } from "../api/result";
 import type { components } from "../api/schema";
+import { isBuiltinTag } from "./format";
 
 export type HtmlIssue = components["schemas"]["HtmlIssue"];
 
@@ -15,10 +16,16 @@ const sample: Record<string, string> = {
 
 /**
  * The markup with its merge tags filled in from the sample contact, for the
- * live preview. Unknown tags stay as they are, so they show up.
+ * live preview. The sample has no contact field values, so a field's tag
+ * (MG-133) shows its fallback, written into the markup as it stands, or
+ * nothing. Unknown tags stay as they are, so they show up.
  */
-export function fillSample(html: string): string {
-  return html.replace(/\{\{\s*(first_name|last_name|email|unsubscribe_url)\s*(?:\|[^{}]*)?\}\}/g, (_, tag: string) => escape(sample[tag]));
+export function fillSample(html: string, fieldKeys: readonly string[] = []): string {
+  return html.replace(/\{\{\s*([^{}|]*?)\s*(?:\|([^{}]*))?\}\}/g, (all, tag: string, fallback?: string) => {
+    if (isBuiltinTag(tag)) return escape(sample[tag]);
+    if (fieldKeys.includes(tag)) return (fallback ?? "").trim();
+    return all;
+  });
 }
 
 function escape(s: string): string {
