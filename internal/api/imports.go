@@ -41,6 +41,12 @@ func (s *Server) importError(w http.ResponseWriter, r *http.Request, err error) 
 		switch ve.Code {
 		case "no_email_column", "invalid_mapping":
 			e = e.WithHint("Name the columns with `columns`, or `--map email=<header>` in the CLI.")
+		case "unknown_field":
+			e = e.WithHint("`mailgoose fields list` shows the account's fields and their keys.")
+		case "field_exists":
+			e = e.WithHint("Match the column to the existing field with `field_columns`, or `--field <key>=<header>` in the CLI.")
+		case "field_limit":
+			e = e.WithHint("Match columns to existing fields instead, or delete a field you no longer use.")
 		case "tag_not_found":
 			e = e.WithHint("`mailgoose tags create <name>` makes it.")
 		case "list_source_required", "invalid_list_source", "list_source_detail_required":
@@ -99,7 +105,12 @@ func importJSON(im *contacts.Import) apigen.Import {
 	out.SkippedByReason.OverLimit = by[contacts.SkipOverLimit]
 	out.SkippedByReason.NotSubscribed = by[contacts.SkipNotSubscribed]
 	out.SkippedByReason.Archived = by[contacts.SkipArchived]
-	out.ExistingTagged, out.ExistingSuppressed = im.ExistingTagged, im.ExistingSuppressed
+	out.ExistingTagged, out.ExistingSuppressed, out.ExistingUpdated = im.ExistingTagged, im.ExistingSuppressed, im.ExistingUpdated
+	out.FieldColumns = make([]apigen.ImportFieldColumn, len(im.FieldColumns))
+	for i, fc := range im.FieldColumns {
+		out.FieldColumns[i] = apigen.ImportFieldColumn{Field: apigen.ImportFieldRef{Id: fc.ID, Key: fc.Key, Name: fc.Name},
+			Column: fc.Column, Created: fc.Created}
+	}
 	if out.Kind == "" {
 		out.Kind = apigen.ImportKindCsv
 	}
@@ -141,6 +152,19 @@ func setImportColumns(in *contacts.ImportInput, cols *apigen.ImportColumns) {
 	}
 }
 
+// setImportFields puts a request's contact field columns and new fields on
+// in (MG-131).
+func setImportFields(in *contacts.ImportInput, cols *apigen.ImportFieldColumns, news *apigen.ImportNewFields) {
+	if cols != nil {
+		in.FieldColumns = *cols
+	}
+	if news != nil {
+		for _, nf := range *news {
+			in.NewFields = append(in.NewFields, contacts.NewImportField{Column: nf.Column, Name: deref(nf.Name)})
+		}
+	}
+}
+
 // PreviewImport is POST /v1/imports/preview.
 func (s *Server) PreviewImport(w http.ResponseWriter, r *http.Request) {
 	c := s.contactsCaller(w, r)
@@ -154,7 +178,8 @@ func (s *Server) PreviewImport(w http.ResponseWriter, r *http.Request) {
 	}
 	in := contacts.ImportInput{CSV: []byte(req.Csv), NoHeader: req.HasHeader != nil && !*req.HasHeader}
 	setImportColumns(&in, req.Columns)
-	p, err := contacts.PreviewImport(in)
+	setImportFields(&in, req.FieldColumns, req.NewFields)
+	p, err := s.Contacts.PreviewImport(r.Context(), c.AccountID, in)
 	if s.importError(w, r, err) {
 		return
 	}
@@ -165,6 +190,12 @@ func (s *Server) PreviewImport(w http.ResponseWriter, r *http.Request) {
 		if col.Field != "" {
 			f := apigen.ImportField(col.Field)
 			out.Columns[i].Field = &f
+		}
+		if f := col.CustomField; f != nil {
+			out.Columns[i].CustomField = &apigen.ImportFieldRef{Id: f.ID, Key: f.Key, Name: f.Name}
+		}
+		if nf := col.NewField; nf != nil {
+			out.Columns[i].NewField = &apigen.ImportNewFieldPreview{Name: nf.Name, Key: nf.Key}
 		}
 	}
 	if p.Problem != nil {
@@ -190,6 +221,7 @@ func (s *Server) CreateImport(w http.ResponseWriter, r *http.Request) {
 		in.FileName = *req.FileName
 	}
 	setImportColumns(&in, req.Columns)
+	setImportFields(&in, req.FieldColumns, req.NewFields)
 	if req.Tags != nil {
 		if len(*req.Tags) > contacts.MaxImportTags {
 			WriteError(w, Unprocessable("too_many_tags", "An import puts at most "+strconv.Itoa(contacts.MaxImportTags)+" tags on its contacts."))

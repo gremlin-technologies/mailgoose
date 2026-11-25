@@ -51,6 +51,16 @@ func importsStub(t *testing.T) (*harness, *[]seenRequest) {
 			_, _ = w.Write([]byte(`{"separator":"tab","rows":1,"has_header_guess":false,"columns":[` +
 				`{"position":1,"header":"","name":"#1","field":null,"samples":["Pat"]},` +
 				`{"position":2,"header":"","name":"#2","field":"email","samples":["pat@example.com"]}],"problem":null}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/imports/preview" && strings.HasPrefix(req.body["csv"].(string), "Email,Organisation"):
+			_, _ = w.Write([]byte(`{"separator":"comma","rows":1,"has_header_guess":true,"columns":[` +
+				`{"position":1,"header":"Email","name":"Email","field":"email","custom_field":null,"new_field":null,"samples":["pat@example.com"]},` +
+				`{"position":2,"header":"Organisation","name":"Organisation","field":null,"custom_field":{"id":"f1","key":"company","name":"Company"},"new_field":null,"samples":["Acme"]},` +
+				`{"position":3,"header":"Size","name":"Size","field":null,"custom_field":null,"new_field":{"name":"Company size","key":"company_size"},"samples":["12"]}],"problem":null}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/imports" && strings.HasPrefix(req.body["csv"].(string), "Email,Organisation"):
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(strings.Replace(testImport("queued", 0, 0, 0), `"tags":[]`, `"tags":[],"existing_updated":0,"field_columns":[`+
+				`{"field":{"id":"f1","key":"company","name":"Company"},"column":"Organisation","created":false},`+
+				`{"field":{"id":"f2","key":"company_size","name":"Company size"},"column":"Size","created":true}]`, 1)))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/imports/preview":
 			_, _ = w.Write([]byte(`{"separator":"tab","rows":2,"has_header_guess":true,"columns":[` +
 				`{"position":1,"header":"E-mail","name":"E-mail","field":"email","samples":["pat@example.com","ana@example.com"]},` +
@@ -68,7 +78,7 @@ func importsStub(t *testing.T) (*harness, *[]seenRequest) {
 			_, _ = w.Write([]byte(testImport("done", 4, 2, 2)))
 		case r.URL.Path == one+"/skipped-rows/export":
 			w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-			_, _ = w.Write([]byte("row,source,email,reason,why\n3,,nope,invalid_email,Not an email address.\n5,,pat@example.com,exists,Already a contact; left as it was.\n"))
+			_, _ = w.Write([]byte("row,source,email,reason,why\n3,,nope,invalid_email,Not an email address.\n5,,pat@example.com,exists,Already a contact; not added again.\n"))
 		case r.URL.Path == one+"/skipped-rows" && r.URL.Query().Get("cursor") == "":
 			_, _ = w.Write([]byte(`{"data":[{"row":3,"email":"nope","reason":"invalid_email"}],"next_cursor":"p2"}`))
 		case r.URL.Path == one+"/skipped-rows":
@@ -330,5 +340,56 @@ func TestImportSkippedDownloadsTheCSV(t *testing.T) {
 	}
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
 		t.Errorf("a failed download left %s", missing)
+	}
+}
+
+// Contact field columns (MG-131): --field and --new-field go in the request,
+// and the preview and the import show them.
+func TestImportContactFieldFlags(t *testing.T) {
+	h, seen := importsStub(t)
+	path := writeCSV(t, "Email,Organisation,Size\npat@example.com,Acme,12\n")
+	if code := h.run("import", "preview", path, "--field", "company=Organisation", "--field", "plan=", "--new-field", "Size=Company size"); code != ExitOK {
+		t.Fatalf("preview: exit %d: %s", code, h.errOut)
+	}
+	body := (*seen)[0].body
+	cols, _ := body["field_columns"].(map[string]any)
+	news, _ := body["new_fields"].([]any)
+	if len(cols) != 2 || cols["company"] != "Organisation" || cols["plan"] != "" || len(news) != 1 ||
+		news[0].(map[string]any)["column"] != "Size" || news[0].(map[string]any)["name"] != "Company size" {
+		t.Errorf("preview request = %+v", body)
+	}
+	out := h.out.String()
+	for _, want := range []string{"Organisation  field company", "Size          new field company_size (Company size)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("preview output lacks %q:\n%s", want, out)
+		}
+	}
+
+	h.out.Reset()
+	if code := h.run("import", path, "--list-source", "customers", "--field", "company=Organisation", "--new-field", "Size", "--new-field", "#4=Region"); code != ExitOK {
+		t.Fatalf("import: exit %d: %s", code, h.errOut)
+	}
+	body = (*seen)[1].body
+	news, _ = body["new_fields"].([]any)
+	if body["field_columns"].(map[string]any)["company"] != "Organisation" || len(news) != 2 ||
+		news[0].(map[string]any)["name"] != nil || news[1].(map[string]any)["column"] != "#4" || news[1].(map[string]any)["name"] != "Region" {
+		t.Errorf("import request = %+v", body)
+	}
+	if want := `Contact fields: company from "Organisation", company_size from "Size" (new).`; !strings.Contains(h.out.String(), want) {
+		t.Errorf("import output lacks %q:\n%s", want, h.out)
+	}
+
+	n := len(*seen)
+	for _, args := range [][]string{
+		{"import", path, "--list-source", "form", "--field", "company"},
+		{"import", path, "--list-source", "form", "--field", "=Organisation"},
+		{"import", "preview", path, "--new-field", "=Name"},
+	} {
+		if code := h.run(args...); code != ExitUsage {
+			t.Errorf("%v: exit %d, want %d (%s)", args, code, ExitUsage, h.errOut)
+		}
+	}
+	if len(*seen) != n {
+		t.Errorf("usage errors reached the API: %+v", (*seen)[n:])
 	}
 }

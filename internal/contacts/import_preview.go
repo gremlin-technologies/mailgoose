@@ -1,6 +1,7 @@
 package contacts
 
 import (
+	"context"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -44,20 +45,41 @@ type PreviewColumn struct {
 	// or "#3" for one whose header is blank or repeated.
 	Name string
 	// Field is the field the column would become, empty when it isn't
-	// imported.
+	// imported or becomes a contact field.
 	Field string
+	// CustomField is the account's contact field the column would fill,
+	// named or matched by its header (MG-131); nil when none.
+	CustomField *Field
+	// NewField is the contact field the import would make from the column;
+	// nil when none.
+	NewField *NewFieldPreview
 	// Samples are the column's values in the first rows, "" where a row
 	// has none.
 	Samples []string
 }
 
+// NewFieldPreview is a contact field an import would make.
+type NewFieldPreview struct {
+	Name, Key string
+}
+
 var separatorNames = map[rune]string{',': "comma", ';': "semicolon", '\t': "tab"}
 
-// PreviewImport reads a file the way CreateImport would with the same
-// columns, and changes nothing. It returns an error only when the file can't
-// be read at all; a problem the import would refuse it for, such as no email
-// column, is in the preview's Problem.
-func PreviewImport(in ImportInput) (*ImportPreview, error) {
+// PreviewImport is PreviewFile with the account's contact fields.
+func (s *Service) PreviewImport(ctx context.Context, accountID string, in ImportInput) (*ImportPreview, error) {
+	af, err := s.accountFields(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	return PreviewFile(in, af)
+}
+
+// PreviewFile reads a file the way CreateImport would with the same
+// columns, for an account with the contact fields af, and changes nothing.
+// It returns an error only when the file can't be read at all; a problem the
+// import would refuse it for, such as no email column or too many new
+// fields, is in the preview's Problem.
+func PreviewFile(in ImportInput, af AccountFields) (*ImportPreview, error) {
 	if len(in.CSV) > MaxImportBytes {
 		return nil, invalidImport("file_too_large", "csv", fmt.Sprintf("The file is over %d MB. Split it into smaller files.", MaxImportBytes>>20))
 	}
@@ -66,7 +88,7 @@ func PreviewImport(in ImportInput) (*ImportPreview, error) {
 		return nil, err
 	}
 	p := &ImportPreview{Separator: separatorNames[l.comma], HasHeaderGuess: guessHeader(in)}
-	problem := l.choose(in.choice())
+	problem := l.choose(in.choice(af))
 	if problem == nil {
 		p.Rows, problem = checkRows(in.CSV, l, nil)
 	} else {
@@ -97,9 +119,20 @@ func PreviewImport(in ImportInput) (*ImportPreview, error) {
 			field[i] = f
 		}
 	}
+	custom := map[int]*Field{}
+	for _, f := range af.Fields {
+		if i, ok := l.fieldCol[f.ID]; ok {
+			custom[i] = f
+		}
+	}
+	made := map[int]*NewFieldPreview{}
+	for _, nf := range l.newCols {
+		made[nf.col] = &NewFieldPreview{Name: nf.name, Key: nf.key}
+	}
 	p.Columns = make([]PreviewColumn, len(l.header))
 	for i, h := range l.header {
-		c := PreviewColumn{Position: i + 1, Header: h, Name: l.name(i), Field: field[i], Samples: make([]string, len(samples))}
+		c := PreviewColumn{Position: i + 1, Header: h, Name: l.name(i), Field: field[i], CustomField: custom[i], NewField: made[i],
+			Samples: make([]string, len(samples))}
 		for r, rec := range samples {
 			c.Samples[r] = unescapeCell(cell(rec, i))
 		}
@@ -119,7 +152,7 @@ func guessHeader(in ImportInput) bool {
 	if err != nil {
 		return true
 	}
-	_ = l.choose(in.choice())
+	_ = l.choose(in.choice(AccountFields{}))
 	isEmail := func(v string) bool {
 		_, err := NormalizeEmail(unescapeCell(strings.TrimSpace(v)))
 		return err == nil

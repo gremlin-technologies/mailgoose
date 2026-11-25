@@ -4,6 +4,61 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-24: Import columns to custom fields (MG-131; reversible defaults)
+
+The owner: "And we need to be able to support mapping to those columns in
+the import. So if there is that we don't have, a field for, we'd give them
+the option to create a new field. with that CSV header." Built on MG-130's
+fields and the MG-124 matching step, for uploads and pastes (MG-125) alike.
+What changed:
+
+- **Matching by name or key.** A column whose header matches a field's name
+  or key, compared the loose way first name is found (case, spaces,
+  underscores, dashes and dots ignored), fills that field by default.
+  Built-in fields are matched first, so a field named "First" doesn't take a
+  first-name column. The API does the same guess when `field_columns` leaves
+  a field out, as it does for the built-in columns; the web app sends every
+  field it knows, `""` for the unmatched ones, so it imports exactly what was
+  shown.
+- **Unmatched columns default to Skip** ("Don't import"), with a "Create
+  field" button beside each one and a "New field" choice in its menu. A new
+  field is named after the header; a column with no header (pasted
+  contacts) asks for a name.
+- **New fields are made when the import is created, all or nothing**, inside
+  the transaction that queues it and under the account lock MG-130's create
+  uses, before the worker reads any row. Past the plan's limit
+  (`field_limit`, saying how many more can be made), a name or key that's
+  taken (`field_exists`, by an existing field or another new one) or a name
+  the MG-130 rules refuse (`invalid_field_name`, `reserved_field_name`), the
+  import is refused and nothing is made or queued. Unlike the fields API,
+  these are 422s, like every other import refusal; the codes are the same.
+  The preview reports the same problems in `problem`, and the web app
+  disables "Create field" once the limit, counting the new fields already
+  chosen, is reached, with a line saying the limit and that a column can
+  still go into an existing field.
+- **A non-blank cell overwrites an existing value.** An existing contact is
+  still not added again (a skipped `exists` row) and keeps its name, status
+  and tags, but its custom fields take the row's non-blank values. A blank
+  cell sets nothing, so it never clears a value. `existing_updated` counts
+  the contacts whose values changed; a contact whose values were already the
+  same isn't touched. Beyond the ticket: this only applies to custom fields,
+  not to first and last name, which stay as they were.
+- **Values are cut, not refused**, the way names are: line breaks become
+  spaces and a value is cut to 500 characters, so a long cell never costs a
+  contact.
+- **A deleted field's column is skipped by the worker.** The import keeps
+  its columns by field id (`imports.field_columns`), and each batch looks the
+  fields up again, locked, so a field deleted between creating the import and
+  the worker reaching a row isn't written and doesn't stop the import. The
+  import's `field_columns` leaves it out.
+- **API and CLI.** `createImport` and `previewImport` take `field_columns`
+  (field key or id to column, `""` to leave out) and `new_fields`
+  (`[{column, name}]`, name defaulting to the header); preview columns carry
+  `custom_field` and `new_field`; an import carries `field_columns` and
+  `existing_updated`. `mailgoose import` and `import preview` take
+  `--field key=column` (`key=` leaves it out) and `--new-field
+  column[=name]`, both repeatable, and show the mappings.
+
 ## 2026-11-24: Custom contact fields (MG-130; reversible defaults)
 
 The owner: "We need to be able to store more headers than just first name,

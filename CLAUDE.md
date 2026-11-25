@@ -137,7 +137,10 @@ scope; they only show where an idea came from.
   paid; `contact_field_limit` in `GET /v1/plan`), managed on the Fields page
   and with `mailgoose fields`. Contacts carry `fields` by key, the key worked
   out from the name and kept on rename; the contacts table and export show a
-  column per field in the order made.
+  column per field in the order made. Imports (MG-131) match columns to
+  fields by name or key, skip the rest by default, and can make a field
+  from a header at import creation, all or nothing within the limit; a
+  non-blank cell overwrites an existing contact's value.
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API

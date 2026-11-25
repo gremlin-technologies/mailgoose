@@ -1566,12 +1566,27 @@ first one whose first row holds an address, unless `columns` names
 it. `previewImport`'s `has_header_guess` says which a file looks
 like. Leave `file_name` out for pasted contacts.
 
+Other columns can fill the account's contact fields
+(`listContactFields`). A column whose header matches a field's name
+or key, compared loosely, fills that field unless `field_columns`
+says otherwise; `field_columns` names a field's column, or leaves
+the field out with an empty string. `new_fields` makes a field from
+a column, named after its header unless a name is given. New fields
+are made when the import is created, all or none: past the plan's
+field limit (`field_limit`), or with a name that's taken
+(`field_exists`) or not allowed, nothing is made or queued. A blank
+cell sets no value, and a value is cut to 500 characters on one
+line.
+
 Imported contacts are `unconfirmed` unless `permission_confirmed` says
 the account has these people's permission to mail them; then they're
 `subscribed`. Rows with a bad address, a repeat of an earlier row, an
 address already in the account, a suppressed address, or one past a
 free account's 1,000-contact limit are skipped and listed by
-`listImportSkippedRows`. Existing contacts aren't changed.
+`listImportSkippedRows`. An existing contact isn't added again and
+keeps its name, status and tags, but its contact fields take the
+row's non-blank values; `existing_updated` counts the contacts that
+changed.
 
 Every import says where its people came from in `list_source`; an
 import carries no proof that they asked for mail, the way a form
@@ -1600,7 +1615,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `413`: `request_too_large`: the request body is over the operation's limit. [Error](#schema-error)
-- `422`: The file can't be imported, and nothing was queued. `code` says why: `no_rows`, `no_email_column` (name the column in `columns.email`), `invalid_mapping` (a named column isn't in the header), `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes), `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found`, `too_many_tags`, `list_source_required` (say where the list came from), `list_source_detail_required` (describe an `other` source) or `invalid_list_source`. [Error](#schema-error)
+- `422`: The file can't be imported, and nothing was queued. `code` says why: `no_rows`, `no_email_column` (name the column in `columns.email`), `invalid_mapping` (a named column isn't in the header), `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes), `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found`, `too_many_tags`, `list_source_required` (say where the list came from), `list_source_detail_required` (describe an `other` source), `invalid_list_source`, `unknown_field` (`field_columns` names a field the account doesn't have), `invalid_field_name` or `reserved_field_name` (a new field's name isn't allowed), `field_exists` (a new field's name or key is taken) or `field_limit` (the new fields would pass the plan's field limit). Nothing is made or queued. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -1619,6 +1634,9 @@ there are, and each column with its first few values and the field it
 would become, so the person can check the columns before importing.
 It also guesses whether the first row is a header
 (`has_header_guess`); send the same `has_header` to both calls.
+Each column shows the contact field it would fill (`custom_field`),
+including one matched by its header, or make (`new_field`), with the
+same `field_columns` and `new_fields`.
 A problem `createImport` would refuse the file for, such as no email
 column or a named column that isn't there, is in `problem` instead of
 an error, so the columns can still be shown. Only a file whose header
@@ -1636,7 +1654,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `413`: `request_too_large`: the request body is over the operation's limit. [Error](#schema-error)
-- `422`: The file can't be imported, and nothing was queued. `code` says why: `no_rows`, `no_email_column` (name the column in `columns.email`), `invalid_mapping` (a named column isn't in the header), `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes), `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found`, `too_many_tags`, `list_source_required` (say where the list came from), `list_source_detail_required` (describe an `other` source) or `invalid_list_source`. [Error](#schema-error)
+- `422`: The file can't be imported, and nothing was queued. `code` says why: `no_rows`, `no_email_column` (name the column in `columns.email`), `invalid_mapping` (a named column isn't in the header), `invalid_encoding` (not UTF-8), `invalid_csv` (a quote never closes), `too_many_rows` (over 100,000), `file_too_large`, `tag_not_found`, `too_many_tags`, `list_source_required` (say where the list came from), `list_source_detail_required` (describe an `other` source), `invalid_list_source`, `unknown_field` (`field_columns` names a field the account doesn't have), `invalid_field_name` or `reserved_field_name` (a new field's name isn't allowed), `field_exists` (a new field's name or key is taken) or `field_limit` (the new fields would pass the plan's field limit). Nothing is made or queued. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -4678,6 +4696,40 @@ column's header looks like it. Email can't be left empty.
 | `csv` | string | yes | The whole CSV file as UTF-8 text, header row first unless `has_header` is false. |
 | `has_header` | [ImportHasHeader](#schema-importhasheader) |  |  |
 | `columns` | [ImportColumns](#schema-importcolumns) |  |  |
+| `field_columns` | [ImportFieldColumns](#schema-importfieldcolumns) |  |  |
+| `new_fields` | [ImportNewFields](#schema-importnewfields) |  |  |
+
+<a id="schema-importfieldcolumns"></a>
+
+### ImportFieldColumns
+
+The column each of the account's contact fields comes from, keyed by
+the field's key or id: a header, or a position such as `#3`. An
+empty string leaves the field out, even when a column's header
+matches it. A field left out of this object fills from a column
+whose header matches its name or key, compared loosely, if one isn't
+already taken.
+
+Type: object
+
+<a id="schema-importnewfields"></a>
+
+### ImportNewFields
+
+Contact fields to make from columns, each filled from its column.
+They're made when the import is created, all or none, within the
+plan's field limit.
+
+Type: array of [ImportNewField](#schema-importnewfield)
+
+<a id="schema-importnewfield"></a>
+
+### ImportNewField
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `column` | string | yes | The column, named as in `columns`. |
+| `name` | string or null |  | The new field's name; its column's header when left out. Required for a column with no header. |
 
 <a id="schema-importhasheader"></a>
 
@@ -4710,7 +4762,9 @@ Type: boolean
 | `position` | integer | yes | The column's place in the file, counting from 1. |
 | `header` | string | yes | The column's header as written; empty when it has none, and always empty with `has_header` false. |
 | `name` | string | yes | What to send in `columns` to pick this column. Its header, or `#3` for a column whose header is blank or repeated. |
-| `field` | [ImportField](#schema-importfield) or null | yes | The field this column would become; null when it isn't imported. |
+| `field` | [ImportField](#schema-importfield) or null | yes | The built-in field this column would become; null when it isn't imported or fills a contact field. |
+| `custom_field` | [ImportFieldRef](#schema-importfieldref) or null | yes | The account's contact field this column would fill: the one `field_columns` names, or one whose name or key matches the header. Null when none. |
+| `new_field` | [ImportNewFieldPreview](#schema-importnewfieldpreview) or null | yes | The contact field the import would make from this column (`new_fields`); null when none. |
 | `samples` | array of string | yes | The column's values in the first rows, an empty string where a row has none. |
 
 <a id="schema-importfield"></a>
@@ -4719,13 +4773,32 @@ Type: boolean
 
 Type: string: one of `email`, `first_name`, `last_name`, `status`, `tags`
 
+<a id="schema-importnewfieldpreview"></a>
+
+### ImportNewFieldPreview
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes |  |
+| `key` | string | yes | The key the new field would have. |
+
+<a id="schema-importfieldref"></a>
+
+### ImportFieldRef
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `id` | string (uuid) | yes |  |
+| `key` | string | yes |  |
+| `name` | string | yes |  |
+
 <a id="schema-importpreviewproblem"></a>
 
 ### ImportPreviewProblem
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `code` | string | yes | The code `createImport` would refuse the file with, such as `no_email_column`, `invalid_mapping`, `too_many_rows`, `invalid_tag_name`, `too_many_tags`, `invalid_csv` (a quote that never closes) or `no_rows` (a header with no contacts). |
+| `code` | string | yes | The code `createImport` would refuse the file with, such as `no_email_column`, `invalid_mapping`, `too_many_rows`, `invalid_tag_name`, `too_many_tags`, `invalid_csv` (a quote that never closes), `no_rows` (a header with no contacts), `unknown_field`, `invalid_field_name`, `reserved_field_name`, `field_exists` or `field_limit`. |
 | `message` | string | yes |  |
 
 <a id="schema-createimportrequest"></a>
@@ -4738,6 +4811,8 @@ Type: string: one of `email`, `first_name`, `last_name`, `status`, `tags`
 | `has_header` | [ImportHasHeader](#schema-importhasheader) |  |  |
 | `file_name` | string or null |  | The file's name, to tell imports apart later. Leave it out for pasted contacts. |
 | `columns` | [ImportColumns](#schema-importcolumns) |  |  |
+| `field_columns` | [ImportFieldColumns](#schema-importfieldcolumns) |  |  |
+| `new_fields` | [ImportNewFields](#schema-importnewfields) |  |  |
 | `tags` | array of string |  | Tags, by name or id, put on every contact the import adds. They must exist. |
 | `permission_confirmed` | boolean |  | True says the account has these people's permission to mail them, so they're added `subscribed`. Otherwise they're `unconfirmed` and don't receive campaigns. |
 | `list_source` | [ListSource](#schema-listsource) | yes |  |
@@ -4766,6 +4841,16 @@ What the checks found in the file when the import was queued.
 | `role_addresses` | integer | yes | Valid rows with a role address, such as info@, sales@ or admin@. |
 | `disposable_addresses` | integer | yes | Valid rows with an address at a disposable (throwaway) mail domain. |
 
+<a id="schema-importfieldcolumn"></a>
+
+### ImportFieldColumn
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `field` | [ImportFieldRef](#schema-importfieldref) | yes |  |
+| `column` | string | yes | The column the field comes from, named as in `columns`. |
+| `created` | boolean | yes | The import made this field. |
+
 <a id="schema-importstatus"></a>
 
 ### ImportStatus
@@ -4787,7 +4872,8 @@ non-subscribed (transactional) or archived member.
 `invalid_email`: not an email address. `invalid_row`: the row
 couldn't be read as CSV (a stray quote, say). `duplicate`: the same
 address is on an earlier row. `exists`: the account already has the
-contact, which is left as it is. `suppressed`: the address
+contact, which isn't added again; only its contact fields take the
+row's non-blank values. `suppressed`: the address
 unsubscribed, bounced or complained before. `over_limit`: a free
 account, or a tester account (MG-86), was full.
 
@@ -4813,6 +4899,8 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 | `skipped_by_reason` | object | yes |  |
 | `existing_tagged` | integer | yes | A Mailchimp import's addresses that were already contacts and only gained tags; 0 for a CSV. |
 | `existing_suppressed` | integer | yes | Of those, how many Mailchimp's unsubscribe or clean took off the mailing list. |
+| `existing_updated` | integer | yes | Contacts already in the account whose contact fields the import changed. They're counted in `skipped_by_reason.exists` too, since the import didn't add them. |
+| `field_columns` | array of [ImportFieldColumn](#schema-importfieldcolumn) | yes | The contact fields the import fills and the column each comes from, in the fields' order. A field deleted since is left out, and its column isn't imported. |
 | `review` | string: one of `none`, `held`, `approved` | yes | A `held` import's contacts aren't mailed until mailgoose approves it. |
 | `hold_reason` | string or null | yes | Why a held import is held: `shared_list` (many of its addresses are on other accounts' lists), `risky_addresses` (many role or disposable addresses), `invalid_addresses` (many rows that aren't addresses), `large_first_import` or `over_contact_limit`. |
 | `hold_message` | string or null | yes | Why the import is held, in plain words, for showing to the account; null when it isn't held. |

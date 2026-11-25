@@ -3010,7 +3010,8 @@ type ContactData struct {
 		// `invalid_email`: not an email address. `invalid_row`: the row
 		// couldn't be read as CSV (a stray quote, say). `duplicate`: the same
 		// address is on an earlier row. `exists`: the account already has the
-		// contact, which is left as it is. `suppressed`: the address
+		// contact, which isn't added again; only its contact fields take the
+		// row's non-blank values. `suppressed`: the address
 		// unsubscribed, bounced or complained before. `over_limit`: a free
 		// account, or a tester account (MG-86), was full.
 		Reason SkipReason `json:"reason"`
@@ -3221,6 +3222,17 @@ type CreateImportRequest struct {
 	// pat@example.com,Pat
 	Csv string `json:"csv"`
 
+	// FieldColumns The column each of the account's contact fields comes from, keyed by
+	// the field's key or id: a header, or a position such as `#3`. An
+	// empty string leaves the field out, even when a column's header
+	// matches it. A field left out of this object fills from a column
+	// whose header matches its name or key, compared loosely, if one isn't
+	// already taken.
+	//
+	//
+	// Examples: {"company":"Company","plan":"#4"}
+	FieldColumns *ImportFieldColumns `json:"field_columns,omitempty"`
+
 	// FileName The file's name, to tell imports apart later. Leave it out for pasted contacts.
 	FileName *string `json:"file_name,omitempty"`
 
@@ -3237,6 +3249,11 @@ type CreateImportRequest struct {
 
 	// ListSourceDetail Where the people came from, in a few words. Required when `list_source` is `other`.
 	ListSourceDetail *string `json:"list_source_detail,omitempty"`
+
+	// NewFields Contact fields to make from columns, each filled from its column.
+	// They're made when the import is created, all or none, within the
+	// plan's field limit.
+	NewFields *ImportNewFields `json:"new_fields,omitempty"`
 
 	// PermissionConfirmed True says the account has these people's permission to mail them,
 	// so they're added `subscribed`. Otherwise they're `unconfirmed` and
@@ -3953,6 +3970,16 @@ type Import struct {
 	// ExistingTagged A Mailchimp import's addresses that were already contacts and only gained tags; 0 for a CSV.
 	ExistingTagged int `json:"existing_tagged"`
 
+	// ExistingUpdated Contacts already in the account whose contact fields the import
+	// changed. They're counted in `skipped_by_reason.exists` too, since
+	// the import didn't add them.
+	ExistingUpdated int `json:"existing_updated"`
+
+	// FieldColumns The contact fields the import fills and the column each comes
+	// from, in the fields' order. A field deleted since is left out,
+	// and its column isn't imported.
+	FieldColumns []ImportFieldColumn `json:"field_columns"`
+
 	// FileName The file's name; null for contacts pasted in rather than uploaded as a file.
 	FileName   *string    `json:"file_name"`
 	FinishedAt *time.Time `json:"finished_at"`
@@ -4082,6 +4109,37 @@ type ImportEmailHtmlResult struct {
 // ImportField defines model for ImportField.
 type ImportField string
 
+// ImportFieldColumn defines model for ImportFieldColumn.
+type ImportFieldColumn struct {
+	// Column The column the field comes from, named as in `columns`.
+	Column string `json:"column"`
+
+	// Created The import made this field.
+	Created bool           `json:"created"`
+	Field   ImportFieldRef `json:"field"`
+}
+
+// ImportFieldColumns The column each of the account's contact fields comes from, keyed by
+// the field's key or id: a header, or a position such as `#3`. An
+// empty string leaves the field out, even when a column's header
+// matches it. A field left out of this object fills from a column
+// whose header matches its name or key, compared loosely, if one isn't
+// already taken.
+//
+// Examples: {"company":"Company","plan":"#4"}
+type ImportFieldColumns map[string]string
+
+// ImportFieldRef defines model for ImportFieldRef.
+type ImportFieldRef struct {
+	Id string `json:"id"`
+
+	// Key Examples: company
+	Key string `json:"key"`
+
+	// Name Examples: Company
+	Name string `json:"name"`
+}
+
 // ImportHasHeader False when the first row is a contact rather than a header, as when
 // contacts are pasted from a spreadsheet. Columns are then named by
 // position (`#1`, `#2` ...).
@@ -4092,6 +4150,35 @@ type ImportList struct {
 	Data       []Import `json:"data"`
 	NextCursor *string  `json:"next_cursor"`
 }
+
+// ImportNewField defines model for ImportNewField.
+type ImportNewField struct {
+	// Column The column, named as in `columns`.
+	//
+	// Examples: Company size
+	Column string `json:"column"`
+
+	// Name The new field's name; its column's header when left out. Required for a column with no header.
+	//
+	// Examples: Company size
+	Name *string `json:"name,omitempty"`
+}
+
+// ImportNewFieldPreview defines model for ImportNewFieldPreview.
+type ImportNewFieldPreview struct {
+	// Key The key the new field would have.
+	//
+	// Examples: company_size
+	Key string `json:"key"`
+
+	// Name Examples: Company size
+	Name string `json:"name"`
+}
+
+// ImportNewFields Contact fields to make from columns, each filled from its column.
+// They're made when the import is created, all or none, within the
+// plan's field limit.
+type ImportNewFields = []ImportNewField
 
 // ImportPreview defines model for ImportPreview.
 type ImportPreview struct {
@@ -4119,7 +4206,12 @@ type ImportPreviewSeparator string
 
 // ImportPreviewColumn defines model for ImportPreviewColumn.
 type ImportPreviewColumn struct {
-	// Field The field this column would become; null when it isn't imported.
+	// CustomField The account's contact field this column would fill: the one
+	// `field_columns` names, or one whose name or key matches the
+	// header. Null when none.
+	CustomField *ImportFieldRef `json:"custom_field"`
+
+	// Field The built-in field this column would become; null when it isn't imported or fills a contact field.
 	Field *ImportField `json:"field"`
 
 	// Header The column's header as written; empty when it has none, and always empty with `has_header` false.
@@ -4129,6 +4221,9 @@ type ImportPreviewColumn struct {
 	//
 	// Examples: Email Address
 	Name string `json:"name"`
+
+	// NewField The contact field the import would make from this column (`new_fields`); null when none.
+	NewField *ImportNewFieldPreview `json:"new_field"`
 
 	// Position The column's place in the file, counting from 1.
 	Position int `json:"position"`
@@ -4142,7 +4237,9 @@ type ImportPreviewProblem struct {
 	// Code The code `createImport` would refuse the file with, such as
 	// `no_email_column`, `invalid_mapping`, `too_many_rows`,
 	// `invalid_tag_name`, `too_many_tags`, `invalid_csv` (a quote that
-	// never closes) or `no_rows` (a header with no contacts).
+	// never closes), `no_rows` (a header with no contacts),
+	// `unknown_field`, `invalid_field_name`, `reserved_field_name`,
+	// `field_exists` or `field_limit`.
 	//
 	//
 	// Examples: no_email_column
@@ -4669,10 +4766,26 @@ type PreviewImportRequest struct {
 	// pat@example.com,Pat
 	Csv string `json:"csv"`
 
+	// FieldColumns The column each of the account's contact fields comes from, keyed by
+	// the field's key or id: a header, or a position such as `#3`. An
+	// empty string leaves the field out, even when a column's header
+	// matches it. A field left out of this object fills from a column
+	// whose header matches its name or key, compared loosely, if one isn't
+	// already taken.
+	//
+	//
+	// Examples: {"company":"Company","plan":"#4"}
+	FieldColumns *ImportFieldColumns `json:"field_columns,omitempty"`
+
 	// HasHeader False when the first row is a contact rather than a header, as when
 	// contacts are pasted from a spreadsheet. Columns are then named by
 	// position (`#1`, `#2` ...).
 	HasHeader *ImportHasHeader `json:"has_header,omitempty"`
+
+	// NewFields Contact fields to make from columns, each filled from its column.
+	// They're made when the import is created, all or none, within the
+	// plan's field limit.
+	NewFields *ImportNewFields `json:"new_fields,omitempty"`
 }
 
 // RecipientCount defines model for RecipientCount.
@@ -4994,7 +5107,8 @@ type SignupRequest struct {
 // `invalid_email`: not an email address. `invalid_row`: the row
 // couldn't be read as CSV (a stray quote, say). `duplicate`: the same
 // address is on an earlier row. `exists`: the account already has the
-// contact, which is left as it is. `suppressed`: the address
+// contact, which isn't added again; only its contact fields take the
+// row's non-blank values. `suppressed`: the address
 // unsubscribed, bounced or complained before. `over_limit`: a free
 // account, or a tester account (MG-86), was full.
 type SkipReason string
@@ -5009,7 +5123,8 @@ type SkippedRow struct {
 	// `invalid_email`: not an email address. `invalid_row`: the row
 	// couldn't be read as CSV (a stray quote, say). `duplicate`: the same
 	// address is on an earlier row. `exists`: the account already has the
-	// contact, which is left as it is. `suppressed`: the address
+	// contact, which isn't added again; only its contact fields take the
+	// row's non-blank values. `suppressed`: the address
 	// unsubscribed, bounced or complained before. `over_limit`: a free
 	// account, or a tester account (MG-86), was full.
 	Reason SkipReason `json:"reason"`
