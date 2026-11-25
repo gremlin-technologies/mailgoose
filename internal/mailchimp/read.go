@@ -205,7 +205,7 @@ func readZip(r io.ReaderAt, size int64, opts Options) (*Bundle, error) {
 	var campaignCSV *zipEntry
 	texts := map[string]*zipEntry{}
 	nested := false
-	var members []*zipEntry
+	var members, tagFiles []*zipEntry
 	for _, e := range entries {
 		dir, base := path.Split(e.rel)
 		dir = strings.TrimSuffix(dir, "/")
@@ -238,6 +238,8 @@ func readZip(r io.ReaderAt, size int64, opts Options) (*Bundle, error) {
 			b.Campaigns = append(b.Campaigns, &Campaign{Name: stem(base), Path: e.path, HTML: h.HTML})
 		case hasElem(dir, "campaigns_content") && ext == ".txt":
 			texts[stem(base)] = e
+		case strings.EqualFold(base, MergeTagsFile) && dir != "":
+			tagFiles = append(tagFiles, e)
 		case ext == ".csv" && statusFromName(base) != "":
 			members = append(members, e)
 			if dir != "" {
@@ -268,6 +270,20 @@ func readZip(r io.ReaderAt, size int64, opts Options) (*Bundle, error) {
 		_ = rc.Close()
 		if err != nil {
 			return nil, err
+		}
+	}
+
+	for _, e := range tagFiles {
+		aud := audiences[audienceName(e.rel, opts.AudienceName)]
+		ok := aud != nil
+		if ok {
+			var err error
+			if ok, err = rd.readMergeTags(e, aud); err != nil {
+				return nil, err
+			}
+		}
+		if !ok {
+			b.Ignored = append(b.Ignored, IgnoredFile{Path: e.path, Reason: IgnoreUnknown})
 		}
 	}
 
@@ -876,6 +892,61 @@ func parseTime(v string) *time.Time {
 // readCampaignCSV fills in campaigns' subjects, titles and send times from
 // the account export's campaigns CSV, matching a row to a content file by
 // the campaign's id or title.
+// readMergeTags reads an audience's MergeTagsFile into its MergeTags,
+// matching each merge field by its column's name as written. It reports
+// false, reading nothing, for a file without Tag and Name columns.
+func (rd *reader) readMergeTags(e *zipEntry, aud *Audience) (bool, error) {
+	rc, err := e.f.Open()
+	if err != nil {
+		return false, refuse(ErrBadZip, "%s in the ZIP can't be read. Download the export from Mailchimp again.", e.path)
+	}
+	defer rc.Close()
+	cr := csv.NewReader(rd.limit(rc))
+	cr.FieldsPerRecord = -1
+	header, err := cr.Read()
+	if errors.Is(err, errOverBudget) {
+		return false, rd.tooLarge()
+	}
+	if err != nil {
+		return false, nil
+	}
+	tagCol, nameCol := -1, -1
+	for i, h := range header {
+		switch normalize(h) {
+		case "tag":
+			tagCol = i
+		case "name":
+			nameCol = i
+		}
+	}
+	if tagCol < 0 || nameCol < 0 {
+		return false, nil
+	}
+	byName := map[string]string{}
+	for n := 0; n < MaxColumns; n++ {
+		rec, err := cr.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if errors.Is(err, errOverBudget) {
+			return false, rd.tooLarge()
+		}
+		if err != nil {
+			break
+		}
+		if tagCol < len(rec) && nameCol < len(rec) {
+			if t := strings.ToUpper(strings.TrimSpace(rec[tagCol])); t != "" && utf8.RuneCountInString(t) <= 200 {
+				byName[strings.TrimSpace(rec[nameCol])] = t
+			}
+		}
+	}
+	aud.MergeTags = make([]string, len(aud.MergeFields))
+	for k, name := range aud.MergeFields {
+		aud.MergeTags[k] = byName[name]
+	}
+	return true, nil
+}
+
 func (rd *reader) readCampaignCSV(e *zipEntry, campaigns []*Campaign) error {
 	rc, err := e.f.Open()
 	if err != nil {

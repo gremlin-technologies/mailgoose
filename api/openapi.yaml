@@ -7191,6 +7191,7 @@ components:
               dropped_fields: [MEMBER_RATING, LAST_CHANGED]
               merge_fields:
                 - name: Phone Number
+                  tags: []
                   audiences: [Newsletter]
                   members: 640
                   samples: ["555-0100", "555-0101", "555-0102"]
@@ -7198,6 +7199,7 @@ components:
                   new_field: {name: Phone Number, key: phone_number}
                   skip_reason: null
                 - name: Company
+                  tags: []
                   audiences: [Newsletter]
                   members: 310
                   samples: [Acme, Initech]
@@ -7219,6 +7221,11 @@ components:
                 subject: ""
                 preview_text: ""
                 images: 2
+                merge_tags:
+                  - tag: "*|COMPANY|*"
+                    merge_field: Company
+                    field: {key: company, name: Company}
+                    new_field: false
                 errors: []
                 warnings: []
                 email_id: null
@@ -7494,12 +7501,21 @@ components:
     MailchimpMergeField:
       type: object
       additionalProperties: false
-      required: [name, audiences, members, samples, custom_field, new_field, skip_reason]
+      required: [name, tags, audiences, members, samples, custom_field, new_field, skip_reason]
       properties:
         name:
           type: string
           description: The merge field's name, as `field_columns` and `new_fields` name it.
           examples: [Phone Number]
+        tags:
+          type: array
+          description: |
+            Its Mailchimp merge tags, such as `MMERGE3`, where the export
+            says: a connected account's does, an uploaded export doesn't,
+            so this is empty for an upload. The emails' merge tags are
+            matched to merge fields by these, else by name.
+          items:
+            type: string
         audiences:
           type: array
           description: The audiences that have it.
@@ -7539,7 +7555,7 @@ components:
     MailchimpEmail:
       type: object
       additionalProperties: false
-      required: [from, file, name, subject, preview_text, images, errors, warnings, email_id]
+      required: [from, file, name, subject, preview_text, images, merge_tags, errors, warnings, email_id]
       properties:
         from:
           type: string
@@ -7556,6 +7572,18 @@ components:
         images:
           type: integer
           description: Mailchimp-hosted images copied into mailgoose.
+        merge_tags:
+          type: array
+          description: |
+            The Mailchimp merge tags it uses beyond the ones mailgoose always
+            converts (names, email, unsubscribe, subject, preview text and
+            the postal address) and conditionals, each once, with what each
+            became: a contact field's tag, or taken out (with a
+            `mailchimp_tag_removed` warning). In a preview, as the merge
+            fields' default choices would make them; once made, as they
+            were made. Empty for an email made before this was listed.
+          items:
+            $ref: "#/components/schemas/MailchimpEmailMergeTag"
         errors:
           type: array
           description: What stops it being sent until it's fixed; the email is made anyway.
@@ -7569,6 +7597,44 @@ components:
           type: [string, "null"]
           format: uuid
           description: The email made; null in a preview.
+    MailchimpEmailMergeTag:
+      type: object
+      additionalProperties: false
+      required: [tag, merge_field, field, new_field]
+      properties:
+        tag:
+          type: string
+          description: The tag as Mailchimp writes it.
+          examples: ["*|MMERGE3|*"]
+        merge_field:
+          type: [string, "null"]
+          description: |
+            The import's merge field the tag is, by name, matched by its
+            Mailchimp tag or else by name; null when none.
+          examples: [Company]
+        field:
+          description: |
+            The contact field whose tag, `{{key}}`, took its place, with no
+            fallback; null when it was taken out because no contact field
+            matches it or its merge field is left out.
+          oneOf:
+            - $ref: "#/components/schemas/MailchimpTagField"
+            - type: "null"
+        new_field:
+          type: boolean
+          description: True when `field` is one the import makes.
+    MailchimpTagField:
+      type: object
+      additionalProperties: false
+      required: [key, name]
+      properties:
+        key:
+          type: string
+          description: The field's key; its merge tag is `{{key}}`.
+          examples: [company]
+        name:
+          type: string
+          examples: [Company]
     MailchimpEmailNote:
       type: object
       additionalProperties: false

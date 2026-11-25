@@ -661,6 +661,14 @@ function EmailsView({ preview }: { preview: Preview }) {
             HTML emails you can edit.
           </p>
           <EmailTable emails={preview.emails} />
+          {preview.emails.some((e) => (e.merge_tags ?? []).length > 0) && (
+            <p className="muted small">
+              Mailchimp merge tags become your contact fields' tags, with the merge fields going where the contact
+              fields below suggest; if you change those, the emails follow what you choose. A merge tag with no
+              contact field is taken out. To keep one, add the field its note names on the{" "}
+              <Link to="/fields">Fields page</Link> before you import.
+            </p>
+          )}
         </>
       )}
       {(preview.templates_not_fetched ?? 0) > 0 && (
@@ -685,31 +693,42 @@ function EmailTable({ emails }: { emails: Email[] }) {
         </tr>
       </thead>
       <tbody>
-        {emails.map((e) => (
-          <tr key={e.file}>
-            <td>
-              {e.email_id ? <Link to={`/emails/${e.email_id}`}>{e.name}</Link> : e.name}
-              {e.subject && <div className="muted small">{e.subject}</div>}
-            </td>
-            <td>{e.from === "template" ? "Template" : "Campaign"}</td>
-            <td>
-              {e.errors.length + e.warnings.length === 0 ? (
-                <span className="muted">None</span>
-              ) : (
-                <ul className="plain">
-                  {e.errors.map((n, i) => (
-                    <li key={`e${i}`}>
-                      <Badge tone="bad">Fix</Badge> {n.message}
-                    </li>
-                  ))}
-                  {e.warnings.map((n, i) => (
-                    <li key={`w${i}`}>{n.message}</li>
-                  ))}
-                </ul>
-              )}
-            </td>
-          </tr>
-        ))}
+        {emails.map((e) => {
+          // MG-134: the merge tags that became a contact field's tag; the
+          // ones taken out have a warning each.
+          const converted = (e.merge_tags ?? []).flatMap((t) => (t.field ? [{ ...t, field: t.field }] : []));
+          return (
+            <tr key={e.file}>
+              <td>
+                {e.email_id ? <Link to={`/emails/${e.email_id}`}>{e.name}</Link> : e.name}
+                {e.subject && <div className="muted small">{e.subject}</div>}
+              </td>
+              <td>{e.from === "template" ? "Template" : "Campaign"}</td>
+              <td>
+                {e.errors.length + e.warnings.length + converted.length === 0 ? (
+                  <span className="muted">None</span>
+                ) : (
+                  <ul className="plain">
+                    {e.errors.map((n, i) => (
+                      <li key={`e${i}`}>
+                        <Badge tone="bad">Fix</Badge> {n.message}
+                      </li>
+                    ))}
+                    {converted.map((t) => (
+                      <li key={`t${t.tag}`}>
+                        <code>{t.tag}</code> became <code>{`{{${t.field.key}}}`}</code>, the tag of your{" "}
+                        {t.new_field ? "new " : ""}field {t.field.name}, with no fallback.
+                      </li>
+                    ))}
+                    {e.warnings.map((n, i) => (
+                      <li key={`w${i}`}>{n.message}</li>
+                    ))}
+                  </ul>
+                )}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

@@ -48,7 +48,7 @@ func TestImportEmails(t *testing.T) {
 					`<script>x()</script><a href="*|UNSUB|*">Unsubscribe</a></body></html>`},
 		},
 	}
-	got, err := im.Import(ctx, acct, b, 0)
+	got, err := im.Import(ctx, acct, b, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestImportEmailsTooLarge(t *testing.T) {
 	}
 	im := &EmailImporter{Emails: &emails.Service{DB: db}, Images: &images.Service{DB: db, Store: &images.Memory{}}}
 	b := &Bundle{Templates: []*HTMLFile{{Name: "Big", HTML: "<p>" + strings.Repeat("x", emails.MaxHTMLBytes) + "</p>"}}}
-	got, err := im.Import(ctx, acct, b, 0)
+	got, err := im.Import(ctx, acct, b, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,10 +161,10 @@ func TestImportEmailsLimitsImageFetches(t *testing.T) {
 		{Name: "A big one", Path: "templates/a.html", HTML: big},
 		{Name: "Many images", Path: "templates/b.html", HTML: "<p>Hi</p>" + imageTags("many", MaxImportImages+20)},
 	}}
-	if plans := PlanEmails(b, 0); plans[0].Images != 0 || plans[1].Images != MaxImportImages+20 {
+	if plans := PlanEmails(b, 0, nil); plans[0].Images != 0 || plans[1].Images != MaxImportImages+20 {
 		t.Errorf("planned images %d, %d", plans[0].Images, plans[1].Images)
 	}
-	got, err := im.Import(t.Context(), acct, b, 0)
+	got, err := im.Import(t.Context(), acct, b, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestImportEmailsStopsWhenTheAccountIsFull(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := &Bundle{Templates: []*HTMLFile{{Name: "Three", Path: "templates/a.html", HTML: "<p>Hi</p>" + imageTags("t", 3)}}}
-	got, err := im.Import(t.Context(), acct, b, 0)
+	got, err := im.Import(t.Context(), acct, b, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestImportEmailsStopsWhenTheAccountIsFull(t *testing.T) {
 	// With no image storage, nothing is fetched.
 	im.Images = nil
 	*fetches = 0
-	got, err = im.Import(t.Context(), acct, b, 0)
+	got, err = im.Import(t.Context(), acct, b, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestPlanEmailsCapsTemplates(t *testing.T) {
 	for i := range MaxTemplates + 5 {
 		b.Templates = append(b.Templates, &HTMLFile{Name: fmt.Sprint("t", i), Path: fmt.Sprintf("templates/%03d.html", i), HTML: "<p>Hi</p>"})
 	}
-	if n := len(PlanEmails(b, 0)); n != MaxTemplates {
+	if n := len(PlanEmails(b, 0, nil)); n != MaxTemplates {
 		t.Errorf("%d planned", n)
 	}
 	if left := TemplatesLeftOut(b); !slices.Equal(left, []string{"templates/100.html", "templates/101.html",

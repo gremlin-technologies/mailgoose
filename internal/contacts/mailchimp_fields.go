@@ -33,6 +33,9 @@ type MailchimpMergeField struct {
 	Members int `json:"members"`
 	// Samples are up to 3 different values, in the order first seen.
 	Samples []string `json:"samples"`
+	// Tags are its Mailchimp tags, where the bundle says (a connected
+	// account's does, MG-134), in the order first seen.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // mcMerge is a bundle's merge fields, and where each audience's are among
@@ -71,6 +74,9 @@ func mailchimpMergeFields(b *mailchimp.Bundle) *mcMerge {
 			}
 			if !slices.Contains(mg.fields[i].Audiences, a.Name) {
 				mg.fields[i].Audiences = append(mg.fields[i].Audiences, a.Name)
+			}
+			if k < len(a.MergeTags) && a.MergeTags[k] != "" && !slices.Contains(mg.fields[i].Tags, a.MergeTags[k]) {
+				mg.fields[i].Tags = append(mg.fields[i].Tags, a.MergeTags[k])
 			}
 			idx[k] = i
 		}

@@ -437,6 +437,10 @@ func TestFetchReadsAnAccountIntoAnExport(t *testing.T) {
 	if want := []string{"Birthday", "Tags (MMERGE5)", "Address"}; !slices.Equal(a.MergeFields, want) || len(a.DroppedFields) != 0 {
 		t.Errorf("merge fields = %v, want %v; dropped %v", a.MergeFields, want, a.DroppedFields)
 	}
+	// Each merge field's tag comes over too (MG-134).
+	if want := []string{"BIRTHDAY", "MMERGE5", "ADDRESS"}; !slices.Equal(a.MergeTags, want) {
+		t.Errorf("merge tags = %v, want %v", a.MergeTags, want)
+	}
 	// An address is one text value, its parts joined.
 	if want := []string{"12/10", "x", "1 Main St, Leeds"}; !slices.Equal(ada.Merge, want) {
 		t.Errorf("ada's merge values = %q, want %q", ada.Merge, want)

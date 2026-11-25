@@ -33,14 +33,26 @@ type mailchimpNote struct {
 
 // mailchimpEmail is the API's MailchimpEmail.
 type mailchimpEmail struct {
-	From     string          `json:"from"`
-	File     string          `json:"file"`
-	Name     string          `json:"name"`
-	Subject  string          `json:"subject"`
-	Images   int             `json:"images"`
-	Errors   []mailchimpNote `json:"errors"`
-	Warnings []mailchimpNote `json:"warnings"`
-	EmailID  *string         `json:"email_id"`
+	From      string              `json:"from"`
+	File      string              `json:"file"`
+	Name      string              `json:"name"`
+	Subject   string              `json:"subject"`
+	Images    int                 `json:"images"`
+	MergeTags []mailchimpMergeTag `json:"merge_tags"`
+	Errors    []mailchimpNote     `json:"errors"`
+	Warnings  []mailchimpNote     `json:"warnings"`
+	EmailID   *string             `json:"email_id"`
+}
+
+// mailchimpMergeTag is the API's MailchimpEmailMergeTag (MG-134).
+type mailchimpMergeTag struct {
+	Tag        string  `json:"tag"`
+	MergeField *string `json:"merge_field"`
+	Field      *struct {
+		Key  string `json:"key"`
+		Name string `json:"name"`
+	} `json:"field"`
+	NewField bool `json:"new_field"`
 }
 
 // mailchimpProgress is the API's MailchimpEmailProgress.
@@ -377,6 +389,7 @@ func (a *App) printMailchimpBundle(b mailchimpBundle, raw json.RawMessage) {
 		}
 		fmt.Fprintf(w, "\nEmails: %d templates and the newest %d of %d campaigns, as HTML emails.\n", templates, campaigns, p.CampaignsAvailable)
 		a.printMailchimpEmailTable(p.Emails)
+		a.printMailchimpMergeTags(p.Emails, false)
 	}
 	leftOut := 0
 	for _, f := range p.IgnoredFiles {
@@ -446,7 +459,64 @@ func (a *App) printMailchimpEmails(p mailchimpProgress) {
 	}
 	if len(p.Made) > 0 {
 		a.printMailchimpEmailTable(p.Made)
+		a.printMailchimpMergeTags(p.Made, true)
 		fmt.Fprintln(w, "Open one with: mailgoose email get <id>")
+	}
+}
+
+// printMailchimpMergeTags lists the Mailchimp merge tags the emails use
+// beyond the built-in ones, each once, with what it becomes (MG-134): a
+// contact field's tag, or taken out. made is true once the emails are made.
+func (a *App) printMailchimpMergeTags(es []mailchimpEmail, made bool) {
+	type row struct {
+		becomes string
+		emails  int
+	}
+	var order []string
+	rows := map[string]*row{}
+	removed := false
+	for _, e := range es {
+		for _, t := range e.MergeTags {
+			becomes := "taken out: no contact field matches it"
+			switch {
+			case t.Field != nil && t.NewField:
+				becomes = fmt.Sprintf("{{%s}} (new field %s)", t.Field.Key, t.Field.Name)
+			case t.Field != nil:
+				becomes = fmt.Sprintf("{{%s}} (field %s)", t.Field.Key, t.Field.Name)
+			case t.MergeField != nil:
+				becomes = fmt.Sprintf("taken out: merge field %s isn't imported", *t.MergeField)
+			}
+			r := rows[t.Tag]
+			if r == nil {
+				// A tag reads the same in every email, unless one was
+				// made after a field changed; the first one is shown.
+				r = &row{becomes: becomes}
+				rows[t.Tag] = r
+				order = append(order, t.Tag)
+			}
+			r.emails++
+			removed = removed || t.Field == nil
+		}
+	}
+	if len(order) == 0 {
+		return
+	}
+	w := a.Stdout
+	if made {
+		fmt.Fprintln(w, "Mailchimp merge tags in the emails:")
+	} else {
+		fmt.Fprintln(w, "\nMailchimp merge tags in the emails, with the merge fields going where shown above:")
+	}
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "  TAG\tBECOMES\tEMAILS")
+	for _, tag := range order {
+		fmt.Fprintf(tw, "  %s\t%s\t%d\n", strings.ReplaceAll(tag, "\t", " "), strings.ReplaceAll(rows[tag].becomes, "\t", " "), rows[tag].emails)
+	}
+	_ = tw.Flush()
+	if made {
+		fmt.Fprintln(w, "A field's tag has no fallback, so contacts without a value see nothing there; mailgoose email check <id> warns about each.")
+	} else if removed {
+		fmt.Fprintln(w, "A tag taken out leaves nothing in its place. To keep one, add a contact field for it (mailgoose fields create <name>) before you confirm, or choose a field for its merge field with --field or --new-field.")
 	}
 }
 

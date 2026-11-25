@@ -689,3 +689,29 @@ func TestMergeFields(t *testing.T) {
 		}
 	}
 }
+
+// MG-134: a fetched bundle names each merge field's tag in MergeTagsFile;
+// one without Tag and Name columns, or for no audience, is ignored.
+func TestMergeTagsFile(t *testing.T) {
+	members := "Email Address,Company,Fav bread\na@example.com,Acme,Rye\n"
+	b := mustRead(t, zipFiles(t,
+		[2]string{"audiences/News/subscribed_members.csv", members},
+		[2]string{"audiences/News/" + MergeTagsFile, "Tag,Name\nmmerge3,Company\nBREAD,Other\n"},
+		[2]string{"audiences/Gone/" + MergeTagsFile, "Tag,Name\nX,Y\n"},
+		[2]string{"audiences/Club/subscribed_members.csv", members},
+		[2]string{"audiences/Club/" + MergeTagsFile, "Something,Else\n"},
+	), "x.zip", Options{})
+	if got := audience(t, b, "News").MergeTags; !slices.Equal(got, []string{"MMERGE3", ""}) {
+		t.Errorf("News merge tags = %q", got)
+	}
+	if got := audience(t, b, "Club").MergeTags; got != nil {
+		t.Errorf("Club merge tags = %q", got)
+	}
+	var ignored []string
+	for _, f := range b.Ignored {
+		ignored = append(ignored, f.Path)
+	}
+	if want := []string{"audiences/Club/" + MergeTagsFile, "audiences/Gone/" + MergeTagsFile}; !slices.Equal(ignored, want) {
+		t.Errorf("ignored = %v", ignored)
+	}
+}

@@ -24,7 +24,7 @@ func TestConvertHTMLMergeTags(t *testing.T) {
 		`<p>*|LIST:ADDRESSLINE|*</p><p>*|REWARDS|* *|REWARDS|* <a href="*|ARCHIVE|*">View online</a></p>` +
 		`<table mc:repeatable="item" mc:hideable><tr><td>x</td></tr></table>` +
 		`<a href="*|UNSUB|*">Unsubscribe</a></body></html>`
-	c := ConvertHTML(src, "Hi *|FNAME|* & friends", "")
+	c := ConvertHTML(src, "Hi *|FNAME|* & friends", "", nil)
 	if c.Subject != "Hi {{first_name}} & friends" {
 		t.Errorf("subject %q", c.Subject)
 	}
@@ -60,7 +60,7 @@ func TestConvertHTMLMergeTags(t *testing.T) {
 func TestConvertHTMLKeepsConditionals(t *testing.T) {
 	src := "<html><body>\n<p>Hello</p>\n*|IF:FNAME|*<p>Hi *|FNAME|*</p>*|ELSE:|*<p>Hi there</p>*|END:IF|*\n" +
 		`<a href="*|UNSUB|*">Unsubscribe</a></body></html>`
-	c := ConvertHTML(src, "", "")
+	c := ConvertHTML(src, "", "", nil)
 	if len(c.Errors) != 1 || c.Errors[0].Code != NoteConditional || c.Errors[0].Line != 3 {
 		t.Fatalf("errors %+v", c.Errors)
 	}
@@ -82,7 +82,7 @@ func TestConvertHTMLImagesAndTrackingLinks(t *testing.T) {
 		`<a href="https://example.us1.list-manage.com/track/click?u=1&amp;id=2">a</a>` +
 		`<a href="https://example.us1.list-manage.com/track/click?u=1&amp;id=3">b</a>` +
 		`<a href="https://example.com/">c</a><a href="*|UNSUB|*">u</a></body></html>`
-	c := ConvertHTML(src, "", "")
+	c := ConvertHTML(src, "", "", nil)
 	want := []string{"https://gallery.mailchimp.com/abc/bg.jpg", img, "https://abc.mcusercontent.com/b.gif"}
 	if !slices.Equal(c.Images, want) {
 		t.Errorf("images %v", c.Images)
@@ -134,7 +134,7 @@ func TestPlanEmailsNamesAndSubjects(t *testing.T) {
 		},
 	}
 	// Campaigns with no send date come newest file first.
-	ps := PlanEmails(b, 0)
+	ps := PlanEmails(b, 0, nil)
 	if len(ps) != 3 {
 		t.Fatalf("%d plans", len(ps))
 	}

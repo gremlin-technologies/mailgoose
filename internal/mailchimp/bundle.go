@@ -81,6 +81,10 @@ type Audience struct {
 	// later file adds; at most MaxMergeFields, without duplicates. Each
 	// member's Merge holds its values.
 	MergeFields []string
+	// MergeTags are the Mailchimp tags of MergeFields, by place (MG-134),
+	// where the export says: a fetch from a connected account writes them
+	// in MergeTagsFile. "" for one it doesn't name; nil for an upload.
+	MergeTags []string
 	// DroppedFields are the columns kept only by name (decision 6):
 	// Mailchimp's own columns, and merge fields past MaxMergeFields. Sorted,
 	// without duplicates.

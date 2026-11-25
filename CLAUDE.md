@@ -146,7 +146,13 @@ scope; they only show where an idea came from.
   or scheduled campaign's email uses can't be deleted (`field_in_use`). Mailchimp imports
   (MG-132, Nov 25) do the same with merge fields: matched by name, else new
   fields in Mailchimp's order while the limit has room, the rest skipped
-  and listed; audiences share a field for one merge field name.
+  and listed; audiences share a field for one merge field name. MG-134
+  (Nov 25): an imported email's Mailchimp merge tags become `{{key}}` of
+  the field the same import puts that merge field into (by tag on a
+  connected account, by name on an upload), else a field an earlier import
+  put that tag into, else a field matching by key or name; no fallback.
+  Unmatched ones are still taken out with a note naming the field to add;
+  each email lists its `merge_tags`.
 - Block designer (Nov 20): rebuilt full-window, with headings, text and button
   labels typed on the email itself, a floating formatting toolbar, and drags
   that snap to the nearest gap. Text blocks keep the Markdown subset; no API
