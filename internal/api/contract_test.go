@@ -233,6 +233,7 @@ var contractCases = map[string][]contractCase{
 		{name: "deleted", server: draftKey(authServer), before: addedField, req: bearer(fieldPath(http.MethodDelete, "")), status: http.StatusOK},
 		{name: "bad id", server: fullKey(authServer), req: bearer(request(http.MethodDelete, "/v1/contact-fields/company")), status: http.StatusBadRequest},
 		{name: "unknown", server: fullKey(authServer), req: bearer(fieldPath(http.MethodDelete, "")), status: http.StatusNotFound},
+		{name: "in use", server: fullKey(authServer), before: usedField, req: bearer(fieldPath(http.MethodDelete, "")), status: http.StatusConflict},
 		{name: "no credentials", server: authServer, req: fieldPath(http.MethodDelete, ""), status: http.StatusUnauthorized},
 		{name: "from another site", server: authServer, before: signedIn, req: fromAnotherSite(withSession(fieldPath(http.MethodDelete, ""))), status: http.StatusForbidden},
 		{name: "rate limited", server: fullKey(rateLimitedAuthServer), before: send(bearer(request(http.MethodGet, "/v1/contact-fields"))),

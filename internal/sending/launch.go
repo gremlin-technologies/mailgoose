@@ -311,7 +311,7 @@ func (s *Service) launchProblems(ctx context.Context, accountID string, c *campa
 		return nil, nil, err
 	default:
 		res := emailcheck.Check(ctx, emailcheck.Input{Doc: p.Email.Document, PostalAddress: p.PostalAddress,
-			FromEmail: p.From.Email, FromVerified: true, Safety: s.LinkSafety}, links)
+			FromEmail: p.From.Email, FromVerified: true, Safety: s.LinkSafety, FieldKeys: p.FieldKeys}, links)
 		for _, issue := range res.Errors {
 			if issue.Code == emailcheck.UnsafeLink {
 				problems = append(problems, unsafeProblem(issue))

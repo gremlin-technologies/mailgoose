@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { useApi } from "../api/context";
 import { attempt } from "../api/result";
 import { LoadFailed, Loading, useLoad } from "../components";
+import { useMergeFields } from "./mergefields";
 
 export type Width = "desktop" | "mobile";
 
@@ -25,12 +26,15 @@ export function Preview({ emailId, width, version }: { emailId: string; width: W
     [api, emailId, width, version],
   );
   const { state, reload } = useLoad<string>(load);
+  const fields = useMergeFields();
   if (state.status === "loading") return <Loading />;
   if (state.status === "failed") return <LoadFailed failure={state.failure} retry={reload} />;
   const label = width === "desktop" ? "Desktop preview" : "Mobile preview";
   return (
     <div className={`preview preview-${width}`}>
-      <p className="muted small">Filled in with sample details: Alex Rivera, alex@example.com.</p>
+      <p className="muted small">
+        Filled in with sample details: Alex Rivera, alex@example.com{fields.length > 0 && ", with no values for your fields, so they show their fallbacks"}.
+      </p>
       <iframe title={label} sandbox="" srcDoc={state.data} className="preview-frame" />
     </div>
   );

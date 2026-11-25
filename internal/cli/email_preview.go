@@ -14,13 +14,17 @@ import (
 )
 
 func (a *App) emailPreviewCmd() *cobra.Command {
-	var width, out string
+	var width, out, contact string
 	var open bool
-	cmd := calls("previewEmail", &cobra.Command{
+	cmd := callsAll([]string{"previewEmail", "listContacts"}, &cobra.Command{
 		Use:   "preview <email-id>",
 		Short: "Render an email as it will look",
 		Long: `Renders the email as it will be sent, filled in with sample data (Alex Rivera,
-alex@example.com), and writes the HTML to standard output, or to --out.
+alex@example.com), and writes the HTML to standard output, or to --out. The
+sample person has no contact field values, so each field's merge tag, such
+as {{company|your team}}, shows its fallback or nothing. --contact fills
+the tags from one of your contacts instead (an id or an address): their
+name, address and field values.
 
 --width mobile shows the email in a 375 pixel frame, so its phone layout
 applies. --open opens the result in your browser when you're at a terminal;
@@ -29,7 +33,8 @@ without --out it writes a file in your temporary directory first.
 Until the account has a postal address, the footer shows a placeholder where
 it goes.`,
 		Example: `  mailgoose email preview 3f1c... --out spring.html
-  mailgoose email preview 3f1c... --width mobile --open`,
+  mailgoose email preview 3f1c... --width mobile --open
+  mailgoose email preview 3f1c... --contact pat@example.com --out pat.html`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			id, err := emailIDArg(args[0])
@@ -39,8 +44,16 @@ it goes.`,
 			if width != "desktop" && width != "mobile" {
 				return usageError("--width must be desktop or mobile.", "")
 			}
+			q := url.Values{"width": {width}}
+			if contact != "" {
+				cid, err := a.contactID(cmd.Context(), contact)
+				if err != nil {
+					return err
+				}
+				q.Set("contact_id", cid)
+			}
 			var page bytes.Buffer
-			path := emailPath(id) + "/preview?width=" + url.QueryEscape(width)
+			path := emailPath(id) + "/preview?" + q.Encode()
 			if err := a.download(cmd.Context(), path, &page); err != nil {
 				return err
 			}
@@ -88,6 +101,7 @@ it goes.`,
 	cmd.Flags().StringVar(&width, "width", "desktop", "desktop or mobile")
 	cmd.Flags().StringVar(&out, "out", "", "write the HTML to this file instead of standard output")
 	cmd.Flags().BoolVar(&open, "open", false, "open the preview in your browser (only at a terminal)")
+	cmd.Flags().StringVar(&contact, "contact", "", "fill the merge tags from this contact (an id or an address) instead of the sample")
 	return cmd
 }
 

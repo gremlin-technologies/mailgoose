@@ -71,7 +71,7 @@ export function Fields() {
     <section className="page">
       <PageHeader
         title="Fields"
-        about="Your own contact fields, such as company or plan. Each one gets a column on the contacts table and in exports."
+        about="Your own contact fields, such as company or plan. Each one gets a column on the contacts table and in exports, and is a merge tag in emails by its key, such as {{company}}."
       />
       <form onSubmit={create} className="panel stack" aria-label="Add a field">
         <div className="row-form">

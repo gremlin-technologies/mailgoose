@@ -4,6 +4,56 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-25: Contact fields as merge tags (MG-133; reversible defaults)
+
+Each of MG-130's contact fields is a merge tag in emails by its key, beside
+the built-in ones (DES-7). The ticket left the delete rule open; refusing is
+the default here. What changed:
+
+- **`{{key}}` and `{{key|fallback}}`.** A field's tag fills in from each
+  recipient's value, with the same fallback syntax and limits as the
+  built-in tags; an empty or missing value takes the fallback, or nothing.
+  Values are HTML-escaped in the HTML part, as names are. Built-in tags come
+  first, and `unsubscribe_url` is now a reserved field key too
+  (`reserved_field_name`), so no new field can shadow a built-in tag; a
+  field made before this with that key is never filled in as a tag.
+- **The check.** A field's tag with no fallback is a warning,
+  `merge_tag_no_fallback`, once per tag per place (block field, setting, or
+  an html email's markup), since some contacts may have no value; it doesn't
+  stop a test or a launch. A built-in tag with no fallback still isn't
+  warned about. A tag that is neither built in nor a field's key stays the
+  `merge_tag` error, and its message now lists the account's keys (or says
+  it has none). The preview's `invalid_merge_tags`, Prepare's `merge_tag`
+  problem and the check all compile against the same keys, so the API, the
+  CLI and launches agree.
+- **Deleting a field in use is refused**: 409 `field_in_use` when the email
+  of a draft or scheduled campaign uses its tag, with or without a fallback.
+  The message names the emails, and `details` has `key` and `emails` (`id`,
+  `name`). The web app's Fields page shows it with its own hint, and the
+  CLI's `fields delete` prints it. Emails no draft or scheduled campaign uses
+  don't stop the delete; their check then reports the tag as unknown. A
+  launched campaign (sending, paused) kept its compiled copy, in which the
+  tag stays and fills in as empty, so its fallback shows. The check isn't
+  locked against an email saved at the same moment; the check and the launch
+  catch that case. Allowing the delete and flagging the emails is the other
+  option the ticket named, and an easy switch.
+- **A rename keeps the key**, so emails keep working; nothing is rewritten.
+- **Previews.** The sample person (Alex Rivera) has no field values, so each
+  field's tag shows its fallback or nothing, in the API's preview, the CLI's
+  and the HTML editor's live preview. Beyond the ticket, the preview takes
+  `contact_id` (the CLI's `email preview --contact <id-or-address>`) to fill
+  the tags from one contact instead; the web app doesn't offer that yet.
+- **Sends.** A test send takes the values of the contact with the test's
+  address, the owner's included when it's a contact, and fallbacks
+  otherwise. Campaign copies read `fields` with the contact row the worker
+  already reads for each copy, so there is no extra query. A stored
+  (launched) template keeps a field's tag by its key.
+- **Editors.** The block designer's merge tag menu lists the account's
+  fields under "Your fields", after the built-in tags, by name, with the
+  same fallback prompt. The HTML editor has no merge tag menu, checks or
+  autocomplete of its own; its live preview fills field tags from the sample
+  (fallbacks), and a line under the code lists the tags it can use.
+
 ## 2026-11-25: Mailchimp merge fields as contact fields (MG-132; reversible defaults)
 
 Follows the owner's ask for MG-130 ("folks should be able to import their

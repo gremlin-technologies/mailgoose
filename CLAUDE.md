@@ -140,7 +140,10 @@ scope; they only show where an idea came from.
   column per field in the order made. Imports (MG-131) match columns to
   fields by name or key, skip the rest by default, and can make a field
   from a header at import creation, all or nothing within the limit; a
-  non-blank cell overwrites an existing contact's value. Mailchimp imports
+  non-blank cell overwrites an existing contact's value. MG-133 (Nov 25):
+  each field is a merge tag by key (`{{company|your team}}`); the check
+  warns `merge_tag_no_fallback` on one with no fallback, and a field a draft
+  or scheduled campaign's email uses can't be deleted (`field_in_use`). Mailchimp imports
   (MG-132, Nov 25) do the same with merge fields: matched by name, else new
   fields in Mailchimp's order while the limit has room, the rest skipped
   and listed; audiences share a field for one merge field name.

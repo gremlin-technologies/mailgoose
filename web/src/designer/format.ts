@@ -12,6 +12,7 @@ export function insert(text: string, start: number, end: number, insert: string)
   return { text: out, start: at, end: at };
 }
 
+/** The built-in merge tags. Each contact field is a merge tag too, by its key (MG-133). */
 export const mergeTags = [
   { tag: "first_name", label: "First name" },
   { tag: "last_name", label: "Last name" },
@@ -20,11 +21,16 @@ export const mergeTags = [
 ] as const;
 export type MergeTag = (typeof mergeTags)[number]["tag"];
 
+/** True for a built-in merge tag, rather than a contact field's key. */
+export function isBuiltinTag(tag: string): tag is MergeTag {
+  return mergeTags.some((t) => t.tag === tag);
+}
+
 /** The longest fallback the API takes. */
 export const maxFallback = 100;
 
-/** A merge tag as it's written in the email, with its fallback if any. */
-export function mergeTag(tag: MergeTag, fallback = ""): string {
+/** A merge tag as it's written in the email, with its fallback if any: a built-in tag or a contact field's key. */
+export function mergeTag(tag: string, fallback = ""): string {
   const f = fallback.trim();
   return tag === "unsubscribe_url" || f === "" ? `{{${tag}}}` : `{{${tag}|${f}}}`;
 }

@@ -63,7 +63,7 @@ func TestFieldCreateRenameList(t *testing.T) {
 			t.Errorf("%q: %v", bad, err)
 		}
 	}
-	for _, reserved := range []string{"Email", "First name", "tags", "Status", "ID", "Created at", "Signup IP", "permission confirmed"} {
+	for _, reserved := range []string{"Email", "First name", "tags", "Status", "ID", "Created at", "Signup IP", "permission confirmed", "Unsubscribe URL"} {
 		if _, err := h.svc.CreateField(ctx, h.acc, reserved); code(err) != "reserved_field_name" {
 			t.Errorf("%q: %v", reserved, err)
 		}
@@ -103,6 +103,65 @@ func TestFieldCreateRenameList(t *testing.T) {
 	}
 	if want := []string{"company_size", "plan", "f_2nd_email"}; !slices.Equal(keys, want) {
 		t.Errorf("fields in order made = %v, want %v", keys, want)
+	}
+	if got, err := h.svc.FieldKeys(ctx, h.acc); err != nil || !slices.Equal(got, keys) {
+		t.Errorf("FieldKeys = %v %v, want %v", got, err, keys)
+	}
+}
+
+// TestDeleteFieldInUse: a field whose merge tag the email of a draft or
+// scheduled campaign uses isn't deleted (MG-133); other emails don't stop it.
+func TestDeleteFieldInUse(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	company := h.field(t, h.acc, "Company")
+	plan := h.field(t, h.acc, "Plan")
+	h.field(t, h.acc, "Comp")
+	email := func(name, kind, doc string) string {
+		var id string
+		if err := h.svc.DB.QueryRow(ctx, `INSERT INTO emails (account_id, name, kind, document) VALUES ($1, $2, $3, $4) RETURNING id`,
+			h.acc, name, kind, doc).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	campaign := func(emailID, status string) {
+		if _, err := h.svc.DB.Exec(ctx, `INSERT INTO campaigns (account_id, name, email_id, all_contacts, status) VALUES ($1, 'C', $2, true, $3)`,
+			h.acc, emailID, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	blocks := func(text string) string {
+		return `{"settings":{"subject":"Hi"},"blocks":[{"id":"b_text000001","type":"text","text":` + fmt.Sprintf("%q", text) + `},{"id":"b_footer00001","type":"footer","text":""}]}`
+	}
+	spring := email("Spring", "blocks", blocks("At {{company|your team}}"))
+	campaign(spring, "draft")
+	news := email("News", "html", `{"settings":{"subject":"{{ company }}"},"html":"<p>x</p>"}`)
+	campaign(news, "scheduled")
+	// Not in use: a sent campaign's email, an email with no campaign, and
+	// a key that's only part of another tag or plain text.
+	campaign(email("Old", "blocks", blocks("{{plan}}")), "sent")
+	email("Loose", "blocks", blocks("{{plan}}"))
+	campaign(email("Text", "blocks", blocks("company {{comp}} {{company_x}}")), "draft")
+
+	_, err := h.svc.DeleteField(ctx, h.acc, company.ID)
+	var ue *FieldInUseError
+	if !errors.As(err, &ue) || ue.Key != "company" || len(ue.Emails) != 2 || ue.Emails[0].Name != "News" || ue.Emails[0].ID != news ||
+		ue.Emails[1].Name != "Spring" || ue.Emails[1].ID != spring {
+		t.Fatalf("delete a field in use: %v %+v", err, ue)
+	}
+	if _, err := h.svc.GetField(ctx, h.acc, company.ID); err != nil {
+		t.Errorf("the field was deleted: %v", err)
+	}
+	if _, err := h.svc.DeleteField(ctx, h.acc, plan.ID); err != nil {
+		t.Errorf("delete a field only a sent campaign and a loose email use: %v", err)
+	}
+	// Once neither campaign is a draft or scheduled, it goes.
+	if _, err := h.svc.DB.Exec(ctx, `UPDATE campaigns SET status = 'cancelled' WHERE email_id IN ($1, $2)`, spring, news); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.svc.DeleteField(ctx, h.acc, company.ID); err != nil {
+		t.Errorf("delete once no draft uses it: %v", err)
 	}
 }
 

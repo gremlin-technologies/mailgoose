@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
+	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/render"
 	"github.com/gremlin-technologies/mailgoose/internal/sending"
@@ -52,6 +53,32 @@ func (s *Server) PreviewEmail(w http.ResponseWriter, r *http.Request, id string,
 		return
 	}
 	acct := render.Account{PostalAddress: previewPostalAddress, AssetsURL: s.webURL(r)}
+	rcpt := previewRecipient
+	if s.Contacts != nil {
+		// The account's contact fields are merge tags too (MG-133); the
+		// sample person has no values for them, so each shows its fallback.
+		if acct.FieldKeys, err = s.Contacts.FieldKeys(r.Context(), c.AccountID); err != nil {
+			s.emailError(w, r, err)
+			return
+		}
+		if params.ContactId != nil {
+			if !uuidPattern.MatchString(*params.ContactId) {
+				WriteError(w, BadRequest("invalid_parameter", "contact_id must be a contact's id."))
+				return
+			}
+			ct, err := s.Contacts.Get(r.Context(), c.AccountID, *params.ContactId)
+			if errors.Is(err, contacts.ErrNotFound) {
+				WriteError(w, NotFound("not_found", "No contact with that id in this account.").
+					WithHint("`mailgoose contacts list` shows the account's contacts."))
+				return
+			}
+			if err != nil {
+				s.emailError(w, r, err)
+				return
+			}
+			rcpt.Email, rcpt.FirstName, rcpt.LastName, rcpt.Fields = ct.Email, deref(ct.FirstName), deref(ct.LastName), ct.Fields
+		}
+	}
 	branded := false
 	if s.Auth != nil {
 		st, err := s.Auth.AccountSettings(r.Context(), c.AccountID)
@@ -101,7 +128,6 @@ func (s *Server) PreviewEmail(w http.ResponseWriter, r *http.Request, id string,
 	}
 	// The preview shows the "Sent by mailgoose" footer a free account's
 	// copies carry (MG-119).
-	rcpt := previewRecipient
 	rcpt.Branded = branded
 	if s.Sending != nil {
 		if rcpt.Branded, err = sending.Branded(r.Context(), s.Sending.DB, c.AccountID); err != nil {

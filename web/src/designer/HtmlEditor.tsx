@@ -7,7 +7,9 @@ import { FailureNotice, Loading, PageHeader } from "../components";
 import { EMAIL, saveSettings, saveText, useAutosave } from "./autosave";
 import { SaveAndExit } from "./exit";
 import type { Marked } from "./CodeEditor";
+import { mergeTags } from "./format";
 import { byLine, fillSample, issuesOf, maxFileBytes, type HtmlIssue } from "./html";
+import { useMergeFields } from "./mergefields";
 import type { Width } from "./Preview";
 import { EmailProperties, type Settings } from "./properties";
 
@@ -93,7 +95,9 @@ export function HtmlEditor({ email, replace, reload }: { email: Email; replace: 
     const t = setTimeout(() => setPreviewed(code), previewDelay);
     return () => clearTimeout(t);
   }, [code]);
-  const preview = useMemo(() => fillSample(previewed), [previewed]);
+  const fields = useMergeFields();
+  const keys = useMemo(() => fields.map((f) => f.key), [fields]);
+  const preview = useMemo(() => fillSample(previewed, keys), [previewed, keys]);
 
   const marked: Marked[] = useMemo(
     () => [...errors.map((i) => ({ ...i, severity: "error" as const })), ...warnings.map((i) => ({ ...i, severity: "warning" as const }))],
@@ -150,6 +154,11 @@ export function HtmlEditor({ email, replace, reload }: { email: Email; replace: 
             </p>
           )}
           <p className="muted small">Paste your HTML, or type it. It needs an unsubscribe link: {"{{unsubscribe_url}}"}.</p>
+          <p className="muted small">
+            Merge tags: {mergeTags.map((t) => `{{${t.tag}}}`).join(", ")}
+            {keys.length > 0 && <>, and your fields: {keys.map((k) => `{{${k}}}`).join(", ")}</>}. Any but the unsubscribe link takes a
+            fallback for contacts with no value: {`{{${keys[0] ?? "first_name"}|your words}}`}.
+          </p>
           <Suspense fallback={<Loading />}>
             <CodeEditor value={code} onChange={(html) => edit(HTML, { html })} issues={marked} label="HTML code" />
           </Suspense>
@@ -180,7 +189,7 @@ export function HtmlEditor({ email, replace, reload }: { email: Email; replace: 
               </button>
             ))}
           </div>
-          <p className="muted small">Filled in with sample details: Alex Rivera, alex@example.com. The footer with your postal address is added when it's sent, if the email doesn't show it.</p>
+          <p className="muted small">Filled in with sample details: Alex Rivera, alex@example.com{keys.length > 0 && ", with no values for your fields"}. The footer with your postal address is added when it's sent, if the email doesn't show it.</p>
           <iframe title="Live preview" sandbox="" srcDoc={preview} className={`preview-frame live-${width}`} />
         </div>
       </div>

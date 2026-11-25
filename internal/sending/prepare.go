@@ -18,6 +18,7 @@ import (
 
 	"github.com/gremlin-technologies/mailgoose/internal/auth"
 	"github.com/gremlin-technologies/mailgoose/internal/campaigns"
+	"github.com/gremlin-technologies/mailgoose/internal/contacts"
 	"github.com/gremlin-technologies/mailgoose/internal/domains"
 	"github.com/gremlin-technologies/mailgoose/internal/emails"
 	"github.com/gremlin-technologies/mailgoose/internal/linkrisk"
@@ -147,7 +148,10 @@ type Prepared struct {
 	DefaultFrom bool
 	// PostalAddress is the account's, which the footer shows.
 	PostalAddress string
-	Template      *render.Template
+	// FieldKeys are the account's contact field keys, each a merge tag
+	// (MG-133).
+	FieldKeys []string
+	Template  *render.Template
 }
 
 // Prepare gets a campaign ready to send, or returns a *NotReadyError with
@@ -229,8 +233,11 @@ func (s *Service) Prepare(ctx context.Context, accountID, campaignID string) (*P
 			Hint: "Add it with `mailgoose email import-html " + e.ID + " <file.html>`."})
 	}
 	p.PostalAddress = postal
+	if p.FieldKeys, err = contacts.FieldKeys(ctx, s.DB, accountID); err != nil {
+		return nil, err
+	}
 	if len(problems) == 0 {
-		acct := render.Account{PostalAddress: postal, AssetsURL: s.AssetsURL}
+		acct := render.Account{PostalAddress: postal, AssetsURL: s.AssetsURL, FieldKeys: p.FieldKeys}
 		if doc.HTML != nil {
 			p.Template, err = render.CompileHTML(doc, acct)
 		} else {

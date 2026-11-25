@@ -69,7 +69,7 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 
 ## Contacts
 
-- [List contacts](reference.md#op-listcontacts): `GET /v1/contacts`, CLI `mailgoose contacts delete`, `mailgoose contacts export-data`, `mailgoose contacts get`, `mailgoose contacts list`, `mailgoose contacts update`, `mailgoose tags add`, `mailgoose tags remove`. The account's contacts, newest first.
+- [List contacts](reference.md#op-listcontacts): `GET /v1/contacts`, CLI `mailgoose contacts delete`, `mailgoose contacts export-data`, `mailgoose contacts get`, `mailgoose contacts list`, `mailgoose contacts update`, `mailgoose email preview`, `mailgoose tags add`, `mailgoose tags remove`. The account's contacts, newest first.
 - [Add a contact](reference.md#op-createcontact): `POST /v1/contacts`, CLI `mailgoose contacts add`. Adds one contact.
 - [Count contacts](reference.md#op-countcontacts): `GET /v1/contacts/count`, CLI `mailgoose contacts count`. How many of the account's contacts match the same filters as listing them; with none, every contact.
 - [Export contacts as CSV](reference.md#op-exportcontacts): `GET /v1/contacts/export`, CLI `mailgoose export`. The account's contacts as a CSV file, oldest first, with the same filters as listing them; with none, every contact.
@@ -128,7 +128,7 @@ Authenticate with an API key as `Authorization: Bearer mg_…`, or set `MAILGOOS
 - [Delete an email](reference.md#op-deleteemail): `DELETE /v1/emails/{email_id}`, CLI `mailgoose email delete`
 - [Replace an email's whole document](reference.md#op-replaceemaildocument): `PUT /v1/emails/{email_id}/document`, CLI `mailgoose email replace`. Swaps the settings and content for the `document` given, checked whole.
 - [Replace an html email's markup](reference.md#op-importemailhtml): `PUT /v1/emails/{email_id}/html`, CLI `mailgoose email import-html`. Swaps an html email's markup for `html`, whole, after checking it.
-- [Preview an email as it will look](reference.md#op-previewemail): `GET /v1/emails/{email_id}/preview`, CLI `mailgoose email preview`. Renders the email as it will be sent, filled in with sample data: first name Alex, last name Rivera, email alex@example.com, and an unsubscribe link that goes nowhere.
+- [Preview an email as it will look](reference.md#op-previewemail): `GET /v1/emails/{email_id}/preview`, CLI `mailgoose email preview`. Renders the email as it will be sent, filled in with sample data: first name Alex, last name Rivera, email alex@example.com, no value for any contact field (so each field's tag shows its fallback, or nothing), and an unsubscribe link that goes nowhere.
 - [Check an email before sending it](reference.md#op-checkemail): `POST /v1/emails/{email_id}/check`, CLI `mailgoose email check`. Looks the email over and answers what would stop it going (`errors`) and what some readers would trip on (`warnings`).
 - [Duplicate an email](reference.md#op-duplicateemail): `POST /v1/emails/{email_id}/duplicate`, CLI `mailgoose email duplicate`. Copies the email's settings and content into a new email, named "Copy of" the original unless a `name` is given.
 - [List an email's blocks](reference.md#op-listemailblocks): `GET /v1/emails/{email_id}/blocks`, CLI `mailgoose email blocks list`. Every block of a blocks email in document order, a columns block's contents right after it, each with where it is.

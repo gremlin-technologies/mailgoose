@@ -1183,8 +1183,10 @@ export interface paths {
          *     whose key is one of a contact's own columns (`email`, `first_name`,
          *     `last_name`, `status`, `tags`, `source`, `id`, `contact_id`,
          *     `created_at`, `updated_at`, `status_changed_at`,
-         *     `permission_confirmed`, or an export column such as `signup_ip`) is
-         *     refused with 422 `reserved_field_name`. An account on any plan has at
+         *     `permission_confirmed`, or an export column such as `signup_ip`) or
+         *     the `unsubscribe_url` merge tag is refused with 422
+         *     `reserved_field_name`. Each field is a merge tag by its key, such as
+         *     `{{company_size|a few}}`. An account on any plan has at
          *     most 20 fields; one more is a 409 `field_limit`.
          */
         post: operations["createContactField"];
@@ -1208,6 +1210,12 @@ export interface paths {
          * Delete a contact field
          * @description Deletes the field and every contact's value for it, which can't be
          *     undone. The response counts the contacts that had a value.
+         *
+         *     A field whose merge tag (`{{key}}`) is in the email of a draft or
+         *     scheduled campaign isn't deleted: the answer is 409 `field_in_use`,
+         *     naming those emails. Take the tag out of them, or give those
+         *     campaigns another email, first. An email no such campaign uses
+         *     doesn't stop the delete; its check then reports the tag as unknown.
          */
         delete: operations["deleteContactField"];
         options?: never;
@@ -2267,8 +2275,11 @@ export interface paths {
         /**
          * Preview an email as it will look
          * @description Renders the email as it will be sent, filled in with sample data:
-         *     first name Alex, last name Rivera, email alex@example.com, and an
-         *     unsubscribe link that goes nowhere. `desktop` returns the email
+         *     first name Alex, last name Rivera, email alex@example.com, no value
+         *     for any contact field (so each field's tag shows its fallback, or
+         *     nothing), and an unsubscribe link that goes nowhere. With
+         *     `contact_id`, it's filled in from that contact instead: its name,
+         *     address and contact field values. `desktop` returns the email
          *     itself; `mobile` returns a page that shows it in a 375 pixel frame,
          *     so its narrow-screen rules apply. A free account's preview, like its
          *     test sends and every copy it sends, ends with a small "Sent by
@@ -2312,7 +2323,9 @@ export interface paths {
          *     address), `unverified_reply_to` (the email would go from the shared
          *     sending domain, and its Reply-To isn't a verified sender or on a
          *     verified domain), `missing_postal_address`, `empty_email`,
-         *     `merge_tag` (a tag that can't be filled), `missing_unsubscribe`,
+         *     `merge_tag` (a tag that can't be filled: neither a built-in tag nor
+         *     one of the account's contact field keys, which the message lists),
+         *     `missing_unsubscribe`,
          *     `broken_link` (not a full web address, or the page or site doesn't
          *     exist), `too_large` (over 102 KB as rendered), `invalid_html`, and
          *     `unsafe_link` (on Google Web Risk's malware, phishing or unwanted
@@ -2324,7 +2337,10 @@ export interface paths {
          *     checked too often), `link_safety_not_checked` (links weren't looked
          *     up on the phishing and malware lists: the lookup isn't set up, or
          *     didn't answer within 2 seconds; they pass), `missing_alt`,
-         *     `near_size_limit` (over 90 KB), `unsupported_css`, and
+         *     `near_size_limit` (over 90 KB), `unsupported_css`,
+         *     `merge_tag_no_fallback` (a contact field's tag, such as
+         *     `{{company}}`, with no fallback, so contacts with no value for the
+         *     field get nothing there; `{{company|your team}}` has one), and
          *     `shared_domain` (the email goes from mailgoose's shared sending
          *     domain because its From isn't on a verified domain; adding the
          *     domain is better for deliverability and trust).
@@ -5842,7 +5858,7 @@ export interface components {
         };
         EmailCheckIssue: {
             /** @enum {string} */
-            code: "missing_subject" | "missing_from" | "unverified_from" | "unverified_reply_to" | "missing_postal_address" | "empty_email" | "merge_tag" | "missing_unsubscribe" | "broken_link" | "too_large" | "invalid_html" | "unsafe_link" | "insecure_link" | "link_unreachable" | "link_not_checked" | "link_safety_not_checked" | "missing_alt" | "near_size_limit" | "unsupported_css" | "shared_domain";
+            code: "missing_subject" | "missing_from" | "unverified_from" | "unverified_reply_to" | "missing_postal_address" | "empty_email" | "merge_tag" | "missing_unsubscribe" | "broken_link" | "too_large" | "invalid_html" | "unsafe_link" | "insecure_link" | "link_unreachable" | "link_not_checked" | "link_safety_not_checked" | "missing_alt" | "near_size_limit" | "unsupported_css" | "merge_tag_no_fallback" | "shared_domain";
             message: string;
             /** @description The block field or setting it's about, such as `blocks[2].alt` or `settings.subject`. */
             path?: string;
@@ -6459,6 +6475,20 @@ export interface components {
          *     most it can keep.
          */
         SegmentConflict: {
+            headers: {
+                "X-Request-Id": components["headers"]["X-Request-Id"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
+         * @description `field_in_use`: the email of a draft or scheduled campaign uses the
+         *     field's merge tag. `details.key` is the field's key and
+         *     `details.emails` lists those emails (`id` and `name`).
+         */
+        ContactFieldInUse: {
             headers: {
                 "X-Request-Id": components["headers"]["X-Request-Id"];
                 [name: string]: unknown;
@@ -9324,6 +9354,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["CrossOrigin"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["ContactFieldInUse"];
             429: components["responses"]["TooManyRequests"];
             503: components["responses"]["ServiceUnavailable"];
         };
@@ -10913,6 +10944,11 @@ export interface operations {
             query?: {
                 /** @description desktop (the default) or mobile. */
                 width?: "desktop" | "mobile";
+                /**
+                 * @description A contact of the account to fill the merge tags from, in place of
+                 *     the sample person. 404 when the account has no such contact.
+                 */
+                contact_id?: string;
             };
             header?: never;
             path: {

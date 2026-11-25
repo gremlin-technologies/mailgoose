@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -193,18 +194,18 @@ func TestLintReportsTags(t *testing.T) {
 		{"id":"b","type":"button","text":"Go {{first_name|{x}}}","href":"{{unsubscribe_url}}"},
 		{"id":"so","type":"social","links":[{"network":"x","url":"https://x.com/p"},{"network":"x","url":"https://x.com/q","label":"{{name}} on X"}]},
 		{"id":"f","type":"footer","text":"Bye {{first_name"}`, `{"subject":"{{FIRST_NAME}}"}`)
-	errs := Lint(d)
+	errs := Lint(d, nil)
 	var got []string
 	for _, e := range errs {
 		got = append(got, e.Path+": "+e.Message)
 	}
 	want := []string{
-		"settings.subject: {{FIRST_NAME}} isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}} or {{unsubscribe_url}}",
-		"blocks[0].text: {{name}} isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}} or {{unsubscribe_url}}",
+		"settings.subject: {{FIRST_NAME}} isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}} or {{unsubscribe_url}} (this account has no contact fields to use as tags)",
+		"blocks[0].text: {{name}} isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}} or {{unsubscribe_url}} (this account has no contact fields to use as tags)",
 		"blocks[1].columns[0].blocks[0].text: {{unsubscribe_url}} takes no fallback; every recipient has one",
 		"blocks[1].columns[0].blocks[0].text: the link [x](ftp://nope) needs a full https:// address",
 		"blocks[2].text: the fallback in {{first_name|{x}} can't contain { or }",
-		"blocks[3].links[1].label: {{name}} isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}} or {{unsubscribe_url}}",
+		"blocks[3].links[1].label: {{name}} isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}} or {{unsubscribe_url}} (this account has no contact fields to use as tags)",
 		`blocks[4].text: "{{first_name" opens a merge tag but never closes it with }}`,
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
@@ -367,7 +368,7 @@ func TestLintRefusesTagLinks(t *testing.T) {
 		}
 	}
 	var got []string
-	for _, e := range Lint(d) {
+	for _, e := range Lint(d, nil) {
 		got = append(got, e.Path+": "+e.Message)
 	}
 	want := []string{
@@ -401,5 +402,77 @@ func TestColumnWidths(t *testing.T) {
 	got := columnWidths(&emails.Columns{Layout: "1:1:1", Columns: make([]emails.Column, 3)}, 500)
 	if got[0]+got[1]+got[2] != 500 {
 		t.Errorf("1:1:1 of 500 = %v", got)
+	}
+}
+
+func TestFieldTags(t *testing.T) {
+	d := doc(t, `{"id":"h","type":"heading","text":"For {{company|your team}}"},
+		{"id":"t","type":"text","text":"Plan: {{plan}}. {{ company }} rocks."},
+		{"id":"f","type":"footer","text":""}`, `{"subject":"{{first_name|Hi}} at {{company|your team}}"}`)
+	acct := Account{PostalAddress: postal, FieldKeys: []string{"company", "plan"}}
+	tpl, err := Compile(d, acct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A value fills the tag, escaped in the HTML; an empty or missing one
+	// takes the fallback, or nothing.
+	m := tpl.Personalize(Recipient{Email: "pat@example.com", FirstName: "Pat", Fields: map[string]string{"company": "A&B", "plan": "  "}})
+	if m.Subject != "Pat at A&B" {
+		t.Errorf("subject %q", m.Subject)
+	}
+	if !strings.Contains(m.HTML, "For A&amp;B") || !strings.Contains(m.HTML, "Plan: . A&amp;B rocks.") || !strings.Contains(m.Text, "Plan: . A&B rocks.") {
+		t.Errorf("html:\n%s\ntext:\n%s", m.HTML, m.Text)
+	}
+	m = tpl.Personalize(Recipient{Email: "sam@example.com"})
+	if m.Subject != "Hi at your team" || !strings.Contains(m.HTML, "For your team") || !strings.Contains(m.HTML, "Plan: .  rocks.") {
+		t.Errorf("no values: subject %q\n%s", m.Subject, m.HTML)
+	}
+
+	// Without the field, the tag can't be filled in, and the message lists
+	// the account's keys.
+	_, err = Compile(d, Account{PostalAddress: postal, FieldKeys: []string{"company", "size"}})
+	var p Problems
+	if !errors.As(err, &p) || len(p) != 1 || p[0].Path != "blocks[1].text" ||
+		p[0].Message != "{{plan}} isn't a merge tag; use {{first_name}}, {{last_name}}, {{email}}, {{unsubscribe_url}} or one of this account's contact fields: {{company}}, {{size}}" {
+		t.Errorf("unknown field tag: %v", err)
+	}
+
+	// An html email's tags are checked against the same keys.
+	h := `<html><body><p>{{company|x}} {{plan}}</p><a href="{{unsubscribe_url}}">Unsubscribe</a></body></html>`
+	hd, err := emails.ParseDocument(emails.KindHTML, []byte(`{"settings":{"subject":"{{plan|y}}"},"html":`+strconv.Quote(h)+`}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ht, err := CompileHTML(hd, acct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := ht.Personalize(Recipient{Fields: map[string]string{"plan": "Pro"}}); m.Subject != "Pro" || !strings.Contains(m.HTML, "<p>x Pro</p>") {
+		t.Errorf("html email: %q\n%s", m.Subject, m.HTML)
+	}
+	if _, err := CompileHTML(hd, Account{PostalAddress: postal}); !errors.As(err, &p) || len(p) != 3 {
+		t.Errorf("html email without the fields: %v", err)
+	}
+}
+
+func TestUsedTags(t *testing.T) {
+	d := doc(t, `{"id":"t","type":"text","text":"{{company}} and {{company}} and {{company|x}} {{first_name}} {{broken"},
+		{"id":"c","type":"columns","columns":[{"blocks":[{"id":"b","type":"button","text":"Go {{plan}}","href":"https://x.example/?p={{plan|none}}"}]},{"blocks":[]}]},
+		{"id":"f","type":"footer","text":"{{ nickname }}"}`, `{"subject":"{{plan}}","preview_text":"{{}}"}`)
+	var got []string
+	for _, u := range UsedTags(d) {
+		got = append(got, fmt.Sprintf("%s %s %v", u.Path, u.Tag, u.HasFallback))
+	}
+	want := []string{
+		"settings.subject plan false",
+		"blocks[0].text company false",
+		"blocks[0].text company true",
+		"blocks[0].text first_name false",
+		"blocks[1].columns[0].blocks[0].text plan false",
+		"blocks[1].columns[0].blocks[0].href plan true",
+		"blocks[2].text nickname false",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("got:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
 }

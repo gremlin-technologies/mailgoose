@@ -57,6 +57,7 @@ import { backLabel, SaveAndExit, useReturnTo } from "./exit";
 import { HtmlEditor } from "./HtmlEditor";
 import { InlineText, RichText } from "./inline";
 import { LayoutGlyph } from "./layout";
+import { MergeFieldsProvider } from "./mergefields";
 import { base64, BlockProperties, EmailProperties, type Settings } from "./properties";
 import { networkNames, networks, SocialCanvas, type Network } from "./social";
 
@@ -89,8 +90,16 @@ export function Designer() {
 
   if (state.status === "loading") return <Loading />;
   if (state.status === "failed") return <LoadFailed failure={state.failure} retry={reload} />;
-  if (state.data.kind === "html") return <HtmlEditor email={state.data} replace={replace} reload={reload} />;
-  return <BlockDesigner email={state.data} replace={replace} reload={reload} />;
+  // The account's contact fields are merge tags too (MG-133).
+  return (
+    <MergeFieldsProvider>
+      {state.data.kind === "html" ? (
+        <HtmlEditor email={state.data} replace={replace} reload={reload} />
+      ) : (
+        <BlockDesigner email={state.data} replace={replace} reload={reload} />
+      )}
+    </MergeFieldsProvider>
+  );
 }
 
 /** Every block id in a document, columns' contents too. */

@@ -945,6 +945,27 @@ describe("fields page", () => {
     expect(screen.getByText("1 of 20 fields used")).toBeTruthy();
   });
 
+  it("shows why a field an email uses can't be deleted, in the web app's words", async () => {
+    const message = 'The email "Spring", in a draft or scheduled campaign, uses {{plan}}, so the field can\'t be deleted.';
+    const api = fakeApi({
+      ...signedIn,
+      "GET /v1/plan": planRoute(20),
+      "GET /v1/contact-fields": fieldsRoute([fieldCompany, fieldPlan]),
+      [`DELETE /v1/contact-fields/${fieldPlan.id}`]: () =>
+        apiError(409, "field_in_use", message, "Take {{plan}} out of those emails. `mailgoose email get <email> --json` shows where it is."),
+    });
+    const user = userEvent.setup();
+    renderApp("/fields", api.fetch);
+
+    await user.click(await screen.findByRole("button", { name: "Delete Plan tier" }));
+    await user.click(screen.getByRole("button", { name: "Delete field" }));
+    expect(await screen.findByText(message)).toBeTruthy();
+    expect(screen.getByText(/Take the field's merge tag out of those emails in the editor/)).toBeTruthy();
+    expect(screen.queryByText(/mailgoose email/)).toBeNull();
+    // The field is still there.
+    expect(screen.getByRole("button", { name: "Delete field" })).toBeTruthy();
+  });
+
   it("disables adding at the limit, and shows the API's refusal", async () => {
     const api = fakeApi({
       ...signedIn,

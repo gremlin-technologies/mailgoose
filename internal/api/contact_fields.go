@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gremlin-technologies/mailgoose/internal/api/apigen"
 	"github.com/gremlin-technologies/mailgoose/internal/contacts"
@@ -14,7 +16,23 @@ import (
 func (s *Server) fieldError(w http.ResponseWriter, r *http.Request, err error) bool {
 	var le *contacts.FieldLimitError
 	var ke *contacts.FieldKeyExistsError
+	var ue *contacts.FieldInUseError
 	switch {
+	case errors.As(err, &ue):
+		names := make([]string, len(ue.Emails))
+		list := make([]map[string]string, len(ue.Emails))
+		for i, e := range ue.Emails {
+			names[i] = strconv.Quote(e.Name)
+			list[i] = map[string]string{"id": e.ID, "name": e.Name}
+		}
+		msg := fmt.Sprintf("The email %s, in a draft or scheduled campaign, uses {{%s}}, so the field can't be deleted.", names[0], ue.Key)
+		if len(names) > 1 {
+			msg = fmt.Sprintf("%d emails in draft or scheduled campaigns use {{%s}} (%s), so the field can't be deleted.",
+				len(names), ue.Key, strings.Join(names, ", "))
+		}
+		WriteError(w, Conflict("field_in_use", msg).
+			WithHint(fmt.Sprintf("Take {{%s}} out of those emails, or give their campaigns another email, then delete the field. `mailgoose email get <email> --json` shows where it is.", ue.Key)).
+			WithDetails(map[string]any{"key": ue.Key, "emails": list}))
 	case errors.Is(err, contacts.ErrFieldExists):
 		WriteError(w, Conflict("field_exists", "This account already has a contact field with that name.").
 			WithHint("Field names are unique ignoring case. `mailgoose fields list` shows them."))

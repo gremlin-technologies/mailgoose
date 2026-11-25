@@ -77,6 +77,7 @@ export const WEB_HINTS: Record<string, string> = {
   tag_exists: "Pick the existing tag instead.",
   field_exists: "Field names, and the keys made from them, are unique. Pick another name.",
   field_limit: "Delete a field you no longer use on the Fields page to add another.",
+  field_in_use: "Take the field's merge tag out of those emails in the editor, or pick another email for their campaigns, then delete the field.",
   unknown_field: "Add the field on the Fields page first.",
   unknown_tag: "Pick one of your tags.",
   unknown_email: "Pick one of your emails.",

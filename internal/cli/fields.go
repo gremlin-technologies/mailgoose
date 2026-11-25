@@ -84,7 +84,9 @@ func (a *App) fieldsCmd() *cobra.Command {
 such as company or plan. Each has a name, its label and its column's header
 in an export, and a key worked out from the name ("Company size" is
 company_size), which contacts use: mailgoose contacts add pat@example.com
---field company_size=50. A rename keeps the key and every value. A field's
+--field company_size=50. Each field is a merge tag in emails by its key,
+with an optional fallback for contacts with no value: {{company_size|a few}}.
+A rename keeps the key and every value, so emails keep working. A field's
 id, key or name works wherever a field is asked for.`,
 	}
 
@@ -175,8 +177,14 @@ id, key or name works wherever a field is asked for.`,
 
 	var yes bool
 	del := callsAll([]string{"deleteContactField", "listContactFields"}, &cobra.Command{
-		Use:     "delete <field>",
-		Short:   "Delete a contact field and every contact's value for it",
+		Use:   "delete <field>",
+		Short: "Delete a contact field and every contact's value for it",
+		Long: `Deletes the field and every contact's value for it, which can't be undone.
+
+A field whose merge tag, such as {{company_size}}, is in the email of a
+draft or scheduled campaign isn't deleted: the answer is field_in_use, naming
+those emails. Take the tag out of them, or give their campaigns another
+email, first.`,
 		Example: `  mailgoose fields delete company_size --yes`,
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

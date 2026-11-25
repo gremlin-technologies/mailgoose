@@ -958,7 +958,7 @@ Responses:
 `GET /v1/contacts`
 
 - Operation: `listContacts`
-- CLI: `mailgoose contacts delete`, `mailgoose contacts export-data`, `mailgoose contacts get`, `mailgoose contacts list`, `mailgoose contacts update`, `mailgoose tags add`, `mailgoose tags remove`
+- CLI: `mailgoose contacts delete`, `mailgoose contacts export-data`, `mailgoose contacts get`, `mailgoose contacts list`, `mailgoose contacts update`, `mailgoose email preview`, `mailgoose tags add`, `mailgoose tags remove`
 
 The account's contacts, newest first. Filters combine, every one must
 match, and empty ones are ignored. The engagement filters (MG-113) are
@@ -1440,8 +1440,10 @@ end, and `f_` in front when it doesn't start with a letter
 whose key is one of a contact's own columns (`email`, `first_name`,
 `last_name`, `status`, `tags`, `source`, `id`, `contact_id`,
 `created_at`, `updated_at`, `status_changed_at`,
-`permission_confirmed`, or an export column such as `signup_ip`) is
-refused with 422 `reserved_field_name`. An account on any plan has at
+`permission_confirmed`, or an export column such as `signup_ip`) or
+the `unsubscribe_url` merge tag is refused with 422
+`reserved_field_name`. Each field is a merge tag by its key, such as
+`{{company_size|a few}}`. An account on any plan has at
 most 20 fields; one more is a 409 `field_limit`.
 
 Request body (`application/json`, required): [CreateContactFieldRequest](#schema-createcontactfieldrequest)
@@ -1500,6 +1502,12 @@ Responses:
 Deletes the field and every contact's value for it, which can't be
 undone. The response counts the contacts that had a value.
 
+A field whose merge tag (`{{key}}`) is in the email of a draft or
+scheduled campaign isn't deleted: the answer is 409 `field_in_use`,
+naming those emails. Take the tag out of them, or give those
+campaigns another email, first. An email no such campaign uses
+doesn't stop the delete; its check then reports the tag as unknown.
+
 | Parameter | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
 | `field_id` | path | string (uuid) | yes | The contact field's `id`. |
@@ -1511,6 +1519,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
+- `409`: `field_in_use`: the email of a draft or scheduled campaign uses the field's merge tag. `details.key` is the field's key and `details.emails` lists those emails (`id` and `name`). [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -2363,8 +2372,11 @@ Responses:
 - CLI: `mailgoose email preview`
 
 Renders the email as it will be sent, filled in with sample data:
-first name Alex, last name Rivera, email alex@example.com, and an
-unsubscribe link that goes nowhere. `desktop` returns the email
+first name Alex, last name Rivera, email alex@example.com, no value
+for any contact field (so each field's tag shows its fallback, or
+nothing), and an unsubscribe link that goes nowhere. With
+`contact_id`, it's filled in from that contact instead: its name,
+address and contact field values. `desktop` returns the email
 itself; `mobile` returns a page that shows it in a 375 pixel frame,
 so its narrow-screen rules apply. A free account's preview, like its
 test sends and every copy it sends, ends with a small "Sent by
@@ -2378,6 +2390,7 @@ runs no scripts.
 | --- | --- | --- | --- | --- |
 | `email_id` | path | string (uuid) | yes | The email's `id`. |
 | `width` | query | string: one of `desktop`, `mobile` |  | desktop (the default) or mobile. |
+| `contact_id` | query | string (uuid) |  | A contact of the account to fill the merge tags from, in place of the sample person. 404 when the account has no such contact. |
 
 Responses:
 
@@ -2412,7 +2425,9 @@ sending domain, nor, with shared sending on, a verified sender
 address), `unverified_reply_to` (the email would go from the shared
 sending domain, and its Reply-To isn't a verified sender or on a
 verified domain), `missing_postal_address`, `empty_email`,
-`merge_tag` (a tag that can't be filled), `missing_unsubscribe`,
+`merge_tag` (a tag that can't be filled: neither a built-in tag nor
+one of the account's contact field keys, which the message lists),
+`missing_unsubscribe`,
 `broken_link` (not a full web address, or the page or site doesn't
 exist), `too_large` (over 102 KB as rendered), `invalid_html`, and
 `unsafe_link` (on Google Web Risk's malware, phishing or unwanted
@@ -2424,7 +2439,10 @@ a port other than 80 or 443, the check ran out of time, or links were
 checked too often), `link_safety_not_checked` (links weren't looked
 up on the phishing and malware lists: the lookup isn't set up, or
 didn't answer within 2 seconds; they pass), `missing_alt`,
-`near_size_limit` (over 90 KB), `unsupported_css`, and
+`near_size_limit` (over 90 KB), `unsupported_css`,
+`merge_tag_no_fallback` (a contact field's tag, such as
+`{{company}}`, with no fallback, so contacts with no value for the
+field get nothing there; `{{company|your team}}` has one), and
 `shared_domain` (the email goes from mailgoose's shared sending
 domain because its From isn't on a verified domain; adding the
 domain is better for deliverability and trust).
@@ -6618,7 +6636,7 @@ Type: [Campaign](#schema-campaign) and object
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `code` | string: one of `missing_subject`, `missing_from`, `unverified_from`, `unverified_reply_to`, `missing_postal_address`, `empty_email`, `merge_tag`, `missing_unsubscribe`, `broken_link`, `too_large`, `invalid_html`, `unsafe_link`, `insecure_link`, `link_unreachable`, `link_not_checked`, `link_safety_not_checked`, `missing_alt`, `near_size_limit`, `unsupported_css`, `shared_domain` | yes |  |
+| `code` | string: one of `missing_subject`, `missing_from`, `unverified_from`, `unverified_reply_to`, `missing_postal_address`, `empty_email`, `merge_tag`, `missing_unsubscribe`, `broken_link`, `too_large`, `invalid_html`, `unsafe_link`, `insecure_link`, `link_unreachable`, `link_not_checked`, `link_safety_not_checked`, `missing_alt`, `near_size_limit`, `unsupported_css`, `merge_tag_no_fallback`, `shared_domain` | yes |  |
 | `message` | string | yes |  |
 | `path` | string |  | The block field or setting it's about, such as `blocks[2].alt` or `settings.subject`. |
 | `line` | integer |  | The line of an html email's markup it's on. |

@@ -752,6 +752,7 @@ const (
 	EmailCheckIssueCodeLinkSafetyNotChecked EmailCheckIssueCode = "link_safety_not_checked"
 	EmailCheckIssueCodeLinkUnreachable      EmailCheckIssueCode = "link_unreachable"
 	EmailCheckIssueCodeMergeTag             EmailCheckIssueCode = "merge_tag"
+	EmailCheckIssueCodeMergeTagNoFallback   EmailCheckIssueCode = "merge_tag_no_fallback"
 	EmailCheckIssueCodeMissingAlt           EmailCheckIssueCode = "missing_alt"
 	EmailCheckIssueCodeMissingFrom          EmailCheckIssueCode = "missing_from"
 	EmailCheckIssueCodeMissingPostalAddress EmailCheckIssueCode = "missing_postal_address"
@@ -784,6 +785,8 @@ func (e EmailCheckIssueCode) Valid() bool {
 	case EmailCheckIssueCodeLinkUnreachable:
 		return true
 	case EmailCheckIssueCodeMergeTag:
+		return true
+	case EmailCheckIssueCodeMergeTagNoFallback:
 		return true
 	case EmailCheckIssueCodeMissingAlt:
 		return true
@@ -5727,6 +5730,9 @@ type ContactConflict = Error
 // ContactFieldConflict defines model for ContactFieldConflict.
 type ContactFieldConflict = Error
 
+// ContactFieldInUse defines model for ContactFieldInUse.
+type ContactFieldInUse = Error
+
 // ContactFilterUnusable defines model for ContactFilterUnusable.
 type ContactFilterUnusable = Error
 
@@ -6200,6 +6206,10 @@ type RemoveEmailBlockParams struct {
 type PreviewEmailParams struct {
 	// Width desktop (the default) or mobile.
 	Width *PreviewEmailParamsWidth `form:"width,omitempty" json:"width,omitempty"`
+
+	// ContactId A contact of the account to fill the merge tags from, in place of
+	// the sample person. 404 when the account has no such contact.
+	ContactId *string `form:"contact_id,omitempty" json:"contact_id,omitempty"`
 }
 
 // PreviewEmailParamsWidth defines parameters for PreviewEmail.
@@ -10411,6 +10421,19 @@ func (siw *ServerInterfaceWrapper) PreviewEmail(w http.ResponseWriter, r *http.R
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "width"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "width", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "contact_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "contact_id", r.URL.Query(), &params.ContactId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "contact_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "contact_id", Err: err})
 		}
 		return
 	}

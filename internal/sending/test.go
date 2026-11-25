@@ -319,12 +319,14 @@ func (s *Service) notSuppressed(ctx context.Context, accountID, addr string) err
 }
 
 // testRecipient fills a test's merge tags: from the contact with that
-// address when there is one, so the test looks as it will for them.
+// address when there is one, its contact field values included (MG-133),
+// so the test looks as it will for them. Otherwise each tag but the
+// address takes its fallback.
 func (s *Service) testRecipient(ctx context.Context, accountID, addr string) render.Recipient {
 	r := render.Recipient{Email: addr}
 	var first, last *string
-	if err := s.DB.QueryRow(ctx, `SELECT first_name, last_name FROM contacts WHERE account_id = $1 AND email = $2`,
-		accountID, addr).Scan(&first, &last); err == nil {
+	if err := s.DB.QueryRow(ctx, `SELECT first_name, last_name, fields FROM contacts WHERE account_id = $1 AND email = $2`,
+		accountID, addr).Scan(&first, &last, &r.Fields); err == nil {
 		r.FirstName, r.LastName = trimmed(first), trimmed(last)
 	}
 	return r
