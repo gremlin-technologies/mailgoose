@@ -4365,7 +4365,7 @@ type MailchimpAudienceList struct {
 	Audiences []MailchimpAccountAudience `json:"audiences"`
 }
 
-// MailchimpBundle Examples: {"bytes":482113,"campaigns":10,"confirmed_at":null,"created_at":"2026-11-21T12:00:00Z","emails":{"error":null,"made":[],"status":"none","total":0},"expires_at":"2026-11-28T12:00:00Z","file_name":"mailchimp-export.zip","forms":[],"id":"7c1e5a52-3d1f-4c55-9a0e-2f9b8b6f4a10","import_id":null,"preview":{"audiences":[{"by_status":{"archived":0,"cleaned":20,"pending":14,"subscribed":1100,"transactional":10,"unsubscribed":60},"groups":["Interests: Baking"],"members":1204,"name":"Newsletter"}],"campaigns_available":24,"contacts":{"dropped_fields":["MEMBER_RATING","LAST_CHANGED"],"existing_suppressed":0,"existing_tagged":20,"fields":{"existing":1,"left_out":0,"limit":20,"new":1},"holds":["over_contact_limit"],"merge_fields":[{"audiences":["Newsletter"],"custom_field":null,"members":640,"name":"Phone Number","new_field":{"key":"phone_number","name":"Phone Number"},"samples":["555-0100","555-0101","555-0102"],"skip_reason":null},{"audiences":["Newsletter"],"custom_field":{"id":"3b0f6c1e-6f7a-4b8e-9d2c-5a1e7f3c9b20","key":"company","name":"Company"},"members":310,"name":"Company","new_field":null,"samples":["Acme","Initech"],"skip_reason":null}],"merge_suppressed":0,"merge_suppressed_examples":[],"names_cut":0,"new":{"bounced":20,"subscribed":1080,"unconfirmed":14,"unsubscribed":60},"newest_optin":"2026-10-30T09:12:00Z","plan":{"contacts":1100,"limit":500,"month_cents":500,"plan":"paid","tester":false,"units":1,"upgrade":true,"year_cents":5000},"renamed_tags":[],"skipped":{"archived":0,"invalid_email":0,"invalid_row":0,"not_subscribed":10,"suppressed":0},"tags_to_create":["vip","Interests: Baking"],"waits":true,"with_optin_time":1000},"emails":[{"email_id":null,"errors":[],"file":"templates/Monthly_newsletter.html","from":"template","images":2,"name":"Monthly newsletter","preview_text":"","subject":"","warnings":[]}],"ignored_files":[{"path":"reports/opens.csv","reason":"unknown_file"}],"source":"account_export"},"status":"unconfirmed"}
+// MailchimpBundle Examples: {"bytes":482113,"campaigns":10,"confirmed_at":null,"created_at":"2026-11-21T12:00:00Z","emails":{"error":null,"made":[],"status":"none","total":0},"expires_at":"2026-11-28T12:00:00Z","file_name":"mailchimp-export.zip","forms":[],"id":"7c1e5a52-3d1f-4c55-9a0e-2f9b8b6f4a10","import_id":null,"preview":{"audiences":[{"by_status":{"archived":0,"cleaned":20,"pending":14,"subscribed":1100,"transactional":10,"unsubscribed":60},"groups":["Interests: Baking"],"members":1204,"name":"Newsletter"}],"campaigns_available":24,"contacts":{"dropped_fields":["MEMBER_RATING","LAST_CHANGED"],"existing_suppressed":0,"existing_tagged":20,"fields":{"existing":1,"left_out":0,"limit":20,"new":1},"holds":["over_contact_limit"],"merge_fields":[{"audiences":["Newsletter"],"custom_field":null,"members":640,"name":"Phone Number","new_field":{"key":"phone_number","name":"Phone Number"},"samples":["555-0100","555-0101","555-0102"],"skip_reason":null,"tags":[]},{"audiences":["Newsletter"],"custom_field":{"id":"3b0f6c1e-6f7a-4b8e-9d2c-5a1e7f3c9b20","key":"company","name":"Company"},"members":310,"name":"Company","new_field":null,"samples":["Acme","Initech"],"skip_reason":null,"tags":[]}],"merge_suppressed":0,"merge_suppressed_examples":[],"names_cut":0,"new":{"bounced":20,"subscribed":1080,"unconfirmed":14,"unsubscribed":60},"newest_optin":"2026-10-30T09:12:00Z","plan":{"contacts":1100,"limit":500,"month_cents":500,"plan":"paid","tester":false,"units":1,"upgrade":true,"year_cents":5000},"renamed_tags":[],"skipped":{"archived":0,"invalid_email":0,"invalid_row":0,"not_subscribed":10,"suppressed":0},"tags_to_create":["vip","Interests: Baking"],"waits":true,"with_optin_time":1000},"emails":[{"email_id":null,"errors":[],"file":"templates/Monthly_newsletter.html","from":"template","images":2,"merge_tags":[{"field":{"key":"company","name":"Company"},"merge_field":"Company","new_field":false,"tag":"*|COMPANY|*"}],"name":"Monthly newsletter","preview_text":"","subject":"","warnings":[]}],"ignored_files":[{"path":"reports/opens.csv","reason":"unknown_file"}],"source":"account_export"},"status":"unconfirmed"}
 type MailchimpBundle struct {
 	// Bytes The uploaded file's size.
 	Bytes int `json:"bytes"`
@@ -4538,15 +4538,47 @@ type MailchimpEmail struct {
 	From MailchimpEmailFrom `json:"from"`
 
 	// Images Mailchimp-hosted images copied into mailgoose.
-	Images      int                  `json:"images"`
-	Name        string               `json:"name"`
-	PreviewText string               `json:"preview_text"`
-	Subject     string               `json:"subject"`
-	Warnings    []MailchimpEmailNote `json:"warnings"`
+	Images int `json:"images"`
+
+	// MergeTags The Mailchimp merge tags it uses beyond the ones mailgoose always
+	// converts (names, email, unsubscribe, subject, preview text and
+	// the postal address) and conditionals, each once, with what each
+	// became: a contact field's tag, or taken out (with a
+	// `mailchimp_tag_removed` warning). In a preview, as the merge
+	// fields' default choices would make them; once made, as they
+	// were made. Empty for an email made before this was listed.
+	MergeTags   []MailchimpEmailMergeTag `json:"merge_tags"`
+	Name        string                   `json:"name"`
+	PreviewText string                   `json:"preview_text"`
+	Subject     string                   `json:"subject"`
+	Warnings    []MailchimpEmailNote     `json:"warnings"`
 }
 
 // MailchimpEmailFrom defines model for MailchimpEmail.From.
 type MailchimpEmailFrom string
+
+// MailchimpEmailMergeTag defines model for MailchimpEmailMergeTag.
+type MailchimpEmailMergeTag struct {
+	// Field The contact field whose tag, `{{key}}`, took its place, with no
+	// fallback; null when it was taken out because no contact field
+	// matches it or its merge field is left out.
+	Field *MailchimpTagField `json:"field"`
+
+	// MergeField The import's merge field the tag is, by name, matched by its
+	// Mailchimp tag or else by name; null when none.
+	//
+	//
+	// Examples: Company
+	MergeField *string `json:"merge_field"`
+
+	// NewField True when `field` is one the import makes.
+	NewField bool `json:"new_field"`
+
+	// Tag The tag as Mailchimp writes it.
+	//
+	// Examples: *|MMERGE3|*
+	Tag string `json:"tag"`
+}
 
 // MailchimpEmailNote defines model for MailchimpEmailNote.
 type MailchimpEmailNote struct {
@@ -4638,6 +4670,12 @@ type MailchimpMergeField struct {
 	// existing field, or a new field of another name. Null when it
 	// fills a field.
 	SkipReason *MailchimpMergeFieldSkipReason `json:"skip_reason"`
+
+	// Tags Its Mailchimp merge tags, such as `MMERGE3`, where the export
+	// says: a connected account's does, an uploaded export doesn't,
+	// so this is empty for an upload. The emails' merge tags are
+	// matched to merge fields by these, else by name.
+	Tags []string `json:"tags"`
 }
 
 // MailchimpMergeFieldSkipReason defines model for MailchimpMergeField.SkipReason.
@@ -4696,6 +4734,17 @@ type MailchimpStatusCounts struct {
 	Subscribed    int `json:"subscribed"`
 	Transactional int `json:"transactional"`
 	Unsubscribed  int `json:"unsubscribed"`
+}
+
+// MailchimpTagField defines model for MailchimpTagField.
+type MailchimpTagField struct {
+	// Key The field's key; its merge tag is `{{key}}`.
+	//
+	// Examples: company
+	Key string `json:"key"`
+
+	// Name Examples: Company
+	Name string `json:"name"`
 }
 
 // MoveEmailBlockRequest The new place, as in BlockPlace.

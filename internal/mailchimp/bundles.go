@@ -247,6 +247,15 @@ func (s *Store) Get(ctx context.Context, accountID, id string) (*Upload, error) 
 		WHERE id = $1 AND account_id = $2 AND (confirmed_at IS NOT NULL OR expires_at > $3)`, id, accountID, s.now()))
 }
 
+// SetPreview replaces an unconfirmed upload's stored preview, as when its
+// emails are worked out again against the account's fields (MG-134). A
+// confirmed upload keeps none, so it's left alone.
+func (s *Store) SetPreview(ctx context.Context, accountID, id string, preview []byte) error {
+	_, err := s.DB.Exec(ctx, `UPDATE mailchimp_bundles SET preview = $3 WHERE id = $1 AND account_id = $2 AND confirmed_at IS NULL`,
+		id, accountID, preview)
+	return err
+}
+
 // ErrUploadConfirmed means a confirmed upload can't be deleted.
 var ErrUploadConfirmed = errors.New("mailchimp upload already confirmed")
 
@@ -329,6 +338,11 @@ type EmailJob struct {
 	Importer *EmailImporter
 	// MaxMembers is the most members Read takes, as on upload.
 	MaxMembers int
+	// FieldTags says which contact field each merge tag of the upload's
+	// emails becomes (MG-134): the fields its contacts import put its merge
+	// fields into, importID nil when it had none, and the account's
+	// fields. Nil takes every merge tag out but the built-in ones.
+	FieldTags func(ctx context.Context, accountID string, importID *string, b *Bundle) (*FieldTags, error)
 }
 
 // Run makes emails until ctx ends, looking for work every poll, and deletes
@@ -426,6 +440,15 @@ func (j *EmailJob) RunNext(ctx context.Context) (bool, error) {
 	}
 	b, err := Read(bytes.NewReader(data), int64(len(data)), u.FileName, u.Options(j.MaxMembers))
 	data = nil
+	var ft *FieldTags
+	if b != nil && j.FieldTags != nil {
+		// The merge tags become the fields the contacts import put the
+		// merge fields into, as they are now.
+		if ft, err = j.FieldTags(ctx, accountID, u.ImportID, b); err != nil {
+			release()
+			return true, err
+		}
+	}
 	if b != nil {
 		// Only the emails are made here; the contacts went to their import.
 		b.Audiences = nil
@@ -435,7 +458,7 @@ func (j *EmailJob) RunNext(ctx context.Context) (bool, error) {
 		msg := "The export couldn't be read again: " + err.Error()
 		return true, finish(EmailsFailed, &msg)
 	}
-	err = j.Importer.ImportFrom(ctx, accountID, b, u.Campaigns, len(u.Emails), func(e ImportedEmail) error {
+	err = j.Importer.ImportFrom(ctx, accountID, b, u.Campaigns, ft, len(u.Emails), func(e ImportedEmail) error {
 		raw, err := json.Marshal(e)
 		if err != nil {
 			return err

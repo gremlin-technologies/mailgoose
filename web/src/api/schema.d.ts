@@ -3928,6 +3928,7 @@ export interface components {
          *           "merge_fields": [
          *             {
          *               "name": "Phone Number",
+         *               "tags": [],
          *               "audiences": [
          *                 "Newsletter"
          *               ],
@@ -3946,6 +3947,7 @@ export interface components {
          *             },
          *             {
          *               "name": "Company",
+         *               "tags": [],
          *               "audiences": [
          *                 "Newsletter"
          *               ],
@@ -3996,6 +3998,17 @@ export interface components {
          *             "subject": "",
          *             "preview_text": "",
          *             "images": 2,
+         *             "merge_tags": [
+         *               {
+         *                 "tag": "*|COMPANY|*",
+         *                 "merge_field": "Company",
+         *                 "field": {
+         *                   "key": "company",
+         *                   "name": "Company"
+         *                 },
+         *                 "new_field": false
+         *               }
+         *             ],
          *             "errors": [],
          *             "warnings": [],
          *             "email_id": null
@@ -4197,6 +4210,13 @@ export interface components {
              * @example Phone Number
              */
             name: string;
+            /**
+             * @description Its Mailchimp merge tags, such as `MMERGE3`, where the export
+             *     says: a connected account's does, an uploaded export doesn't,
+             *     so this is empty for an upload. The emails' merge tags are
+             *     matched to merge fields by these, else by name.
+             */
+            tags: string[];
             /** @description The audiences that have it. */
             audiences: string[];
             /** @description Member rows with a value for it. */
@@ -4227,6 +4247,16 @@ export interface components {
             preview_text: string;
             /** @description Mailchimp-hosted images copied into mailgoose. */
             images: number;
+            /**
+             * @description The Mailchimp merge tags it uses beyond the ones mailgoose always
+             *     converts (names, email, unsubscribe, subject, preview text and
+             *     the postal address) and conditionals, each once, with what each
+             *     became: a contact field's tag, or taken out (with a
+             *     `mailchimp_tag_removed` warning). In a preview, as the merge
+             *     fields' default choices would make them; once made, as they
+             *     were made. Empty for an email made before this was listed.
+             */
+            merge_tags: components["schemas"]["MailchimpEmailMergeTag"][];
             /** @description What stops it being sent until it's fixed; the email is made anyway. */
             errors: components["schemas"]["MailchimpEmailNote"][];
             warnings: components["schemas"]["MailchimpEmailNote"][];
@@ -4235,6 +4265,36 @@ export interface components {
              * @description The email made; null in a preview.
              */
             email_id: string | null;
+        };
+        MailchimpEmailMergeTag: {
+            /**
+             * @description The tag as Mailchimp writes it.
+             * @example *|MMERGE3|*
+             */
+            tag: string;
+            /**
+             * @description The import's merge field the tag is, by name, matched by its
+             *     Mailchimp tag or else by name; null when none.
+             * @example Company
+             */
+            merge_field: string | null;
+            /**
+             * @description The contact field whose tag, `{{key}}`, took its place, with no
+             *     fallback; null when it was taken out because no contact field
+             *     matches it or its merge field is left out.
+             */
+            field: components["schemas"]["MailchimpTagField"] | null;
+            /** @description True when `field` is one the import makes. */
+            new_field: boolean;
+        };
+        MailchimpTagField: {
+            /**
+             * @description The field's key; its merge tag is `{{key}}`.
+             * @example company
+             */
+            key: string;
+            /** @example Company */
+            name: string;
         };
         MailchimpEmailNote: {
             /** @enum {string} */

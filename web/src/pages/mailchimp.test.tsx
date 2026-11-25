@@ -29,6 +29,7 @@ function email(name: string, from: "template" | "campaign", extra = {}) {
     subject: from === "campaign" ? `${name} subject` : "",
     preview_text: "",
     images: 0,
+    merge_tags: [],
     errors: [],
     warnings: [],
     email_id: null,
@@ -70,6 +71,10 @@ function preview(extra = {}, contacts = {}) {
     emails: [
       email("Welcome", "template"),
       email("November offers", "campaign", {
+        merge_tags: [
+          { tag: "*|MMERGE3|*", merge_field: "Company", field: { key: "company", name: "Company" }, new_field: true },
+          { tag: "*|REWARDS|*", merge_field: null, field: null, new_field: false },
+        ],
         warnings: [{ code: "mailchimp_tag_removed", message: "*|REWARDS|* was removed: mailgoose has no rewards badge." }],
       }),
       email("Old promo", "campaign", {
@@ -308,6 +313,11 @@ describe("Mailchimp import", () => {
     expect(screen.getByText("Held for review: it's your account's first import of more than 2,000 contacts.")).toBeTruthy();
     expect(screen.getByText(/1 template and the newest 2 campaigns of 14 become HTML emails/)).toBeTruthy();
     expect(screen.getByText("*|REWARDS|* was removed: mailgoose has no rewards badge.")).toBeTruthy();
+    // MG-134: a merge tag that became a contact field's tag is listed.
+    const converted = screen.getByText("*|MMERGE3|*").closest("li") as HTMLElement;
+    expect(converted.textContent).toBe("*|MMERGE3|* became {{company}}, the tag of your new field Company, with no fallback.");
+    expect(screen.getByText(/Mailchimp merge tags become your contact fields' tags/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Fields page" }).getAttribute("href")).toBe("/fields");
     expect(screen.getByText("The HTML has an unclosed table on line 12.")).toBeTruthy();
     expect(screen.getByText(/1 file in the export isn't imported/)).toBeTruthy();
   });
@@ -327,7 +337,10 @@ describe("Mailchimp import", () => {
     const confirmed = (emails: object) =>
       bundle({ status: "confirmed", confirmed_at: "2026-11-22T10:01:00Z", import_id: importID, campaigns: 3, emails });
     const made = [
-      email("Welcome", "template", { email_id: "88888888-8888-4888-8888-888888888888" }),
+      email("Welcome", "template", {
+        email_id: "88888888-8888-4888-8888-888888888888",
+        merge_tags: [{ tag: "*|COMPANY|*", merge_field: null, field: { key: "company", name: "Company" }, new_field: false }],
+      }),
       email("Old promo", "campaign", {
         email_id: emailID,
         errors: [{ code: "invalid_html", message: "The HTML has an unclosed table on line 12.", line: 12 }],
@@ -364,6 +377,10 @@ describe("Mailchimp import", () => {
     expect(await screen.findByText("1 of 2 emails made")).toBeTruthy();
     expect(await screen.findByText("5 contacts added, 1 skipped.", {}, { timeout: 3000 })).toBeTruthy();
     expect(await screen.findByText("2 emails made.", {}, { timeout: 3000 })).toBeTruthy();
+    // The report says which merge tags became contact fields' tags (MG-134).
+    expect((screen.getByText("*|COMPANY|*").closest("li") as HTMLElement).textContent).toBe(
+      "*|COMPANY|* became {{company}}, the tag of your field Company, with no fallback.",
+    );
     expect(screen.getByRole("link", { name: "See the import report" }).getAttribute("href")).toBe(`/contacts/imports/${importID}`);
 
     const next = screen.getByRole("heading", { name: "What's next" }).nextElementSibling as HTMLElement;

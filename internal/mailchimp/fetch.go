@@ -515,6 +515,23 @@ func (f *fetcher) members(ctx context.Context, a *fetchAudience) error {
 	}
 	header = append(header, a.categories...)
 	header = append(header, "TAGS", "OPTIN_TIME", "OPTIN_IP", "CONFIRM_TIME", "CONFIRM_IP", "Marketing Permissions")
+	// The member files name merge fields by name; this file says each
+	// one's tag, so an email's merge tags can find them (MG-134).
+	if len(a.merge) > 0 {
+		w, err := f.create("audiences/" + a.folder + "/" + MergeTagsFile)
+		if err != nil {
+			return err
+		}
+		cw := csv.NewWriter(w)
+		_ = cw.Write([]string{"Tag", "Name"})
+		for _, m := range a.merge {
+			_ = cw.Write([]string{m.tag, m.column})
+		}
+		cw.Flush()
+		if err := cw.Error(); err != nil {
+			return err
+		}
+	}
 	for _, st := range Statuses {
 		// Every audience gets its subscribed file, so an empty one still
 		// shows in the preview.

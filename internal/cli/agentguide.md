@@ -370,6 +370,19 @@ past the limit; `key=` leaves that field out), choose the new fields with
 those are made), or make none with `--no-new-fields`. Contacts already here
 take the merge fields' values too.
 
+**Merge tags in the emails become field tags.** A Mailchimp merge tag in an
+imported email (`*|COMPANY|*`, `*|MMERGE3|*`) becomes the tag of the contact
+field it stands for, `{{company}}`, in the HTML, subject and preview text:
+the field this import puts that merge field into (matched by its Mailchimp
+tag on a connected account, by name on an upload), a field an earlier
+import put it into, or a field whose key or name matches it. Each email's
+`merge_tags` lists them, with the `field` each became, or `null` when it was
+taken out with a `mailchimp_tag_removed` warning saying which field to add.
+To keep one, make the field before confirming (`mailgoose fields create
+Company`; the preview follows) or bring its merge field in with `--field` or
+`--new-field`. A converted tag has no fallback, so `mailgoose email check`
+warns `merge_tag_no_fallback`; offer to add one (`{{company|your team}}`).
+
 **Confirm only after the person says yes.** `--permission-confirmed` states
 that the person has permission to email these contacts: Mailchimp's
 subscribed contacts come in subscribed, with no confirmation email. Run it

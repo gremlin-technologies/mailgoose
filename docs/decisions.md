@@ -4,6 +4,90 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-25: Mailchimp merge tags in imported emails become field tags (MG-134; reversible defaults)
+
+Since MG-132 a Mailchimp import's merge fields come over as contact fields,
+and since MG-133 each field is a merge tag, `{{key}}`. So a Mailchimp merge
+tag in an imported template or campaign (`*|COMPANY|*`, `*|MMERGE3|*`) now
+becomes the tag of the contact field it stands for, in the HTML, the subject
+and the preview text, instead of being taken out. The ticket left the order
+and the fallbacks to the builder. What changed:
+
+- **The order a tag is matched in.** First, the import's own merge field
+  with that Mailchimp tag; where the import doesn't know a merge field's tag
+  (an upload), the one whose name matches the tag loosely (case, spaces,
+  underscores, dashes and dots ignored, as MG-131 matches headers), with
+  Mailchimp's default names for its default tags (`PHONE` is "Phone
+  Number", `ADDRESS`, `BIRTHDAY`, `COMPANY`). It becomes the field the
+  import puts that merge field into, made or matched. Second, a field an
+  earlier Mailchimp import put a merge field with that tag into. Third, a
+  field whose key, then whose name, matches the tag loosely, the import's
+  new fields included. The import's own merge field comes first because
+  only it says what the tag means in that account; the loose match is a
+  guess. A merge field the import leaves out still lets the second and
+  third steps match. Mailchimp's own tags (any with a colon, `ARCHIVE`,
+  `UPDATE_PROFILE`, `FORWARD`, `CURRENT_YEAR`, `REWARDS` and a few more)
+  are never a field's and are taken out as before.
+- **Connected accounts know tags; uploads don't.** A fetch (MG-74) now
+  writes `merge_field_tags.csv` (Tag, Name) beside each audience's member
+  files, and the reader keeps each merge field's tag. The preview's
+  `merge_fields` gains `tags`, empty for an upload. When the same merge field
+  name has different tags in two audiences, both tags point at the one
+  field. If two merge fields of one import share a tag (possible across
+  audiences), the first in Mailchimp's order wins.
+- **Fields remember tags.** When a Mailchimp import puts a merge field with
+  known tags into a field, made or matched, the field keeps those tags
+  (`contact_fields.mailchimp_tags`, at most the latest 20, not shown in the
+  API), so a later import of templates alone finds `*|MMERGE3|*` by tag. A
+  tag names one field: the latest import moves it. Beyond the ticket's
+  "made from that merge field": matched fields keep tags too, since the
+  import said that's where the merge field goes.
+- **The same import.** The preview's emails are worked out against the
+  merge fields' default choices, new fields included, so a tag whose merge
+  field becomes a new field shows that field. Confirm converts against what
+  the person chose: the job that makes the emails reads the contacts
+  import's `field_columns` (merge field to field, new ones marked) and the
+  account's fields as they are then. A field deleted before the job gets to
+  an email isn't used, and its tags are taken out.
+- **The preview follows field changes.** The emails are still worked out
+  once on upload and stored. Each read of an unconfirmed upload matches the
+  stored emails' tags against the account's fields as they are now; only
+  when one would become something else is the export read again for its
+  emails, and the new emails stored. So adding the field a note names, then
+  reading the preview, shows the tag converted. A preview stored before
+  this change lists no merge tags and is read again once if it took a tag
+  out. The web app's confirm form doesn't redo the email table as the
+  person changes merge field choices; a line under the table says the
+  emails follow what they choose, and the report shows what was done.
+- **No fallback.** A converted tag is `{{key}}`, so MG-133's
+  `merge_tag_no_fallback` warning shows on the email's check. Mailchimp's
+  `*|IF:COMPANY|*...*|ELSE:|*...*|END:IF|*` isn't turned into a fallback:
+  conditional blocks are still left as written with MG-71's
+  `mailchimp_conditional` error, since only the customer knows which part
+  to keep. Turning the simple form into `{{company|...}}` is the obvious
+  next step if imports often have it.
+- **Links.** A merge tag can't decide where a link goes (MG-19), so a tag
+  that is a link's whole address (`href="*|WEBSITE|*"`) is still taken out
+  there, leaving the link empty, even when it becomes a field's tag
+  elsewhere; a `mailchimp_tag_removed` warning says so. In the path or query
+  of a full address it's converted like anywhere else; in a host the email
+  check's `merge_tag_link` error catches it.
+- **Notes.** An unmatched tag is still taken out with
+  `mailchimp_tag_removed`, once per tag. Its message now says to add a
+  contact field named after the tag (Mailchimp's default name, or the tag
+  in words: `FAV_CAKE` is "Fav cake") and use its tag, or, when the tag is a
+  merge field this import leaves out, names that merge field and says to
+  bring it into a field.
+- **API, CLI and web.** Each imported email (`MailchimpEmail`, in the
+  preview and in the report's `emails.made`) has `merge_tags`: the tags it
+  used beyond the built-in ones, each once, with `merge_field`, the `field`
+  (`key`, `name`) it became or `null` when taken out, and `new_field`. An
+  email made before this lists none. `mailgoose import mailchimp` prints a
+  table of the tags and what each becomes under the email table, in the
+  preview and once the emails are made. The web app lists each converted
+  tag in the email's notes, beside the removed ones, and links the Fields
+  page from a line under the preview's table.
+
 ## 2026-11-25: Contact fields as merge tags (MG-133; reversible defaults)
 
 Each of MG-130's contact fields is a merge tag in emails by its key, beside
@@ -1030,7 +1114,8 @@ import. These defaults are each easy to change:
   `{{unsubscribe_url}}`. `*|MC:SUBJECT|*` and `*|MC_PREVIEW_TEXT|*` become
   the subject and preview text. The postal address tags are taken out
   quietly, since mailgoose adds the account's address. Any other tag is
-  taken out with a warning (`mailchimp_tag_removed`), once per tag.
+  taken out with a warning (`mailchimp_tag_removed`), once per tag. (Since
+  MG-134, Nov 25, a tag that matches a contact field becomes its tag.)
 - **Conditional blocks** (`*|IF:...|*`, `*|INTERESTED:...|*`) are left as
   written with one error (`mailchimp_conditional`) at the first, since
   mailgoose has none and only the customer knows which part to keep.

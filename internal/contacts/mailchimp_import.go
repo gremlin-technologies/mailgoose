@@ -401,6 +401,9 @@ func (s *Service) CreateMailchimpImport(ctx context.Context, accountID string, i
 	if err != nil {
 		return nil, false, err
 	}
+	if err := recordMailchimpTags(ctx, tx, accountID, fp.layout, made, mg.fields); err != nil {
+		return nil, false, err
+	}
 	a, err := s.assess(ctx, tx, accountID, p)
 	if err != nil {
 		return nil, false, err

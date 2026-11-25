@@ -74,6 +74,10 @@ type EmailPlan struct {
 	Warnings []Note `json:"warnings"`
 	// Images counts the Mailchimp-hosted images to copy.
 	Images int `json:"images"`
+	// MergeTags are the Mailchimp merge tags it used beyond the built-in
+	// ones, with the contact field each became (MG-134). Nil for an email
+	// made before that.
+	MergeTags []MergeTag `json:"merge_tags"`
 
 	conv *Conversion
 }
@@ -86,17 +90,23 @@ type ImportedEmail struct {
 
 // PlanEmails converts a bundle's first MaxTemplates templates and its newest
 // campaigns (campaigns of them, 0 for DefaultCampaigns, at most
-// MaxCampaigns), without fetching or writing anything. Copying images can
-// still add a warning.
-func PlanEmails(b *Bundle, campaigns int) []EmailPlan {
+// MaxCampaigns), without fetching or writing anything. ft says which
+// contact field each merge tag becomes; nil takes them all out. Copying
+// images can still add a warning.
+func PlanEmails(b *Bundle, campaigns int, ft *FieldTags) []EmailPlan {
 	var out []EmailPlan
 	for _, t := range b.Templates[:min(len(b.Templates), MaxTemplates)] {
-		out = append(out, plan(EmailFromTemplate, t.Path, emailName(t.Name, "", "", "Mailchimp template"), t.HTML, ""))
+		out = append(out, plan(EmailFromTemplate, t.Path, emailName(t.Name, "", "", "Mailchimp template"), t.HTML, "", ft))
 	}
 	for _, c := range NewestCampaigns(b, campaigns) {
-		out = append(out, plan(EmailFromCampaign, c.Path, emailName(c.Title, c.Subject, c.Name, "Mailchimp campaign"), c.HTML, c.Subject))
+		out = append(out, plan(EmailFromCampaign, c.Path, emailName(c.Title, c.Subject, c.Name, "Mailchimp campaign"), c.HTML, c.Subject, ft))
 	}
 	return out
+}
+
+// CountEmails is how many emails PlanEmails would list.
+func CountEmails(b *Bundle, campaigns int) int {
+	return min(len(b.Templates), MaxTemplates) + len(NewestCampaigns(b, campaigns))
 }
 
 // TemplatesLeftOut is the files of the templates past MaxTemplates, which an
@@ -109,12 +119,12 @@ func TemplatesLeftOut(b *Bundle) []string {
 	return out
 }
 
-func plan(from, file, name, src, subject string) EmailPlan {
+func plan(from, file, name, src, subject string, ft *FieldTags) EmailPlan {
 	// A stored email must be valid UTF-8; fix it first, so the size and
 	// checks are of what's stored.
-	conv := ConvertHTML(strings.ToValidUTF8(src, "\uFFFD"), strings.ToValidUTF8(subject, "\uFFFD"), "")
+	conv := ConvertHTML(strings.ToValidUTF8(src, "\uFFFD"), strings.ToValidUTF8(subject, "\uFFFD"), "", ft)
 	p := EmailPlan{From: from, File: file, Name: name, Subject: clipRunes(conv.Subject, 200),
-		PreviewText: clipRunes(conv.PreviewText, 200), Images: len(conv.Images), conv: conv}
+		PreviewText: clipRunes(conv.PreviewText, 200), Images: len(conv.Images), MergeTags: append([]MergeTag{}, conv.MergeTags...), conv: conv}
 	if len(conv.HTML) > emails.MaxHTMLBytes {
 		// The email is made empty, so none of its images is copied.
 		p.Images = 0
@@ -215,10 +225,11 @@ var (
 // images into the account's image storage. Each email is made even when its
 // checks fail, with the errors listed; only a failure to store one stops the
 // import. It fetches at most MaxImportImages images, none for an email too
-// large to keep, and none once the account can keep no more.
-func (im *EmailImporter) Import(ctx context.Context, accountID string, b *Bundle, campaigns int) ([]ImportedEmail, error) {
+// large to keep, and none once the account can keep no more. ft says which
+// contact field each merge tag becomes.
+func (im *EmailImporter) Import(ctx context.Context, accountID string, b *Bundle, campaigns int, ft *FieldTags) ([]ImportedEmail, error) {
 	var out []ImportedEmail
-	err := im.ImportFrom(ctx, accountID, b, campaigns, 0, func(e ImportedEmail) error {
+	err := im.ImportFrom(ctx, accountID, b, campaigns, ft, 0, func(e ImportedEmail) error {
 		out = append(out, e)
 		return nil
 	})
@@ -229,7 +240,7 @@ func (im *EmailImporter) Import(ctx context.Context, accountID string, b *Bundle
 // calling made after each; an error from made stops it. A job that stopped
 // carries on this way without making an email twice, except one made just
 // before the stop and not yet recorded.
-func (im *EmailImporter) ImportFrom(ctx context.Context, accountID string, b *Bundle, campaigns, from int, made func(ImportedEmail) error) error {
+func (im *EmailImporter) ImportFrom(ctx context.Context, accountID string, b *Bundle, campaigns int, ft *FieldTags, from int, made func(ImportedEmail) error) error {
 	fetch := im.Fetch
 	if fetch == nil {
 		fetch = FetchImage
@@ -241,7 +252,7 @@ func (im *EmailImporter) ImportFrom(ctx context.Context, accountID string, b *Bu
 		stop = errNoImageStorage
 	}
 	fetches := 0
-	plans := PlanEmails(b, campaigns)
+	plans := PlanEmails(b, campaigns, ft)
 	for _, p := range plans[min(from, len(plans)):] {
 		if err := ctx.Err(); err != nil {
 			return err

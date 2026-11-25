@@ -5150,6 +5150,7 @@ Member rows by their Mailchimp status.
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `name` | string | yes | The merge field's name, as `field_columns` and `new_fields` name it. |
+| `tags` | array of string | yes | Its Mailchimp merge tags, such as `MMERGE3`, where the export says: a connected account's does, an uploaded export doesn't, so this is empty for an upload. The emails' merge tags are matched to merge fields by these, else by name. |
 | `audiences` | array of string | yes | The audiences that have it. |
 | `members` | integer | yes | Member rows with a value for it. |
 | `samples` | array of string | yes | Up to 3 of its values. |
@@ -5169,9 +5170,30 @@ Member rows by their Mailchimp status.
 | `subject` | string | yes |  |
 | `preview_text` | string | yes |  |
 | `images` | integer | yes | Mailchimp-hosted images copied into mailgoose. |
+| `merge_tags` | array of [MailchimpEmailMergeTag](#schema-mailchimpemailmergetag) | yes | The Mailchimp merge tags it uses beyond the ones mailgoose always converts (names, email, unsubscribe, subject, preview text and the postal address) and conditionals, each once, with what each became: a contact field's tag, or taken out (with a `mailchimp_tag_removed` warning). In a preview, as the merge fields' default choices would make them; once made, as they were made. Empty for an email made before this was listed. |
 | `errors` | array of [MailchimpEmailNote](#schema-mailchimpemailnote) | yes | What stops it being sent until it's fixed; the email is made anyway. |
 | `warnings` | array of [MailchimpEmailNote](#schema-mailchimpemailnote) | yes |  |
 | `email_id` | string (uuid) or null | yes | The email made; null in a preview. |
+
+<a id="schema-mailchimpemailmergetag"></a>
+
+### MailchimpEmailMergeTag
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `tag` | string | yes | The tag as Mailchimp writes it. |
+| `merge_field` | string or null | yes | The import's merge field the tag is, by name, matched by its Mailchimp tag or else by name; null when none. |
+| `field` | [MailchimpTagField](#schema-mailchimptagfield) or null | yes | The contact field whose tag, `{{key}}`, took its place, with no fallback; null when it was taken out because no contact field matches it or its merge field is left out. |
+| `new_field` | boolean | yes | True when `field` is one the import makes. |
+
+<a id="schema-mailchimptagfield"></a>
+
+### MailchimpTagField
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `key` | string | yes | The field's key; its merge tag is `{{key}}`. |
+| `name` | string | yes |  |
 
 <a id="schema-mailchimpemailnote"></a>
 

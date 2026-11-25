@@ -380,7 +380,7 @@ func (s *Server) ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request, 
 		for i, f := range made {
 			bundleForms[i] = mailchimp.BundleForm{ID: f.ID, Name: f.Name, Audience: f.Audience, New: f.New}
 		}
-		if u, err = s.Mailchimp.Confirm(ctx, c.AccountID, id, importID, campaigns, len(mailchimp.PlanEmails(b, campaigns)), bundleForms); s.mailchimpError(w, r, err) {
+		if u, err = s.Mailchimp.Confirm(ctx, c.AccountID, id, importID, campaigns, mailchimp.CountEmails(b, campaigns), bundleForms); s.mailchimpError(w, r, err) {
 			return
 		}
 		// A fetched bundle holds all the import needs, so the Mailchimp
@@ -511,22 +511,101 @@ func (s *Server) mailchimpBundleJSON(ctx context.Context, u *mailchimp.Upload) (
 				p.Audiences[i].Groups = []string{}
 			}
 		}
+		var fp *contacts.MailchimpFieldPlan
 		if c := p.Contacts; c != nil {
 			// A preview stored before MG-132 has no merge fields; its
 			// merge fields are in dropped_fields.
 			merge := make([]contacts.MailchimpMergeField, len(c.MergeFields))
 			for i, m := range c.MergeFields {
-				merge[i] = contacts.MailchimpMergeField{Name: m.Name, Audiences: m.Audiences, Members: m.Members, Samples: m.Samples}
+				merge[i] = contacts.MailchimpMergeField{Name: m.Name, Audiences: m.Audiences, Members: m.Members, Samples: m.Samples, Tags: m.Tags}
 			}
-			fp, err := s.Contacts.PlanMailchimpFields(ctx, u.AccountID, merge, contacts.MailchimpFieldInput{})
-			if err != nil {
+			var err error
+			if fp, err = s.Contacts.PlanMailchimpFields(ctx, u.AccountID, merge, contacts.MailchimpFieldInput{}); err != nil {
 				return out, err
 			}
 			setMergeFieldsJSON(c, fp)
 		}
+		if err := s.refreshMailchimpEmails(ctx, u, &p, fp); err != nil {
+			return out, err
+		}
+		for i := range p.Emails {
+			// A preview stored before MG-134 lists no merge tags.
+			if p.Emails[i].MergeTags == nil {
+				p.Emails[i].MergeTags = []apigen.MailchimpEmailMergeTag{}
+			}
+		}
 		out.Preview = &p
 	}
 	return out, nil
+}
+
+// refreshMailchimpEmails makes p's emails what they'd be against the
+// account's fields as they are now (MG-134): their merge tags become the
+// fields of the merge field choices fp, nil for an export with no contacts.
+// The emails are worked out on upload; only when a merge tag would now
+// become something else is the export read again for them, and the new
+// emails stored, so most reads cost no more than matching the tags.
+func (s *Server) refreshMailchimpEmails(ctx context.Context, u *mailchimp.Upload, p *apigen.MailchimpPreview, fp *contacts.MailchimpFieldPlan) error {
+	if len(p.Emails) == 0 {
+		return nil
+	}
+	ft, err := s.Contacts.MailchimpPreviewFieldTags(ctx, u.AccountID, fp)
+	if err != nil {
+		return err
+	}
+	if !mailchimpTagsChanged(p.Emails, ft) {
+		return nil
+	}
+	b, release, err := s.loadMailchimpBundle(ctx, u.AccountID, u)
+	defer release()
+	if err != nil || b == nil {
+		// The emails stay as they were worked out; confirming converts
+		// the tags against the fields as they are then.
+		if err != nil && ctx.Err() == nil {
+			s.Log.ErrorContext(ctx, "reading a Mailchimp export again for its emails failed", "err", err)
+		}
+		return nil
+	}
+	emails := make([]apigen.MailchimpEmail, 0, len(p.Emails))
+	for _, e := range mailchimp.PlanEmails(b, mailchimp.DefaultCampaigns, ft) {
+		emails = append(emails, mailchimpEmailJSON(e, nil))
+	}
+	release()
+	p.Emails = emails
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return err
+	}
+	if err := s.Mailchimp.SetPreview(ctx, u.AccountID, u.ID, raw); err != nil {
+		s.Log.ErrorContext(ctx, "storing a Mailchimp export's new preview failed", "err", err)
+	}
+	return nil
+}
+
+// mailchimpTagsChanged reports whether any of the emails' merge tags would
+// become something else with ft. An email stored before MG-134 lists no
+// merge tags, so one with a tag taken out counts as changed.
+func mailchimpTagsChanged(es []apigen.MailchimpEmail, ft *mailchimp.FieldTags) bool {
+	for _, e := range es {
+		if e.MergeTags == nil {
+			if slices.ContainsFunc(e.Warnings, func(n apigen.MailchimpEmailNote) bool {
+				return n.Code == apigen.MailchimpEmailNoteCodeMailchimpTagRemoved
+			}) {
+				return true
+			}
+			continue
+		}
+		for _, t := range e.MergeTags {
+			m := mailchimp.MergeTag{Tag: t.Tag, MergeField: deref(t.MergeField), NewField: t.NewField}
+			if t.Field != nil {
+				m.FieldKey, m.FieldName = t.Field.Key, t.Field.Name
+			}
+			if !m.Same(ft.Match(mailchimp.TagName(t.Tag))) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // mailchimpPreviewJSON is the preview of b, against the account as it is now.
@@ -554,9 +633,6 @@ func (s *Server) mailchimpPreviewJSON(ctx context.Context, accountID string, b *
 		p.Audiences = append(p.Audiences, apigen.MailchimpAudience{Name: a.Name, Members: len(a.Members), ByStatus: by,
 			Groups: mailchimpGroups(a)})
 	}
-	for _, e := range mailchimp.PlanEmails(b, campaigns) {
-		p.Emails = append(p.Emails, mailchimpEmailJSON(e, nil))
-	}
 	p.IgnoredFiles = make([]struct {
 		Path   string                                    `json:"path"`
 		Reason apigen.MailchimpPreviewIgnoredFilesReason `json:"reason"`
@@ -570,12 +646,23 @@ func (s *Server) mailchimpPreviewJSON(ctx context.Context, accountID string, b *
 			Reason apigen.MailchimpPreviewIgnoredFilesReason `json:"reason"`
 		}{path, apigen.MailchimpPreviewIgnoredFilesReasonTooManyTemplates})
 	}
+	var fp *contacts.MailchimpFieldPlan
 	if b.Members() > 0 {
 		cp, err := s.Contacts.PreviewMailchimpImport(ctx, accountID, b)
 		if err != nil {
 			return nil, err
 		}
 		p.Contacts = mailchimpContactsJSON(cp)
+		fp = cp.Fields
+	}
+	// The emails' merge tags become the fields the merge fields would go
+	// into by default, the new ones included (MG-134).
+	ft, err := s.Contacts.MailchimpPreviewFieldTags(ctx, accountID, fp)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range mailchimp.PlanEmails(b, campaigns, ft) {
+		p.Emails = append(p.Emails, mailchimpEmailJSON(e, nil))
 	}
 	return p, nil
 }
@@ -616,9 +703,12 @@ func mailchimpContactsJSON(cp *contacts.MailchimpPreview) *apigen.MailchimpConta
 func setMergeFieldsJSON(out *apigen.MailchimpContactsPreview, fp *contacts.MailchimpFieldPlan) {
 	out.MergeFields = make([]apigen.MailchimpMergeField, len(fp.Choices))
 	for i, c := range fp.Choices {
-		m := apigen.MailchimpMergeField{Name: c.Name, Audiences: c.Audiences, Members: c.Members, Samples: c.Samples}
+		m := apigen.MailchimpMergeField{Name: c.Name, Audiences: c.Audiences, Members: c.Members, Samples: c.Samples, Tags: c.Tags}
 		if m.Audiences == nil {
 			m.Audiences = []string{}
+		}
+		if m.Tags == nil {
+			m.Tags = []string{}
 		}
 		if m.Samples == nil {
 			m.Samples = []string{}
@@ -650,8 +740,18 @@ func mailchimpEmailJSON(e mailchimp.EmailPlan, id *string) apigen.MailchimpEmail
 		}
 		return out
 	}
+	tags := make([]apigen.MailchimpEmailMergeTag, len(e.MergeTags))
+	for i, t := range e.MergeTags {
+		tags[i] = apigen.MailchimpEmailMergeTag{Tag: t.Tag, NewField: t.NewField}
+		if t.MergeField != "" {
+			tags[i].MergeField = &t.MergeField
+		}
+		if t.FieldKey != "" {
+			tags[i].Field = &apigen.MailchimpTagField{Key: t.FieldKey, Name: t.FieldName}
+		}
+	}
 	return apigen.MailchimpEmail{From: apigen.MailchimpEmailFrom(e.From), File: e.File, Name: e.Name, Subject: e.Subject,
-		PreviewText: e.PreviewText, Images: e.Images, Errors: notes(e.Errors), Warnings: notes(e.Warnings), EmailId: id}
+		PreviewText: e.PreviewText, Images: e.Images, MergeTags: tags, Errors: notes(e.Errors), Warnings: notes(e.Warnings), EmailId: id}
 }
 
 func mailchimpProgressJSON(u *mailchimp.Upload) apigen.MailchimpEmailProgress {

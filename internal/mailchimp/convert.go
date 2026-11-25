@@ -5,6 +5,7 @@ import (
 	"html"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -15,7 +16,8 @@ import (
 // Codes for the notes ConvertHTML makes.
 const (
 	// NoteRemovedTag: a Mailchimp merge tag mailgoose has no match for was
-	// taken out (a warning).
+	// taken out, or one that became a contact field's tag was taken out of
+	// a link (a warning).
 	NoteRemovedTag = "mailchimp_tag_removed"
 	// NoteConditional: a *|IF:...|* block was left as written (an error to
 	// fix: mailgoose has no conditionals).
@@ -47,6 +49,10 @@ type Conversion struct {
 	// Images are the Mailchimp-hosted images the HTML uses, as written in
 	// it, without repeats and in the order they first appear.
 	Images []string
+	// MergeTags are the merge tags it used other than the built-in ones
+	// (MG-134), each once, in the order first seen (subject, preview text,
+	// then the HTML), with the contact field each became or none.
+	MergeTags []MergeTag
 }
 
 // mergeTag matches a Mailchimp merge tag, *|NAME|*.
@@ -110,18 +116,29 @@ func hostOf(raw string) string {
 
 // ConvertHTML rewrites src, a Mailchimp template or campaign, for mailgoose.
 // subject and preview are the email's subject and preview text where known;
-// their own merge tags are converted too.
-func ConvertHTML(src, subject, preview string) *Conversion {
+// their own merge tags are converted too. ft says which contact field a
+// merge tag stands for (MG-134); nil matches none, so every tag but the
+// built-in ones is taken out.
+func ConvertHTML(src, subject, preview string, ft *FieldTags) *Conversion {
 	c := &Conversion{}
-	removed := map[string]bool{}
-	c.Subject = convertText(subject, "", removed, c, "subject")
-	c.PreviewText = convertText(preview, c.Subject, removed, c, "preview text")
+	tags := &tagUses{ft: ft, c: c, notes: map[string]bool{}, at: map[string]int{}}
+	c.Subject = convertText(subject, "", tags, "the subject")
+	c.PreviewText = convertText(preview, c.Subject, tags, "the preview text")
 
 	// Tags that are a link's whole address leave it empty when taken out.
+	// A merge tag can't decide where a link goes (MG-19), so a tag that
+	// becomes a field's tag is taken out of such a link too.
 	linkTags := map[string]bool{}
-	for _, m := range hrefTag.FindAllStringSubmatch(src, -1) {
-		linkTags[strings.ToUpper(strings.TrimSpace(m[1]+m[2]+m[3]))] = true
-	}
+	src = hrefTag.ReplaceAllStringFunc(src, func(m string) string {
+		s := hrefTag.FindStringSubmatch(m)
+		tag := strings.ToUpper(strings.TrimSpace(s[1] + s[2] + s[3]))
+		linkTags[tag] = true
+		if mailgooseTags[tag] == "" && tags.match(tag).Field != nil {
+			tags.linkEmptied(tag)
+			return mergeTag.ReplaceAllString(m, "")
+		}
+		return m
+	})
 
 	conditionals := 0
 	firstConditional := 0
@@ -140,16 +157,9 @@ func ConvertHTML(src, subject, preview string) *Conversion {
 			conditionals++
 			return m
 		}
-		if !removed[tag] {
-			removed[tag] = true
-			msg := fmt.Sprintf("Mailchimp's %s merge tag has no match in mailgoose, so it was taken out", m)
-			if linkTags[tag] {
-				msg += "; a link was left empty, so give it an address or remove it"
-			}
-			c.Warnings = append(c.Warnings, Note{Code: NoteRemovedTag, Message: msg})
-		}
-		return ""
+		return tags.use(tag, "", linkTags[tag])
 	})
+	tags.finish()
 	if conditionals > 0 {
 		firstConditional = lineOf(out, conditionalIndex(out))
 		c.Errors = append(c.Errors, Note{Code: NoteConditional, Line: firstConditional,
@@ -185,11 +195,65 @@ func ConvertHTML(src, subject, preview string) *Conversion {
 	return c
 }
 
+// tagUses converts the merge tags of one email that aren't built in, and
+// lists them, each once, in the order first seen, with one note for each
+// tag taken out.
+type tagUses struct {
+	ft *FieldTags
+	c  *Conversion
+	// at is each tag's place in c.MergeTags; notes the tags already noted.
+	at    map[string]int
+	notes map[string]bool
+	// emptied are the converted tags taken out of a link's whole address,
+	// noted once the HTML is done.
+	emptied []string
+}
+
+func (u *tagUses) match(tag string) TagMatch { return u.ft.Match(tag) }
+
+// use converts one use of tag in where ("" for the HTML), returning what
+// takes its place.
+func (u *tagUses) use(tag, where string, link bool) string {
+	t := u.match(tag)
+	written := "*|" + tag + "|*"
+	if _, ok := u.at[tag]; !ok {
+		u.at[tag] = len(u.c.MergeTags)
+		u.c.MergeTags = append(u.c.MergeTags, mergeTagOf(tag, t))
+	}
+	if t.Field != nil {
+		return "{{" + t.Field.Key + "}}"
+	}
+	if !u.notes[tag] {
+		u.notes[tag] = true
+		u.c.Warnings = append(u.c.Warnings, removedTagNote(written, tag, where, t, link))
+	}
+	return ""
+}
+
+func (u *tagUses) linkEmptied(tag string) {
+	if !slices.Contains(u.emptied, tag) {
+		u.emptied = append(u.emptied, tag)
+	}
+}
+
+// finish notes the converted tags that were taken out of links.
+func (u *tagUses) finish() {
+	for _, tag := range u.emptied {
+		t := u.match(tag)
+		if _, ok := u.at[tag]; !ok {
+			u.at[tag] = len(u.c.MergeTags)
+			u.c.MergeTags = append(u.c.MergeTags, mergeTagOf(tag, t))
+		}
+		u.c.Warnings = append(u.c.Warnings, linkTagNote("*|"+tag+"|*", t.Field))
+	}
+}
+
 // convertText converts the merge tags in a subject or preview text: names
-// become mailgoose tags, *|MC:SUBJECT|* the subject, and anything else is
-// taken out with a warning (conditionals included, since a subject can't
-// show an error line).
-func convertText(s, subject string, removed map[string]bool, c *Conversion, what string) string {
+// become mailgoose tags, *|MC:SUBJECT|* the subject, a contact field's
+// merge tag that field's tag, and anything else is taken out with a
+// warning (conditionals included, since a subject can't show an error
+// line).
+func convertText(s, subject string, tags *tagUses, where string) string {
 	if s == "" {
 		return ""
 	}
@@ -201,12 +265,7 @@ func convertText(s, subject string, removed map[string]bool, c *Conversion, what
 		case "MC:SUBJECT":
 			return subject
 		}
-		if !removed[tag] {
-			removed[tag] = true
-			c.Warnings = append(c.Warnings, Note{Code: NoteRemovedTag,
-				Message: fmt.Sprintf("Mailchimp's %s merge tag in the %s has no match in mailgoose, so it was taken out", m, what)})
-		}
-		return ""
+		return tags.use(tag, where, false)
 	})
 	return strings.Join(strings.Fields(out), " ")
 }

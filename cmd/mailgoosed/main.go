@@ -174,7 +174,8 @@ func serve(ctx context.Context, log *slog.Logger) error {
 			log.Info("connecting Mailchimp accounts is off: MAILCHIMP_CLIENT_ID and MAILCHIMP_CLIENT_SECRET aren't both set")
 		}
 		mailchimpEmails := &mailchimp.EmailJob{Store: srv.Mailchimp, MaxMembers: cfg.MailchimpImportMaxContacts,
-			Importer: &mailchimp.EmailImporter{Emails: srv.Emails, Images: srv.Images}}
+			Importer:  &mailchimp.EmailImporter{Emails: srv.Emails, Images: srv.Images},
+			FieldTags: srv.Contacts.MailchimpImportFieldTags}
 		// Fetches from a connected Mailchimp account (MG-74) run here too:
 		// only the API has the Mailchimp app's secret that opens the token.
 		mailchimpFetches := &mailchimp.FetchJob{Store: srv.Mailchimp, Connections: srv.MailchimpConnections,

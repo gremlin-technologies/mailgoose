@@ -29,14 +29,17 @@ const testBundlePreview = `{"id":"` + testBundleID + `","file_name":"export.zip"
 {"name":"Pet","audiences":["Newsletter"],"members":1,"samples":["Rex"],"custom_field":null,"new_field":null,"skip_reason":"field_limit"}],
 "fields":{"limit":20,"existing":19,"new":1,"left_out":1},
 "plan":{"plan":"paid","upgrade":true,"contacts":3000,"limit":500,"month_cents":1000,"year_cents":10000,"tester":false,"units":2}},
-"emails":[{"from":"template","file":"templates/a.html","name":"Monthly","subject":"","images":0,"errors":[],"warnings":[],"email_id":null},
+"emails":[{"from":"template","file":"templates/a.html","name":"Monthly","subject":"","images":0,"errors":[],"warnings":[],"email_id":null,
+"merge_tags":[{"tag":"*|MMERGE3|*","merge_field":"Company","field":{"key":"company","name":"Company"},"new_field":false},
+{"tag":"*|PET|*","merge_field":"Pet","field":null,"new_field":false},{"tag":"*|FAX|*","merge_field":null,"field":null,"new_field":false}]},
 {"from":"campaign","file":"campaigns_content/b.html","name":"Spring sale","subject":"Spring","images":2,"errors":[{"code":"mailchimp_conditional","message":"x","line":3}],"warnings":[],"email_id":null}],
 "ignored_files":[{"path":"events.csv","reason":"unknown_file"}]}}`
 
 func testBundleConfirmed(status string, made int) string {
 	m := []string{}
 	for i := 0; i < made; i++ {
-		m = append(m, `{"from":"campaign","file":"c.html","name":"Spring sale","subject":"Spring","images":0,"errors":[],"warnings":[],"email_id":"e`+itoa(i)+`"}`)
+		m = append(m, `{"from":"campaign","file":"c.html","name":"Spring sale","subject":"Spring","images":0,"errors":[],"warnings":[],"email_id":"e`+itoa(i)+`",
+"merge_tags":[{"tag":"*|COMPANY|*","merge_field":null,"field":{"key":"company","name":"Company"},"new_field":true}]}`)
 	}
 	return `{"id":"` + testBundleID + `","file_name":"export.zip","bytes":4412,"status":"confirmed","created_at":"2026-11-21T12:00:00Z",
 "expires_at":"2026-11-28T12:00:00Z","confirmed_at":"2026-11-21T12:01:00Z","import_id":"` + testImportID + `","campaigns":3,"preview":null,
@@ -124,7 +127,9 @@ func TestImportMailchimpUploadShowsThePreview(t *testing.T) {
 		"1 templates and the newest 1 of 12 campaigns", "Spring sale", "1 files in the export",
 		"Groups: Interests: Baking.", "double opt-in was off in Mailchimp; mailgoose's form has it on",
 		"Each audience gets a draft signup form", `--form-tag "<group>"`,
-		"mailgoose import mailchimp confirm " + testBundleID + " --permission-confirmed", "--campaigns N"} {
+		"mailgoose import mailchimp confirm " + testBundleID + " --permission-confirmed", "--campaigns N",
+		"*|MMERGE3|*  {{company}} (field Company)", "*|PET|*      taken out: merge field Pet isn't imported",
+		"*|FAX|*      taken out: no contact field matches it", "mailgoose fields create <name>"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
@@ -171,6 +176,7 @@ func TestImportMailchimpConfirmWaitsForTheEmails(t *testing.T) {
 	}
 	out := h.out.String()
 	for _, want := range []string{"is confirmed", "mailgoose import status " + testImportID, "Emails: all 2 made", "e1",
+		"*|COMPANY|*  {{company}} (new field Company)  2", "has no fallback",
 		"9a8b7c6d-1111-4c55-9a0e-2f9b8b6f4a10  Newsletter (draft)", "Recipe Club (made by an earlier import)",
 		"form update <form-id> --live"} {
 		if !strings.Contains(out, want) {
