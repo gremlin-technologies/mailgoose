@@ -4,6 +4,76 @@ Newest first. Each entry says who decided and whether it's confirmed. Anything
 marked **recommended** is a proposal the owner hasn't confirmed yet; treat it as
 the default until the owner does, but don't build anything hard to undo on it.
 
+## 2026-11-25: Mailchimp merge fields as contact fields (MG-132; reversible defaults)
+
+Follows the owner's ask for MG-130 ("folks should be able to import their
+own arbitrary fields") into Mailchimp imports: merge fields beyond first and
+last name now come over as MG-130's contact fields, chosen the way MG-131
+chooses a CSV's columns, for uploads and connected accounts alike. This
+answers the open question "merge fields beyond name" below. What changed:
+
+- **Merge fields are read, not dropped.** The reader keeps every column of
+  a members file it doesn't otherwise use (email, names, status, tags,
+  groups, opt-in details) as a merge field, in Mailchimp's order, with each
+  member's values. An address merge field comes over as one line of text,
+  as the connected account's fetch already writes it. Mailchimp's own columns (MEMBER_RATING, LATITUDE, LONGITUDE,
+  GMTOFF, DSTOFF, TIMEZONE, CC, REGION, LAST_CHANGED, LEID, EUID, NOTES and
+  the UNSUB_ and CLEAN_ columns) are still dropped and listed, now as
+  "Mailchimp's own details". They are told apart from merge fields only
+  when written in capitals as Mailchimp writes them, so a merge field named
+  "Region" is kept; one named exactly "REGION" in an upload is dropped, and
+  a connected account's fetch names such a merge field by its name and tag
+  so it isn't. An unnamed group column in an upload is now a merge field
+  rather than dropped. An audience keeps at most 100 merge fields; the rest
+  are dropped and listed.
+- **One list for the whole import.** Merge fields of several audiences
+  whose names match loosely (case, spaces, underscores, dashes and dots
+  ignored, as MG-131 matches headers) are one merge field and fill one
+  contact field, named as the first audience names it. A member in two
+  audiences takes the first non-blank value, in the audiences' order.
+- **Defaults.** A merge field whose name matches a field's name or key
+  loosely fills that field. Each other one gets a new field named after it,
+  in Mailchimp's order, while the plan's field limit (`contacts.FieldLimit`,
+  20) has room; past it, the rest are left out and the preview says how
+  many and why (`skip_reason: field_limit`, and `fields.left_out`). One
+  whose name can't be a field's (a contact's own column such as Status, or
+  an invalid name) is left out with that code instead, and can still be
+  made under another name. The person can change any of it: map a merge
+  field into an existing field, which works past the limit, make different
+  new fields, or leave one out.
+- **Values.** Values are cut as MG-131 cuts them (one line, 500
+  characters). A contact already in mailgoose takes the chosen merge
+  fields' non-blank values too, overwriting what it had, as in a CSV import,
+  and is counted in `existing_updated`; a blank never clears a value.
+- **Made at confirm, all or nothing.** New fields are made when the import
+  is confirmed, in the transaction that queues it, under the account lock,
+  exactly as MG-131 makes them; past the limit, a taken name or a refused
+  name the confirm is refused (422, same codes) and nothing is made. The
+  import keeps its field columns by field id, with the merge field's name
+  as the column.
+- **The preview is worked out when it's read.** The merge fields, their
+  members and up to 3 sample values are stored with the upload; what each
+  becomes is worked out again on each read of an unconfirmed upload,
+  against the account's fields as they are then. A preview stored before
+  this change lists no merge fields, and confirming it keeps none.
+- **API and CLI.** The contacts preview carries `merge_fields` (name,
+  audiences, members, samples, `custom_field`, `new_field`, `skip_reason`)
+  and `fields` (`limit`, `existing`, `new`, `left_out`). Confirm takes
+  MG-131's `field_columns` (field key or id to merge field name, `""` to
+  leave the field out) and `new_fields` (`[{column, name}]`, column being
+  the merge field's name). Without `new_fields` the defaults are made; an
+  empty list makes none. There is no separate preview call for a changed
+  choice: the web app counts the limit as the person chooses, and confirm
+  checks it. `mailgoose import mailchimp` shows the merge fields and what
+  each becomes; `confirm` takes `--field key=MERGE` (`key=` leaves it out),
+  `--new-field MERGE[=name]` (with any, only those are made) and
+  `--no-new-fields`.
+- **Web app.** The confirm form has a "Contact fields" section with a menu
+  per merge field (Don't import, your fields, New field), the limit and how
+  much of it is used, a note when some are left out for the limit, and the
+  new-field choice disabled once no room is left. It sends every field it
+  knows and exactly the new fields shown, so it imports what was shown.
+
 ## 2026-11-24: Import columns to custom fields (MG-131; reversible defaults)
 
 The owner: "And we need to be able to support mapping to those columns in
@@ -580,7 +650,8 @@ shows the preview unless `--no-wait`. These defaults are each easy to change:
   `campaigns.csv`) and reads them with the upload's reader, so the upload's
   limits (the import's member cap, 25 MB zipped) and rules apply. Members of
   every status are read 1,000 at a time. Merge fields other than first and
-  last name are dropped and listed, as for an upload; interest categories
+  last name are dropped and listed, as for an upload (since MG-132, Nov 25,
+  they come over as contact fields); interest categories
   become group columns; opt-in and confirm times and IPs and GDPR
   permissions come over as the export has them.
 - **Tags.** A member's tags are the ones the members endpoint returns, which
@@ -1051,7 +1122,7 @@ should be checked against a real export when one is available.
 - **Groups are named, not guessed.** A CSV doesn't say which columns are
   group categories and which are merge fields, so the reader reads as groups
   only the columns the caller names; any other column is dropped and listed
-  (decision 6). MG-72 lets the customer name them.
+  (decision 6). Since MG-132 (Nov 25), any other column is a merge field. MG-72 lets the customer name them.
 - **Tags and groups** are split on commas, each name optionally in double
   quotes so it can hold a comma.
 - **GDPR permissions.** A column named for marketing permissions, or
@@ -4310,7 +4381,10 @@ Decided by the owner in the PRD scoping call and follow-ups.
   yes, through the existing holds, unchanged, with Mailchimp signals shown on
   held imports. MG-77.)
 - Mailchimp import: merge fields beyond name (address, phone, birthday,
-  custom). (Default: dropped and listed in the preview. MG-69, MG-70.)
+  custom). (Default since Nov 25: they come over as contact fields, matched
+  by name or made as new fields in Mailchimp's order up to the plan's field
+  limit, the rest left out and listed; the person can change which. Earlier
+  default: dropped and listed in the preview. MG-69, MG-70, MG-132.)
 - Mailchimp import: pending contacts. (Default: unconfirmed, no email sent.
   MG-70.)
 - Mailchimp import: the OAuth path needs a registered Mailchimp app. (Default:

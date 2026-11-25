@@ -80,11 +80,18 @@ type mailchimpBundle struct {
 				From string `json:"from"`
 				To   string `json:"to"`
 			} `json:"renamed_tags"`
-			MergeSuppressed int      `json:"merge_suppressed"`
-			DroppedFields   []string `json:"dropped_fields"`
-			Holds           []string `json:"holds"`
-			Waits           bool     `json:"waits"`
-			Plan            struct {
+			MergeSuppressed int                   `json:"merge_suppressed"`
+			DroppedFields   []string              `json:"dropped_fields"`
+			MergeFields     []mailchimpMergeField `json:"merge_fields"`
+			Fields          struct {
+				Limit    int `json:"limit"`
+				Existing int `json:"existing"`
+				New      int `json:"new"`
+				LeftOut  int `json:"left_out"`
+			} `json:"fields"`
+			Holds []string `json:"holds"`
+			Waits bool     `json:"waits"`
+			Plan  struct {
 				Plan       string `json:"plan"`
 				Upgrade    bool   `json:"upgrade"`
 				Contacts   int    `json:"contacts"`
@@ -108,6 +115,61 @@ type mailchimpBundle struct {
 		Audience string `json:"audience"`
 		New      bool   `json:"new"`
 	} `json:"forms"`
+}
+
+// mailchimpMergeField is the API's MailchimpMergeField (MG-132).
+type mailchimpMergeField struct {
+	Name        string          `json:"name"`
+	Audiences   []string        `json:"audiences"`
+	Members     int             `json:"members"`
+	Samples     []string        `json:"samples"`
+	CustomField *importFieldRef `json:"custom_field"`
+	NewField    *struct {
+		Name string `json:"name"`
+		Key  string `json:"key"`
+	} `json:"new_field"`
+	SkipReason *string `json:"skip_reason"`
+}
+
+// mergeSkipReasons says why a merge field is left out by default.
+var mergeSkipReasons = map[string]string{
+	"field_limit":         "no room under the plan's field limit",
+	"invalid_field_name":  "its name can't be a field's",
+	"reserved_field_name": "its name is taken by a contact's own column",
+	"field_exists":        "a field has that key already",
+}
+
+// printMergeFields shows what each merge field would become by default, and
+// how to change it.
+func (a *App) printMergeFields(id string, fs []mailchimpMergeField, limit, existing, newCount, leftOut int) {
+	if len(fs) == 0 {
+		return
+	}
+	w := a.Stdout
+	fmt.Fprintln(w, "\nMerge fields, into contact fields:")
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "  MERGE FIELD\tBECOMES\tVALUES\tSAMPLES")
+	for _, f := range fs {
+		becomes := "skipped"
+		switch {
+		case f.CustomField != nil:
+			becomes = "field " + f.CustomField.Key
+		case f.NewField != nil:
+			becomes = "new field " + f.NewField.Key
+		case f.SkipReason != nil:
+			if why := mergeSkipReasons[*f.SkipReason]; why != "" {
+				becomes = "skipped: " + why
+			}
+		}
+		fmt.Fprintf(tw, "  %s\t%s\t%d\t%s\n", strings.ReplaceAll(f.Name, "\t", " "), becomes, f.Members,
+			strings.ReplaceAll(strings.Join(f.Samples, ", "), "\t", " "))
+	}
+	_ = tw.Flush()
+	fmt.Fprintf(w, "The plan allows %d contact fields; the account has %d, and this would make %d.\n", limit, existing, newCount)
+	if leftOut > 0 {
+		fmt.Fprintf(w, "%d merge fields are skipped for the limit. Choose which with --new-field, or put them into existing fields with --field.\n", leftOut)
+	}
+	fmt.Fprintf(w, "To choose: mailgoose import mailchimp confirm %s --permission-confirmed --field <key>=<merge field> --new-field \"<merge field>[=<name>]\" (or --no-new-fields).\n", id)
 }
 
 // printMailchimpForms lists the signup forms a confirmed import made or
@@ -264,7 +326,7 @@ func (a *App) printMailchimpBundle(b mailchimpBundle, raw json.RawMessage) {
 		fmt.Fprintf(w, "\nNew contacts: %d subscribed, %d unconfirmed, %d unsubscribed, %d bounced.\n",
 			c.New["subscribed"], c.New["unconfirmed"], c.New["unsubscribed"], c.New["bounced"])
 		if c.ExistingTagged+c.ExistingSuppressed > 0 {
-			fmt.Fprintf(w, "Existing contacts: %d gain tags; %d come off the list as Mailchimp has them unsubscribed or cleaned.\n",
+			fmt.Fprintf(w, "Existing contacts: %d gain tags and field values; %d come off the list as Mailchimp has them unsubscribed or cleaned.\n",
 				c.ExistingTagged, c.ExistingSuppressed)
 		}
 		var skipped []string
@@ -286,7 +348,7 @@ func (a *App) printMailchimpBundle(b mailchimpBundle, raw json.RawMessage) {
 			fmt.Fprintf(w, "Tag %q becomes %q.\n", t.From, t.To)
 		}
 		if len(c.DroppedFields) > 0 {
-			fmt.Fprintf(w, "Fields mailgoose doesn't keep: %s.\n", strings.Join(c.DroppedFields, ", "))
+			fmt.Fprintf(w, "Mailchimp's own columns mailgoose doesn't keep: %s.\n", strings.Join(c.DroppedFields, ", "))
 		}
 		if c.Plan.Upgrade {
 			fmt.Fprintf(w, "Plan: %d contacts needs the paid plan, $%.2f a month or $%.2f a year.\n",
@@ -302,6 +364,7 @@ func (a *App) printMailchimpBundle(b mailchimpBundle, raw json.RawMessage) {
 			}
 			fmt.Fprintf(w, "Held for review: %s. Held contacts don't get campaigns until mailgoose approves the import.\n", text)
 		}
+		a.printMergeFields(b.ID, c.MergeFields, c.Fields.Limit, c.Fields.Existing, c.Fields.New, c.Fields.LeftOut)
 	}
 	if len(p.Emails) > 0 {
 		templates, campaigns := 0, 0
@@ -392,7 +455,7 @@ func (a *App) importMailchimpCmd() *cobra.Command {
 		Use:   "mailchimp",
 		Short: "Bring contacts, tags and emails over from a Mailchimp export",
 		Long: `Imports what Mailchimp's account export holds: each audience's contacts
-with their tags and groups, and the templates and newest campaigns as HTML
+with their tags, groups and merge fields, and the templates and newest campaigns as HTML
 emails. In Mailchimp, export your account data (Account & billing > Settings >
 Manage my data) or an audience, then:
 
@@ -414,8 +477,8 @@ Agents: see "Moving from Mailchimp" in ` + "`mailgoose docs`" + `.`,
 		Long: `Uploads Mailchimp's export, the .zip of the account or an audience, or one
 audience CSV from it, up to 25 MB (export a larger account one audience at a
 time). Nothing is imported: it shows the
-contacts by status, the tags to create, the emails it would make and the plan
-the contacts need, and gives the upload's id to confirm.
+contacts by status, the tags to create, the merge fields and the contact
+fields they'd fill, the emails it would make and the plan the contacts need, and gives the upload's id to confirm.
 
 A single CSV doesn't name its audience: --audience-name does, for the tag
 when there's more than one. Group categories are found from the export; name
@@ -450,10 +513,10 @@ any others with --group-column.`,
 		},
 	})
 
-	var permission, wait bool
+	var permission, wait, noNewFields bool
 	var campaigns int
 	var key string
-	var formTags []string
+	var formTags, fields, newFields []string
 	confirm := callsAll([]string{"confirmMailchimpBundle", "getMailchimpBundle"}, &cobra.Command{
 		Use:   "confirm <id>",
 		Short: "Import an uploaded Mailchimp export",
@@ -475,9 +538,20 @@ embedded form: email, first and last name, double opt-in on, and the
 --form-tag for each group (as the preview lists them) the forms should tag
 signups with. The forms are drafts: they take no signups until you check and
 save them (mailgoose form update <form-id> --live). Importing again makes no
-second form for an audience.`,
+second form for an audience.
+
+Merge fields beyond first and last name (phone, address, birthday and your
+own) become contact fields, as the preview lists them: one whose name
+matches a field's fills it, and the others get new fields, in Mailchimp's
+order, while the plan's field limit has room; the rest are skipped. Put a
+merge field into an existing field with --field company=Company (--field
+company= leaves that field out), and choose the new fields with --new-field
+"Phone Number", or --new-field 'Phone Number=Phone' to name it: with any
+--new-field, only those are made. --no-new-fields makes none. A contact
+already here takes the merge fields' values too.`,
 		Example: `  mailgoose import mailchimp confirm 3f1c... --permission-confirmed
   mailgoose import mailchimp confirm 3f1c... --permission-confirmed --form-tag "Interests: Baking"
+  mailgoose import mailchimp confirm 3f1c... --permission-confirmed --field company=Company --new-field "Phone Number=Phone"
   mailgoose import mailchimp confirm 3f1c... --permission-confirmed --campaigns 25 --wait --json`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -494,6 +568,21 @@ second form for an audience.`,
 			}
 			if len(formTags) > 0 {
 				body["form_tags"] = formTags
+			}
+			if noNewFields && len(newFields) > 0 {
+				return usageError("--no-new-fields and --new-field can't go together.", "Use --new-field for each field to make, or --no-new-fields to make none.")
+			}
+			cols, news, err := importFieldFlags(fields, newFields, true)
+			if err != nil {
+				return err
+			}
+			if len(cols) > 0 {
+				body["field_columns"] = cols
+			}
+			if len(news) > 0 {
+				body["new_fields"] = news
+			} else if noNewFields {
+				body["new_fields"] = []any{}
 			}
 			ctx := cmd.Context()
 			path := "/v1/imports/mailchimp/bundles/" + url.PathEscape(args[0])
@@ -518,6 +607,11 @@ second form for an audience.`,
 	confirm.Flags().StringVar(&key, "idempotency-key", "", "a key that makes retrying return the same import (default: the export's own)")
 	confirm.Flags().BoolVar(&wait, "wait", false, "wait until the emails are made")
 	confirm.Flags().StringArrayVar(&formTags, "form-tag", nil, "a group tag the audiences' signup forms put on signups (repeatable)")
+	confirm.Flags().StringArrayVar(&fields, "field", nil,
+		"key=merge-field, putting a merge field into the contact field with that key; key= leaves the field out; repeatable")
+	confirm.Flags().StringArrayVar(&newFields, "new-field", nil,
+		"a merge field, optionally =name, to make a contact field from; with any, only those are made; repeatable")
+	confirm.Flags().BoolVar(&noNewFields, "no-new-fields", false, "make no contact fields from merge fields")
 
 	var yes bool
 	del := calls("deleteMailchimpBundle", &cobra.Command{

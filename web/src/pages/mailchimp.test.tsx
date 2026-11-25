@@ -55,7 +55,9 @@ function preview(extra = {}, contacts = {}) {
       tags_to_create: ["regulars", "wholesale"],
       merge_suppressed: 1,
       merge_suppressed_examples: ["sam@example.com"],
-      dropped_fields: ["Birthday", "Phone"],
+      dropped_fields: ["MEMBER_RATING", "LEID"],
+      merge_fields: [],
+      fields: { limit: 20, existing: 0, new: 0, left_out: 0 },
       renamed_tags: [{ from: "VIP", to: "vip" }],
       names_cut: 0,
       with_optin_time: 3,
@@ -301,7 +303,7 @@ describe("Mailchimp import", () => {
     expect(screen.getByText(/1 address is in more than one audience .* such as sam@example.com/)).toBeTruthy();
     expect(screen.getByText("New tags: regulars, wholesale.")).toBeTruthy();
     expect(screen.getByText("VIP becomes vip.")).toBeTruthy();
-    expect(screen.getByText(/These Mailchimp fields aren't kept: Birthday, Phone/)).toBeTruthy();
+    expect(screen.getByText(/These details Mailchimp keeps for itself aren't kept: MEMBER_RATING, LEID/)).toBeTruthy();
     expect(screen.getByText(/600 contacts needs the paid plan: \$5 a month, or \$50 a year/)).toBeTruthy();
     expect(screen.getByText("Held for review: it's your account's first import of more than 2,000 contacts.")).toBeTruthy();
     expect(screen.getByText(/1 template and the newest 2 campaigns of 14 become HTML emails/)).toBeTruthy();
@@ -372,6 +374,93 @@ describe("Mailchimp import", () => {
       ["Send a test", "/campaigns/new"],
     ]);
   });
+  it("brings the merge fields picked as contact fields, within the plan's field limit", async () => {
+    let posted: unknown;
+    const merge = (name: string, extra = {}) => ({
+      name,
+      audiences: ["Bakery news"],
+      members: 2,
+      samples: [`${name} 1`, `${name} 2`],
+      custom_field: null,
+      new_field: null,
+      skip_reason: null,
+      ...extra,
+    });
+    const company = { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", key: "company", name: "Company" };
+    const withMerge = bundle({
+      preview: preview(
+        {},
+        {
+          existing_tagged: 0,
+          merge_fields: [
+            merge("Phone", { new_field: { name: "Phone", key: "phone" } }),
+            merge("COMPANY", { custom_field: company }),
+            merge("Birthday", { new_field: { name: "Birthday", key: "birthday" } }),
+            merge("Pet", { skip_reason: "field_limit" }),
+            merge("Status", { skip_reason: "reserved_field_name" }),
+          ],
+          fields: { limit: 3, existing: 1, new: 2, left_out: 1 },
+        },
+      ),
+    });
+    const api = fakeApi({
+      ...signedIn,
+      [`GET /v1/imports/mailchimp/bundles/${bundleID}`]: () => ({ status: 200, body: withMerge }),
+      "GET /v1/contact-fields": () => ({
+        status: 200,
+        body: { data: [{ ...company, created_at: "2026-11-20T10:00:00Z", updated_at: "2026-11-20T10:00:00Z" }], next_cursor: null },
+      }),
+      [`POST /v1/imports/mailchimp/bundles/${bundleID}/confirm`]: (body) => {
+        posted = body;
+        return { status: 202, body: bundle({ status: "confirmed", confirmed_at: "2026-11-22T10:01:00Z", import_id: importID }) };
+      },
+      [`GET /v1/imports/${importID}`]: () => ({ status: 200, body: anImport("running", 0) }),
+    });
+    const user = userEvent.setup();
+    renderApp(`/contacts/import/mailchimp/${bundleID}`, api.fetch);
+
+    const group = await screen.findByRole("group", { name: "Contact fields" });
+    expect(within(group).getByText(/1 merge field doesn't fit under that limit/)).toBeTruthy();
+    const pick = (name: string) => within(group).getByLabelText(name) as HTMLSelectElement;
+    expect([pick("Phone").value, pick("COMPANY").value, pick("Birthday").value, pick("Pet").value, pick("Status").value]).toEqual([
+      "new",
+      "field:company",
+      "new",
+      "",
+      "",
+    ]);
+    expect(within(group).getByText(/Pet 1, Pet 2\. Left out: no room for another field/)).toBeTruthy();
+    // No room for Pet until another new field is left out.
+    const petNew = within(pick("Pet")).getByRole("option", { name: "New field: Pet" }) as HTMLOptionElement;
+    expect(petNew.disabled).toBe(true);
+    await user.selectOptions(pick("Birthday"), "");
+    expect(petNew.disabled).toBe(false);
+    await user.selectOptions(pick("Pet"), "new");
+    // Phone goes into Company, which takes it off COMPANY and makes room
+    // for Status under a name of its own.
+    await user.selectOptions(pick("Phone"), "field:company");
+    expect(pick("COMPANY").value).toBe("");
+    await user.selectOptions(pick("Status"), "new");
+    await user.click(screen.getByRole("checkbox", { name: "Everyone in this file has given me permission to email them." }));
+    const importButton = screen.getByRole("button", { name: "Import" }) as HTMLButtonElement;
+    expect(importButton.disabled).toBe(true);
+    await user.type(within(group).getByLabelText("Name for the new field"), "Member status");
+    expect(importButton.disabled).toBe(false);
+    await user.click(importButton);
+
+    await waitFor(() =>
+      expect(posted).toEqual({
+        permission_confirmed: true,
+        campaigns: 10,
+        field_columns: { company: "Phone" },
+        new_fields: [
+          { column: "Pet", name: "Pet" },
+          { column: "Status", name: "Member status" },
+        ],
+      }),
+    );
+  });
+
   it("gives each audience a draft signup form, tagged with the groups picked", async () => {
     let posted: unknown;
     const audience = (name: string, groups: string[], double_optin: boolean) => ({

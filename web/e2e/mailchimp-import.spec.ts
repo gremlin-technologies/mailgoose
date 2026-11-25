@@ -4,10 +4,11 @@ import { expect, test, type Page } from "@playwright/test";
 import { axeTags, names, signUp } from "./helpers";
 
 // MG-75: a Mailchimp customer uploads an audience export (Mailchimp names
-// each file for its members' status, as here), reads the preview,
-// confirms it, and gets the checklist of what's next, at desktop and phone
-// width, then saves the draft signup form the import made (MG-76). The
-// addresses are on SES's mailbox simulator, and nothing is sent.
+// each file for its members' status, as here), reads the preview, keeps its
+// merge field as a contact field (MG-132), confirms it, and gets the
+// checklist of what's next, at desktop and phone width, then saves the draft
+// signup form the import made (MG-76). The addresses are on SES's mailbox
+// simulator, and nothing is sent.
 
 async function noViolations(page: Page, where: string) {
   const result = await new AxeBuilder({ page }).withTags(axeTags).exclude("iframe").analyze();
@@ -44,7 +45,8 @@ test("upload a Mailchimp audience export, preview it and import it", async ({ pa
     await expect(page.getByText("New tags: Regulars, Wholesale.")).toBeVisible();
     // One row in three isn't an address, which holds the import for review.
     await expect(page.getByText("Held for review: too many rows aren't valid email addresses.")).toBeVisible();
-    await expect(page.getByText(/These Mailchimp fields aren't kept: Favourite bread/)).toBeVisible();
+    // MG-132: a merge field comes over as a new contact field by default.
+    await expect(page.getByLabel("Favourite bread", { exact: true })).toHaveValue("new");
     await noViolations(page, "preview");
   });
 

@@ -43,6 +43,10 @@ const (
 	// permission cell; the rest are left out and the member's NamesCut is
 	// set.
 	MaxListNames = 500
+	// MaxMergeFields is the most merge fields Read keeps values of for one
+	// audience (MG-132); Mailchimp allows about 80. Columns past it are
+	// dropped.
+	MaxMergeFields = 100
 )
 
 // Options changes how Read reads an export. The zero value reads with the
@@ -543,7 +547,29 @@ type columns struct {
 	optinTime, optinIP, confTime, confIP int
 	groups                               map[int]string
 	permissions                          []int
-	dropped                              []string
+	// merge are the merge field columns, by index, in the header's order;
+	// dropped the columns of Mailchimp's own that aren't kept.
+	merge   []int
+	dropped []string
+}
+
+// systemColumns are the columns Mailchimp's export adds to a member file of
+// its own, normalized: member rating, location, change and unsubscribe or
+// clean details, internal ids and notes. The export writes them in capitals
+// (MEMBER_RATING, REGION), which tells them from a merge field named, say,
+// Region. They aren't merge fields and aren't kept.
+var systemColumns = map[string]bool{
+	"member rating": true, "latitude": true, "longitude": true, "gmtoff": true, "dstoff": true, "timezone": true,
+	"cc": true, "region": true, "last changed": true, "leid": true, "euid": true, "notes": true,
+	"unsub time": true, "unsub campaign title": true, "unsub campaign id": true, "unsub reason": true,
+	"unsub reason other": true, "clean time": true, "clean campaign title": true, "clean campaign id": true,
+}
+
+// SystemColumn reports whether a member-file header is one of Mailchimp's
+// own columns rather than a merge field.
+func SystemColumn(h string) bool {
+	h = strings.TrimSpace(h)
+	return h == strings.ToUpper(h) && systemColumns[normalize(h)]
 }
 
 func mapColumns(header []string, groupNames []string) *columns {
@@ -589,8 +615,11 @@ func mapColumns(header []string, groupNames []string) *columns {
 			c.groups[i] = strings.TrimSpace(h)
 		case strings.Contains(n, "marketing permission") || strings.HasPrefix(n, "gdpr"):
 			c.permissions = append(c.permissions, i)
-		case n != "":
+		case n == "":
+		case SystemColumn(h):
 			c.dropped = append(c.dropped, strings.TrimSpace(h))
+		default:
+			c.merge = append(c.merge, i)
 		}
 	}
 	return c
@@ -633,13 +662,28 @@ func (rd *reader) readMembers(r io.Reader, file string, status Status, aud *Audi
 	for _, name := range col.dropped {
 		aud.DroppedFields = insertSorted(aud.DroppedFields, name)
 	}
+	// mergeAt is each merge column's place in aud.MergeFields, -1 for one
+	// past MaxMergeFields, which is dropped.
+	mergeAt := make([]int, len(col.merge))
+	for j, i := range col.merge {
+		name := strings.TrimSpace(header[i])
+		k := slices.Index(aud.MergeFields, name)
+		if k < 0 && len(aud.MergeFields) < MaxMergeFields {
+			k = len(aud.MergeFields)
+			aud.MergeFields = append(aud.MergeFields, name)
+		}
+		if k < 0 {
+			aud.DroppedFields = insertSorted(aud.DroppedFields, name)
+		}
+		mergeAt[j] = k
+	}
 	for _, i := range sortedKeys(col.groups) {
 		aud.GroupColumns = insertSorted(aud.GroupColumns, col.groups[i])
 	}
 	for _, i := range col.permissions {
 		aud.PermissionColumns = insertSorted(aud.PermissionColumns, strings.TrimSpace(header[i]))
 	}
-	if n := len(aud.DroppedFields) + len(aud.GroupColumns) + len(aud.PermissionColumns); n > MaxColumns {
+	if n := len(aud.DroppedFields) + len(aud.MergeFields) + len(aud.GroupColumns) + len(aud.PermissionColumns); n > MaxColumns {
 		return refuse(ErrTooManyColumns, "The files of %s have more than %s different columns between them, more than one import takes. Upload the export as Mailchimp made it.", aud.Name, commas(MaxColumns))
 	}
 
@@ -719,6 +763,19 @@ func (rd *reader) readMembers(r io.Reader, file string, status Status, aud *Audi
 			if v := cell(i); v != "" {
 				m.PermissionsKnown = true
 				m.Permissions = append(m.Permissions, list(v)...)
+			}
+		}
+		for j, i := range col.merge {
+			k := mergeAt[j]
+			v := cell(i)
+			if k < 0 || v == "" {
+				continue
+			}
+			if len(m.Merge) <= k {
+				m.Merge = append(m.Merge, make([]string, k+1-len(m.Merge))...)
+			}
+			if m.Merge[k] == "" {
+				m.Merge[k] = v
 			}
 		}
 		aud.Members = append(aud.Members, m)

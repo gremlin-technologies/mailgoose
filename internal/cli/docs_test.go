@@ -68,7 +68,8 @@ func TestDocsPrintsTheAgentGuide(t *testing.T) {
 		"automations",
 		"reports",
 		"signup form designs",
-		"merge fields beyond",
+		"Merge fields become contact fields", // MG-132
+		"--new-field MERGE",
 	} {
 		if !strings.Contains(guide, want) {
 			t.Errorf("the guide lacks %q", want)

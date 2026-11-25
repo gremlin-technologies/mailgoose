@@ -188,15 +188,25 @@ func TestAccountExport(t *testing.T) {
 	if want := []SkippedRow{{File: "audiences/Newsletter/subscribed_members_export_0a1b2c.csv", Row: 4, Reason: SkipNoEmail}}; !reflect.DeepEqual(news.Skipped, want) {
 		t.Errorf("skipped = %+v", news.Skipped)
 	}
-	for _, f := range []string{"Phone Number", "MEMBER_RATING", "LATITUDE", "NOTES", "LEID", "EUID", "UNSUB_TIME", "CLEAN_TIME"} {
+	for _, f := range []string{"MEMBER_RATING", "LATITUDE", "NOTES", "LEID", "EUID", "UNSUB_TIME", "CLEAN_TIME"} {
 		if !slices.Contains(news.DroppedFields, f) {
 			t.Errorf("dropped fields %v lack %s", news.DroppedFields, f)
 		}
 	}
-	for _, f := range []string{"Email Address", "First Name", "TAGS", "OPTIN_TIME", "Interests", "Marketing Permissions"} {
+	for _, f := range []string{"Email Address", "First Name", "TAGS", "OPTIN_TIME", "Interests", "Marketing Permissions", "Phone Number"} {
 		if slices.Contains(news.DroppedFields, f) {
 			t.Errorf("%s is read, not dropped", f)
 		}
+	}
+	// Phone Number is a merge field, kept with its values (MG-132).
+	if !slices.Equal(news.MergeFields, []string{"Phone Number"}) {
+		t.Errorf("merge fields = %v", news.MergeFields)
+	}
+	if m := member(t, news, "ada@example.com").Merge; !slices.Equal(m, []string{"555-0100"}) {
+		t.Errorf("ada's merge values = %q", m)
+	}
+	if m := member(t, news, "grace@example.com").Merge; m != nil {
+		t.Errorf("grace's blank phone = %q", m)
 	}
 	if !slices.IsSorted(news.DroppedFields) {
 		t.Errorf("dropped fields aren't sorted: %v", news.DroppedFields)
@@ -245,8 +255,8 @@ func TestAccountExportWithoutGroupColumns(t *testing.T) {
 	if ada := member(t, news, "ada@example.com"); ada.Groups != nil {
 		t.Errorf("groups without GroupColumns = %v", ada.Groups)
 	}
-	if !slices.Contains(news.DroppedFields, "Interests") {
-		t.Errorf("an unnamed group column is dropped: %v", news.DroppedFields)
+	if !slices.Contains(news.MergeFields, "Interests") {
+		t.Errorf("an unnamed group column is read as a merge field: %v", news.MergeFields)
 	}
 }
 
@@ -425,9 +435,11 @@ func wideHeader(n int) string {
 
 func TestTooManyColumns(t *testing.T) {
 	// MaxColumns is taken.
+	// The first MaxMergeFields are merge fields; the rest are dropped.
 	b := mustRead(t, []byte(wideHeader(MaxColumns)+"\na@example.com\n"), "subscribed.csv", Options{})
-	if got := len(b.Audiences[0].DroppedFields); got != MaxColumns-1 {
-		t.Errorf("dropped %d fields", got)
+	if got := len(b.Audiences[0].DroppedFields) + len(b.Audiences[0].MergeFields); got != MaxColumns-1 ||
+		len(b.Audiences[0].MergeFields) != MaxMergeFields || b.Audiences[0].MergeFields[0] != "FIELD1" {
+		t.Errorf("dropped %d fields, %d merge fields", len(b.Audiences[0].DroppedFields), len(b.Audiences[0].MergeFields))
 	}
 	if !slices.IsSorted(b.Audiences[0].DroppedFields) {
 		t.Error("dropped fields aren't sorted")
@@ -468,7 +480,7 @@ func TestTooManyColumns(t *testing.T) {
 		[2]string{"unsubscribed.csv", half(0)},
 		[2]string{"cleaned.csv", half(0)},
 	)
-	if b := mustRead(t, data, "x.zip", Options{}); len(b.Audiences[0].DroppedFields) != MaxColumns/2+1 {
+	if b := mustRead(t, data, "x.zip", Options{}); len(b.Audiences[0].DroppedFields)+len(b.Audiences[0].MergeFields) != MaxColumns/2+1 {
 		t.Errorf("dropped %d fields", len(b.Audiences[0].DroppedFields))
 	}
 }
@@ -524,7 +536,8 @@ func TestMissingColumns(t *testing.T) {
 	// Only an email column: the rest are blank.
 	b := mustRead(t, []byte("Email\nmin@example.com\n"), "subscribed.csv", Options{})
 	m := b.Audiences[0].Members[0]
-	if m.Email != "min@example.com" || m.FirstName != "" || m.Tags != nil || m.OptinAt != nil || len(b.Audiences[0].DroppedFields) != 0 {
+	if m.Email != "min@example.com" || m.FirstName != "" || m.Tags != nil || m.OptinAt != nil || len(b.Audiences[0].DroppedFields) != 0 ||
+		len(b.Audiences[0].MergeFields) != 0 || m.Merge != nil {
 		t.Errorf("member = %+v", m)
 	}
 	// A short row reads its missing cells as blank.
@@ -639,5 +652,40 @@ func TestUnreadableRow(t *testing.T) {
 	a := b.Audiences[0]
 	if len(a.Members) != 2 || a.Members[0].FirstName != `O"Brien` {
 		t.Errorf("members = %+v, skipped %+v", a.Members, a.Skipped)
+	}
+}
+
+func TestMergeFields(t *testing.T) {
+	// Mailchimp's own columns are in capitals; a merge field with the same
+	// words isn't one of them. Merge fields keep the header's order, and a
+	// later file's new ones come after.
+	data := zipFiles(t,
+		[2]string{"subscribed.csv", "Email Address,Region,Company,REGION,MEMBER_RATING\na@example.com, North ,Acme,GA,3\nb@example.com,,,GA,2\n"},
+		[2]string{"unsubscribed.csv", "Email Address,Company,Birthday,Region\nc@example.com,Initech,01/02,South\n"},
+	)
+	b := mustRead(t, data, "x.zip", Options{})
+	a := b.Audiences[0]
+	if want := []string{"Region", "Company", "Birthday"}; !slices.Equal(a.MergeFields, want) {
+		t.Errorf("merge fields = %v, want %v", a.MergeFields, want)
+	}
+	if want := []string{"MEMBER_RATING", "REGION"}; !slices.Equal(a.DroppedFields, want) {
+		t.Errorf("dropped = %v, want %v", a.DroppedFields, want)
+	}
+	for _, c := range []struct {
+		email string
+		want  []string
+	}{
+		{"a@example.com", []string{"North", "Acme"}},
+		{"b@example.com", nil},
+		{"c@example.com", []string{"South", "Initech", "01/02"}},
+	} {
+		if got := member(t, a, c.email).Merge; !slices.Equal(got, c.want) {
+			t.Errorf("%s's merge values = %q, want %q", c.email, got, c.want)
+		}
+	}
+	for h, want := range map[string]bool{"REGION": true, "Region": false, "LAST_CHANGED": true, "Last Changed": false, "PHONE": false} {
+		if got := SystemColumn(h); got != want {
+			t.Errorf("SystemColumn(%q) = %v", h, got)
+		}
 	}
 }

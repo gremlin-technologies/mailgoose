@@ -323,8 +323,9 @@ func folderName(name string, used map[string]bool) string {
 }
 
 // reservedColumns are the member file's own columns; a merge field or an
-// interest category with one of these names is written under another so
-// the reader doesn't take it for them.
+// interest category with one of these names, or one of Mailchimp's own
+// (SystemColumn), is written under another so the reader doesn't take it
+// for them.
 var reservedColumns = map[string]bool{
 	"email": true, "email address": true, "e-mail": true, "e-mail address": true, "fname": true, "first name": true,
 	"lname": true, "last name": true, "tags": true, "status": true, "email marketing": true, "email marketing status": true,
@@ -334,7 +335,8 @@ var reservedColumns = map[string]bool{
 
 func columnFree(name string, taken map[string]bool) bool {
 	n := normalize(name)
-	return n != "" && !reservedColumns[n] && !taken[n] && !strings.Contains(n, "marketing permission") && !strings.HasPrefix(n, "gdpr")
+	return n != "" && !reservedColumns[n] && !taken[n] && !strings.Contains(n, "marketing permission") && !strings.HasPrefix(n, "gdpr") &&
+		!SystemColumn(name)
 }
 
 func (f *fetcher) mergeFields(ctx context.Context, a *fetchAudience) error {

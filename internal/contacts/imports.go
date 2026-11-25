@@ -249,24 +249,32 @@ func (in ImportInput) choice(af AccountFields) columnChoice {
 	for _, f := range in.SkipFields {
 		skip[f] = true
 	}
+	c := fieldChoice(af, in.FieldColumns, in.NewFields)
+	c.named = map[string]string{fieldEmail: in.EmailColumn, fieldFirstName: in.FirstNameColumn, fieldLastName: in.LastNameColumn,
+		fieldStatus: in.StatusColumn, fieldTags: in.TagsColumn}
+	c.skip = skip
+	return c
+}
+
+// fieldChoice is how an import picks its contact fields' columns (MG-131):
+// the ones fieldColumns names by field key or id, guesses for the rest,
+// and the new fields to make. af is the account's contact fields.
+func fieldChoice(af AccountFields, fieldColumns map[string]string, newFields []NewImportField) columnChoice {
 	c := columnChoice{
-		named: map[string]string{fieldEmail: in.EmailColumn, fieldFirstName: in.FirstNameColumn, fieldLastName: in.LastNameColumn,
-			fieldStatus: in.StatusColumn, fieldTags: in.TagsColumn},
-		skip:       skip,
 		guess:      true,
 		fields:     af.Fields,
 		fieldLimit: af.Limit,
 		fieldNamed: map[string]string{},
-		newFields:  in.NewFields,
+		newFields:  newFields,
 	}
-	for _, ref := range slices.Sorted(maps.Keys(in.FieldColumns)) {
+	for _, ref := range slices.Sorted(maps.Keys(fieldColumns)) {
 		r := strings.TrimSpace(ref)
 		i := slices.IndexFunc(af.Fields, func(f *Field) bool { return f.Key == r || f.ID == r })
 		if i < 0 {
 			c.unknownFields = append(c.unknownFields, ref)
 			continue
 		}
-		c.fieldNamed[af.Fields[i].ID] = strings.TrimSpace(in.FieldColumns[ref])
+		c.fieldNamed[af.Fields[i].ID] = strings.TrimSpace(fieldColumns[ref])
 	}
 	return c
 }
@@ -338,6 +346,9 @@ type csvLayout struct {
 	// by the field's id, and newCols the fields it will make (MG-131).
 	fieldCol map[string]int
 	newCols  []newFieldCol
+	// merge is true for a Mailchimp import's merge fields (MG-132), whose
+	// "columns" are merge fields: messages name them so.
+	merge bool
 }
 
 // column is how field's column is stored on the import, nil when the file
@@ -491,6 +502,34 @@ func (l *csvLayout) headerList() string {
 	return strings.Join(names, ", ")
 }
 
+// colWord is what a message calls a column: "column", or "merge field" for
+// a Mailchimp import's merge fields.
+func (l *csvLayout) colWord() string {
+	if l.merge {
+		return "merge field"
+	}
+	return "column"
+}
+
+// noColumn is the error for a column name that names none.
+func (l *csvLayout) noColumn(field, name string) error {
+	if l.merge && len(l.header) == 0 {
+		return invalidImport("invalid_mapping", field, fmt.Sprintf("The export has no merge field %q; it has none beyond first and last name.", name))
+	}
+	if l.merge {
+		return invalidImport("invalid_mapping", field, fmt.Sprintf("The export has no merge field %q. Its merge fields are: %s.", name, l.headerList()))
+	}
+	return invalidImport("invalid_mapping", field, fmt.Sprintf("No column is headed %q. The headers are: %s.", name, l.headerList()))
+}
+
+// columnTaken is the error for a column two fields would come from.
+func (l *csvLayout) columnTaken() error {
+	if l.merge {
+		return invalidImport("invalid_mapping", "field_columns", "Each merge field can go into one field only.")
+	}
+	return invalidImport("invalid_mapping", "columns", "Each field needs its own column.")
+}
+
 // choose picks each field's column. It picks all it can and returns the
 // first problem, so a preview can still show the rest.
 func (l *csvLayout) choose(c columnChoice) error {
@@ -541,17 +580,7 @@ func (l *csvLayout) choose(c columnChoice) error {
 	}
 	// A contact field is found under its name or its key, after the
 	// built-in fields, so a header such as "First" stays a first name.
-	for _, f := range c.fields {
-		if _, named := c.fieldNamed[f.ID]; !c.guess || named {
-			continue
-		}
-		for i, h := range l.header {
-			if hk := headerKey(h); hk != "" && !used[i] && (hk == headerKey(f.Name) || hk == headerKey(f.Key)) {
-				used[i], l.fieldCol[f.ID] = true, i
-				break
-			}
-		}
-	}
+	l.guessFields(c, used)
 	// With no header, the email column is the first one whose first row
 	// holds an address.
 	if c.guess && !l.hasHeader && l.col[fieldEmail] < 0 && !c.skip[fieldEmail] && c.named[fieldEmail] == "" {
@@ -570,6 +599,22 @@ func (l *csvLayout) choose(c columnChoice) error {
 		fail(invalidImport("no_email_column", "columns.email", msg))
 	}
 	return first
+}
+
+// guessFields finds each contact field c doesn't name from a column, not
+// yet used, whose header matches the field's name or key loosely.
+func (l *csvLayout) guessFields(c columnChoice, used map[int]bool) {
+	for _, f := range c.fields {
+		if _, named := c.fieldNamed[f.ID]; !c.guess || named {
+			continue
+		}
+		for i, h := range l.header {
+			if hk := headerKey(h); hk != "" && !used[i] && (hk == headerKey(f.Name) || hk == headerKey(f.Key)) {
+				used[i], l.fieldCol[f.ID] = true, i
+				break
+			}
+		}
+	}
 }
 
 // chooseFields picks the columns of the contact fields named in c and of
@@ -595,42 +640,25 @@ func (l *csvLayout) chooseFields(c columnChoice, used map[int]bool, fail func(er
 		}
 		i := findColumn(l.header, name)
 		if i < 0 {
-			fail(invalidImport("invalid_mapping", "field_columns."+keyOf(id),
-				fmt.Sprintf("No column is headed %q. The headers are: %s.", name, l.headerList())))
+			fail(l.noColumn("field_columns."+keyOf(id), name))
 			continue
 		}
 		if used[i] {
-			fail(invalidImport("invalid_mapping", "columns", "Each field needs its own column."))
+			fail(l.columnTaken())
 			continue
 		}
 		used[i], l.fieldCol[id] = true, i
 	}
 
-	// "name:" and a lower-case name, or "key:" and a key, to the field that
-	// has it; new fields are added as they're checked.
-	type taken struct {
-		name  string
-		isNew bool
-	}
-	names := map[string]taken{}
-	for _, f := range c.fields {
-		names["name:"+strings.ToLower(f.Name)], names["key:"+f.Key] = taken{f.Name, false}, taken{f.Name, false}
-	}
-	exists := func(t taken, msg string) {
-		if t.isNew {
-			msg = fmt.Sprintf("Two new fields would both be named %q, or have the same key. Give one another name.", t.name)
-		}
-		fail(invalidImport("field_exists", "new_fields", msg))
-	}
+	names := newFieldNames(c.fields, l.colWord())
 	for _, nf := range c.newFields {
 		i := findColumn(l.header, nf.Column)
 		if strings.TrimSpace(nf.Column) == "" || i < 0 {
-			fail(invalidImport("invalid_mapping", "new_fields",
-				fmt.Sprintf("No column is headed %q. The headers are: %s.", nf.Column, l.headerList())))
+			fail(l.noColumn("new_fields", nf.Column))
 			continue
 		}
 		if used[i] {
-			fail(invalidImport("invalid_mapping", "columns", "Each field needs its own column."))
+			fail(l.columnTaken())
 			continue
 		}
 		raw := nf.Name
@@ -642,31 +670,79 @@ func (l *csvLayout) chooseFields(c columnChoice, used map[int]bool, fail func(er
 				fmt.Sprintf("Column %d has no header, so its new field needs a name.", i+1)))
 			continue
 		}
-		name, key, err := normalizeFieldName(raw)
+		name, key, err := names.add(raw)
 		if err != nil {
-			var ve *auth.ValidationError
-			if errors.As(err, &ve) {
-				err = invalidImport(ve.Code, "new_fields", ve.Message)
-			}
 			fail(err)
 			continue
 		}
-		if t, ok := names["name:"+strings.ToLower(name)]; ok {
-			exists(t, fmt.Sprintf("There's already a contact field named %q. Match the column to it instead of making a new one.", t.name))
-			continue
-		}
-		if t, ok := names["key:"+key]; ok {
-			exists(t, fmt.Sprintf("A new field named %q would have the key %s, which the field %q already has. "+
-				"Pick another name, or match the column to that field.", name, key, t.name))
-			continue
-		}
-		names["name:"+strings.ToLower(name)], names["key:"+key] = taken{name, true}, taken{name, true}
 		used[i] = true
 		l.newCols = append(l.newCols, newFieldCol{name: name, key: key, col: i})
 	}
 	if len(c.newFields) > 0 && len(c.fields)+len(c.newFields) > c.fieldLimit {
-		fail(importFieldLimit(c.fieldLimit, len(c.fields), len(c.newFields)))
+		fail(importFieldLimit(c.fieldLimit, len(c.fields), len(c.newFields), l.colWord()))
 	}
+}
+
+// fieldNames checks new fields' names against an account's fields and the
+// new fields before them: "name:" and a lower-case name, or "key:" and a
+// key, to the field that has it.
+type fieldNames struct {
+	taken map[string]takenName
+	// word is what a message calls a column.
+	word string
+}
+
+type takenName struct {
+	name  string
+	isNew bool
+}
+
+func newFieldNames(fields []*Field, word string) *fieldNames {
+	n := &fieldNames{taken: map[string]takenName{}, word: word}
+	for _, f := range fields {
+		n.taken["name:"+strings.ToLower(f.Name)], n.taken["key:"+f.Key] = takenName{f.Name, false}, takenName{f.Name, false}
+	}
+	return n
+}
+
+// add checks a new field's name as written and, when it can be made,
+// keeps it as taken.
+func (n *fieldNames) add(raw string) (name, key string, err error) {
+	if name, key, err = n.check(raw); err == nil {
+		n.keep(name, key)
+	}
+	return name, key, err
+}
+
+// keep keeps a new field's name and key as taken.
+func (n *fieldNames) keep(name, key string) {
+	n.taken["name:"+strings.ToLower(name)], n.taken["key:"+key] = takenName{name, true}, takenName{name, true}
+}
+
+// check checks a new field's name as written, keeping nothing.
+func (n *fieldNames) check(raw string) (name, key string, err error) {
+	name, key, err = normalizeFieldName(raw)
+	if err != nil {
+		var ve *auth.ValidationError
+		if errors.As(err, &ve) {
+			err = invalidImport(ve.Code, "new_fields", ve.Message)
+		}
+		return "", "", err
+	}
+	exists := func(t takenName, msg string) error {
+		if t.isNew {
+			msg = fmt.Sprintf("Two new fields would both be named %q, or have the same key. Give one another name.", t.name)
+		}
+		return invalidImport("field_exists", "new_fields", msg)
+	}
+	if t, ok := n.taken["name:"+strings.ToLower(name)]; ok {
+		return "", "", exists(t, fmt.Sprintf("There's already a contact field named %q. Match the %s to it instead of making a new one.", t.name, n.word))
+	}
+	if t, ok := n.taken["key:"+key]; ok {
+		return "", "", exists(t, fmt.Sprintf("A new field named %q would have the key %s, which the field %q already has. "+
+			"Pick another name, or match the %s to that field.", name, key, t.name, n.word))
+	}
+	return name, key, nil
 }
 
 // csvRow is one contact row of a file.
@@ -981,7 +1057,7 @@ func (s *Service) CreateImport(ctx context.Context, accountID string, in ImportI
 	}
 	// New fields are made now, before any row is imported, all or none
 	// (MG-131).
-	made, err := s.createImportFields(ctx, tx, accountID, plan, l.newCols)
+	made, err := s.createImportFields(ctx, tx, accountID, plan, l.newCols, l.colWord())
 	if err != nil {
 		return nil, err
 	}

@@ -84,8 +84,11 @@ type MailchimpSummary struct {
 	// status present.
 	ByMailchimpStatus map[string]int `json:"by_mailchimp_status"`
 	// DroppedFields are the columns not imported (decision 6), across
-	// audiences.
+	// audiences: Mailchimp's own, and merge fields past the reader's limit.
 	DroppedFields []string `json:"dropped_fields"`
+	// MergeFields are the merge fields beyond first and last name, which
+	// can fill contact fields (MG-132), in Mailchimp's order.
+	MergeFields []MailchimpMergeField `json:"merge_fields"`
 	// RenamedTags are tags whose Mailchimp names mailgoose can't take as
 	// they are: cut to MaxTagNameLen characters, or with commas or line
 	// breaks taken out.
@@ -133,6 +136,10 @@ type mcRow struct {
 	Last   string   `json:"last,omitempty"`
 	Status string   `json:"status,omitempty"`
 	Tags   []string `json:"tags,omitempty"`
+	// Fields are the values of the merge fields the import keeps, by the
+	// merge field's name (MG-132): for each, the first of the address's
+	// members with one.
+	Fields map[string]string `json:"fields,omitempty"`
 	// Consent is the contact's consent record wording, without the file
 	// name, which the worker adds.
 	Consent json.RawMessage `json:"consent,omitempty"`
@@ -221,10 +228,16 @@ type mcConsentAudience struct {
 	Permissions []string `json:"gdpr_permissions,omitempty"`
 }
 
-// planMailchimp merges a bundle's members into one row per address.
-func planMailchimp(b *mailchimp.Bundle) (*mcPlan, error) {
+// planMailchimp merges a bundle's members into one row per address. mg is
+// the bundle's merge fields (nil works them out), and keep names the ones
+// whose values the rows carry.
+func planMailchimp(b *mailchimp.Bundle, mg *mcMerge, keep map[string]bool) (*mcPlan, error) {
+	if mg == nil {
+		mg = mailchimpMergeFields(b)
+	}
 	p := &mcPlan{}
 	sum := &p.summary
+	sum.MergeFields = mg.fields
 	sum.Source = b.Source
 	sum.Templates, sum.Campaigns = len(b.Templates), len(b.Campaigns)
 	sum.ByMailchimpStatus = map[string]int{}
@@ -237,6 +250,8 @@ func planMailchimp(b *mailchimp.Bundle) (*mcPlan, error) {
 		members []*mailchimp.Member
 		// memberAud is each member's audience; audiences the distinct ones.
 		memberAud, audiences []string
+		// fromAud is each member's audience itself.
+		fromAud []*mailchimp.Audience
 	}
 	n := b.Members()
 	byEmail := make(map[string]*address, n)
@@ -279,6 +294,7 @@ func planMailchimp(b *mailchimp.Bundle) (*mcPlan, error) {
 			}
 			ad.members = append(ad.members, m)
 			ad.memberAud = append(ad.memberAud, a.Name)
+			ad.fromAud = append(ad.fromAud, a)
 			if !slices.Contains(ad.audiences, a.Name) {
 				ad.audiences = append(ad.audiences, a.Name)
 			}
@@ -317,12 +333,31 @@ func planMailchimp(b *mailchimp.Bundle) (*mcPlan, error) {
 			continue
 		}
 		row.Status = status
-		for _, m := range ad.members {
+		for i, m := range ad.members {
 			if row.First == "" {
 				row.First = m.FirstName
 			}
 			if row.Last == "" {
 				row.Last = m.LastName
+			}
+			if len(keep) == 0 {
+				continue
+			}
+			at := mg.at[ad.fromAud[i]]
+			for k, v := range m.Merge {
+				if k >= len(at) || at[k] < 0 || v == "" {
+					continue
+				}
+				name := mg.fields[at[k]].Name
+				if !keep[name] || row.Fields[name] != "" {
+					continue
+				}
+				if v = importFieldValue(v); v != "" {
+					if row.Fields == nil {
+						row.Fields = map[string]string{}
+					}
+					row.Fields[name] = v
+				}
 			}
 		}
 

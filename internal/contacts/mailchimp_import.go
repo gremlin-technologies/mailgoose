@@ -22,9 +22,9 @@ type MailchimpPreview struct {
 	// status they'd have; every status the import gives is present.
 	New map[string]int
 	// ExistingTagged counts addresses that are already contacts and would
-	// only gain tags; ExistingSuppressed those of them, subscribed or
-	// unconfirmed now, that Mailchimp's unsubscribe or clean would take off
-	// the mailing list.
+	// only gain tags and field values; ExistingSuppressed those of them,
+	// subscribed or unconfirmed now, that Mailchimp's unsubscribe or clean
+	// would take off the mailing list.
 	ExistingTagged     int
 	ExistingSuppressed int
 	// Skipped counts rows that wouldn't be imported, by reason: every
@@ -44,6 +44,8 @@ type MailchimpPreview struct {
 	// its contact limit: it waits until the plan covers it, with the
 	// suppressions already imported.
 	Waits bool
+	// Fields is what the merge fields would become by default (MG-132).
+	Fields *MailchimpFieldPlan
 }
 
 // PlanNeed is the plan an import needs.
@@ -249,7 +251,7 @@ func (s *Service) planNeed(a *mcAssessment) PlanNeed {
 // PreviewMailchimpImport says what importing the bundle would do, without
 // writing anything.
 func (s *Service) PreviewMailchimpImport(ctx context.Context, accountID string, b *mailchimp.Bundle) (*MailchimpPreview, error) {
-	p, err := planMailchimp(b)
+	p, err := planMailchimp(b, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -257,9 +259,13 @@ func (s *Service) PreviewMailchimpImport(ctx context.Context, accountID string, 
 	if err != nil {
 		return nil, err
 	}
+	fp, err := s.PlanMailchimpFields(ctx, accountID, p.summary.MergeFields, MailchimpFieldInput{})
+	if err != nil {
+		return nil, err
+	}
 	out := &MailchimpPreview{Summary: p.summary, New: a.newByStatus, ExistingTagged: a.existingTagged,
 		ExistingSuppressed: a.existingSuppressed, Skipped: a.skipped, Plan: s.planNeed(a),
-		Holds: a.holds, Waits: a.waits, TagsToCreate: []string{}, MergeSuppressedExamples: []string{}}
+		Holds: a.holds, Waits: a.waits, TagsToCreate: []string{}, MergeSuppressedExamples: []string{}, Fields: fp}
 	if out.Holds == nil {
 		out.Holds = []string{}
 	}
@@ -295,6 +301,9 @@ type MailchimpImportInput struct {
 	// import already made. Empty means the bundle's own hash. A key used
 	// for a different bundle is refused.
 	IdempotencyKey string
+	// Fields says which merge fields fill which contact fields (MG-132);
+	// the zero value matches by name and makes the default new fields.
+	Fields MailchimpFieldInput
 }
 
 // maxMailchimpImportBytes is the most a Mailchimp import's stored rows may
@@ -311,7 +320,22 @@ func (s *Service) CreateMailchimpImport(ctx context.Context, accountID string, i
 	if in.Bundle == nil || in.Bundle.Members() == 0 {
 		return nil, false, invalidImport("no_rows", "bundle", "The export has no contacts to import.")
 	}
-	p, err := planMailchimp(in.Bundle)
+	// Which merge fields fill which contact fields is worked out against
+	// the fields as they are now; the new ones are made under the account
+	// lock below, all or none, as for a CSV import (MG-131).
+	mg := mailchimpMergeFields(in.Bundle)
+	af, err := s.accountFields(ctx, accountID)
+	if err != nil {
+		return nil, false, err
+	}
+	fp, err := planMailchimpFields(mg.fields, af, in.Fields)
+	if err != nil {
+		return nil, false, err
+	}
+	if fp.Problem != nil {
+		return nil, false, fp.Problem
+	}
+	p, err := planMailchimp(in.Bundle, mg, fp.kept())
 	if err != nil {
 		return nil, false, err
 	}
@@ -347,8 +371,10 @@ func (s *Service) CreateMailchimpImport(ctx context.Context, accountID string, i
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	// Lock the account, so two confirms can't both make an import, and two
-	// first imports can't both count as first.
-	if _, err := tx.Exec(ctx, `SELECT 1 FROM accounts WHERE id = $1 FOR UPDATE`, accountID); err != nil {
+	// first imports can't both count as first. The lock also keeps the new
+	// fields within the plan's limit (see CreateField).
+	var plan string
+	if err := tx.QueryRow(ctx, `SELECT plan FROM accounts WHERE id = $1 FOR UPDATE`, accountID).Scan(&plan); err != nil {
 		return nil, false, fmt.Errorf("lock account: %w", err)
 	}
 	var id string
@@ -367,6 +393,14 @@ func (s *Service) CreateMailchimpImport(ctx context.Context, accountID string, i
 		return nil, false, err
 	}
 
+	made, err := s.createImportFields(ctx, tx, accountID, plan, fp.layout.newCols, fp.layout.colWord())
+	if err != nil {
+		return nil, false, err
+	}
+	fieldCols, err := fp.layout.storedFieldColumns(made)
+	if err != nil {
+		return nil, false, err
+	}
 	a, err := s.assess(ctx, tx, accountID, p)
 	if err != nil {
 		return nil, false, err
@@ -381,12 +415,12 @@ func (s *Service) CreateMailchimpImport(ctx context.Context, accountID string, i
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO imports (account_id, kind, file_name, permission_confirmed, email_column, csv, total_rows, review, hold_reason,
 			created_at, list_source, list_source_detail, invalid_rows, role_addresses, disposable_addresses, shared_addresses,
-			shared_account_id, idempotency_key, content_hash, unlisted_skipped, mailchimp)
-		VALUES ($1, 'mailchimp', $2, true, 'Email Address', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+			shared_account_id, idempotency_key, content_hash, unlisted_skipped, mailchimp, field_columns)
+		VALUES ($1, 'mailchimp', $2, true, 'Email Address', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		RETURNING id`,
 		accountID, fileName, data, len(p.rows), review, holdReason, s.now(), ListSourceExport, mailchimpListDetail,
 		c.InvalidRows, c.RoleAddresses, c.DisposableAddresses, c.SharedAddresses, c.SharedAccountID,
-		key, hash, p.unlisted, summary).Scan(&id); err != nil {
+		key, hash, p.unlisted, summary, fieldCols).Scan(&id); err != nil {
 		return nil, false, err
 	}
 	if _, err := tx.Exec(ctx, `
@@ -530,6 +564,22 @@ func (s *Service) importMailchimpBatch(ctx context.Context, j *importJob, rows [
 	if err != nil {
 		return err
 	}
+	// The contact fields the merge fields fill, locked until the batch
+	// commits; one deleted since the import was created is left out
+	// (MG-132, as MG-131).
+	fieldKeys, err := liveFieldKeys(ctx, tx, j.accountID, j.fieldCols)
+	if err != nil {
+		return err
+	}
+	fieldValues := func(r mcRow) string {
+		byID := map[string]string{}
+		for _, fc := range j.fieldCols {
+			if v := r.Fields[fc.Column]; v != "" {
+				byID[fc.FieldID] = v
+			}
+		}
+		return fieldValuesJSON(byID, fieldKeys)
+	}
 
 	count := limit.count
 	var add []mcRow
@@ -537,6 +587,7 @@ func (s *Service) importMailchimpBatch(ctx context.Context, j *importJob, rows [
 	var tagged []candidate           // existing contacts, to gain tags
 	contactID := map[string]string{} // email -> contact id, for tags
 	var downIDs, downStatuses []string
+	var updIDs, updFields []string
 	existingTagged := 0
 	for i, r := range rows {
 		if r.Skip != "" {
@@ -547,6 +598,11 @@ func (s *Service) importMailchimpBatch(ctx context.Context, j *importJob, rows [
 			existingTagged++
 			contactID[r.Email] = c.id
 			tagged = append(tagged, candidate{email: r.Email, tags: r.Tags})
+			// As in a CSV import, an existing contact's fields take the
+			// non-blank values.
+			if v := fieldValues(r); v != "{}" {
+				updIDs, updFields = append(updIDs, c.id), append(updFields, v)
+			}
 			if Suppressing(r.Status) && Counted(c.status) {
 				downIDs, downStatuses = append(downIDs, c.id), append(downStatuses, r.Status)
 				if limit.capped() {
@@ -581,24 +637,24 @@ func (s *Service) importMailchimpBatch(ctx context.Context, j *importJob, rows [
 	now := s.now()
 	n := len(add)
 	addEmails, firsts, lasts, statuses := make([]string, n), make([]*string, n), make([]*string, n), make([]string, n)
-	counted, wordings := make([]bool, n), make([]string, n)
+	counted, wordings, addFields := make([]bool, n), make([]string, n), make([]string, n)
 	for i, r := range add {
 		addEmails[i], firsts[i], lasts[i], statuses[i] = r.Email, importName(r.First), importName(r.Last), r.Status
-		counted[i], wordings[i] = Counted(r.Status), string(r.Consent)
+		counted[i], wordings[i], addFields[i] = Counted(r.Status), string(r.Consent), fieldValues(r)
 	}
 	ins, err := tx.Query(ctx, `
 		INSERT INTO contacts (account_id, email, first_name, last_name, status, source, created_at, updated_at, status_changed_at,
-			held_import_id, import_id)
+			held_import_id, import_id, fields)
 		SELECT $1, x.email, x.first_name, x.last_name, x.status, 'import', x.at, x.at, x.at,
-			CASE WHEN x.counted THEN $8::uuid END, $9
+			CASE WHEN x.counted THEN $8::uuid END, $9, x.fields::jsonb
 		FROM (
 			SELECT *, $7::timestamptz + (n - 1) * interval '1 microsecond' AS at
-			FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::bool[])
-				WITH ORDINALITY AS u(email, first_name, last_name, status, counted, n)
+			FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::bool[], $10::text[])
+				WITH ORDINALITY AS u(email, first_name, last_name, status, counted, fields, n)
 		) AS x
 		ORDER BY x.n
 		ON CONFLICT (account_id, email) DO NOTHING
-		RETURNING id::text, email`, j.accountID, addEmails, firsts, lasts, statuses, counted, now, held, j.id)
+		RETURNING id::text, email`, j.accountID, addEmails, firsts, lasts, statuses, counted, now, held, j.id, addFields)
 	if err != nil {
 		return err
 	}
@@ -651,14 +707,27 @@ func (s *Service) importMailchimpBatch(ctx context.Context, j *importJob, rows [
 	if err := s.tagFromCells(ctx, tx, j.accountID, append(newCands, tagged...), contactID, now); err != nil {
 		return err
 	}
+	updated := 0
+	if len(updIDs) > 0 {
+		// Only contacts whose values change are touched and counted.
+		res, err := tx.Exec(ctx, `
+			UPDATE contacts c SET fields = c.fields || x.f::jsonb, updated_at = $3
+			FROM unnest($1::uuid[], $2::text[]) AS x(id, f)
+			WHERE c.id = x.id AND NOT c.fields @> x.f::jsonb`, updIDs, updFields, now)
+		if err != nil {
+			return err
+		}
+		updated = int(res.RowsAffected())
+	}
 	if err := insertSkips(ctx, tx, j.id, skips); err != nil {
 		return err
 	}
 	processed := offset + len(rows)
 	if err := s.leased(ctx, tx, j, `
 		UPDATE imports SET processed_rows = $3, imported = imported + $4, skipped = skipped + $5, lease_until = $6,
-			existing_tagged = existing_tagged + $7, existing_suppressed = existing_suppressed + $8`,
-		processed, len(newIDs), len(skips), now.Add(ImportLease), existingTagged, len(downIDs)); err != nil {
+			existing_tagged = existing_tagged + $7, existing_suppressed = existing_suppressed + $8,
+			existing_updated = existing_updated + $9`,
+		processed, len(newIDs), len(skips), now.Add(ImportLease), existingTagged, len(downIDs), updated); err != nil {
 		return err
 	}
 	if err := tx.Commit(ctx); err != nil {

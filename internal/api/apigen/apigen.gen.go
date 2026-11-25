@@ -1330,6 +1330,30 @@ func (e MailchimpFetchStatus) Valid() bool {
 	}
 }
 
+// Defines values for MailchimpMergeFieldSkipReason.
+const (
+	MailchimpMergeFieldSkipReasonFieldExists       MailchimpMergeFieldSkipReason = "field_exists"
+	MailchimpMergeFieldSkipReasonFieldLimit        MailchimpMergeFieldSkipReason = "field_limit"
+	MailchimpMergeFieldSkipReasonInvalidFieldName  MailchimpMergeFieldSkipReason = "invalid_field_name"
+	MailchimpMergeFieldSkipReasonReservedFieldName MailchimpMergeFieldSkipReason = "reserved_field_name"
+)
+
+// Valid indicates whether the value is a known member of the MailchimpMergeFieldSkipReason enum.
+func (e MailchimpMergeFieldSkipReason) Valid() bool {
+	switch e {
+	case MailchimpMergeFieldSkipReasonFieldExists:
+		return true
+	case MailchimpMergeFieldSkipReasonFieldLimit:
+		return true
+	case MailchimpMergeFieldSkipReasonInvalidFieldName:
+		return true
+	case MailchimpMergeFieldSkipReasonReservedFieldName:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MailchimpPreviewIgnoredFilesReason.
 const (
 	MailchimpPreviewIgnoredFilesReasonTooLarge         MailchimpPreviewIgnoredFilesReason = "too_large"
@@ -2874,16 +2898,31 @@ type ColumnsBlockLayout string
 // ColumnsBlockType defines model for ColumnsBlock.Type.
 type ColumnsBlockType string
 
-// ConfirmMailchimpBundleRequest Examples: {"campaigns":10,"form_tags":["Interests: Baking"],"permission_confirmed":true}
+// ConfirmMailchimpBundleRequest Examples: {"campaigns":10,"form_tags":["Interests: Baking"],"permission_confirmed":true}, {"field_columns":{"company":"Company"},"new_fields":[{"column":"Phone Number"},{"column":"Birthday","name":"Birthday (day/month)"}],"permission_confirmed":true}
 type ConfirmMailchimpBundleRequest struct {
 	// Campaigns How many of the newest campaigns become HTML emails.
 	Campaigns *int `json:"campaigns,omitempty"`
+
+	// FieldColumns The merge field each of the account's contact fields comes from,
+	// keyed by the field's key or id: a merge field's name as the
+	// preview's `merge_fields[].name` has it. An empty string leaves
+	// the field out. A field left out of this object takes a merge
+	// field whose name matches its name or key, compared loosely, if
+	// one isn't taken. Works past the field limit.
+	FieldColumns *ImportFieldColumns `json:"field_columns,omitempty"`
 
 	// FormTags Group tags (from the preview's `audiences[].groups`) that each audience's new signup form puts on everyone who signs up with it, besides its `audience: <name>` tag when the export has more than one audience. A tag goes on the form of every audience that has that group. None by default.
 	FormTags *[]string `json:"form_tags,omitempty"`
 
 	// IdempotencyKey Confirming the same export again with this key returns the import already made.
 	IdempotencyKey *string `json:"idempotency_key,omitempty"`
+
+	// NewFields Contact fields to make, each from the merge field `column` names
+	// (as `merge_fields[].name`), named after it unless `name` is
+	// given. Left out, the import makes the preview's defaults: one for
+	// each merge field not matched, in Mailchimp's order, within the
+	// plan's field limit. An empty list makes none.
+	NewFields *ImportNewFields `json:"new_fields,omitempty"`
 
 	// PermissionConfirmed True says these people agreed to get your email. Required.
 	PermissionConfirmed bool `json:"permission_confirmed"`
@@ -4323,7 +4362,7 @@ type MailchimpAudienceList struct {
 	Audiences []MailchimpAccountAudience `json:"audiences"`
 }
 
-// MailchimpBundle Examples: {"bytes":482113,"campaigns":10,"confirmed_at":null,"created_at":"2026-11-21T12:00:00Z","emails":{"error":null,"made":[],"status":"none","total":0},"expires_at":"2026-11-28T12:00:00Z","file_name":"mailchimp-export.zip","forms":[],"id":"7c1e5a52-3d1f-4c55-9a0e-2f9b8b6f4a10","import_id":null,"preview":{"audiences":[{"by_status":{"archived":0,"cleaned":20,"pending":14,"subscribed":1100,"transactional":10,"unsubscribed":60},"groups":["Interests: Baking"],"members":1204,"name":"Newsletter"}],"campaigns_available":24,"contacts":{"dropped_fields":["Birthday","Phone Number"],"existing_suppressed":0,"existing_tagged":20,"holds":["over_contact_limit"],"merge_suppressed":0,"merge_suppressed_examples":[],"names_cut":0,"new":{"bounced":20,"subscribed":1080,"unconfirmed":14,"unsubscribed":60},"newest_optin":"2026-10-30T09:12:00Z","plan":{"contacts":1100,"limit":500,"month_cents":500,"plan":"paid","tester":false,"units":1,"upgrade":true,"year_cents":5000},"renamed_tags":[],"skipped":{"archived":0,"invalid_email":0,"invalid_row":0,"not_subscribed":10,"suppressed":0},"tags_to_create":["vip","Interests: Baking"],"waits":true,"with_optin_time":1000},"emails":[{"email_id":null,"errors":[],"file":"templates/Monthly_newsletter.html","from":"template","images":2,"name":"Monthly newsletter","preview_text":"","subject":"","warnings":[]}],"ignored_files":[{"path":"reports/opens.csv","reason":"unknown_file"}],"source":"account_export"},"status":"unconfirmed"}
+// MailchimpBundle Examples: {"bytes":482113,"campaigns":10,"confirmed_at":null,"created_at":"2026-11-21T12:00:00Z","emails":{"error":null,"made":[],"status":"none","total":0},"expires_at":"2026-11-28T12:00:00Z","file_name":"mailchimp-export.zip","forms":[],"id":"7c1e5a52-3d1f-4c55-9a0e-2f9b8b6f4a10","import_id":null,"preview":{"audiences":[{"by_status":{"archived":0,"cleaned":20,"pending":14,"subscribed":1100,"transactional":10,"unsubscribed":60},"groups":["Interests: Baking"],"members":1204,"name":"Newsletter"}],"campaigns_available":24,"contacts":{"dropped_fields":["MEMBER_RATING","LAST_CHANGED"],"existing_suppressed":0,"existing_tagged":20,"fields":{"existing":1,"left_out":0,"limit":20,"new":1},"holds":["over_contact_limit"],"merge_fields":[{"audiences":["Newsletter"],"custom_field":null,"members":640,"name":"Phone Number","new_field":{"key":"phone_number","name":"Phone Number"},"samples":["555-0100","555-0101","555-0102"],"skip_reason":null},{"audiences":["Newsletter"],"custom_field":{"id":"3b0f6c1e-6f7a-4b8e-9d2c-5a1e7f3c9b20","key":"company","name":"Company"},"members":310,"name":"Company","new_field":null,"samples":["Acme","Initech"],"skip_reason":null}],"merge_suppressed":0,"merge_suppressed_examples":[],"names_cut":0,"new":{"bounced":20,"subscribed":1080,"unconfirmed":14,"unsubscribed":60},"newest_optin":"2026-10-30T09:12:00Z","plan":{"contacts":1100,"limit":500,"month_cents":500,"plan":"paid","tester":false,"units":1,"upgrade":true,"year_cents":5000},"renamed_tags":[],"skipped":{"archived":0,"invalid_email":0,"invalid_row":0,"not_subscribed":10,"suppressed":0},"tags_to_create":["vip","Interests: Baking"],"waits":true,"with_optin_time":1000},"emails":[{"email_id":null,"errors":[],"file":"templates/Monthly_newsletter.html","from":"template","images":2,"name":"Monthly newsletter","preview_text":"","subject":"","warnings":[]}],"ignored_files":[{"path":"reports/opens.csv","reason":"unknown_file"}],"source":"account_export"},"status":"unconfirmed"}
 type MailchimpBundle struct {
 	// Bytes The uploaded file's size.
 	Bytes int `json:"bytes"`
@@ -4394,17 +4433,40 @@ type MailchimpConnection struct {
 
 // MailchimpContactsPreview defines model for MailchimpContactsPreview.
 type MailchimpContactsPreview struct {
-	// DroppedFields Columns that aren't imported.
+	// DroppedFields Columns that aren't imported: Mailchimp's own, such as
+	// MEMBER_RATING or LAST_CHANGED, and merge fields past the 100 an
+	// audience's values are read for.
 	DroppedFields []string `json:"dropped_fields"`
 
 	// ExistingSuppressed Of those, how many Mailchimp's unsubscribe or clean would take off the mailing list.
 	ExistingSuppressed int `json:"existing_suppressed"`
 
-	// ExistingTagged Addresses already contacts here, which would only gain tags.
+	// ExistingTagged Addresses already contacts here, which would only gain tags and the values of the merge fields brought over.
 	ExistingTagged int `json:"existing_tagged"`
+
+	// Fields The plan's contact field limit, and what the default choices use of it.
+	Fields struct {
+		// Existing The account's contact fields now.
+		Existing int `json:"existing"`
+
+		// LeftOut Merge fields left out by default because the limit has no room for them (`skip_reason` `field_limit`).
+		LeftOut int `json:"left_out"`
+
+		// Limit The most contact fields the account's plan allows (`contact_field_limit`).
+		Limit int `json:"limit"`
+
+		// New Fields the import would make by default.
+		New int `json:"new"`
+	} `json:"fields"`
 
 	// Holds Why the import would be held for review, as `hold_reason` codes, the first being the one recorded.
 	Holds []string `json:"holds"`
+
+	// MergeFields The merge fields beyond first and last name, in Mailchimp's
+	// order, each with what it would become by default: the contact
+	// field it fills, the field the import would make, or neither.
+	// Merge fields of several audiences with the same name are one.
+	MergeFields []MailchimpMergeField `json:"merge_fields"`
 
 	// MergeSuppressed Addresses subscribed in one audience but unsubscribed or cleaned in another, so suppressed.
 	MergeSuppressed int `json:"merge_suppressed"`
@@ -4543,6 +4605,40 @@ type MailchimpFetch struct {
 
 // MailchimpFetchStatus defines model for MailchimpFetch.Status.
 type MailchimpFetchStatus string
+
+// MailchimpMergeField defines model for MailchimpMergeField.
+type MailchimpMergeField struct {
+	// Audiences The audiences that have it.
+	Audiences []string `json:"audiences"`
+
+	// CustomField The account's contact field it would fill, matched by name or key; null when none.
+	CustomField *ImportFieldRef `json:"custom_field"`
+
+	// Members Member rows with a value for it.
+	Members int `json:"members"`
+
+	// Name The merge field's name, as `field_columns` and `new_fields` name it.
+	//
+	// Examples: Phone Number
+	Name string `json:"name"`
+
+	// NewField The contact field the import would make from it; null when none.
+	NewField *ImportNewFieldPreview `json:"new_field"`
+
+	// Samples Up to 3 of its values.
+	Samples []string `json:"samples"`
+
+	// SkipReason Why it's left out by default: `field_limit` when the plan's
+	// field limit has no room for another field, or the code a field
+	// of its name would be refused with (`invalid_field_name`,
+	// `reserved_field_name`, `field_exists`); it can still go into an
+	// existing field, or a new field of another name. Null when it
+	// fills a field.
+	SkipReason *MailchimpMergeFieldSkipReason `json:"skip_reason"`
+}
+
+// MailchimpMergeFieldSkipReason defines model for MailchimpMergeField.SkipReason.
+type MailchimpMergeFieldSkipReason string
 
 // MailchimpPreview defines model for MailchimpPreview.
 type MailchimpPreview struct {

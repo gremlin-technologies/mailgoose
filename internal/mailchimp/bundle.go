@@ -74,9 +74,16 @@ type Audience struct {
 	// Files are the member files read for it, by path.
 	Files   []string
 	Members []*Member
-	// DroppedFields are the columns kept only by name (decision 6): every
-	// column that isn't email, first or last name, tags, a group, a status,
-	// opt-in data or a marketing permission. Sorted, without duplicates.
+	// MergeFields are the merge field columns (MG-132): every column that
+	// isn't email, first or last name, tags, a group, a status, opt-in data,
+	// a marketing permission or one of Mailchimp's own (SystemColumn). In
+	// Mailchimp's order, the order of the first file's header, then any a
+	// later file adds; at most MaxMergeFields, without duplicates. Each
+	// member's Merge holds its values.
+	MergeFields []string
+	// DroppedFields are the columns kept only by name (decision 6):
+	// Mailchimp's own columns, and merge fields past MaxMergeFields. Sorted,
+	// without duplicates.
 	DroppedFields []string
 	// GroupColumns are the columns read as group categories.
 	GroupColumns []string
@@ -135,6 +142,10 @@ type Member struct {
 	// NamesCut is true when a tags, group or permission cell listed more
 	// than MaxListNames names, so some were left out.
 	NamesCut bool
+	// Merge are the member's merge field values, trimmed, by their place in
+	// its audience's MergeFields; "" where it has none. Nil when it has
+	// none, and it may end before the last merge field.
+	Merge []string
 	// File and Row say where the member came from; the header is row 1.
 	File string
 	Row  int

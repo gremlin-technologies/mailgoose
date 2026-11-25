@@ -218,7 +218,7 @@ func (s *Server) mailchimpFetchJSON(ctx context.Context, f *mailchimp.Fetch) (ap
 		if err != nil {
 			return out, err
 		}
-		b, err := s.mailchimpBundleJSON(u)
+		b, err := s.mailchimpBundleJSON(ctx, u)
 		if err != nil {
 			return out, err
 		}

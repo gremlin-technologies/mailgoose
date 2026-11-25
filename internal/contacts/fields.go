@@ -393,7 +393,9 @@ func (s *Service) accountFields(ctx context.Context, accountID string) (AccountF
 
 // importFieldLimit is the error for an import whose new fields would take
 // the account past its plan's field limit.
-func importFieldLimit(limit, count, adding int) error {
+// word is what the message calls a column: "column", or "merge field" for a
+// Mailchimp import.
+func importFieldLimit(limit, count, adding int, word string) error {
 	noun := "fields"
 	if adding == 1 {
 		noun = "field"
@@ -401,13 +403,14 @@ func importFieldLimit(limit, count, adding int) error {
 	left := max(limit-count, 0)
 	return invalidImport("field_limit", "new_fields", fmt.Sprintf(
 		"This import would make %d new %s, but an account can have at most %d contact fields and this one has %d, so %d more can be made. "+
-			"Match those columns to existing fields, or leave some out.", adding, noun, limit, count, left))
+			"Match those %ss to existing fields, or leave some out.", adding, noun, limit, count, left, word))
 }
 
 // createImportFields makes an import's new fields in tx, whose caller holds
 // the account row's lock, checking the plan's limit first. On an error the
-// caller rolls tx back, so either every field is made or none is.
-func (s *Service) createImportFields(ctx context.Context, tx pgx.Tx, accountID, plan string, news []newFieldCol) ([]*Field, error) {
+// caller rolls tx back, so either every field is made or none is. word is
+// what a message calls a column.
+func (s *Service) createImportFields(ctx context.Context, tx pgx.Tx, accountID, plan string, news []newFieldCol, word string) ([]*Field, error) {
 	if len(news) == 0 {
 		return nil, nil
 	}
@@ -416,7 +419,7 @@ func (s *Service) createImportFields(ctx context.Context, tx pgx.Tx, accountID, 
 		return nil, err
 	}
 	if limit := FieldLimit(plan); n+len(news) > limit {
-		return nil, importFieldLimit(limit, n, len(news))
+		return nil, importFieldLimit(limit, n, len(news), word)
 	}
 	now := s.now()
 	out := make([]*Field, len(news))
@@ -430,7 +433,7 @@ func (s *Service) createImportFields(ctx context.Context, tx pgx.Tx, accountID, 
 			var pgErr *pgconn.PgError
 			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 				return nil, invalidImport("field_exists", "new_fields",
-					fmt.Sprintf("This account already has a contact field named %q, or with the key %s. Match the column to it instead.", nf.name, nf.key))
+					fmt.Sprintf("This account already has a contact field named %q, or with the key %s. Match the %s to it instead.", nf.name, nf.key, word))
 			}
 			return nil, err
 		}

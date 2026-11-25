@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"mime/multipart"
@@ -473,5 +474,107 @@ func TestMailchimpUploadOverTheCeiling(t *testing.T) {
 	csv = "Email Address\na@example.com\nb@example.com\n"
 	if rec := do(t, h, bearer(mailchimpUpload("subscribed_members_export_x.csv", func(*testing.T) []byte { return []byte(csv) }))(t)); rec.Code != http.StatusCreated {
 		t.Fatalf("at the ceiling: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// MG-132: merge fields fill contact fields, chosen at confirm.
+func TestMailchimpMergeFieldsThroughTheAPI(t *testing.T) {
+	s := draftKey(authServer)(t)
+	h := importRunner{s.Handler(), s.Contacts}
+	csv := "Email Address,First Name,Phone Number,Company,MEMBER_RATING\n" +
+		"ada@example.com,Ada,555-0100,Acme,4\nbea@example.com,Bea,,Initech,2\n"
+	rec := do(t, h, bearer(mailchimpUpload("subscribed_members_export_x.csv", func(*testing.T) []byte { return []byte(csv) }))(t))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("upload: %d %s", rec.Code, rec.Body)
+	}
+	type preview struct {
+		ID      string `json:"id"`
+		Preview struct {
+			Contacts struct {
+				DroppedFields []string `json:"dropped_fields"`
+				MergeFields   []struct {
+					Name        string   `json:"name"`
+					Members     int      `json:"members"`
+					Samples     []string `json:"samples"`
+					CustomField *struct {
+						Key string `json:"key"`
+					} `json:"custom_field"`
+					NewField *struct {
+						Key string `json:"key"`
+					} `json:"new_field"`
+					SkipReason *string `json:"skip_reason"`
+				} `json:"merge_fields"`
+				Fields struct {
+					Limit, Existing, New, LeftOut int
+				} `json:"fields"`
+			} `json:"contacts"`
+		} `json:"preview"`
+	}
+	sum := func(p preview) string {
+		var parts []string
+		for _, m := range p.Preview.Contacts.MergeFields {
+			switch {
+			case m.CustomField != nil:
+				parts = append(parts, m.Name+"->"+m.CustomField.Key)
+			case m.NewField != nil:
+				parts = append(parts, m.Name+"->new "+m.NewField.Key)
+			default:
+				parts = append(parts, m.Name+"->skip")
+			}
+		}
+		c := p.Preview.Contacts
+		return fmt.Sprintf("%s; dropped %v; %d new of %d", strings.Join(parts, ", "), c.DroppedFields, c.Fields.New, c.Fields.Limit)
+	}
+	var up preview
+	decodeInto(t, rec, &up)
+	if got, want := sum(up), "Phone Number->new phone_number, Company->new company; dropped [MEMBER_RATING]; 2 new of 20"; got != want {
+		t.Errorf("upload preview = %q, want %q", got, want)
+	}
+	if m := up.Preview.Contacts.MergeFields[1]; m.Members != 2 || fmt.Sprint(m.Samples) != "[Acme Initech]" {
+		t.Errorf("Company = %+v", m)
+	}
+
+	// A field made since is matched when the upload is read again.
+	if rec := do(t, h, bearer(jsonRequest(http.MethodPost, "/v1/contact-fields", `{"name":"Company"}`))(t)); rec.Code != http.StatusCreated {
+		t.Fatalf("create field: %d %s", rec.Code, rec.Body)
+	}
+	rec = do(t, h, bearer(request(http.MethodGet, "/v1/imports/mailchimp/bundles/"+up.ID))(t))
+	var again preview
+	decodeInto(t, rec, &again)
+	if got, want := sum(again), "Phone Number->new phone_number, Company->company; dropped [MEMBER_RATING]; 1 new of 20"; got != want {
+		t.Errorf("preview again = %q, want %q", got, want)
+	}
+
+	confirm := func(body string) *httptest.ResponseRecorder {
+		return do(t, h, bearer(jsonRequest(http.MethodPost, "/v1/imports/mailchimp/bundles/"+up.ID+"/confirm", body))(t))
+	}
+	if rec := confirm(`{"permission_confirmed":true,"new_fields":[{"column":"Fax"}]}`); rec.Code != http.StatusUnprocessableEntity ||
+		errorCode(t, rec) != "invalid_mapping" || !strings.Contains(rec.Body.String(), "merge field") {
+		t.Fatalf("unknown merge field: %d %s", rec.Code, rec.Body)
+	}
+	rec = confirm(`{"permission_confirmed":true,"new_fields":[{"column":"Phone Number","name":"Phone"}]}`)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("confirm: %d %s", rec.Code, rec.Body)
+	}
+	var conf bundleJSON
+	decodeInto(t, rec, &conf)
+	rec = do(t, h, bearer(request(http.MethodGet, "/v1/imports/"+*conf.ImportID))(t))
+	var im struct {
+		Status       string `json:"status"`
+		FieldColumns []struct {
+			Field struct {
+				Key string `json:"key"`
+			} `json:"field"`
+			Column  string `json:"column"`
+			Created bool   `json:"created"`
+		} `json:"field_columns"`
+	}
+	decodeInto(t, rec, &im)
+	if got := fmt.Sprint(im.FieldColumns); im.Status != "done" || got != "[{{company} Company false} {{phone} Phone Number true}]" {
+		t.Fatalf("import = %s", rec.Body)
+	}
+	rec = do(t, h, bearer(request(http.MethodGet, "/v1/contacts?q=ada@example.com"))(t))
+	if !strings.Contains(rec.Body.String(), `"fields":{"company":"Acme","phone":"555-0100"}`) {
+		t.Errorf("ada = %s", rec.Body)
 	}
 }

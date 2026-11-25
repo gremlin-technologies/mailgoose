@@ -23,7 +23,11 @@ const testBundlePreview = `{"id":"` + testBundleID + `","file_name":"export.zip"
 "audiences":[{"name":"Newsletter","members":5,"by_status":{"subscribed":2,"unsubscribed":1,"cleaned":1,"pending":0,"transactional":1,"archived":0},"groups":["Interests: Baking"],"double_optin":false}],
 "contacts":{"new":{"subscribed":2,"unconfirmed":0,"unsubscribed":1,"bounced":1},"existing_tagged":3,"existing_suppressed":1,
 "skipped":{"invalid_email":1,"invalid_row":0,"suppressed":0,"not_subscribed":1,"archived":0},"tags_to_create":["audience: Newsletter","VIP"],
-"renamed_tags":[{"from":"Smith, Jones","to":"Smith Jones"}],"merge_suppressed":0,"dropped_fields":["Phone Number"],"holds":["over_contact_limit"],"waits":true,
+"renamed_tags":[{"from":"Smith, Jones","to":"Smith Jones"}],"merge_suppressed":0,"dropped_fields":["MEMBER_RATING"],"holds":["over_contact_limit"],"waits":true,
+"merge_fields":[{"name":"Phone Number","audiences":["Newsletter"],"members":4,"samples":["555-0100"],"custom_field":null,"new_field":{"name":"Phone Number","key":"phone_number"},"skip_reason":null},
+{"name":"Company","audiences":["Newsletter"],"members":2,"samples":["Acme"],"custom_field":{"id":"f1","key":"company","name":"Company"},"new_field":null,"skip_reason":null},
+{"name":"Pet","audiences":["Newsletter"],"members":1,"samples":["Rex"],"custom_field":null,"new_field":null,"skip_reason":"field_limit"}],
+"fields":{"limit":20,"existing":19,"new":1,"left_out":1},
 "plan":{"plan":"paid","upgrade":true,"contacts":3000,"limit":500,"month_cents":1000,"year_cents":10000,"tester":false,"units":2}},
 "emails":[{"from":"template","file":"templates/a.html","name":"Monthly","subject":"","images":0,"errors":[],"warnings":[],"email_id":null},
 {"from":"campaign","file":"campaigns_content/b.html","name":"Spring sale","subject":"Spring","images":2,"errors":[{"code":"mailchimp_conditional","message":"x","line":3}],"warnings":[],"email_id":null}],
@@ -111,7 +115,10 @@ func TestImportMailchimpUploadShowsThePreview(t *testing.T) {
 	}
 	out := h.out.String()
 	for _, want := range []string{"Nothing is imported yet", `Audience "Newsletter": 5 members (2 subscribed, 1 unsubscribed, 1 cleaned, 1 transactional)`,
-		"New contacts: 2 subscribed, 0 unconfirmed, 1 unsubscribed, 1 bounced.", "3 gain tags; 1 come off the list",
+		"New contacts: 2 subscribed, 0 unconfirmed, 1 unsubscribed, 1 bounced.", "3 gain tags and field values; 1 come off the list",
+		"Mailchimp's own columns mailgoose doesn't keep: MEMBER_RATING.", "new field phone_number", "field company",
+		"skipped: no room under the plan's field limit", "The plan allows 20 contact fields; the account has 19, and this would make 1.",
+		"1 merge fields are skipped for the limit", "--new-field",
 		"Tags to create: audience: Newsletter, VIP.", `Tag "Smith, Jones" becomes "Smith Jones".`, "needs the paid plan, $10.00 a month",
 		"wait for the paid plan", "Held for review: it would take the account past its contact limit",
 		"1 templates and the newest 1 of 12 campaigns", "Spring sale", "1 files in the export",
@@ -169,6 +176,37 @@ func TestImportMailchimpConfirmWaitsForTheEmails(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestImportMailchimpConfirmChoosesMergeFields(t *testing.T) {
+	h, seen, _ := mailchimpStub(t)
+	if code := h.run("import", "mailchimp", "confirm", testBundleID, "--permission-confirmed",
+		"--field", "company=", "--field", "notes=Company", "--new-field", "Phone Number=Phone", "--new-field", "Pet"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	body := (*seen)[0].body
+	if fmt.Sprint(body["field_columns"]) != "map[company: notes:Company]" ||
+		fmt.Sprint(body["new_fields"]) != "[map[column:Phone Number name:Phone] map[column:Pet]]" {
+		t.Errorf("body = %+v", body)
+	}
+
+	h, seen, _ = mailchimpStub(t)
+	if code := h.run("import", "mailchimp", "confirm", testBundleID, "--permission-confirmed", "--no-new-fields"); code != ExitOK {
+		t.Fatalf("exit %d: %s", code, h.errOut)
+	}
+	if news, ok := (*seen)[0].body["new_fields"].([]any); !ok || len(news) != 0 {
+		t.Errorf("--no-new-fields sent new_fields %v", (*seen)[0].body["new_fields"])
+	}
+
+	h, seen, _ = mailchimpStub(t)
+	for _, args := range [][]string{{"--field", "company"}, {"--new-field", "=Phone"}, {"--no-new-fields", "--new-field", "Pet"}} {
+		if code := h.run(append([]string{"import", "mailchimp", "confirm", testBundleID, "--permission-confirmed"}, args...)...); code != ExitUsage {
+			t.Errorf("%q: exit %d", args, code)
+		}
+	}
+	if len(*seen) != 0 {
+		t.Errorf("a refused confirm sent %d requests", len(*seen))
 	}
 }
 
