@@ -328,9 +328,10 @@ is confirmed, after 24 hours, or on `mailgoose import mailchimp disconnect`.
 
 **Show the person the preview.** Both give an upload's `id` and a `preview`:
 each audience's members by Mailchimp status, the new contacts by the status
-they'll get here, existing contacts that change, tags to create, fields
-mailgoose doesn't keep, the emails it would make, any `holds`, and whether the
-contacts need the paid plan (`plan.upgrade`, with its price). Nothing is
+they'll get here, existing contacts that change, tags to create, the merge
+fields (`merge_fields`) and the contact field each would fill, Mailchimp's
+own details mailgoose doesn't keep, the emails it would make, any `holds`,
+and whether the contacts need the paid plan (`plan.upgrade`, with its price). Nothing is
 imported yet. Read it again any time:
 
 ```sh
@@ -340,6 +341,20 @@ mailgoose import mailchimp preview <id> --json
 Tell the person, in plain words, how many contacts would come in subscribed,
 unconfirmed, unsubscribed and bounced, what it would cost them, and anything
 held for review.
+
+**Merge fields become contact fields.** Each merge field beyond first and
+last name (phone, address, birthday, the person's own) fills one of the
+account's contact fields (`custom_field`) when the names match, or gets a new
+field (`new_field`) in Mailchimp's order while the plan's field limit
+(`fields.limit`, 20) has room. The rest are left out, with `skip_reason`
+saying why (`field_limit`, or a name that can't be a field's), and
+`fields.left_out` counts those the limit left out. Audiences with the same
+merge field share one field. When some are left out, ask the person which
+matter: put one into an existing field with `--field key=MERGE` (this works
+past the limit; `key=` leaves that field out), choose the new fields with
+`--new-field MERGE` or `--new-field 'MERGE=Field name'` (with any, only
+those are made), or make none with `--no-new-fields`. Contacts already here
+take the merge fields' values too.
 
 **Confirm only after the person says yes.** `--permission-confirmed` states
 that the person has permission to email these contacts: Mailchimp's
@@ -351,6 +366,7 @@ should tag signups with; none is fine.
 ```sh
 mailgoose import mailchimp confirm <id> --permission-confirmed --wait --json
 mailgoose import mailchimp confirm <id> --permission-confirmed --form-tag "Interests: Baking" --json
+mailgoose import mailchimp confirm <id> --permission-confirmed --field company=Company --new-field "Phone Number=Phone" --json
 mailgoose import status <import-id> --json
 ```
 
@@ -376,8 +392,9 @@ nobody will confirm with `mailgoose import mailchimp delete <id> --yes`.
 
 **What doesn't come over.** Segment rules (a fetched segment is a tag of
 who's in it today), automations and journeys, reports and their history,
-signup form designs and wording, and merge fields beyond first and last
-name. Tell the person, so they aren't surprised.
+signup form designs and wording, Mailchimp's own details such as member
+rating and location, and any merge field left out. Tell the person, so they
+aren't surprised.
 
 **When it fails:**
 
@@ -392,6 +409,11 @@ name. Tell the person, so they aren't surprised.
 - `mailchimp_unavailable`: Mailchimp's API didn't answer; try again in a few
   minutes.
 - `unknown_form_tag`: a `--form-tag` isn't one of the preview's groups.
+- `field_limit`: more new fields than the plan's limit has room for; leave
+  some out or put them into existing fields.
+- `invalid_mapping`, `unknown_field` or `field_exists`: a `--field` or
+  `--new-field` names a merge field the preview doesn't list, a field the
+  account doesn't have, or a name that's taken.
 
 ## When something fails
 

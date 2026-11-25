@@ -313,11 +313,18 @@ func importColumns(maps []string) (map[string]string, error) {
 
 // importFieldFlags turns --field and --new-field flags into an import's
 // field_columns and new_fields (MG-131). --field key= leaves that field out.
-func importFieldFlags(fields, newFields []string) (map[string]string, []map[string]string, error) {
+// merge is true for a Mailchimp import, whose flags name merge fields
+// (MG-132).
+func importFieldFlags(fields, newFields []string, merge bool) (map[string]string, []map[string]string, error) {
 	cols := map[string]string{}
 	for _, f := range fields {
 		key, col, ok := strings.Cut(f, "=")
 		if !ok || strings.TrimSpace(key) == "" {
+			if merge {
+				return nil, nil, usageError(fmt.Sprintf("--field %q isn't key=merge-field.", f),
+					"Name a contact field by its key and the merge field it comes from, as in --field company=Company. "+
+						"--field company= leaves it out. \"mailgoose fields list\" shows the keys.")
+			}
 			return nil, nil, usageError(fmt.Sprintf("--field %q isn't key=header.", f),
 				"Name a contact field by its key and the column it comes from, as in --field company=\"Company name\". "+
 					"--field company= leaves it out. \"mailgoose fields list\" shows the keys.")
@@ -327,6 +334,10 @@ func importFieldFlags(fields, newFields []string) (map[string]string, []map[stri
 	var news []map[string]string
 	for _, nf := range newFields {
 		col, name, _ := strings.Cut(nf, "=")
+		if strings.TrimSpace(col) == "" && merge {
+			return nil, nil, usageError(fmt.Sprintf("--new-field %q doesn't name a merge field.", nf),
+				"Name the merge field to make a field from, and optionally the field's name: --new-field \"Phone Number\" or --new-field 'Phone Number=Phone'.")
+		}
 		if strings.TrimSpace(col) == "" {
 			return nil, nil, usageError(fmt.Sprintf("--new-field %q doesn't name a column.", nf),
 				"Name the column to make a field from, and optionally the field's name: --new-field \"Company size\" or --new-field '#4=Company size'.")
@@ -342,7 +353,7 @@ func importFieldFlags(fields, newFields []string) (map[string]string, []map[stri
 
 // setImportFieldFlags puts --field and --new-field on an import request's body.
 func setImportFieldFlags(body map[string]any, fields, newFields []string) error {
-	cols, news, err := importFieldFlags(fields, newFields)
+	cols, news, err := importFieldFlags(fields, newFields, false)
 	if err != nil {
 		return err
 	}

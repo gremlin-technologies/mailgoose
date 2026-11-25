@@ -6,7 +6,8 @@ import { attempt, type Failure } from "../api/result";
 import type { components } from "../api/schema";
 import { dollars } from "../billing/money";
 import { Badge, FailureNotice, formatDate, LoadFailed, Loading, PageHeader, useLoad } from "../components";
-import { importPollMs } from "./Imports";
+import { useContactFields, type ContactField } from "./Fields";
+import { importPollMs, type FieldTarget } from "./Imports";
 
 type Bundle = components["schemas"]["MailchimpBundle"];
 type Preview = components["schemas"]["MailchimpPreview"];
@@ -14,6 +15,7 @@ type ContactsPreview = components["schemas"]["MailchimpContactsPreview"];
 type Email = components["schemas"]["MailchimpEmail"];
 type Connection = components["schemas"]["MailchimpConnection"];
 type Fetch = components["schemas"]["MailchimpFetch"];
+type MergeField = components["schemas"]["MailchimpMergeField"];
 
 /** The largest export an upload takes (25 MB, as the API). */
 export const maxMailchimpBytes = 25 << 20;
@@ -41,6 +43,63 @@ const fetchSteps: Record<string, string> = {
   members: "Reading members",
   campaigns: "Reading your newest campaigns",
 };
+
+/** Why a merge field is left out by default, for each skip_reason code. */
+const mergeSkips: Record<NonNullable<MergeField["skip_reason"]>, string> = {
+  field_limit: "no room for another field",
+  invalid_field_name: "its name can't be a field's",
+  reserved_field_name: "its name is taken by a contact's own details",
+  field_exists: "you have a field with that name",
+};
+
+/** The longest contact field name, as the API. */
+const maxFieldName = 50;
+
+/** What each merge field fills, by its name; one with none is left out. */
+export type MergeMatching = Record<string, FieldTarget>;
+
+/** The contact fields the preview matched or would make. */
+export function previewMergeMatching(fields: MergeField[]): MergeMatching {
+  const m: MergeMatching = {};
+  for (const f of fields) {
+    if (f.custom_field) m[f.name] = { key: f.custom_field.key };
+    else if (f.new_field) m[f.name] = { name: f.new_field.name };
+  }
+  return m;
+}
+
+/** Puts target on one merge field, taking the same existing field off any other. */
+export function matchMergeField(m: MergeMatching, name: string, target: FieldTarget | undefined): MergeMatching {
+  const next: MergeMatching = {};
+  for (const [n, t] of Object.entries(m)) {
+    if (n === name) continue;
+    if (target && "key" in target && "key" in t && t.key === target.key) continue;
+    next[n] = t;
+  }
+  if (target) next[name] = target;
+  return next;
+}
+
+/**
+ * The confirm request's field choices: every field the page knows, by the
+ * merge field it comes from or an empty string, so the import guesses
+ * nothing; and exactly the new fields to make, none when the list is empty.
+ */
+export function mergeFieldRequest(
+  merge: { name: string }[],
+  m: MergeMatching,
+  fields: { key: string }[],
+): { field_columns: Record<string, string>; new_fields: { column: string; name: string }[] } {
+  const cols: Record<string, string> = Object.fromEntries(fields.map((f) => [f.key, ""]));
+  const news: { column: string; name: string }[] = [];
+  for (const { name } of merge) {
+    const t = m[name];
+    if (!t) continue;
+    if ("key" in t) cols[t.key] = name;
+    else news.push({ column: name, name: t.name.trim() });
+  }
+  return { field_columns: cols, new_fields: news };
+}
 
 function plural(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString()} ${n === 1 ? one : many}`;
@@ -499,6 +558,7 @@ function ContactsView({ c, segmentTags }: { c: ContactsPreview; segmentTags: Non
         {c.existing_tagged > 0 && (
           <li>
             {plural(c.existing_tagged, "address is", "addresses are")} already your contacts and only gain tags
+            {c.merge_fields.length > 0 ? " and the field values you bring" : ""}
             {c.existing_suppressed > 0
               ? `; ${c.existing_suppressed.toLocaleString()} of them come off your list, as Mailchimp has them unsubscribed or cleaned`
               : ""}
@@ -548,10 +608,10 @@ function ContactsView({ c, segmentTags }: { c: ContactsPreview; segmentTags: Non
 
       {c.dropped_fields.length > 0 && (
         <>
-          <h3>Fields that don't come over</h3>
+          <h3>Mailchimp's own details</h3>
           <p>
-            mailgoose keeps each contact's email, name, tags and opt-in details. These Mailchimp fields aren't kept:{" "}
-            {c.dropped_fields.join(", ")}.
+            mailgoose keeps each contact's email, name, tags, opt-in details and the merge fields you choose below.
+            These details Mailchimp keeps for itself aren't kept: {c.dropped_fields.join(", ")}.
           </p>
         </>
       )}
@@ -669,16 +729,46 @@ export function ConfirmBundle({ bundle, onConfirmed }: { bundle: Bundle; onConfi
   // each audience that has it.
   const groups = [...new Set(audiences.flatMap((a) => a.groups ?? []))];
   const [formTags, setFormTags] = useState<string[]>([]);
+  const contacts = bundle.preview?.contacts;
+  const mergeFields = contacts?.merge_fields ?? [];
+  const [mergeMatching, setMergeMatching] = useState(() => previewMergeMatching(mergeFields));
+  const contactFields = useContactFields();
+  // The account's fields, with any the preview matched that the list
+  // couldn't load, so each can be shown and chosen.
+  const loadedFields: ContactField[] = contactFields.state.status === "ok" ? contactFields.state.data : [];
+  const fieldList: { key: string; name: string }[] = [...loadedFields];
+  for (const f of mergeFields) {
+    if (f.custom_field && !fieldList.some((x) => x.key === f.custom_field?.key)) fieldList.push(f.custom_field);
+  }
+  const fieldLimit = contacts?.fields.limit ?? 0;
+  const existingFields = contactFields.state.status === "ok" ? loadedFields.length : (contacts?.fields.existing ?? 0);
+  const newCount = Object.values(mergeMatching).filter((t) => "name" in t).length;
+  const canMake = fieldLimit - existingFields - newCount;
+  const unnamed = Object.values(mergeMatching).some((t) => "name" in t && !t.name.trim());
+
+  /** Changes what one merge field becomes: a contact field ("field:key"), a new field ("new") or nothing (""). */
+  function rematch(f: MergeField, value: string) {
+    let target: FieldTarget | undefined;
+    if (value.startsWith("field:")) target = { key: value.slice("field:".length) };
+    // A merge field whose own name can't be a field's waits for a name.
+    else if (value === "new") target = { name: f.skip_reason && f.skip_reason !== "field_limit" ? "" : f.name };
+    setMergeMatching((m) => matchMergeField(m, f.name, target));
+  }
 
   async function confirm(e: FormEvent) {
     e.preventDefault();
-    if (!permission) return;
+    if (!permission || unnamed) return;
     setBusy(true);
     setFailure(undefined);
     const res = await attempt(() =>
       api.POST("/v1/imports/mailchimp/bundles/{bundle_id}/confirm", {
         params: { path: { bundle_id: bundle.id } },
-        body: { permission_confirmed: true, campaigns, ...(formTags.length > 0 && { form_tags: formTags }) },
+        body: {
+          permission_confirmed: true,
+          campaigns,
+          ...(formTags.length > 0 && { form_tags: formTags }),
+          ...(mergeFields.length > 0 && mergeFieldRequest(mergeFields, mergeMatching, fieldList)),
+        },
       }),
     );
     setBusy(false);
@@ -700,6 +790,87 @@ export function ConfirmBundle({ bundle, onConfirmed }: { bundle: Bundle; onConfi
             onChange={(e) => setCampaignsText(e.target.value)}
           />
         </label>
+      )}
+      {mergeFields.length > 0 && (
+        <fieldset className="stack">
+          <legend>Contact fields</legend>
+          <p className="muted small">
+            Choose what each Mailchimp merge field becomes: one of your fields, a new field, or nothing. Your plan allows{" "}
+            {plural(fieldLimit, "contact field")}, and you have {existingFields.toLocaleString()}.
+          </p>
+          {contacts && contacts.fields.left_out > 0 && (
+            <p className="notice notice-warn" role="status">
+              {plural(contacts.fields.left_out, "merge field doesn't", "merge fields don't")} fit under that limit, so{" "}
+              {contacts.fields.left_out === 1 ? "it's" : "they're"} left out for now. Choose which come over as new
+              fields, or put them into fields you have.
+            </p>
+          )}
+          <ul className="column-match">
+            {mergeFields.map((f, i) => {
+              const target = mergeMatching[f.name];
+              const value = target ? ("key" in target ? `field:${target.key}` : "new") : "";
+              const isNew = target !== undefined && "name" in target;
+              const ownName = !f.skip_reason || f.skip_reason === "field_limit";
+              const id = `merge-${i}`;
+              return (
+                <li key={f.name}>
+                  <div className="column-match-about">
+                    <label htmlFor={id}>{f.name}</label>
+                    <span className="muted small" id={`${id}-about`}>
+                      {plural(f.members, "contact")}
+                      {f.samples.length > 0 ? `: ${f.samples.join(", ")}` : ""}
+                      {audiences.length > 1 ? ` (${f.audiences.join(", ")})` : ""}
+                      {!target && f.skip_reason ? `. Left out: ${mergeSkips[f.skip_reason]}` : ""}
+                    </span>
+                  </div>
+                  <div className="column-match-choice">
+                    <div className="field">
+                      <select id={id} value={value} onChange={(e) => rematch(f, e.target.value)} aria-describedby={`${id}-about`}>
+                        <option value="">Don't import</option>
+                        {fieldList.length > 0 && (
+                          <optgroup label="Your fields">
+                            {fieldList.map((x) => (
+                              <option key={x.key} value={`field:${x.key}`}>
+                                {x.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        <option value="new" disabled={!isNew && canMake <= 0}>
+                          {ownName ? `New field: ${f.name}` : "New field…"}
+                        </option>
+                      </select>
+                    </div>
+                    {isNew && !ownName && (
+                      <label className="field">
+                        <span>Name for the new field</span>
+                        <input
+                          type="text"
+                          value={target.name}
+                          maxLength={maxFieldName}
+                          onChange={(e) => setMergeMatching((m) => matchMergeField(m, f.name, { name: e.target.value }))}
+                          autoComplete="off"
+                          required
+                        />
+                      </label>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {canMake <= 0 && (
+            <p className="muted small" role="status">
+              Your plan allows {plural(fieldLimit, "contact field")}, and {newCount > 0 ? "with the new ones here they're" : "they're"}{" "}
+              all used, so no more can be made. A merge field can still go into one of your existing fields.
+            </p>
+          )}
+          {canMake < 0 && (
+            <p className="notice notice-warn" role="alert">
+              That's {plural(-canMake, "new field")} too many. Leave some merge fields out, or put them into fields you have.
+            </p>
+          )}
+        </fieldset>
       )}
       {audiences.length > 0 && (
         <fieldset className="stack">
@@ -745,7 +916,7 @@ export function ConfirmBundle({ bundle, onConfirmed }: { bundle: Bundle; onConfi
       <p className="muted small">mailgoose needs this to import them. Subscribed contacts get no confirmation email.</p>
       <FailureNotice failure={failure} />
       <div>
-        <button type="submit" className="button primary" disabled={!permission || busy}>
+        <button type="submit" className="button primary" disabled={!permission || busy || unnamed || canMake < 0}>
           {busy ? "Starting…" : "Import"}
         </button>
       </div>

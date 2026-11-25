@@ -1530,9 +1530,10 @@ export interface paths {
          *     keeps at most 3 unconfirmed uploads and sends one at a time. A CSV doesn't say which columns are Mailchimp groups, so name
          *     them in `group_columns` (one part each) to bring them in as tags;
          *     `audience_name` names the audience of an export that doesn't say
-         *     (default "Mailchimp"). Other columns, beyond email, names, tags,
-         *     status, opt-in data and GDPR permissions, aren't imported and are
-         *     listed in `preview.contacts.dropped_fields`.
+         *     (default "Mailchimp"). The other columns are merge fields, which can
+         *     fill contact fields (`preview.contacts.merge_fields`), apart from
+         *     Mailchimp's own (member rating, location, notes and the like), which
+         *     aren't imported and are listed in `preview.contacts.dropped_fields`.
          */
         post: operations["createMailchimpBundle"];
         delete?: never;
@@ -1550,9 +1551,11 @@ export interface paths {
         };
         /**
          * Get an uploaded Mailchimp export
-         * @description The upload with its preview as it was worked out on upload. Once
-         *     confirmed, it says how far its emails have got, and `preview` is
-         *     null.
+         * @description The upload with its preview as it was worked out on upload, except
+         *     what the merge fields would become (`preview.contacts.merge_fields`
+         *     and `preview.contacts.fields`), which is worked out again against
+         *     the account's contact fields as they are now. Once confirmed, it
+         *     says how far its emails have got, and `preview` is null.
          */
         get: operations["getMailchimpBundle"];
         put?: never;
@@ -1599,6 +1602,19 @@ export interface paths {
          *     they're saved. Running the import again makes no second form for an
          *     audience. `form_tags` that aren't groups of the export's audiences
          *     are refused with 422 `unknown_form_tag`.
+         *
+         *     Merge fields beyond first and last name can fill contact fields, as
+         *     a CSV import's columns do, a merge field named as the preview's
+         *     `merge_fields[].name` standing for a column: `field_columns` names
+         *     the merge field each existing contact field comes from (a field left
+         *     out takes a merge field whose name matches its name or key), and
+         *     `new_fields` the fields to make. Without `new_fields`, a field is
+         *     made for each merge field not matched, in Mailchimp's order, while
+         *     the plan's field limit has room, and the rest are left out, as the
+         *     preview shows; `new_fields: []` makes none. New fields are made when
+         *     the import is created, all or none: past the limit the import is
+         *     refused with 422 `field_limit` and nothing is made or queued. A
+         *     contact already here takes the non-blank values, as in a CSV import.
          *
          *     Confirming again returns the upload as it is. `idempotency_key`
          *     (default: the hash of the contacts) makes a second upload of the same
@@ -3649,6 +3665,21 @@ export interface components {
          *         "Interests: Baking"
          *       ]
          *     }
+         * @example {
+         *       "permission_confirmed": true,
+         *       "field_columns": {
+         *         "company": "Company"
+         *       },
+         *       "new_fields": [
+         *         {
+         *           "column": "Phone Number"
+         *         },
+         *         {
+         *           "column": "Birthday",
+         *           "name": "Birthday (day/month)"
+         *         }
+         *       ]
+         *     }
          */
         ConfirmMailchimpBundleRequest: {
             /** @description True says these people agreed to get your email. Required. */
@@ -3662,6 +3693,23 @@ export interface components {
             idempotency_key?: string;
             /** @description Group tags (from the preview's `audiences[].groups`) that each audience's new signup form puts on everyone who signs up with it, besides its `audience: <name>` tag when the export has more than one audience. A tag goes on the form of every audience that has that group. None by default. */
             form_tags?: string[];
+            /**
+             * @description The merge field each of the account's contact fields comes from,
+             *     keyed by the field's key or id: a merge field's name as the
+             *     preview's `merge_fields[].name` has it. An empty string leaves
+             *     the field out. A field left out of this object takes a merge
+             *     field whose name matches its name or key, compared loosely, if
+             *     one isn't taken. Works past the field limit.
+             */
+            field_columns?: components["schemas"]["ImportFieldColumns"];
+            /**
+             * @description Contact fields to make, each from the merge field `column` names
+             *     (as `merge_fields[].name`), named after it unless `name` is
+             *     given. Left out, the import makes the preview's defaults: one for
+             *     each merge field not matched, in Mailchimp's order, within the
+             *     plan's field limit. An empty list makes none.
+             */
+            new_fields?: components["schemas"]["ImportNewFields"];
         };
         /**
          * @example {
@@ -3858,9 +3906,53 @@ export interface components {
          *           "merge_suppressed": 0,
          *           "merge_suppressed_examples": [],
          *           "dropped_fields": [
-         *             "Birthday",
-         *             "Phone Number"
+         *             "MEMBER_RATING",
+         *             "LAST_CHANGED"
          *           ],
+         *           "merge_fields": [
+         *             {
+         *               "name": "Phone Number",
+         *               "audiences": [
+         *                 "Newsletter"
+         *               ],
+         *               "members": 640,
+         *               "samples": [
+         *                 "555-0100",
+         *                 "555-0101",
+         *                 "555-0102"
+         *               ],
+         *               "custom_field": null,
+         *               "new_field": {
+         *                 "name": "Phone Number",
+         *                 "key": "phone_number"
+         *               },
+         *               "skip_reason": null
+         *             },
+         *             {
+         *               "name": "Company",
+         *               "audiences": [
+         *                 "Newsletter"
+         *               ],
+         *               "members": 310,
+         *               "samples": [
+         *                 "Acme",
+         *                 "Initech"
+         *               ],
+         *               "custom_field": {
+         *                 "id": "3b0f6c1e-6f7a-4b8e-9d2c-5a1e7f3c9b20",
+         *                 "key": "company",
+         *                 "name": "Company"
+         *               },
+         *               "new_field": null,
+         *               "skip_reason": null
+         *             }
+         *           ],
+         *           "fields": {
+         *             "limit": 20,
+         *             "existing": 1,
+         *             "new": 1,
+         *             "left_out": 0
+         *           },
          *           "renamed_tags": [],
          *           "names_cut": 0,
          *           "with_optin_time": 1000,
@@ -4015,7 +4107,7 @@ export interface components {
                 unsubscribed: number;
                 bounced: number;
             };
-            /** @description Addresses already contacts here, which would only gain tags. */
+            /** @description Addresses already contacts here, which would only gain tags and the values of the merge fields brought over. */
             existing_tagged: number;
             /** @description Of those, how many Mailchimp's unsubscribe or clean would take off the mailing list. */
             existing_suppressed: number;
@@ -4031,8 +4123,30 @@ export interface components {
             merge_suppressed: number;
             /** @description Up to 100 of them. */
             merge_suppressed_examples: string[];
-            /** @description Columns that aren't imported. */
+            /**
+             * @description Columns that aren't imported: Mailchimp's own, such as
+             *     MEMBER_RATING or LAST_CHANGED, and merge fields past the 100 an
+             *     audience's values are read for.
+             */
             dropped_fields: string[];
+            /**
+             * @description The merge fields beyond first and last name, in Mailchimp's
+             *     order, each with what it would become by default: the contact
+             *     field it fills, the field the import would make, or neither.
+             *     Merge fields of several audiences with the same name are one.
+             */
+            merge_fields: components["schemas"]["MailchimpMergeField"][];
+            /** @description The plan's contact field limit, and what the default choices use of it. */
+            fields: {
+                /** @description The most contact fields the account's plan allows (`contact_field_limit`). */
+                limit: number;
+                /** @description The account's contact fields now. */
+                existing: number;
+                /** @description Fields the import would make by default. */
+                new: number;
+                /** @description Merge fields left out by default because the limit has no room for them (`skip_reason` `field_limit`). */
+                left_out: number;
+            };
             renamed_tags: {
                 from: string;
                 to: string;
@@ -4060,6 +4174,32 @@ export interface components {
             holds: string[];
             /** @description True when the subscribed contacts would take the account past its limit, so they wait until the plan covers them. */
             waits: boolean;
+        };
+        MailchimpMergeField: {
+            /**
+             * @description The merge field's name, as `field_columns` and `new_fields` name it.
+             * @example Phone Number
+             */
+            name: string;
+            /** @description The audiences that have it. */
+            audiences: string[];
+            /** @description Member rows with a value for it. */
+            members: number;
+            /** @description Up to 3 of its values. */
+            samples: string[];
+            /** @description The account's contact field it would fill, matched by name or key; null when none. */
+            custom_field: components["schemas"]["ImportFieldRef"] | null;
+            /** @description The contact field the import would make from it; null when none. */
+            new_field: components["schemas"]["ImportNewFieldPreview"] | null;
+            /**
+             * @description Why it's left out by default: `field_limit` when the plan's
+             *     field limit has no room for another field, or the code a field
+             *     of its name would be refused with (`invalid_field_name`,
+             *     `reserved_field_name`, `field_exists`); it can still go into an
+             *     existing field, or a new field of another name. Null when it
+             *     fills a field.
+             */
+            skip_reason: ("field_limit" | "invalid_field_name" | "reserved_field_name" | "field_exists") | null;
         };
         MailchimpEmail: {
             /** @enum {string} */
@@ -6423,8 +6563,10 @@ export interface components {
          *     `invalid_audience_name`, `invalid_group_column`,
          *     `too_many_group_columns`, `permission_required`, `too_many_tags`,
          *     `invalid_campaigns`, `invalid_idempotency_key`,
-         *     `idempotency_key_reused` or `upload_used` (the file was already
-         *     imported and removed).
+         *     `idempotency_key_reused`, `upload_used` (the file was already
+         *     imported and removed), or for `field_columns` and `new_fields`
+         *     `invalid_mapping`, `unknown_field`, `field_exists`, `field_limit`,
+         *     `invalid_field_name` or `reserved_field_name`.
          */
         MailchimpRefused: {
             headers: {

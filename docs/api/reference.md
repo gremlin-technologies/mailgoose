@@ -1790,9 +1790,10 @@ Send the file as `multipart/form-data`, in the part `file`, at most
 keeps at most 3 unconfirmed uploads and sends one at a time. A CSV doesn't say which columns are Mailchimp groups, so name
 them in `group_columns` (one part each) to bring them in as tags;
 `audience_name` names the audience of an export that doesn't say
-(default "Mailchimp"). Other columns, beyond email, names, tags,
-status, opt-in data and GDPR permissions, aren't imported and are
-listed in `preview.contacts.dropped_fields`.
+(default "Mailchimp"). The other columns are merge fields, which can
+fill contact fields (`preview.contacts.merge_fields`), apart from
+Mailchimp's own (member rating, location, notes and the like), which
+aren't imported and are listed in `preview.contacts.dropped_fields`.
 
 Request body (`multipart/form-data`, required): [CreateMailchimpBundleRequest](#schema-createmailchimpbundlerequest)
 
@@ -1804,7 +1805,7 @@ Responses:
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `409`: `too_many_uploads`: the account already has 3 unconfirmed uploads; confirm or delete one (`deleteMailchimpBundle`), or wait for one to expire. `upload_in_progress`: another upload for the account is still arriving. `upload_confirmed`: a confirmed upload can't be deleted. [Error](#schema-error)
 - `413`: `request_too_large`: the request body is over the operation's limit. [Error](#schema-error)
-- `422`: The export can't be read or imported, and nothing was kept or queued. `code` says why: `not_zip_or_csv`, `bad_zip`, `unsafe_path`, `too_large` (over 1 GB unpacked), `too_many_members` (over the import's limit), `too_many_columns`, `no_email_column`, `unknown_status`, `nothing_to_read`, `file_required`, `invalid_audience_name`, `invalid_group_column`, `too_many_group_columns`, `permission_required`, `too_many_tags`, `invalid_campaigns`, `invalid_idempotency_key`, `idempotency_key_reused` or `upload_used` (the file was already imported and removed). [Error](#schema-error)
+- `422`: The export can't be read or imported, and nothing was kept or queued. `code` says why: `not_zip_or_csv`, `bad_zip`, `unsafe_path`, `too_large` (over 1 GB unpacked), `too_many_members` (over the import's limit), `too_many_columns`, `no_email_column`, `unknown_status`, `nothing_to_read`, `file_required`, `invalid_audience_name`, `invalid_group_column`, `too_many_group_columns`, `permission_required`, `too_many_tags`, `invalid_campaigns`, `invalid_idempotency_key`, `idempotency_key_reused`, `upload_used` (the file was already imported and removed), or for `field_columns` and `new_fields` `invalid_mapping`, `unknown_field`, `field_exists`, `field_limit`, `invalid_field_name` or `reserved_field_name`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -1817,9 +1818,11 @@ Responses:
 - Operation: `getMailchimpBundle`
 - CLI: `mailgoose import mailchimp confirm`, `mailgoose import mailchimp preview`
 
-The upload with its preview as it was worked out on upload. Once
-confirmed, it says how far its emails have got, and `preview` is
-null.
+The upload with its preview as it was worked out on upload, except
+what the merge fields would become (`preview.contacts.merge_fields`
+and `preview.contacts.fields`), which is worked out again against
+the account's contact fields as they are now. Once confirmed, it
+says how far its emails have got, and `preview` is null.
 
 | Parameter | In | Type | Required | Description |
 | --- | --- | --- | --- | --- |
@@ -1891,6 +1894,19 @@ they're saved. Running the import again makes no second form for an
 audience. `form_tags` that aren't groups of the export's audiences
 are refused with 422 `unknown_form_tag`.
 
+Merge fields beyond first and last name can fill contact fields, as
+a CSV import's columns do, a merge field named as the preview's
+`merge_fields[].name` standing for a column: `field_columns` names
+the merge field each existing contact field comes from (a field left
+out takes a merge field whose name matches its name or key), and
+`new_fields` the fields to make. Without `new_fields`, a field is
+made for each merge field not matched, in Mailchimp's order, while
+the plan's field limit has room, and the rest are left out, as the
+preview shows; `new_fields: []` makes none. New fields are made when
+the import is created, all or none: past the limit the import is
+refused with 422 `field_limit` and nothing is made or queued. A
+contact already here takes the non-blank values, as in a CSV import.
+
 Confirming again returns the upload as it is. `idempotency_key`
 (default: the hash of the contacts) makes a second upload of the same
 export return the import already made.
@@ -1908,7 +1924,7 @@ Responses:
 - `401`: `unauthenticated`: no API key or session cookie, or the session has ended. `invalid_api_key`: the key is wrong or revoked. [Error](#schema-error)
 - `403`: `cross_origin_request`: a browser sent this from another site. Only the web app's own origin may change things with a session cookie. [Error](#schema-error)
 - `404`: `not_found`: there's no such thing in this account. [Error](#schema-error)
-- `422`: The export can't be read or imported, and nothing was kept or queued. `code` says why: `not_zip_or_csv`, `bad_zip`, `unsafe_path`, `too_large` (over 1 GB unpacked), `too_many_members` (over the import's limit), `too_many_columns`, `no_email_column`, `unknown_status`, `nothing_to_read`, `file_required`, `invalid_audience_name`, `invalid_group_column`, `too_many_group_columns`, `permission_required`, `too_many_tags`, `invalid_campaigns`, `invalid_idempotency_key`, `idempotency_key_reused` or `upload_used` (the file was already imported and removed). [Error](#schema-error)
+- `422`: The export can't be read or imported, and nothing was kept or queued. `code` says why: `not_zip_or_csv`, `bad_zip`, `unsafe_path`, `too_large` (over 1 GB unpacked), `too_many_members` (over the import's limit), `too_many_columns`, `no_email_column`, `unknown_status`, `nothing_to_read`, `file_required`, `invalid_audience_name`, `invalid_group_column`, `too_many_group_columns`, `permission_required`, `too_many_tags`, `invalid_campaigns`, `invalid_idempotency_key`, `idempotency_key_reused`, `upload_used` (the file was already imported and removed), or for `field_columns` and `new_fields` `invalid_mapping`, `unknown_field`, `field_exists`, `field_limit`, `invalid_field_name` or `reserved_field_name`. [Error](#schema-error)
 - `429`: Rate limited (`rate_limited`), or, for an emailed code, too many wrong codes for the address (`too_many_wrong_codes`). [Error](#schema-error)
 - `503`: `service_unavailable`: a dependency the endpoint needs (the database, or Amazon SES for domains) isn't configured or reachable. Try again later. [Error](#schema-error)
 
@@ -4934,6 +4950,8 @@ Type: string: one of `invalid_email`, `invalid_row`, `duplicate`, `exists`, `sup
 | `campaigns` | integer |  | How many of the newest campaigns become HTML emails. |
 | `idempotency_key` | string |  | Confirming the same export again with this key returns the import already made. |
 | `form_tags` | array of string |  | Group tags (from the preview's `audiences[].groups`) that each audience's new signup form puts on everyone who signs up with it, besides its `audience: <name>` tag when the export has more than one audience. A tag goes on the form of every audience that has that group. None by default. |
+| `field_columns` | [ImportFieldColumns](#schema-importfieldcolumns) |  | The merge field each of the account's contact fields comes from, keyed by the field's key or id: a merge field's name as the preview's `merge_fields[].name` has it. An empty string leaves the field out. A field left out of this object takes a merge field whose name matches its name or key, compared loosely, if one isn't taken. Works past the field limit. |
+| `new_fields` | [ImportNewFields](#schema-importnewfields) |  | Contact fields to make, each from the merge field `column` names (as `merge_fields[].name`), named after it unless `name` is given. Left out, the import makes the preview's defaults: one for each merge field not matched, in Mailchimp's order, within the plan's field limit. An empty list makes none. |
 
 <a id="schema-mailchimpconnect"></a>
 
@@ -5090,13 +5108,15 @@ Member rows by their Mailchimp status.
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
 | `new` | object | yes | Addresses that would become new contacts, by the status they'd have. |
-| `existing_tagged` | integer | yes | Addresses already contacts here, which would only gain tags. |
+| `existing_tagged` | integer | yes | Addresses already contacts here, which would only gain tags and the values of the merge fields brought over. |
 | `existing_suppressed` | integer | yes | Of those, how many Mailchimp's unsubscribe or clean would take off the mailing list. |
 | `skipped` | object | yes |  |
 | `tags_to_create` | array of string | yes |  |
 | `merge_suppressed` | integer | yes | Addresses subscribed in one audience but unsubscribed or cleaned in another, so suppressed. |
 | `merge_suppressed_examples` | array of string | yes | Up to 100 of them. |
-| `dropped_fields` | array of string | yes | Columns that aren't imported. |
+| `dropped_fields` | array of string | yes | Columns that aren't imported: Mailchimp's own, such as MEMBER_RATING or LAST_CHANGED, and merge fields past the 100 an audience's values are read for. |
+| `merge_fields` | array of [MailchimpMergeField](#schema-mailchimpmergefield) | yes | The merge fields beyond first and last name, in Mailchimp's order, each with what it would become by default: the contact field it fills, the field the import would make, or neither. Merge fields of several audiences with the same name are one. |
+| `fields` | object | yes | The plan's contact field limit, and what the default choices use of it. |
 | `renamed_tags` | array of object | yes |  |
 | `names_cut` | integer | yes | Members with a tags, group or permission cell too long to read whole. |
 | `with_optin_time` | integer | yes | Subscribed addresses with a Mailchimp opt-in time. |
@@ -5104,6 +5124,20 @@ Member rows by their Mailchimp status.
 | `plan` | object | yes | The plan the account would need after the import, and its price. |
 | `holds` | array of string | yes | Why the import would be held for review, as `hold_reason` codes, the first being the one recorded. |
 | `waits` | boolean | yes | True when the subscribed contacts would take the account past its limit, so they wait until the plan covers them. |
+
+<a id="schema-mailchimpmergefield"></a>
+
+### MailchimpMergeField
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes | The merge field's name, as `field_columns` and `new_fields` name it. |
+| `audiences` | array of string | yes | The audiences that have it. |
+| `members` | integer | yes | Member rows with a value for it. |
+| `samples` | array of string | yes | Up to 3 of its values. |
+| `custom_field` | [ImportFieldRef](#schema-importfieldref) or null | yes | The account's contact field it would fill, matched by name or key; null when none. |
+| `new_field` | [ImportNewFieldPreview](#schema-importnewfieldpreview) or null | yes | The contact field the import would make from it; null when none. |
+| `skip_reason` | string: one of `field_limit`, `invalid_field_name`, `reserved_field_name`, `field_exists` or null | yes | Why it's left out by default: `field_limit` when the plan's field limit has no room for another field, or the code a field of its name would be refused with (`invalid_field_name`, `reserved_field_name`, `field_exists`); it can still go into an existing field, or a new field of another name. Null when it fills a field. |
 
 <a id="schema-mailchimpemail"></a>
 

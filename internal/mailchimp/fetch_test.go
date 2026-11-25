@@ -432,9 +432,17 @@ func TestFetchReadsAnAccountIntoAnExport(t *testing.T) {
 	if byEmail["cy@example.com"].PermissionsKnown {
 		t.Error("a member with no GDPR data shouldn't refuse email")
 	}
-	// The merge field named Tags is kept by name, not read as tags.
-	if want := []string{"Address", "Birthday", "Tags (MMERGE5)"}; !slices.Equal(a.DroppedFields, want) {
-		t.Errorf("dropped fields = %v, want %v", a.DroppedFields, want)
+	// The merge fields come in Mailchimp's order, and the one named Tags
+	// is a merge field, not read as tags (MG-132).
+	if want := []string{"Birthday", "Tags (MMERGE5)", "Address"}; !slices.Equal(a.MergeFields, want) || len(a.DroppedFields) != 0 {
+		t.Errorf("merge fields = %v, want %v; dropped %v", a.MergeFields, want, a.DroppedFields)
+	}
+	// An address is one text value, its parts joined.
+	if want := []string{"12/10", "x", "1 Main St, Leeds"}; !slices.Equal(ada.Merge, want) {
+		t.Errorf("ada's merge values = %q, want %q", ada.Merge, want)
+	}
+	if bea.Merge != nil {
+		t.Errorf("bea has no merge values: %q", bea.Merge)
 	}
 	if len(b.Campaigns) != 2 {
 		t.Fatalf("campaigns = %+v", b.Campaigns)

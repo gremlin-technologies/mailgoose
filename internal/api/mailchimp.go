@@ -74,8 +74,17 @@ func (s *Server) mailchimpError(w http.ResponseWriter, r *http.Request, err erro
 		WriteError(w, Unprocessable(re.Code, re.Message))
 	case errors.As(err, &ve):
 		e := Unprocessable(ve.Code, ve.Message)
-		if ve.Code == "permission_required" {
+		switch ve.Code {
+		case "permission_required":
 			e = e.WithHint("Send `permission_confirmed: true`, or `--permission-confirmed` in the CLI, once you're sure.")
+		case "invalid_mapping":
+			e = e.WithHint("Name merge fields as the preview's `merge_fields[].name` has them.")
+		case "unknown_field":
+			e = e.WithHint("`mailgoose fields list` shows the account's fields and their keys.")
+		case "field_exists":
+			e = e.WithHint("Put the merge field into the existing field with `field_columns`, or `--field <key>=<merge field>` in the CLI.")
+		case "field_limit":
+			e = e.WithHint("Put merge fields into existing fields instead, leave some out, or delete a field you no longer use.")
 		}
 		WriteError(w, e)
 	case errors.Is(err, mailchimp.ErrUploadNotFound):
@@ -242,7 +251,7 @@ func (s *Server) CreateMailchimpBundle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	release()
-	out, err := s.mailchimpBundleJSON(u)
+	out, err := s.mailchimpBundleJSON(ctx, u)
 	if s.mailchimpError(w, r, err) {
 		return
 	}
@@ -276,11 +285,12 @@ func (s *Server) GetMailchimpBundle(w http.ResponseWriter, r *http.Request, id a
 	if c == nil || !validBundleID(w, id) {
 		return
 	}
-	u, err := s.Mailchimp.Get(r.Context(), c.AccountID, id)
+	ctx := r.Context()
+	u, err := s.Mailchimp.Get(ctx, c.AccountID, id)
 	if s.mailchimpError(w, r, err) {
 		return
 	}
-	out, err := s.mailchimpBundleJSON(u)
+	out, err := s.mailchimpBundleJSON(ctx, u)
 	if s.mailchimpError(w, r, err) {
 		return
 	}
@@ -347,7 +357,8 @@ func (s *Server) ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request, 
 		var importID *string
 		if b.Members() > 0 {
 			im, _, err := s.Contacts.CreateMailchimpImport(ctx, c.AccountID, contacts.MailchimpImportInput{
-				Bundle: b, FileName: u.FileName, PermissionConfirmed: true, IdempotencyKey: deref(req.IdempotencyKey)})
+				Bundle: b, FileName: u.FileName, PermissionConfirmed: true, IdempotencyKey: deref(req.IdempotencyKey),
+				Fields: mailchimpFieldInput(req.FieldColumns, req.NewFields)})
 			if s.mailchimpError(w, r, err) {
 				return
 			}
@@ -380,7 +391,7 @@ func (s *Server) ConfirmMailchimpBundle(w http.ResponseWriter, r *http.Request, 
 			}
 		}
 	}
-	out, err := s.mailchimpBundleJSON(u)
+	out, err := s.mailchimpBundleJSON(ctx, u)
 	if s.mailchimpError(w, r, err) {
 		return
 	}
@@ -457,9 +468,26 @@ func validBundleID(w http.ResponseWriter, id string) bool {
 	return true
 }
 
+// mailchimpFieldInput is a confirm request's merge field choices (MG-132).
+func mailchimpFieldInput(cols *apigen.ImportFieldColumns, news *apigen.ImportNewFields) contacts.MailchimpFieldInput {
+	var in contacts.MailchimpFieldInput
+	if cols != nil {
+		in.FieldColumns = *cols
+	}
+	if news != nil {
+		nf := make([]contacts.NewImportField, len(*news))
+		for i, n := range *news {
+			nf[i] = contacts.NewImportField{Column: n.Column, Name: deref(n.Name)}
+		}
+		in.NewFields = &nf
+	}
+	return in
+}
+
 // mailchimpBundleJSON is an upload as the API shows it, with the preview
-// stored on upload while it's unconfirmed.
-func (s *Server) mailchimpBundleJSON(u *mailchimp.Upload) (apigen.MailchimpBundle, error) {
+// stored on upload while it's unconfirmed. What its merge fields would
+// become is worked out again, against the account's fields as they are.
+func (s *Server) mailchimpBundleJSON(ctx context.Context, u *mailchimp.Upload) (apigen.MailchimpBundle, error) {
 	out := apigen.MailchimpBundle{Id: u.ID, Bytes: u.Bytes, Status: "unconfirmed", CreatedAt: u.CreatedAt.UTC(),
 		ExpiresAt: u.ExpiresAt.UTC(), ConfirmedAt: utcPtr(u.ConfirmedAt), ImportId: u.ImportID, Campaigns: u.Campaigns,
 		Emails: mailchimpProgressJSON(u), Forms: make([]apigen.MailchimpBundleForm, len(u.Forms))}
@@ -482,6 +510,19 @@ func (s *Server) mailchimpBundleJSON(u *mailchimp.Upload) (apigen.MailchimpBundl
 			if p.Audiences[i].Groups == nil {
 				p.Audiences[i].Groups = []string{}
 			}
+		}
+		if c := p.Contacts; c != nil {
+			// A preview stored before MG-132 has no merge fields; its
+			// merge fields are in dropped_fields.
+			merge := make([]contacts.MailchimpMergeField, len(c.MergeFields))
+			for i, m := range c.MergeFields {
+				merge[i] = contacts.MailchimpMergeField{Name: m.Name, Audiences: m.Audiences, Members: m.Members, Samples: m.Samples}
+			}
+			fp, err := s.Contacts.PlanMailchimpFields(ctx, u.AccountID, merge, contacts.MailchimpFieldInput{})
+			if err != nil {
+				return out, err
+			}
+			setMergeFieldsJSON(c, fp)
 		}
 		out.Preview = &p
 	}
@@ -547,6 +588,7 @@ func mailchimpContactsJSON(cp *contacts.MailchimpPreview) *apigen.MailchimpConta
 	if out.DroppedFields == nil {
 		out.DroppedFields = []string{}
 	}
+	setMergeFieldsJSON(out, cp.Fields)
 	out.New.Subscribed = cp.New[contacts.StatusSubscribed]
 	out.New.Unconfirmed = cp.New[contacts.StatusUnconfirmed]
 	out.New.Unsubscribed = cp.New[contacts.StatusUnsubscribed]
@@ -568,6 +610,32 @@ func mailchimpContactsJSON(cp *contacts.MailchimpPreview) *apigen.MailchimpConta
 	out.Plan.Upgrade, out.Plan.Contacts, out.Plan.Limit, out.Plan.Tester = pl.Upgrade, pl.Contacts, pl.Limit, pl.Tester
 	out.Plan.Units, out.Plan.MonthCents, out.Plan.YearCents = pl.Units, int(pl.MonthCents), int(pl.YearCents)
 	return out
+}
+
+// setMergeFieldsJSON puts what the merge fields would become on out.
+func setMergeFieldsJSON(out *apigen.MailchimpContactsPreview, fp *contacts.MailchimpFieldPlan) {
+	out.MergeFields = make([]apigen.MailchimpMergeField, len(fp.Choices))
+	for i, c := range fp.Choices {
+		m := apigen.MailchimpMergeField{Name: c.Name, Audiences: c.Audiences, Members: c.Members, Samples: c.Samples}
+		if m.Audiences == nil {
+			m.Audiences = []string{}
+		}
+		if m.Samples == nil {
+			m.Samples = []string{}
+		}
+		if c.Field != nil {
+			m.CustomField = &apigen.ImportFieldRef{Id: c.Field.ID, Key: c.Field.Key, Name: c.Field.Name}
+		}
+		if c.NewField != nil {
+			m.NewField = &apigen.ImportNewFieldPreview{Name: c.NewField.Name, Key: c.NewField.Key}
+		}
+		if c.SkipReason != "" {
+			r := apigen.MailchimpMergeFieldSkipReason(c.SkipReason)
+			m.SkipReason = &r
+		}
+		out.MergeFields[i] = m
+	}
+	out.Fields.Limit, out.Fields.Existing, out.Fields.New, out.Fields.LeftOut = fp.Limit, fp.Existing, fp.New, fp.LeftOut
 }
 
 func mailchimpEmailJSON(e mailchimp.EmailPlan, id *string) apigen.MailchimpEmail {
